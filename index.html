@@ -5139,16 +5139,23 @@ async function renderArena(){
     const rowCls = isMe ? 'me' : (r.rank === 1 ? 'rank-1' : (r.rank === rankings.length && rankings.length > 3 ? 'rank-last' : ''));
     const taunt = getArenaMessage(r, rankings);
     const indepTag = r.isIndep ? ' <span class="indep-tag">Indé</span>' : (r.noObjectif ? ` <span class="indep-tag" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(r.agent)}</span>` : '');
-    const desiredVal = (isMonthScope && r.desiredObjective > 0) ? r.desiredObjective : null;
+    // En vue "jour", il n'existe pas de minimum imposé par l'admin séparé — la seule valeur disponible
+    // (r.objective) est celle que l'agent s'est fixée lui-même le matin dans "Ton objectif du jour" :
+    // elle va donc sous "souhaité", pas sous "mini". En vue "mois", les deux existent séparément :
+    // r.objective = mini obligatoire réglé par l'admin, r.desiredObjective = souhaité fixé par l'agent.
+    const miniVal = isMonthScope ? r.objective : null;
+    const desiredVal = isMonthScope
+      ? ((r.desiredObjective > 0) ? r.desiredObjective : null)
+      : ((r.objective > 0) ? r.objective : null);
 
     // Deux pourcentages distincts, chacun avec son propre dégradé rouge -> orange -> vert, puis une
     // couleur "dépassement" dédiée : argent pour le mini (objectif admin), or pour le souhaité (objectif agent).
     const isFreeRow = r.isIndep || r.noObjectif;
-    const miniPctVal = (!isFreeRow && r.objective > 0) ? r.pct : null;
+    const miniPctVal = (isMonthScope && !isFreeRow && miniVal > 0) ? r.pct : null;
     const desiredPctVal = desiredVal != null ? Math.round((r.realized/desiredVal)*100) : null;
     const miniColor = pctBadgeColor(miniPctVal, 'var(--silver)');
     const desiredColor = pctBadgeColor(desiredPctVal, 'var(--gold)');
-    const miniLabel = miniPctVal != null ? miniPctVal+'%' : (r.isIndep ? '🧑‍💼' : (r.noObjectif ? '🎯' : '—'));
+    const miniLabel = miniPctVal != null ? miniPctVal+'%' : (isMonthScope ? (r.isIndep ? '🧑‍💼' : (r.noObjectif ? '🎯' : '—')) : '—');
     const desiredLabel = desiredPctVal != null ? desiredPctVal+'%' : '—';
 
     const dayBadge = !isMonthScope && !r.isIndep ? dailyProgressBadge(r.realized) : null;
@@ -5156,7 +5163,7 @@ async function renderArena(){
     return `<div class="lb-row ${rowCls}">
       <div class="lb-rank">${rankEmoji(r.rank, rankings.length)}</div>
       <div class="lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}${dayBadge ? ` <span class="tag ${dayBadge.cls}" style="${dayBadge.pulse?'animation: pulseWarn 1s infinite;':''}">${dayBadge.txt}</span>` : ''}<small>${taunt.text}</small></div>
-      <div class="lb-stat"><b>${r.objective > 0 ? r.objective : (isFreeRow ? '∞' : '—')}</b>${(r.objective > 0 || !isFreeRow) ? 'mini' : ''}</div>
+      <div class="lb-stat"><b>${isMonthScope ? (miniVal > 0 ? miniVal : (isFreeRow ? '∞' : '—')) : '—'}</b>${isMonthScope ? 'mini' : ''}</div>
       <div class="lb-stat lb-stat-desired"><b>${desiredVal != null ? desiredVal : '—'}</b>souhaité</div>
       <div class="lb-stat"><b>${r.realized}</b>signés</div>
       <div style="display:flex; flex-direction:column; gap:3px; align-items:flex-end;">
