@@ -463,7 +463,7 @@
   <button id="deviceGateAdminLink" style="background:none; border:none; color:var(--accent); font-size:13px; font-weight:600; cursor:pointer;" onclick="showDeviceGateAdmin()">Je suis admin</button>
   <div id="deviceGateAdminBox" style="display:none; margin-top:16px;">
     <div style="position:relative; display:inline-block;">
-      <input type="password" id="deviceGateAdminPw" placeholder="Mot de passe admin" style="padding:10px 40px 10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:14px; text-align:center;" onkeydown="if(event.key==='Enter')tryDeviceGateAdmin()">
+      <input type="password" id="deviceGateAdminPw" placeholder="Mot de passe admin" style="padding:10px 40px 10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:14px; text-align:left;" onkeydown="if(event.key==='Enter')tryDeviceGateAdmin()">
       <button type="button" onclick="const i=document.getElementById('deviceGateAdminPw'); const b=this; if(i.type==='password'){i.type='text'; b.textContent='🙈';} else {i.type='password'; b.textContent='👁️';} i.focus();" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️</button>
     </div>
     <div style="margin-top:10px;"><button onclick="tryDeviceGateAdmin()" style="padding:9px 18px; border-radius:8px; border:none; background:var(--accent); color:white; font-weight:700; cursor:pointer; font-size:13px;">Valider</button></div>
@@ -754,7 +754,7 @@ function tryDeviceGateAdmin(){
     <div class="gate" id="adminGate">
       <label>Mot de passe admin</label>
       <div style="position:relative;">
-        <input type="password" id="adminPwInput" placeholder="••••" style="padding-right:40px;" onkeydown="if(event.key==='Enter')tryAdminLogin()">
+        <input type="password" id="adminPwInput" placeholder="••••" style="padding-right:40px; text-align:left;" onkeydown="if(event.key==='Enter')tryAdminLogin()">
         <button type="button" onclick="const i=document.getElementById('adminPwInput'); const b=this; if(i.type==='password'){i.type='text'; b.textContent='🙈';} else {i.type='password'; b.textContent='👁️';} i.focus();" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:17px;">👁️</button>
       </div>
       <button onclick="tryAdminLogin()">Entrer</button>
