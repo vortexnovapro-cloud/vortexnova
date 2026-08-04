@@ -843,8 +843,10 @@ function tryDeviceGateAdmin(){
               <option value="">Aucune (jour normal)</option>
               <option value="full">Journée complète — retenue pleine, PAS compté retard</option>
               <option value="half">Demi-journée — retenue à moitié, PAS compté retard</option>
+              <option value="full_paid">Journée complète — SANS retenue (payée), PAS compté retard</option>
+              <option value="half_paid">Demi-journée — SANS retenue (payée), PAS compté retard</option>
             </select>
-            <div class="section-sub" style="margin-top:6px;">Pour un congé maladie, un rendez-vous administratif justifié, etc. La retenue s'applique comme d'habitude (quote-part du fixe, pleine ou à moitié) mais n'est <b>jamais</b> comptée comme un retard — la prime d'assiduité n'est pas affectée.</div>
+            <div class="section-sub" style="margin-top:6px;">Pour un congé maladie, un rendez-vous administratif justifié, etc. Choisis "SANS retenue" pour un congé payé (ex: congé payé légal, jour férié travaillé compensé) — dans tous les cas, ce n'est <b>jamais</b> compté comme un retard et la prime d'assiduité n'est pas affectée.</div>
           </div>
 
           <div class="settings-grid">
@@ -2662,6 +2664,18 @@ async function endFreeBreak(){
   updateFreeBreakDisplay();
 }
 
+// Libellé lisible pour chacun des 4 types d'absence justifiée — utilisé partout où le statut d'un agent
+// est affiché, pour rester cohérent (jour/demi-jour × payé/non payé).
+function justifiedAbsenceLabel(type, short){
+  const map = {
+    full: short ? 'Absence justifiée (jour)' : 'Absence justifiée (journée)',
+    half: short ? 'Absence justifiée (demi-j)' : 'Absence justifiée (demi-journée)',
+    full_paid: short ? 'Absence payée (jour)' : 'Absence justifiée payée (journée)',
+    half_paid: short ? 'Absence payée (demi-j)' : 'Absence justifiée payée (demi-journée)'
+  };
+  return map[type] || 'Absence justifiée';
+}
+
 const POINTAGE_TYPES = ['in','break_start','break_end','out'];
 function lastEventType(events){
   for(let i=events.length-1;i>=0;i--){
@@ -2807,8 +2821,11 @@ async function renderAgentHistory(){
     const dayLabel = dObj.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 
     let tagsHtml = '';
-    if(log.events.length===0 && infr.length===0){
+    if(log.events.length===0 && infr.length===0 && !log.justifiedAbsence){
       tagsHtml = '<span class="tag absent">Aucun pointage</span>';
+    } else if(log.justifiedAbsence){
+      const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
+      tagsHtml = `<span class="tag independant">🗓️ ${lbl}</span>`;
     } else {
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 0){
@@ -3054,8 +3071,8 @@ async function renderReport(){
     if(!r.hasAnyEvent && r.infractions.length===0 && !r.justifiedAbsence){
       html += `<span class="tag absent">Absent</span>`;
     } else if(r.justifiedAbsence){
-      const lbl = r.justifiedAbsence === 'full' ? 'Absence justifiée (journée)' : 'Absence justifiée (demi-journée)';
-      html += `<span class="tag independant">🗓️ ${lbl} · retenue, pas un retard</span>`;
+      const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
+      const isPaid = r.justifiedAbsence.endsWith("_paid"); html += `<span class="tag independant">🗓️ ${lbl} · ${isPaid?"payée":"retenue"}, pas un retard</span>`;
       if(anyBreakOver){
         html += `<span class="tag warn">Pause dépassée</span>`;
       }
@@ -3098,13 +3115,15 @@ function exportCSV(){
   rows.forEach(r=>{
     const anyBreakOver = r.breakIssues?.some(b=>b.over) || false;
     let sanction = '';
-    if(r.lateMinutes > 0) sanction = r.lateMinutes <= 10 ? '-30min salaire' : 'journee non payee';
+    if(r.justifiedAbsence) sanction = r.justifiedAbsence === 'full' ? 'absence justifiee (jour)' : 'absence justifiee (demi-jour)';
+    else if(r.lateMinutes > 0) sanction = r.lateMinutes <= 10 ? '-30min salaire' : 'journee non payee';
     let statut = 'OK';
     if(r.isIndep) statut = 'Indépendant';
+    else if(r.justifiedAbsence) statut = 'Absence justifiee';
     else if(!r.hasAnyEvent && r.infractions?.length===0) statut = 'Absent';
     else if(r.lateMinutes > 0 || anyBreakOver || r.infractions?.length>0) statut = 'Non conforme';
     const infrTxt = (r.infractions||[]).map(i=>INFR_TYPES[i.type].label).join(' | ');
-    csv += `${r.agent};${r.arrivee||''};${r.depart||''};${r.lateMinutes||0};${sanction};${anyBreakOver?'Oui':'Non'};${infrTxt};${statut};${r.isIndep?'Oui':'Non'}\n`;
+    csv += `${r.agent};${r.arrivee||''};${r.depart||''};${r.justifiedAbsence?0:(r.lateMinutes||0)};${sanction};${anyBreakOver?'Oui':'Non'};${infrTxt};${statut};${r.isIndep?'Oui':'Non'}\n`;
   });
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -3341,7 +3360,7 @@ async function renderExploDailyDetail(agents, dateList){
       } else {
         const log = await getDayLog(agent, dateStr);
         if(log.justifiedAbsence){
-          const lbl = log.justifiedAbsence === 'full' ? 'Absence justifiée (journée)' : 'Absence justifiée (demi-journée)';
+          const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
           statusHtml = `<span class="tag independant">🗓️ ${lbl}</span>`;
         } else if(!log.events || log.events.length === 0){
           const noActivity = realJour === 0 && objJour === 0;
@@ -3639,8 +3658,8 @@ async function renderTodaySnapshot(){
     if(r.isIndep){
       tags = '<span class="tag independant">Indépendant</span>';
     } else if(r.justifiedAbsence){
-      const lbl = r.justifiedAbsence === 'full' ? 'Absence justifiée (journée)' : 'Absence justifiée (demi-journée)';
-      tags += `<span class="tag independant">🗓️ ${lbl} · retenue, pas un retard</span>`;
+      const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
+      const isPaid = r.justifiedAbsence.endsWith("_paid"); tags += `<span class="tag independant">🗓️ ${lbl} · ${isPaid?"payée":"retenue"}, pas un retard</span>`;
       r.infr.forEach(i=>{
         const meta = INFR_TYPES[i.type];
         tags += `<span class="tag warn">${meta.label} (${infrSanctionText(i)})</span>`;
@@ -4082,6 +4101,8 @@ async function monthlyDeductions(agent, year, month){
         total += amt;
         items.push({ date: dateStr, label: `Absence justifiée (demi-journée) — retenue fixe`, amount: Math.round(amt) });
       }
+      // "full_paid" / "half_paid" : absence justifiée et payée intégralement — aucune retenue, juste
+      // exclue du calcul de retard comme les deux cas ci-dessus.
       // Ni retard, ni inactivité ne sont évalués ce jour-là : on passe directement aux infractions.
       infr.forEach(i=>{
         if(i.type === 'phone_youtube'){
@@ -5511,11 +5532,14 @@ async function renderSupervision(){
     if(!isIndep && log){
       const last = lastEventType(log.events);
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
-      if(last === null){ statusLabel = "Pas encore pointé"; statusCls = 'absent'; }
+      if(log.justifiedAbsence){
+        statusLabel = '🗓️ ' + justifiedAbsenceLabel(log.justifiedAbsence, true);
+        statusCls = 'independant';
+      } else if(last === null){ statusLabel = "Pas encore pointé"; statusCls = 'absent'; }
       else if(last === 'out'){ statusLabel = 'Journée terminée'; statusCls = 'ok'; }
       else if(last === 'break_start'){ statusLabel = 'En pause'; statusCls = 'warn'; }
       else { statusLabel = 'Présent'; statusCls = 'ok'; }
-      if(ev.lateMinutes > 0){ statusLabel += ` · retard ${ev.lateMinutes}min`; statusCls = 'late'; }
+      if(!log.justifiedAbsence && ev.lateMinutes > 0){ statusLabel += ` · retard ${ev.lateMinutes}min`; statusCls = 'late'; }
     }
 
     const pctMonth_ = monthObj_ > 0 ? Math.round((monthReal/monthObj_)*100) : (isIndep ? 100 : (monthReal>0?100:0));
