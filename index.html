@@ -1374,14 +1374,17 @@ function playInactivityBeep(level){
       }, delay);
     };
     if(level >= 3){
-      // 3e alerte : le plus fort, le plus long, quadruple bip rapproché — impossible à louper.
-      beepOnce(0, 1046, 0.5, 280); beepOnce(320, 1318, 0.5, 280);
-      beepOnce(640, 1568, 0.55, 320); beepOnce(1000, 1568, 0.55, 380);
+      // 3e alerte : volume au maximum raisonnable, séquence longue et répétée — quasi impossible à louper,
+      // même dans un bureau bruyant ou en fond sonore d'un appel.
+      beepOnce(0, 1046, 0.75, 300); beepOnce(340, 1318, 0.75, 300);
+      beepOnce(680, 1568, 0.8, 340); beepOnce(1040, 1046, 0.75, 300);
+      beepOnce(1380, 1318, 0.75, 300); beepOnce(1720, 1568, 0.8, 380);
     } else if(level === 2){
-      beepOnce(0, 1046, 0.42, 260); beepOnce(320, 1318, 0.42, 260); beepOnce(640, 1568, 0.45, 300);
+      beepOnce(0, 1046, 0.65, 280); beepOnce(340, 1318, 0.65, 280);
+      beepOnce(680, 1568, 0.7, 320); beepOnce(1040, 1046, 0.6, 280);
     } else {
       // 1ère alerte : un seul bip, plus doux, mais audible — ce n'est plus silencieux.
-      beepOnce(0, 784, 0.28, 220);
+      beepOnce(0, 784, 0.35, 240);
     }
   }catch(e){}
 }
@@ -2987,7 +2990,7 @@ async function renderReport(){
     const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
     const infractions = await getInfractions(agent, dateStr);
     const lockouts = extractLockouts(log.events);
-    rows.push({ agent, ...ev, infractions, lockouts, isIndep: false });
+    rows.push({ agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, isIndep: false });
   }
 
   let html = `<table><thead><tr>
@@ -3003,7 +3006,7 @@ async function renderReport(){
       return;
     }
     const anyBreakOver = r.breakIssues.some(b=>b.over) || r.freeBreakOverMin > 0;
-    const flaggedRed = r.lateMinutes > 0;
+    const flaggedRed = r.lateMinutes > 0 && !r.justifiedAbsence;
     const flaggedAmber = !flaggedRed && (anyBreakOver || r.infractions.length>0);
 
     const freeBreakLine = r.freeBreakUsedMin > 0
@@ -3048,8 +3051,17 @@ async function renderReport(){
       <td>${lockoutHtml}</td>
       <td>${infrHtml}</td>
       <td>`;
-    if(!r.hasAnyEvent && r.infractions.length===0){
+    if(!r.hasAnyEvent && r.infractions.length===0 && !r.justifiedAbsence){
       html += `<span class="tag absent">Absent</span>`;
+    } else if(r.justifiedAbsence){
+      const lbl = r.justifiedAbsence === 'full' ? 'Absence justifiée (journée)' : 'Absence justifiée (demi-journée)';
+      html += `<span class="tag independant">🗓️ ${lbl} · retenue, pas un retard</span>`;
+      if(anyBreakOver){
+        html += `<span class="tag warn">Pause dépassée</span>`;
+      }
+      if(r.infractions.length>0){
+        html += `<span class="tag warn">${r.infractions.length} autre(s) infraction(s)</span>`;
+      }
     } else {
       if(r.lateMinutes > 0){
         const sanction = r.lateMinutes <= 10 ? '-30min salaire' : 'journée non payée';
@@ -3125,7 +3137,7 @@ async function monthlyStats(agent, year, month){
   })));
   let retards = 0, pauseOver = 0, phoneYoutube = 0, objectif = 0;
   dayData.forEach(({dateStr, log, infr})=>{
-    if(log.events.length>0){
+    if(log.events.length>0 && !log.justifiedAbsence){
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 0) retards++;
       if(ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0) pauseOver++;
