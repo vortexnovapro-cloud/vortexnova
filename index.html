@@ -553,6 +553,8 @@ function tryDeviceGateAdmin(){
         <button class="action-btn" id="btnFreeBreakEnd" onclick="endFreeBreak()" style="max-width:260px; margin:0 auto; display:none;">Je suis de retour</button>
       </div>
 
+      <div class="settings-box" id="adfBox" style="margin-top:18px; text-align:center; display:none; border-color:rgba(155,89,182,0.45); background:linear-gradient(135deg, rgba(155,89,182,0.08), var(--panel));"></div>
+
       <div class="today-log" id="todayLog" style="display:none;">
         <h3>Aujourd'hui</h3>
         <div id="todayLogRows"></div>
@@ -1163,6 +1165,12 @@ function tryDeviceGateAdmin(){
             <div class="section-sub" style="margin-top:6px;">En dehors du déjeuner, chaque agent a ce total de minutes à prendre quand il veut dans sa journée, en une ou plusieurs fois (avec un décompte en direct). Aucun horaire fixe pour cette pause-là.</div>
           </div>
 
+          <div style="margin-top:22px;">
+            <label style="margin-bottom:6px;">🎓 ADF — délai de retour au poste (minutes)</label>
+            <input type="number" id="cfgAdfGraceMinutes" min="1" step="1" style="max-width:140px;">
+            <div class="section-sub" style="margin-top:6px;">Une fois l'ADF terminé côté agent formé, le superviseur a ce délai pour revenir sur son propre poste et confirmer — sans quoi le suivi d'inactivité normal reprend automatiquement.</div>
+          </div>
+
           <label style="margin:22px 0 10px;">Vendredi — pause déjeuner spéciale</label>
           <div class="settings-grid" style="margin-bottom:6px;">
             <div style="display:flex; align-items:center; gap:8px; padding-top:6px;">
@@ -1495,9 +1503,10 @@ function tickInactivityWatcher(){
     return;
   }
   if(currentAgent && isWithinScheduledHours()){
-    if(isOnAnyBreakNow(freeBreakCache.events || [])){
-      // En pause (déjeuner ou pause libre) : le chrono d'inactivité est simplement mis en sommeil, pas de
-      // compte à rebours, pas d'alerte, pas de déconnexion — personne ne doit être délogé en pause.
+    if(isOnAnyBreakNow(freeBreakCache.events || []) || isProtectedByADF()){
+      // En pause (déjeuner ou pause libre), OU protégé par un ADF en cours (formation superviseur ↔
+      // agent) : le chrono d'inactivité est simplement mis en sommeil, pas de compte à rebours, pas
+      // d'alerte, pas de déconnexion.
       lastActivityAt = Date.now();
       clearInactivityWarnings();
       return;
@@ -1602,6 +1611,13 @@ async function storageSet(key, value){
     return { key, value };
   }catch(e){ console.error('storageSet error:', e); return null; }
 }
+async function storageDelete(key){
+  if(!firebaseReady) return null;
+  try{
+    await db.collection('vortexnova').doc(key).delete();
+    return { key, deleted: true };
+  }catch(e){ console.error('storageDelete error:', e); return null; }
+}
 
 let vnToastTimer = null;
 function showToast(msg, tone){
@@ -1687,6 +1703,7 @@ async function loadConfig(){
   renderAgentChips();
   renderBreaksEditor();
   document.getElementById('cfgFreeBreakMinutes').value = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
+  document.getElementById('cfgAdfGraceMinutes').value = config.adfGraceMinutes != null ? config.adfGraceMinutes : 2;
   renderScheduleHint();
   loadArenaMessagesUI();
 
@@ -2074,6 +2091,8 @@ async function saveConfig(){
   if(isNaN(config.breakStartToleranceMin) || config.breakStartToleranceMin < 0) config.breakStartToleranceMin = 15;
   config.freeBreakMinutes = parseInt(document.getElementById('cfgFreeBreakMinutes').value);
   if(isNaN(config.freeBreakMinutes) || config.freeBreakMinutes < 0) config.freeBreakMinutes = 35;
+  config.adfGraceMinutes = parseInt(document.getElementById('cfgAdfGraceMinutes').value);
+  if(isNaN(config.adfGraceMinutes) || config.adfGraceMinutes < 1) config.adfGraceMinutes = 2;
   config.fridayLunch = {
     enabled: document.getElementById('cfgFridayEnabled').checked,
     start: document.getElementById('cfgFridayStart').value || "12:00",
@@ -2156,6 +2175,7 @@ async function onAgentChange(){
   refreshAgentButtons();
   refreshAgentStatus();
   refreshFreeBreakUI();
+  refreshADFStatus();
 }
 
 async function getDayLog(agent, dateStr){
@@ -2664,6 +2684,219 @@ async function endFreeBreak(){
   updateFreeBreakDisplay();
 }
 
+// ============================================================
+// 🎓 ADF (Acte De Formation) — un superviseur va former un agent sur son poste. Pendant toute la
+// session, ni le superviseur ni l'agent formé ne doivent être délogués/pénalisés pour inactivité —
+// puisqu'aucun des deux n'est en train de taper sur son propre clavier normalement.
+//
+// Déroulé :
+// 1) Le superviseur clique "🎓 Démarrer un ADF" sur SON poste, choisit l'agent → statut "pending".
+//    Le superviseur est protégé dès cet instant (il va se déplacer).
+// 2) Une fois arrivé, il clique "Début ADF" sur LE POSTE DE L'AGENT (l'agent est connecté sous son
+//    propre nom) → statut "confirmed". L'agent est protégé à partir de cet instant.
+// 3) À la fin, toujours sur le poste de l'agent, il clique "Terminer" → l'agent redevient
+//    immédiatement suivi normalement, statut passe à "finishing".
+// 4) Le superviseur a un délai (réglable, 2 min par défaut) pour revenir sur SON poste et cliquer
+//    "Je suis de retour" → statut "done" (session refermée). Passé ce délai, rien de dramatique :
+//    le suivi normal reprend simplement pour le superviseur, sans pénalité rétroactive.
+// ============================================================
+let myADFStatus = null; // { role:'supervisor'|'agent', supervisor, agent, record }
+
+function adfKey(supervisor){ return `adf:${supervisor}`; }
+
+async function getADFRecord(supervisor){
+  try{
+    const res = await storageGet(adfKey(supervisor));
+    if(res && res.value) return JSON.parse(res.value);
+  }catch(e){}
+  return null;
+}
+async function saveADFRecord(supervisor, record){
+  await storageSet(adfKey(supervisor), JSON.stringify(record));
+}
+async function clearADFRecord(supervisor){
+  try{ await storageDelete(adfKey(supervisor)); }catch(e){ await storageSet(adfKey(supervisor), JSON.stringify(null)); }
+}
+
+function listSupervisors(){
+  return config.agents.filter(a => isSupervisor(a));
+}
+
+async function refreshADFStatus(){
+  if(!currentAgent){ myADFStatus = null; renderADFBox(); return; }
+
+  if(isSupervisor(currentAgent)){
+    const record = await getADFRecord(currentAgent);
+    myADFStatus = (record && record.status !== 'done' && record.status !== 'cancelled')
+      ? { role: 'supervisor', supervisor: currentAgent, agent: record.agent, record }
+      : null;
+  } else {
+    myADFStatus = null;
+    for(const sup of listSupervisors()){
+      const record = await getADFRecord(sup);
+      if(record && record.agent === currentAgent && (record.status === 'pending' || record.status === 'confirmed')){
+        myADFStatus = { role: 'agent', supervisor: sup, agent: currentAgent, record };
+        break;
+      }
+    }
+  }
+  renderADFBox();
+}
+
+function renderADFBox(){
+  const box = document.getElementById('adfBox');
+  if(!box || !currentAgent) { if(box) box.style.display='none'; return; }
+
+  // Cas 1 : je suis superviseur, aucune session en cours → bouton pour en démarrer une.
+  if(isSupervisor(currentAgent) && !myADFStatus){
+    box.style.display = 'block';
+    const options = config.agents.filter(a => a !== currentAgent && !isIndependant(a));
+    box.innerHTML = `
+      <label style="margin-bottom:4px;">🎓 Acte De Formation (ADF)</label>
+      <div class="section-sub" style="margin-top:-4px;">Tu vas former un agent sur son poste ? Démarre un ADF pour que ni toi ni lui ne soyez pénalisés pour inactivité pendant ce temps.</div>
+      <div style="margin-top:14px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+        <select id="adfAgentPicker" style="min-width:180px;">
+          <option value="">— Choisir l'agent à former —</option>
+          ${options.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('')}
+        </select>
+        <button class="action-btn" style="max-width:220px;" onclick="startADF()">🎓 Démarrer l'ADF</button>
+      </div>`;
+    return;
+  }
+
+  // Cas 2 : je suis le superviseur, session en attente que l'agent confirme sur son poste.
+  if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'pending'){
+    box.style.display = 'block';
+    box.innerHTML = `
+      <label style="margin-bottom:4px;">🎓 ADF en préparation</label>
+      <div style="font-size:15px; margin:10px 0;">En route vers le poste de <b>${myADFStatus.agent}</b>...</div>
+      <div class="section-sub">Va sur son poste et fais-lui cliquer "Début ADF" pour confirmer — tu es protégé de l'inactivité en attendant.</div>
+      <button class="action-btn arena-btn-set" style="max-width:200px; margin-top:14px;" onclick="cancelADF()">Annuler</button>`;
+    return;
+  }
+
+  // Cas 3 : je suis le superviseur, ADF confirmé et en cours sur le poste de l'agent.
+  if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'confirmed'){
+    box.style.display = 'block';
+    box.innerHTML = `
+      <label style="margin-bottom:4px;">🎓 ADF en cours</label>
+      <div style="font-size:15px; margin:10px 0;">Formation de <b>${myADFStatus.agent}</b> en cours sur son poste.</div>
+      <div class="section-sub">Clique "Terminer" sur SON poste (pas ici) une fois l'ADF fini.</div>`;
+    return;
+  }
+
+  // Cas 4 : je suis le superviseur, l'agent a terminé — je dois confirmer mon retour dans le délai imparti.
+  if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'finishing'){
+    box.style.display = 'block';
+    box.innerHTML = `
+      <label style="margin-bottom:4px;">🎓 ADF terminé avec ${myADFStatus.agent}</label>
+      <div id="adfReturnTimer" style="font-size:30px; font-weight:900; margin:10px 0; color:var(--amber);">--:--</div>
+      <div class="section-sub">Confirme que tu es de retour à ton poste avant la fin du décompte.</div>
+      <button class="action-btn" style="max-width:220px; margin-top:12px;" onclick="confirmReturnADF()">✅ Je suis de retour</button>`;
+    return;
+  }
+
+  // Cas 5 : je suis l'agent formé, le superviseur arrive — je dois confirmer sa présence.
+  if(myADFStatus && myADFStatus.role === 'agent' && myADFStatus.record.status === 'pending'){
+    box.style.display = 'block';
+    box.innerHTML = `
+      <label style="margin-bottom:4px;">🎓 ${myADFStatus.supervisor} arrive pour te former</label>
+      <div class="section-sub" style="margin-top:-4px;">Clique quand il/elle est bien à ton poste.</div>
+      <button class="action-btn" style="max-width:220px; margin-top:12px;" onclick="beginADFOnAgentSide()">✅ Début ADF</button>`;
+    return;
+  }
+
+  // Cas 6 : je suis l'agent formé, ADF confirmé — je peux le terminer quand c'est fini.
+  if(myADFStatus && myADFStatus.role === 'agent' && myADFStatus.record.status === 'confirmed'){
+    box.style.display = 'block';
+    box.innerHTML = `
+      <label style="margin-bottom:4px;">🎓 ADF en cours avec ${myADFStatus.supervisor}</label>
+      <div class="section-sub" style="margin-top:-4px;">Tu es protégé de l'inactivité pendant la formation.</div>
+      <button class="action-btn arena-btn-set" style="max-width:220px; margin-top:12px;" onclick="endADFOnAgentSide()">🏁 Terminer l'ADF</button>`;
+    return;
+  }
+
+  box.style.display = 'none';
+}
+
+async function startADF(){
+  const agent = document.getElementById('adfAgentPicker')?.value;
+  if(!agent){ alert('Choisis l\'agent que tu vas former.'); return; }
+  await saveADFRecord(currentAgent, { agent, status: 'pending', startedAt: new Date().toISOString() });
+  await refreshADFStatus();
+  resetInactivityTimer();
+}
+
+async function cancelADF(){
+  if(!currentAgent) return;
+  await clearADFRecord(currentAgent);
+  await refreshADFStatus();
+}
+
+async function beginADFOnAgentSide(){
+  if(!myADFStatus || myADFStatus.role !== 'agent') return;
+  const record = myADFStatus.record;
+  record.status = 'confirmed';
+  record.confirmedAt = new Date().toISOString();
+  await saveADFRecord(myADFStatus.supervisor, record);
+  await refreshADFStatus();
+  resetInactivityTimer();
+}
+
+async function endADFOnAgentSide(){
+  if(!myADFStatus || myADFStatus.role !== 'agent') return;
+  const record = myADFStatus.record;
+  record.status = 'finishing';
+  record.endedOnAgentAt = new Date().toISOString();
+  await saveADFRecord(myADFStatus.supervisor, record);
+  await refreshADFStatus();
+  // L'agent formé redevient immédiatement suivi normalement — pas d'attente de son côté.
+  resetInactivityTimer();
+}
+
+async function confirmReturnADF(){
+  if(!myADFStatus || myADFStatus.role !== 'supervisor') return;
+  await clearADFRecord(currentAgent);
+  myADFStatus = null;
+  renderADFBox();
+  resetInactivityTimer();
+}
+
+// Vrai si l'inactivité doit être mise en pause pour l'agent actuellement connecté, à cause d'un ADF
+// en cours (superviseur pending/confirmed, ou dans son délai de grâce finishing ; agent formé confirmed).
+function isProtectedByADF(){
+  if(!myADFStatus) return false;
+  if(myADFStatus.role === 'supervisor'){
+    const status = myADFStatus.record.status;
+    if(status === 'pending' || status === 'confirmed') return true;
+    if(status === 'finishing'){
+      const graceMs = (config.adfGraceMinutes != null ? config.adfGraceMinutes : 2) * 60 * 1000;
+      const endedAt = new Date(myADFStatus.record.endedOnAgentAt).getTime();
+      return (Date.now() - endedAt) < graceMs; // passé ce délai, protection levée, suivi normal reprend
+    }
+    return false;
+  }
+  if(myADFStatus.role === 'agent') return myADFStatus.record.status === 'confirmed';
+  return false;
+}
+
+function tickADFTimer(){
+  if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'finishing'){
+    const el = document.getElementById('adfReturnTimer');
+    if(!el) return;
+    const graceMs = (config.adfGraceMinutes != null ? config.adfGraceMinutes : 2) * 60 * 1000;
+    const endedAt = new Date(myADFStatus.record.endedOnAgentAt).getTime();
+    const remaining = graceMs - (Date.now() - endedAt);
+    if(remaining <= 0){
+      el.textContent = '00:00';
+      el.style.color = 'var(--red)';
+    } else {
+      el.textContent = formatDuration(remaining);
+      el.style.color = remaining < 30000 ? 'var(--red)' : 'var(--amber)';
+    }
+  }
+}
+
 // Libellé lisible pour chacun des 4 types d'absence justifiée — utilisé partout où le statut d'un agent
 // est affiché, pour rester cohérent (jour/demi-jour × payé/non payé).
 function justifiedAbsenceLabel(type, short){
@@ -2674,6 +2907,15 @@ function justifiedAbsenceLabel(type, short){
     half_paid: short ? 'Absence payée (demi-j)' : 'Absence justifiée payée (demi-journée)'
   };
   return map[type] || 'Absence justifiée';
+}
+
+// Badge visuel selon le nombre de contrats du jour — pour repérer d'un coup d'œil qui a besoin d'aide
+// (0 = alarme rouge), qui a besoin d'un coup de pouce (1-2), et qui est lancé (3-4+).
+function dailyProgressBadge(count){
+  if(count <= 0) return { txt: '🚨 0 contrat', cls: 'late', pulse: true };
+  if(count <= 2) return { txt: `⚡ ${count} — à pousser`, cls: 'warn', pulse: false };
+  if(count <= 4) return { txt: `🔥 ${count} — motivé`, cls: 'ok', pulse: false };
+  return { txt: `🏆 ${count} — lancé`, cls: 'ok', pulse: false };
 }
 
 const POINTAGE_TYPES = ['in','break_start','break_end','out'];
@@ -4898,9 +5140,11 @@ async function renderArena(){
     const miniLabel = miniPctVal != null ? miniPctVal+'%' : (r.isIndep ? '🧑‍💼' : (r.noObjectif ? '🎯' : '—'));
     const desiredLabel = desiredPctVal != null ? desiredPctVal+'%' : '—';
 
+    const dayBadge = !isMonthScope && !r.isIndep ? dailyProgressBadge(r.realized) : null;
+
     return `<div class="lb-row ${rowCls}">
       <div class="lb-rank">${rankEmoji(r.rank, rankings.length)}</div>
-      <div class="lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}<small>${taunt.text}</small></div>
+      <div class="lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}${dayBadge ? ` <span class="tag ${dayBadge.cls}" style="${dayBadge.pulse?'animation: pulseWarn 1s infinite;':''}">${dayBadge.txt}</span>` : ''}<small>${taunt.text}</small></div>
       <div class="lb-stat"><b>${r.objective > 0 ? r.objective : (isFreeRow ? '∞' : '—')}</b>${(r.objective > 0 || !isFreeRow) ? 'mini' : ''}</div>
       <div class="lb-stat lb-stat-desired"><b>${desiredVal != null ? desiredVal : '—'}</b>souhaité</div>
       <div class="lb-stat"><b>${r.realized}</b>signés</div>
@@ -5625,22 +5869,24 @@ async function renderSupervision(){
 
   let html = pressureHtml + `
     <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
-    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe.</div>
+    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3.</div>
     <div style="overflow-x:auto;">
     <table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Statut aujourd'hui</th><th>Jour</th><th>Semaine</th><th>Mois</th><th>%</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
+      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>Jour</th><th>Semaine</th><th>Mois</th><th>%</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
     </tr></thead><tbody>`;
 
   if(teamRows.length === 0){
-    html += `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px;">Aucun agent salarié pour le moment.</td></tr>`;
+    html += `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px;">Aucun agent salarié pour le moment.</td></tr>`;
   } else {
     html += teamRows.map(r=>{
       const isMe = r.agent === supervisor;
       const pctCls = r.pctMonth >= 100 ? 'good' : (r.pctMonth >= 50 ? 'mid' : 'bad');
-      const rowStyle = r.monthObj>0 && !r.atteint && r.pctMonth<70 ? 'background:var(--red-bg);' : '';
+      const badge = dailyProgressBadge(r.dayRealized);
+      const rowStyle = (r.monthObj>0 && !r.atteint && r.pctMonth<70) || r.dayRealized<=0 ? 'background:var(--red-bg);' : '';
       return `<tr style="${rowStyle}">
         <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}</td>
         <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
+        <td><span class="tag ${badge.cls}" style="${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></td>
         <td>${r.dayRealized}/${r.dayObjective||'—'}</td>
         <td>${r.weekReal}/${r.weekObjective||'—'}</td>
         <td><b>${r.monthReal}</b>/${r.monthObj||'—'}</td>
@@ -6101,10 +6347,16 @@ async function renderProdAdmin(){
 // ressources — ça peut faire "sauter" les alertes intermédiaires (30s/10s/5s) d'un coup. Un Web Worker
 // tourne dans un fil séparé que Chrome ne ralentit pas de la même façon, donc la vérification chaque
 // seconde reste fiable même quand personne ne regarde l'onglet.
+let adfPollCounter = 0;
 function tickMain(){
   document.getElementById('liveClock').textContent = nowTimeStr();
   tickInactivityWatcher();
   tickFreeBreak();
+  tickADFTimer();
+  // On ne relit le statut ADF depuis la base que toutes les 4 secondes environ (pas besoin de la
+  // précision de la seconde ici, et ça évite de solliciter Firestore en continu).
+  adfPollCounter++;
+  if(adfPollCounter >= 4){ adfPollCounter = 0; refreshADFStatus(); }
 }
 try{
   const workerCode = 'setInterval(function(){ postMessage("tick"); }, 1000);';
