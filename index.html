@@ -1365,12 +1365,14 @@ function showInactivityWarning(secondsLeft, level){
       banner.style.display = 'block';
     }
     // Notification silencieuse (silent:true) si le navigateur le permet — juste un signal visuel côté OS.
+    // requireInteraction:true : reste affichée tant que l'agent ne clique pas dessus (sur Windows/Linux).
     if('Notification' in window && Notification.permission === 'granted'){
       try{
         const notif = new Notification('EST-CE QUE TU ES ACTIF ?', {
           body: `Si OUI, clique ICI. (déconnexion dans ${secondsLeft}s)`,
           tag: 'vortexnova-inactivity',
-          silent: true
+          silent: true,
+          requireInteraction: true
         });
         notif.onclick = ()=>{ confirmPresenceFromAlert(); notif.close(); };
       }catch(e){}
@@ -5078,6 +5080,15 @@ function renderCashRealGrid(){
 
   if(!monthRes) return;
   const grid = document.getElementById('cashRealGrid');
+
+  // Repère fixe (hors commissions imprévisibles) : ce que la partie garantie du salaire représente sur
+  // le mois complet, et où on en est aujourd'hui au prorata des jours ouvrés déjà écoulés.
+  const now = new Date();
+  const totalWorkingDaysThisMonth = workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
+  const elapsedWorkingDays = workingDaysElapsedInMonth();
+  const fixedFullMonth = Math.round(pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite);
+  const fixedToDate = totalWorkingDaysThisMonth>0 ? Math.round(fixedFullMonth * (elapsedWorkingDays/totalWorkingDaysThisMonth)) : 0;
+
   grid.innerHTML = `
     <div class="cash-period-card">
       <div class="cp-label">Aujourd'hui</div>
@@ -5112,6 +5123,14 @@ function renderCashRealGrid(){
         ${monthRes.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${monthRes.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${retractLine}
         ${monthRes.deductions.total>0 ? `<div class="miss"><span>Retenues règlement (${monthRes.deductions.items.length})</span><b>-${monthRes.deductions.total.toLocaleString('fr-FR')} DH</b></div>` : ''}
+      </div>
+    </div>
+    <div class="cash-period-card" style="border-color:rgba(61,139,253,0.35);">
+      <div class="cp-label">💼 Salaire brut — repère fixe</div>
+      <div class="cp-sub" style="margin-bottom:10px;">La partie garantie (fixe + prime fixe + prime assiduité), hors commissions au contrat qui dépendent de tes ventes.</div>
+      <div class="cash-breakdown">
+        <div><span>Si tu travailles le mois <b>entier</b></span><b style="color:var(--gold);">${fixedFullMonth.toLocaleString('fr-FR')} DH</b></div>
+        <div class="hit"><span>Acquis à <b>ce jour</b> (${elapsedWorkingDays}/${totalWorkingDaysThisMonth}j ouvrés)</span><b style="color:var(--green);">${fixedToDate.toLocaleString('fr-FR')} DH</b></div>
       </div>
     </div>`;
 }
