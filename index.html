@@ -132,7 +132,29 @@
   .tag.warn{ background: rgba(229,168,61,0.18); color: var(--amber); }
   .tag.absent{ background: rgba(143,161,179,0.15); color: var(--muted); }
   .tag.independant{ background: rgba(155,89,182,0.15); color: var(--independant); }
-  .section-title{ font-size: 15px; font-weight: 700; margin: 34px 0 14px; }
+  .section-title{
+    font-size: 16px; font-weight: 800; margin: 34px 0 14px; padding-left: 12px;
+    border-left: 4px solid var(--accent); line-height: 1.3;
+  }
+  .mega-section .section-title:first-of-type{ margin-top: 4px; }
+  .mega-section.theme-blue .section-title{ border-left-color: #3d8bfd; }
+  .mega-section.theme-gold .section-title{ border-left-color: #ffd700; }
+  .mega-section.theme-green .section-title{ border-left-color: #34b774; }
+  .mega-section.theme-purple .section-title{ border-left-color: #9b59b6; }
+  .mega-section.theme-red .section-title{ border-left-color: #e55a5a; }
+  .mega-section.theme-orange .section-title{ border-left-color: #e5a83d; }
+  .mega-section.theme-gray .section-title{ border-left-color: #8fa1b3; }
+  .mega-section.theme-blue .mega-section-title{ color: #3d8bfd; }
+  .mega-section.theme-gold .mega-section-title{ color: #ffd700; }
+  .mega-section.theme-green .mega-section-title{ color: #34b774; }
+  .mega-section.theme-purple .mega-section-title{ color: #9b59b6; }
+  .mega-section.theme-red .mega-section-title{ color: #e55a5a; }
+  .mega-section.theme-orange .mega-section-title{ color: #e5a83d; }
+  .mega-section.theme-gray .mega-section-title{ color: #8fa1b3; }
+  .mega-section{ margin: 44px 0 20px; padding-top: 28px; border-top: 2px solid var(--border); }
+  .mega-section:first-child{ margin-top: 0; padding-top: 0; border-top: none; }
+  .mega-section-title{ font-size: 20px; font-weight: 900; margin-bottom: 4px; display:flex; align-items:center; gap:10px; }
+  .mega-section-sub{ font-size: 13px; color: var(--muted); margin-bottom: 18px; }
   .section-sub{ font-size:12.5px; color:var(--muted); margin: -8px 0 16px; }
   .settings-box{ background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 24px; }
   .settings-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 16px; margin-bottom: 18px; }
@@ -635,7 +657,7 @@ function tryDeviceGateAdmin(){
         </div>
 
         <div class="arena-actions" id="arenaRetractBox" style="display:none; margin-top:-14px; flex-wrap:wrap; align-items:center;">
-          <button class="arena-btn arena-btn-set" onclick="arenaAddRetraction(1)" title="Un client s'est rétracté ce mois — ce n'est pas une faute, juste une correction">🔻 Contrat résilié ce mois</button>
+          <button class="arena-btn arena-btn-set" onclick="arenaAddRetraction(1)" title="Un client s'est rétracté ce mois — ce n'est pas une faute, juste une correction">🔻 Contrat rétracté ce mois</button>
           <button class="arena-btn arena-btn-set" onclick="arenaAddRetraction(-1)" title="Annuler la dernière déclaration">↩️ Annuler</button>
           <span id="arenaRetractCount" style="font-size:13px; color:var(--muted);"></span>
         </div>
@@ -683,8 +705,8 @@ function tryDeviceGateAdmin(){
         <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin:-8px 0 6px;">
           <button class="arena-btn arena-btn-plus" onclick="cashAddContract(1)">+1 contrat ✍️</button>
           <button class="arena-btn arena-btn-set" onclick="cashAddContract(-1)" title="Corriger une erreur de clic">-1 correction</button>
-          <button class="arena-btn arena-btn-set" onclick="cashAddRetraction(1)" title="Un client s'est rétracté ce mois — ce n'est pas une faute, juste une correction">🔻 Contrat résilié ce mois</button>
-          <button class="arena-btn arena-btn-set" onclick="cashAddRetraction(-1)" title="Annuler la dernière déclaration">↩️ Annuler résiliation</button>
+          <button class="arena-btn arena-btn-set" onclick="cashAddRetraction(1)" title="Un client s'est rétracté ce mois — ce n'est pas une faute, juste une correction">🔻 Contrat rétracté ce mois</button>
+          <button class="arena-btn arena-btn-set" onclick="cashAddRetraction(-1)" title="Annuler la dernière déclaration">↩️ Annuler rétraction</button>
         </div>
         <div id="cashRetractCount" style="text-align:center; font-size:13px; color:var(--muted); margin:0 0 20px;"></div>
 
@@ -774,72 +796,175 @@ function tryDeviceGateAdmin(){
       <div class="admin-subview active" id="admin-overview">
         <div class="schedule-detail" id="scheduleDetailAdmin" style="margin-bottom:20px;"></div>
 
-        <div class="settings-box" style="margin-bottom:26px; border-color:rgba(61,139,253,0.3);">
-          <label style="margin-bottom:6px;">🔎 Explorateur — retards, absences & objectifs</label>
-          <div class="section-sub" style="margin-top:-6px;">Par défaut : aujourd'hui, tous les agents. Choisis une autre date, une période (ex. du 2 au 15), ou un/plusieurs agents précis.</div>
+        <div class="mega-section theme-blue">
+          <div class="mega-section-title">🔎 Explorateur</div>
+          <div class="mega-section-sub">Retards, absences, objectifs — filtrable par date et par agent.</div>
+          <div class="settings-box" style="border-color:rgba(61,139,253,0.3);">
+            <label style="margin-bottom:6px;">Retards, absences & objectifs</label>
+            <div class="section-sub" style="margin-top:-6px;">Par défaut : aujourd'hui, tous les agents. Choisis une autre date, une période (ex. du 2 au 15), ou un/plusieurs agents précis.</div>
 
-          <div class="admin-toolbar" style="margin-top:14px;">
+            <div class="admin-toolbar" style="margin-top:14px;">
+              <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                <div>
+                  <label style="margin-bottom:4px;">Mode</label>
+                  <select id="exploMode" onchange="onExploModeChange()">
+                    <option value="single">Un seul jour</option>
+                    <option value="range">Période (du / au)</option>
+                  </select>
+                </div>
+                <div id="exploSingleWrap">
+                  <label style="margin-bottom:4px;">Date</label>
+                  <input type="date" id="exploDate" onchange="renderExplorateur()">
+                </div>
+                <div id="exploRangeWrap" style="display:none; gap:10px; flex-wrap:wrap;">
+                  <div>
+                    <label style="margin-bottom:4px;">Du</label>
+                    <input type="date" id="exploDateFrom" onchange="renderExplorateur()">
+                  </div>
+                  <div>
+                    <label style="margin-bottom:4px;">Au</label>
+                    <input type="date" id="exploDateTo" onchange="renderExplorateur()">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-top:16px;">
+              <label style="margin-bottom:6px;">Agents</label>
+              <div id="exploAgentChips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+            </div>
+
+            <div id="exploMonthlySummary" style="margin-top:24px;"></div>
+            <div id="exploDailyDetail" style="margin-top:24px;"></div>
+          </div>
+        </div>
+
+        <div class="mega-section theme-gold">
+          <div class="mega-section-title">📸 Aujourd'hui</div>
+          <div class="mega-section-sub">Ce qui se passe là, tout de suite, pour toute l'équipe.</div>
+
+          <div class="section-title" style="margin-top:0;">En un coup d'œil</div>
+          <div id="todaySnapshot"></div>
+
+          <div class="section-title">🎯 Objectif choisi & réalisé</div>
+          <div class="section-sub">L'objectif que chaque agent s'est fixé le matin dans l'Arena, et où il en est. Choisis un jour précis ou une période.</div>
+
+          <div class="admin-toolbar" style="margin-bottom:14px;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
               <div>
                 <label style="margin-bottom:4px;">Mode</label>
-                <select id="exploMode" onchange="onExploModeChange()">
+                <select id="objSnapMode" onchange="onObjSnapModeChange()">
                   <option value="single">Un seul jour</option>
                   <option value="range">Période (du / au)</option>
                 </select>
               </div>
-              <div id="exploSingleWrap">
+              <div id="objSnapSingleWrap">
                 <label style="margin-bottom:4px;">Date</label>
-                <input type="date" id="exploDate" onchange="renderExplorateur()">
+                <input type="date" id="objSnapDate" onchange="renderObjectifSnapshot()">
               </div>
-              <div id="exploRangeWrap" style="display:none; gap:10px; flex-wrap:wrap;">
+              <div id="objSnapRangeWrap" style="display:none; gap:10px; flex-wrap:wrap;">
                 <div>
                   <label style="margin-bottom:4px;">Du</label>
-                  <input type="date" id="exploDateFrom" onchange="renderExplorateur()">
+                  <input type="date" id="objSnapDateFrom" onchange="renderObjectifSnapshot()">
                 </div>
                 <div>
                   <label style="margin-bottom:4px;">Au</label>
-                  <input type="date" id="exploDateTo" onchange="renderExplorateur()">
+                  <input type="date" id="objSnapDateTo" onchange="renderObjectifSnapshot()">
                 </div>
               </div>
             </div>
           </div>
+          <div id="objectifSnapshot"></div>
 
-          <div style="margin-top:16px;">
-            <label style="margin-bottom:6px;">Agents</label>
-            <div id="exploAgentChips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
-          </div>
-
-          <div id="exploMonthlySummary" style="margin-top:24px;"></div>
-          <div id="exploDailyDetail" style="margin-top:24px;"></div>
+          <div class="section-title">⏱️ Temps de pause aujourd'hui</div>
+          <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut, réglable), suivis séparément pour chaque agent.</div>
+          <div id="pauseTotalsToday"></div>
         </div>
 
-        <div class="section-title" style="margin-top:0;">🔔 Statut notifications & version par agent</div>
-        <div class="section-sub">Basé sur la dernière fois que chaque agent s'est connecté. Un agent qui n'a jamais ouvert VortexNova depuis la mise à jour, ou qui n'apparaît pas ici, n'a pas encore été vérifié.</div>
-        <div id="notifStatusPanel"></div>
+        <div class="mega-section theme-green">
+          <div class="mega-section-title">💰 Argent & salaires</div>
+          <div class="mega-section-sub">Ton chiffre d'affaires personnel, et ce que l'équipe coûte ce mois-ci.</div>
 
-        <div class="section-title">Aujourd'hui, en un coup d'œil</div>
-        <div id="todaySnapshot"></div>
+          <div class="section-title" style="margin-top:0;">💰 Mon chiffre d'affaires</div>
+          <div class="section-sub">Basé sur les contrats nets signés par toute l'équipe (agents + indépendants), ta commission et ton taux de retour réglés dans Réglages.</div>
+          <div id="bossRevenuePanel"></div>
 
-        <div class="section-title">🎯 Objectif choisi & réalisé — aujourd'hui</div>
-        <div class="section-sub">L'objectif que chaque agent s'est fixé ce matin dans l'Arena, et où il en est là, tout de suite.</div>
-        <div id="objectifSnapshot"></div>
+          <div class="section-title">💼 Masse salariale prévisionnelle du mois</div>
+          <div class="section-sub">Ce que l'équipe va coûter au total ce mois-ci, si tout continue au même rythme jusqu'à la fin.</div>
+          <div id="payrollSummaryPanel"></div>
 
-        <div class="admin-toolbar" style="margin-top:30px;">
-          <div>
-            <label style="display:inline;margin:0 8px 0 0;">Mois analysé :</label>
-            <input type="month" id="monthSelect" onchange="renderAllMonthly()">
-          </div>
-          <button class="link-btn" onclick="exportOverviewCSV()">Exporter la vue d'ensemble (CSV)</button>
+          <div class="section-title">🧾 Bilan net du mois</div>
+          <div class="section-sub">Ton chiffre d'affaires du mois, moins les charges fixes réglées dans Réglages, moins la masse salariale prévisionnelle.</div>
+          <div id="netBalancePanel"></div>
         </div>
 
-        <div class="kpi-row" id="kpiRow"></div>
+        <div class="mega-section theme-purple">
+          <div class="mega-section-title">📈 Tendance & comparaison</div>
+          <div class="mega-section-sub">Où va l'équipe, et comment ce mois se compare au précédent.</div>
 
-        <div class="section-title">Agents classés du plus au moins conforme</div>
-        <div class="section-sub">Cumul du mois : retards (règlement : dès 1 minute), pauses dépassées, usage téléphone/YouTube, objectifs non atteints. Clique une ligne pour ouvrir le détail du dernier jour signalé.</div>
-        <div id="overviewContainer"></div>
+          <div class="section-title" style="margin-top:0;">📈 Contrats des 14 derniers jours</div>
+          <div id="trendChartPanel"></div>
 
-        <div class="section-title">Suivi des retards — prime d'assiduité</div>
-        <div id="escaladeContainer"></div>
+          <div class="section-title">📅 Ce mois vs le mois dernier</div>
+          <div class="section-sub">Comparaison à date équivalente (même nombre de jours écoulés dans le mois).</div>
+          <div id="monthComparisonPanel"></div>
+        </div>
+
+        <div class="mega-section theme-red">
+          <div class="mega-section-title">🚨 Alertes</div>
+          <div class="mega-section-sub">Ce qui mérite ton attention en premier.</div>
+
+          <div class="section-title" style="margin-top:0;">😴 Agents à 0 contrat</div>
+          <div class="section-sub">Alerte orange dès aujourd'hui (0 contrat), rouge à partir de 2 jours ouvrés consécutifs.</div>
+          <div id="inactiveAgentsPanel"></div>
+
+          <div class="section-title">📅 Projection fin de mois</div>
+          <div class="section-sub">Au rythme actuel de chacun, qui va atteindre son mini obligatoire et qui non — vert = en bonne voie, rouge = à risque.</div>
+          <div id="projectionPanel"></div>
+
+          <div class="section-title">🎓 ADF oubliés en cours</div>
+          <div class="section-sub">Une session ADF démarrée depuis plus de 2h sans être refermée.</div>
+          <div id="adfStuckPanel"></div>
+
+          <div class="section-title">🔁 Récidivistes infractions</div>
+          <div class="section-sub">Agents avec 2 infractions téléphone/YouTube ou plus ce mois-ci.</div>
+          <div id="repeatOffendersPanel"></div>
+
+          <div class="section-title">📊 Meilleur / pire jour du mois</div>
+          <div id="bestWorstDayPanel"></div>
+
+          <div class="section-title">🎯 Proches du palier de prime</div>
+          <div class="section-sub">À 1 ou 2 contrats de débloquer leur prime d'objectif — un petit coup de pouce peut suffire.</div>
+          <div id="nearBonusPanel"></div>
+        </div>
+
+        <div class="mega-section theme-orange">
+          <div class="mega-section-title">📊 Conformité du mois</div>
+          <div class="mega-section-sub">Retards, pauses, infractions — classement et suivi de la prime d'assiduité.</div>
+
+          <div class="admin-toolbar" style="margin-top:0;">
+            <div>
+              <label style="display:inline;margin:0 8px 0 0;">Mois analysé :</label>
+              <input type="month" id="monthSelect" onchange="renderAllMonthly()">
+            </div>
+            <button class="link-btn" onclick="exportOverviewCSV()">Exporter la vue d'ensemble (CSV)</button>
+          </div>
+
+          <div class="kpi-row" id="kpiRow"></div>
+
+          <div class="section-title">Agents classés du plus au moins conforme</div>
+          <div class="section-sub">Cumul du mois : retards (règlement : dès 1 minute), pauses dépassées, usage téléphone/YouTube, objectifs non atteints. Clique une ligne pour ouvrir le détail du dernier jour signalé.</div>
+          <div id="overviewContainer"></div>
+
+          <div class="section-title">Suivi des retards — prime d'assiduité</div>
+          <div id="escaladeContainer"></div>
+        </div>
+
+        <div class="mega-section theme-gray">
+          <div class="mega-section-title">🔔 Technique</div>
+          <div class="mega-section-sub">Vérifier que tout le monde a bien la dernière version et peut recevoir les alertes.</div>
+          <div id="notifStatusPanel"></div>
+        </div>
       </div>
 
       <!-- DAY SUBVIEW -->
@@ -940,7 +1065,7 @@ function tryDeviceGateAdmin(){
 
         <div class="settings-box">
           <label style="margin-bottom:14px;">Enregistrer une infraction (téléphone/YouTube, objectif non atteint)</label>
-          <div class="section-sub" style="margin-top:-10px;">Une résiliation client n'est pas une faute de l'agent : elle n'est plus listée ici, elle est déjà prise en compte via les contrats nets (déclaration de résiliation côté agent).</div>
+          <div class="section-sub" style="margin-top:-10px;">Une rétraction client n'est pas une faute de l'agent : elle n'est plus listée ici, elle est déjà prise en compte via les contrats nets (déclaration de rétraction côté agent).</div>
           <div class="infr-form" id="infrForm">
             <div>
               <label style="margin-bottom:4px;">Agent</label>
@@ -1025,6 +1150,57 @@ function tryDeviceGateAdmin(){
             </div>
           </div>
           <div class="section-sub" style="margin-top:-8px;">💡 « Jours ouvrés ce mois » est calculé automatiquement : lundi → vendredi, jours fériés français exclus (Jour de l'an, Lundi de Pâques, 1er mai, 8 mai, Ascension, Lundi de Pentecôte, 14 juillet, Assomption, Toussaint, Armistice, Noël) — se met à jour tout seul chaque mois, rien à régler. La « prime superviseur » est versée aux agents marqués <b>📊 Superviseur</b> (onglet Réglages), calculée sur les contrats nets signés par toute l'équipe ce mois-ci ; tu peux la personnaliser agent par agent dans le tableau ci-dessous.</div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(255,215,0,0.4);">
+          <label>💰 Ton chiffre d'affaires (patron) — payé au contrat</label>
+          <div class="section-sub">Tu es payé sur les contrats signés par toute l'équipe. Règle ta commission, un taux de retour <b>estimé</b> (simulation — les retours arrivent en général ~2 mois après la signature, donc ce n'est pas un chiffre mesuré dans l'appli, juste ton estimation), et un bonus en plus.</div>
+          <div class="settings-grid" style="margin-top:14px;">
+            <div>
+              <label>Commission par contrat (DH)</label>
+              <input type="number" id="cfgBossCommission" min="0" step="10">
+            </div>
+            <div>
+              <label>Retour estimé à ~2 mois (%)</label>
+              <input type="number" id="cfgBossReturnRate" min="0" max="100" step="1">
+            </div>
+            <div>
+              <label>Bonus en plus (%)</label>
+              <input type="number" id="cfgBossBonusPct" min="0" step="1">
+            </div>
+          </div>
+          <div class="section-sub" style="margin-top:6px;">Exemple : 20% de retour estimé sur 100 contrats → tu es payé comme si tu en avais 80. Le bonus s'ajoute ensuite en plus sur ce montant. Purement une simulation de ta part — n'a aucun lien avec les rétractations réelles du mois (celles-ci restent suivies séparément par les agents dans leur Cash, comme avant). Visible dans Vue d'ensemble → 💰 Mon chiffre d'affaires.</div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
+          <label>💸 Charges de l'entreprise (mensuelles)</label>
+          <div class="section-sub">Réglées une fois, comptées chaque mois automatiquement dans le bilan net (Vue d'ensemble → 💰 Argent & salaires). Mets 0 pour une charge qui ne s'applique pas.</div>
+          <div class="settings-grid" style="margin-top:14px;">
+            <div>
+              <label>📞 Les lignes</label>
+              <input type="number" id="cfgChargeLignes" min="0" step="10">
+            </div>
+            <div>
+              <label>🏢 Loyer bureau</label>
+              <input type="number" id="cfgChargeLoyerBureau" min="0" step="10">
+            </div>
+            <div>
+              <label>🏠 Loyer appart</label>
+              <input type="number" id="cfgChargeLoyerAppart" min="0" step="10">
+            </div>
+            <div>
+              <label>🧾 Syndic</label>
+              <input type="number" id="cfgChargeSyndic" min="0" step="10">
+            </div>
+            <div>
+              <label>🌐 Internet</label>
+              <input type="number" id="cfgChargeInternet" min="0" step="10">
+            </div>
+          </div>
+
+          <label style="margin:20px 0 10px;">Autres charges (libres)</label>
+          <div id="customChargesList"></div>
+          <button class="add-break-btn" onclick="addCustomChargeRow()">+ Ajouter une charge</button>
         </div>
 
         <div class="settings-box">
@@ -1579,7 +1755,7 @@ function resetInactivityTimer(){
 const INFR_TYPES = {
   phone_youtube: { label: 'Téléphone / YouTube', sanction: '-30min salaire' },
   objectif: { label: 'Objectif non atteint', sanction: '-500 DH' },
-  resiliation: { label: 'Résiliation client < 2 mois', sanction: 'Montant retiré' }
+  resiliation: { label: 'Retour client < 2 mois', sanction: 'Montant retiré' }
 };
 
 function infrSanctionText(inf){
@@ -1734,6 +1910,18 @@ async function loadConfig(){
   renderBreaksEditor();
   document.getElementById('cfgFreeBreakMinutes').value = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
   document.getElementById('cfgAdfGraceMinutes').value = config.adfGraceMinutes != null ? config.adfGraceMinutes : 2;
+  document.getElementById('cfgBossCommission').value = config.bossCommissionPerContract != null ? config.bossCommissionPerContract : 0;
+  document.getElementById('cfgBossReturnRate').value = config.bossReturnRatePct != null ? config.bossReturnRatePct : 0;
+  document.getElementById('cfgBossBonusPct').value = config.bossBonusPct != null ? config.bossBonusPct : 0;
+
+  if(!config.charges) config.charges = {};
+  document.getElementById('cfgChargeLignes').value = config.charges.lignes || 0;
+  document.getElementById('cfgChargeLoyerBureau').value = config.charges.loyerBureau || 0;
+  document.getElementById('cfgChargeLoyerAppart').value = config.charges.loyerAppart || 0;
+  document.getElementById('cfgChargeSyndic').value = config.charges.syndic || 0;
+  document.getElementById('cfgChargeInternet').value = config.charges.internet || 0;
+  customChargeRows = (config.customCharges || []).map(c=>({ ...c }));
+  renderCustomChargesEditor();
   renderScheduleHint();
   loadArenaMessagesUI();
 
@@ -1896,7 +2084,7 @@ function showAdminSub(sub){
     const btnId = s==='prod' ? 'subtabProd' : 'subtab'+s.charAt(0).toUpperCase()+s.slice(1);
     document.getElementById(btnId).classList.toggle('active', s===sub);
   });
-  if(sub==='overview'){ initExploDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); }
+  if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
 }
@@ -1907,6 +2095,7 @@ function tryAdminLogin(){
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminPanel').style.display = 'block';
     initExploDefaults();
+    initObjSnapDefaults();
     renderAllMonthly();
     renderExplorateur();
     renderNotifStatusPanel();
@@ -2123,6 +2312,13 @@ async function saveConfig(){
   if(isNaN(config.freeBreakMinutes) || config.freeBreakMinutes < 0) config.freeBreakMinutes = 35;
   config.adfGraceMinutes = parseInt(document.getElementById('cfgAdfGraceMinutes').value);
   if(isNaN(config.adfGraceMinutes) || config.adfGraceMinutes < 1) config.adfGraceMinutes = 2;
+  config.bossCommissionPerContract = parseFloat(document.getElementById('cfgBossCommission').value);
+  if(isNaN(config.bossCommissionPerContract) || config.bossCommissionPerContract < 0) config.bossCommissionPerContract = 0;
+  config.bossReturnRatePct = parseFloat(document.getElementById('cfgBossReturnRate').value);
+  if(isNaN(config.bossReturnRatePct) || config.bossReturnRatePct < 0) config.bossReturnRatePct = 0;
+  config.bossBonusPct = parseFloat(document.getElementById('cfgBossBonusPct').value);
+  if(isNaN(config.bossBonusPct) || config.bossBonusPct < 0) config.bossBonusPct = 0;
+  collectChargesFromUI();
   config.fridayLunch = {
     enabled: document.getElementById('cfgFridayEnabled').checked,
     start: document.getElementById('cfgFridayStart').value || "12:00",
@@ -2466,6 +2662,55 @@ function renderCorrLockoutEditor(){
     </div>`).join('');
 }
 function addCorrLockoutRow(){ corrLockoutRows.push({ start:'', end:'' }); renderCorrLockoutEditor(); }
+
+// ---- 💸 Charges libres (en plus des 5 charges fixes) ----
+let customChargeRows = [];
+function renderCustomChargesEditor(){
+  const container = document.getElementById('customChargesList');
+  if(!container) return;
+  if(customChargeRows.length === 0){
+    container.innerHTML = '<div class="section-sub">Aucune charge additionnelle pour l\'instant.</div>';
+    return;
+  }
+  container.innerHTML = customChargeRows.map((c,i)=>`
+    <div class="break-row" style="grid-template-columns:1fr 130px 40px;">
+      <input type="text" value="${(c.name||'').replace(/"/g,'&quot;')}" placeholder="Nom de la charge" oninput="customChargeRows[${i}].name = this.value">
+      <input type="number" min="0" step="10" value="${c.amount||0}" oninput="customChargeRows[${i}].amount = parseFloat(this.value)||0">
+      <button onclick="removeCustomChargeRow(${i})" title="Supprimer" style="color:var(--red);">×</button>
+    </div>`).join('');
+}
+function addCustomChargeRow(){
+  customChargeRows.push({ id: 'c_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name: '', amount: 0 });
+  renderCustomChargesEditor();
+}
+function removeCustomChargeRow(i){
+  customChargeRows.splice(i,1);
+  renderCustomChargesEditor();
+}
+
+// Lit les 5 champs fixes + les charges libres et les écrit dans config — appelée par les deux boutons
+// "Enregistrer" (Réglages général et Production), pour que peu importe lequel est cliqué, tout se sauvegarde.
+function collectChargesFromUI(){
+  const el = document.getElementById('cfgChargeLignes');
+  if(!el) return; // formulaire pas affiché (autre sous-onglet) : on ne touche à rien
+  config.charges = {
+    lignes: parseFloat(document.getElementById('cfgChargeLignes').value) || 0,
+    loyerBureau: parseFloat(document.getElementById('cfgChargeLoyerBureau').value) || 0,
+    loyerAppart: parseFloat(document.getElementById('cfgChargeLoyerAppart').value) || 0,
+    syndic: parseFloat(document.getElementById('cfgChargeSyndic').value) || 0,
+    internet: parseFloat(document.getElementById('cfgChargeInternet').value) || 0
+  };
+  config.customCharges = customChargeRows
+    .filter(c => (c.name && c.name.trim()) || c.amount > 0)
+    .map(c => ({ id: c.id, name: c.name || 'Sans nom', amount: c.amount || 0 }));
+}
+
+function totalMonthlyCharges(){
+  const c = config.charges || {};
+  const fixed = (c.lignes||0) + (c.loyerBureau||0) + (c.loyerAppart||0) + (c.syndic||0) + (c.internet||0);
+  const custom = (config.customCharges || []).reduce((s,x)=> s + (x.amount||0), 0);
+  return fixed + custom;
+}
 function removeCorrLockoutRow(i){ corrLockoutRows.splice(i,1); renderCorrLockoutEditor(); }
 
 // ---- Éditeur des périodes de pause libre — même principe ----
@@ -3020,6 +3265,40 @@ function justifiedAbsenceLabel(type, short){
 
 // Badge visuel selon le nombre de contrats du jour — pour repérer d'un coup d'œil qui a besoin d'aide
 // (0 = alarme rouge), qui a besoin d'un coup de pouce (1-2), et qui est lancé (3-4+).
+// Phrases d'action pour le superviseur, selon l'avancée du jour de l'agent — variées pour ne pas répéter
+// toujours la même chose. 0 contrat = alerte forte ("va voir l'agent"), 1-2 = coup de pouce, 3-4+ = normal.
+function supervisorActionComment(count){
+  const zero = [
+    "🚨 Agent à ZÉRO — va le voir maintenant.",
+    "🚨 0 contrat — fonce l'aider, pas de temps à perdre.",
+    "🚨 Alerte 0 — passe à son poste tout de suite.",
+    "🚨 Rien signé — va comprendre ce qui bloque.",
+    "🚨 Zéro contrat — une visite s'impose."
+  ];
+  const low = [
+    "⚡ Va le pousser un peu, encore un effort.",
+    "⚡ Passe lui glisser un mot d'encouragement.",
+    "⚡ Un petit coup de boost et ça repart.",
+    "⚡ Reste dans les clous, mais un coup de main aiderait."
+  ];
+  const mid = [
+    "🔥 Bien lancé, encourage-le à continuer.",
+    "🔥 Bon rythme, un petit mot suffit.",
+    "🔥 Ça avance bien, laisse-le sur sa lancée."
+  ];
+  const good = [
+    "🏆 Excellent, félicite-le !",
+    "🏆 Super journée, dis-le lui.",
+    "🏆 Rien à redire, continue comme ça."
+  ];
+  let pool;
+  if(count <= 0) pool = zero;
+  else if(count <= 2) pool = low;
+  else if(count <= 4) pool = mid;
+  else pool = good;
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
 function dailyProgressBadge(count){
   if(count <= 0) return { txt: '🚨 0 contrat', cls: 'late', pulse: true };
   if(count <= 2) return { txt: `⚡ ${count} — à pousser`, cls: 'warn', pulse: false };
@@ -3349,19 +3628,17 @@ async function renderReport(){
     container.innerHTML = '<div class="empty">Ajoute au moins un agent dans Réglages pour voir le rapport.</div>';
     return;
   }
+  container.innerHTML = '<div class="empty">⏳ Chargement…</div>';
 
-  const rows = [];
-  for(const agent of config.agents){
+  const rows = await Promise.all(config.agents.map(async agent=>{
     if(isIndependant(agent)){
-      rows.push({ agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, isIndep: true });
-      continue;
+      return { agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, isIndep: true };
     }
-    const log = await getDayLog(agent, dateStr);
+    const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
     const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
-    const infractions = await getInfractions(agent, dateStr);
     const lockouts = extractLockouts(log.events);
-    rows.push({ agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, isIndep: false });
-  }
+    return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, isIndep: false };
+  }));
 
   let html = `<table><thead><tr>
     <th>Agent</th><th>Arrivée</th><th>Pauses</th><th>Départ</th><th>Inactivité</th><th>Autres infractions</th><th>Statut</th>
@@ -3626,6 +3903,21 @@ async function renderExploMonthlySummary(agents, dateList){
   let html = '<div class="section-title" style="margin-top:0;">🎯 Objectifs du mois — mini obligatoire & souhaité</div>';
   html += '<div class="section-sub" style="margin-top:-6px;">🟢 objectif atteint · 🟠 en cours · 🔴 pas encore réglé / loin du compte.</div>';
 
+  // Précharge tout en parallèle (mois × agent) plutôt qu'un aller-retour à la fois.
+  const monthAgentData = {};
+  const preloadPairs = [];
+  months.forEach(ym=>{
+    const [y,m] = ym.split('-').map(Number);
+    agents.forEach(agent=> preloadPairs.push({ ym, y, m, agent }));
+  });
+  await Promise.all(preloadPairs.map(async ({ym, y, m, agent})=>{
+    const [realized, desired] = await Promise.all([
+      monthlyRealizedContracts(agent, y, m),
+      getMonthlyDesiredObjective(agent, y, m)
+    ]);
+    monthAgentData[`${ym}::${agent}`] = { realized, desired };
+  }));
+
   for(const ym of months){
     const [y,m] = ym.split('-').map(Number);
     const monthLabel = new Date(y, m-1, 1).toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
@@ -3638,8 +3930,7 @@ async function renderExploMonthlySummary(agents, dateList){
       const isIndep = isIndependant(agent);
       const pay = getAgentPay(agent);
       const noObj = pay.noObjectif;
-      const realized = await monthlyRealizedContracts(agent, y, m);
-      const desired = await getMonthlyDesiredObjective(agent, y, m);
+      const { realized, desired } = monthAgentData[`${ym}::${agent}`];
       const mini = (isIndep || noObj) ? 0 : (pay.objectifMensuel || 0);
       const hitMini = mini>0 && realized>=mini;
       const hitDesired = desired>0 && realized>=desired;
@@ -3687,7 +3978,22 @@ async function renderExploDailyDetail(agents, dateList){
   const el = document.getElementById('exploDailyDetail');
   if(!el) return;
   if(dateList.length === 0 || agents.length === 0){ el.innerHTML = ''; return; }
-  el.innerHTML = '<div class="section-title">📅 Détail jour par jour</div><div class="empty">Chargement…</div>';
+  el.innerHTML = '<div class="section-title">📅 Détail jour par jour</div><div class="empty">⏳ Chargement…</div>';
+
+  // Pré-charge tout en parallèle (chaque jour, chaque agent) au lieu d'un aller-retour Firestore à la
+  // fois — sur une grande période avec plusieurs agents, ça change un temps de chargement de plusieurs
+  // secondes en un instant quasi immédiat.
+  await Promise.all(dateList.map(async dateStr=>{
+    if(!prodBoardCache[dateStr]) prodBoardCache[dateStr] = await getProdBoard(dateStr);
+  }));
+  const nonIndepAgents = agents.filter(a=>!isIndependant(a));
+  const pairs = [];
+  dateList.forEach(dateStr=> nonIndepAgents.forEach(agent=> pairs.push({dateStr, agent})));
+  const details = {};
+  await Promise.all(pairs.map(async ({dateStr, agent})=>{
+    const [log, infr] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
+    details[`${dateStr}::${agent}`] = { log, infr };
+  }));
 
   let html = `<div class="section-title">📅 Détail jour par jour${dateList.length>1?` (${dateList.length} jours)`:''}</div>
     <div class="section-sub" style="margin-top:-6px;">Retard compté dès 1 minute. « Absent » = aucun pointage ET aucun contrat saisi ce jour-là. Inactivité = temps délogué (déconnexion auto), déduit au prorata du salaire du jour.</div>
@@ -3696,8 +4002,7 @@ async function renderExploDailyDetail(agents, dateList){
     </tr></thead><tbody>`;
 
   for(const dateStr of dateList){
-    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-    prodBoardCache[dateStr] = board;
+    const board = prodBoardCache[dateStr];
     const dObj = new Date(dateStr + 'T00:00:00');
     const dLabel = dObj.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
 
@@ -3711,7 +4016,7 @@ async function renderExploDailyDetail(agents, dateList){
       if(isIndep){
         statusHtml = '<span class="tag independant">Indépendant</span>';
       } else {
-        const log = await getDayLog(agent, dateStr);
+        const { log, infr } = details[`${dateStr}::${agent}`];
         if(log.justifiedAbsence){
           const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
           statusHtml = `<span class="tag independant">🗓️ ${lbl}</span>`;
@@ -3732,7 +4037,7 @@ async function renderExploDailyDetail(agents, dateList){
         }
       }
 
-      const infr = isIndep ? [] : await getInfractions(agent, dateStr);
+      const infr = isIndep ? [] : details[`${dateStr}::${agent}`].infr;
       const infrHtml = infr.length ? infr.map(i=> (INFR_TYPES[i.type]?.label || i.type)).join(', ') : '—';
 
       html += `<tr class="${rowCls}">
@@ -3825,11 +4130,9 @@ async function renderManualPrimesList(){
     return;
   }
 
+  const listsByAgent = await Promise.all(config.agents.map(agent => getManualPrimes(agent, year, month)));
   let rows = [];
-  for(const agent of config.agents){
-    const list = await getManualPrimes(agent, year, month);
-    list.forEach(p=> rows.push({ agent, ...p }));
-  }
+  config.agents.forEach((agent, i)=> listsByAgent[i].forEach(p=> rows.push({ agent, ...p })));
 
   if(rows.length === 0){
     el.innerHTML = '<div class="empty">Aucune prime manuelle ce mois-ci.</div>';
@@ -3890,6 +4193,43 @@ async function removeManualPrime(agent, year, month, primeId){
   renderMonthlyObjectif();
 }
 
+function initObjSnapDefaults(){
+  const dateEl = document.getElementById('objSnapDate');
+  if(dateEl && !dateEl.value) dateEl.value = todayStr();
+  const fromEl = document.getElementById('objSnapDateFrom');
+  const toEl = document.getElementById('objSnapDateTo');
+  if(fromEl && !fromEl.value) fromEl.value = todayStr();
+  if(toEl && !toEl.value) toEl.value = todayStr();
+}
+
+function onObjSnapModeChange(){
+  const mode = document.getElementById('objSnapMode').value;
+  document.getElementById('objSnapSingleWrap').style.display = mode === 'single' ? 'block' : 'flex';
+  document.getElementById('objSnapRangeWrap').style.display = mode === 'range' ? 'flex' : 'none';
+  renderObjectifSnapshot();
+}
+
+function objSnapDateList(){
+  const mode = document.getElementById('objSnapMode')?.value || 'single';
+  if(mode === 'single'){
+    const d = document.getElementById('objSnapDate')?.value || todayStr();
+    return [d];
+  }
+  const from = document.getElementById('objSnapDateFrom')?.value;
+  const to = document.getElementById('objSnapDateTo')?.value;
+  if(!from || !to || from > to) return [];
+  const list = [];
+  let cur = new Date(from + 'T00:00:00');
+  const end = new Date(to + 'T00:00:00');
+  let guard = 0;
+  while(cur <= end && guard < 370){
+    list.push(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`);
+    cur.setDate(cur.getDate()+1);
+    guard++;
+  }
+  return list;
+}
+
 async function renderObjectifSnapshot(){
   const container = document.getElementById('objectifSnapshot');
   if(!container) return;
@@ -3897,45 +4237,182 @@ async function renderObjectifSnapshot(){
     container.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>';
     return;
   }
-  const dateStr = todayStr();
-  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-  prodBoardCache[dateStr] = board;
+  const dateList = objSnapDateList();
+  if(dateList.length === 0){
+    container.innerHTML = '<div class="empty">Choisis une date (ou une période valide).</div>';
+    return;
+  }
+  const isSingle = dateList.length === 1;
 
+  const boards = {};
+  await Promise.all(dateList.map(async d=>{
+    boards[d] = prodBoardCache[d] || await getProdBoard(d);
+    prodBoardCache[d] = boards[d];
+  }));
+
+  if(isSingle){
+    const dateStr = dateList[0];
+    const board = boards[dateStr];
+
+    const rows = config.agents.filter(a => !isIndependant(a)).map(agent=>{
+      const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
+      return { agent, objective: p.objective || 0, realized: p.realized || 0 };
+    });
+    // Tri par urgence : sans objectif fixé d'abord (rien n'a été choisi ce matin, à relancer), puis du
+    // moins avancé au plus avancé — pour repérer en un clin d'œil qui a besoin d'un coup de pouce.
+    rows.sort((a,b)=>{
+      const aSet = a.objective > 0, bSet = b.objective > 0;
+      if(aSet !== bSet) return aSet ? 1 : -1;
+      if(!aSet){
+        if(b.realized !== a.realized) return b.realized - a.realized;
+        return a.agent.localeCompare(b.agent);
+      }
+      const ratioDiff = (a.realized/a.objective) - (b.realized/b.objective);
+      if(ratioDiff !== 0) return ratioDiff;
+      return a.agent.localeCompare(b.agent);
+    });
+
+    // Un indépendant peut lui aussi se fixer un objectif du jour (défi facultatif) — s'il en a réglé un,
+    // il s'affiche comme les autres (X / Y ✅), sinon on retombe sur un simple compteur de contrats.
+    const indepRows = config.agents.filter(a => isIndependant(a)).map(agent=>{
+      const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
+      return { agent, objective: p.objective || 0, realized: p.realized || 0, isIndep: true };
+    });
+
+    renderObjSnapSingleDay(container, rows, indepRows);
+    return;
+  }
+
+  // Plusieurs jours : l'objectif "du jour" étant par nature quotidien, on l'agrège sur la période —
+  // combien de jours un objectif a été fixé, combien de fois il a été atteint, et le total réalisé.
   const rows = config.agents.filter(a => !isIndependant(a)).map(agent=>{
-    const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
-    return { agent, objective: p.objective || 0, realized: p.realized || 0 };
+    let daysWithObjective = 0, daysHit = 0, totalRealized = 0, totalObjective = 0;
+    dateList.forEach(d=>{
+      const board = boards[d];
+      const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
+      const obj = p.objective || 0, real = p.realized || 0;
+      totalRealized += real;
+      if(obj > 0){ daysWithObjective++; totalObjective += obj; if(real >= obj) daysHit++; }
+    });
+    return { agent, daysWithObjective, daysHit, totalRealized, totalObjective, nbDays: dateList.length };
   });
-  rows.sort((a,b)=> b.realized - a.realized);
-
-  // Un indépendant peut lui aussi se fixer un objectif du jour (défi facultatif) — s'il en a réglé un,
-  // il s'affiche comme les autres (X / Y ✅), sinon on retombe sur un simple compteur de contrats.
-  const indepRows = config.agents.filter(a => isIndependant(a)).map(agent=>{
-    const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
-    return { agent, objective: p.objective || 0, realized: p.realized || 0, isIndep: true };
+  rows.sort((a,b)=>{
+    const aRate = a.daysWithObjective>0 ? a.daysHit/a.daysWithObjective : -1;
+    const bRate = b.daysWithObjective>0 ? b.daysHit/b.daysWithObjective : -1;
+    if(aRate !== bRate) return aRate - bRate;
+    return a.agent.localeCompare(b.agent);
   });
 
-  const allRows = [...rows, ...indepRows];
+  let html = `<div class="section-sub" style="margin-top:-4px; margin-bottom:10px;">Du ${dateList[0]} au ${dateList[dateList.length-1]} (${dateList.length} jour${dateList.length>1?'s':''}).</div>`;
+  html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
+  rows.forEach(r=>{
+    const hasAny = r.daysWithObjective > 0;
+    const rate = hasAny ? Math.round((r.daysHit/r.daysWithObjective)*100) : 0;
+    const barColor = !hasAny ? 'var(--muted)' : (rate>=100 ? 'var(--green)' : (rate>=50 ? 'var(--amber)' : 'var(--red)'));
+    html += `<div style="padding:14px; border-radius:12px; background:var(--panel2); border:1px solid ${hasAny && rate>=100 ? 'rgba(52,183,116,0.45)' : 'var(--border)'};">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+        <b style="font-size:15px;">${r.agent}</b>
+        <span class="tag ${!hasAny?'absent':(rate>=100?'ok':(rate>=50?'warn':'late'))}">${hasAny ? `${r.daysHit}/${r.daysWithObjective} jours atteints` : 'Aucun objectif fixé'}</span>
+      </div>
+      <div class="arena-prog-bar" style="height:9px;"><div class="arena-prog-fill" style="width:${rate}%; background:${barColor};"></div></div>
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; font-size:13px; color:var(--muted);">
+        <span>Réalisé sur la période : <b style="color:var(--text);">${r.totalRealized}</b></span>
+        <span>${hasAny ? `Objectif cumulé : <b style="color:var(--text);">${r.totalObjective}</b>` : ''}</span>
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
 
-  container.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:10px;">` + allRows.map(r=>{
-    if(r.isIndep){
+function renderObjSnapSingleDay(container, rows, indepRows){
+
+  let html = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
+
+  rows.forEach(r=>{
+    const noObj = r.objective === 0;
+    const pct = noObj ? 0 : Math.min(100, Math.round((r.realized/r.objective)*100));
+    const hit = !noObj && r.realized >= r.objective;
+    const badge = dailyProgressBadge(r.realized);
+    const barColor = hit ? 'var(--green)' : (pct >= 50 ? 'var(--amber)' : 'var(--red)');
+    html += `<div style="padding:14px; border-radius:12px; background:var(--panel2); border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+        <b style="font-size:15px;">${r.agent}</b>
+        ${hit
+          ? '<span class="tag ok" style="white-space:nowrap;">✅ Atteint</span>'
+          : `<span class="tag ${badge.cls}" style="white-space:nowrap; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
+      </div>
+      ${noObj
+        ? '<div style="font-size:13px; color:var(--muted);">🎯 Objectif pas encore fixé ce matin</div>'
+        : `<div class="arena-prog-bar" style="height:9px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor};"></div></div>
+           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px;">
+             <span style="font-size:20px; font-weight:800; color:${barColor};">${r.realized}<span style="font-size:13px; color:var(--muted); font-weight:600;"> / ${r.objective}</span></span>
+             <span style="font-size:14px; font-weight:700; color:${barColor};">${pct}%</span>
+           </div>`}
+    </div>`;
+  });
+
+  if(indepRows.length){
+    indepRows.forEach(r=>{
       const hasObj = r.objective > 0;
       const hit = hasObj && r.realized >= r.objective;
-      const cls = hit ? 'border-color:rgba(52,183,116,0.4);' : 'border-color:var(--independant);';
-      return `<div class="agent-chip" style="${cls} padding:8px 14px;">
-        <b>${r.agent}</b> <span class="tag independant">Indépendant</span>
-        <span style="color:var(--muted);">${hasObj ? `${r.realized} / ${r.objective} (défi)` : `${r.realized} contrats`}</span>
-        ${hit ? '<span style="color:var(--green);">✅</span>' : ''}
+      html += `<div style="padding:14px; border-radius:12px; background:var(--panel2); border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--independant)'};">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+          <b style="font-size:15px;">${r.agent}</b>
+          <span class="tag independant" style="white-space:nowrap;">🧑‍💼 Indé</span>
+        </div>
+        <div style="font-size:14px; color:var(--muted);">${hasObj ? `Défi perso : <b style="color:var(--text);">${r.realized} / ${r.objective}</b>${hit?' ✅':''}` : `<b style="color:var(--text); font-size:18px;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui`}</div>
       </div>`;
-    }
-    const noObj = r.objective === 0;
-    const hit = !noObj && r.realized >= r.objective;
-    const cls = noObj ? '' : (hit ? 'border-color:rgba(52,183,116,0.4);' : 'border-color:rgba(229,168,61,0.35);');
-    return `<div class="agent-chip" style="${cls} padding:8px 14px;">
-      <b>${r.agent}</b>
-      <span style="color:var(--muted);">${noObj ? "objectif non fixé" : `${r.realized} / ${r.objective}`}</span>
-      ${hit ? '<span style="color:var(--green);">✅</span>' : ''}
-    </div>`;
-  }).join('') + `</div>`;
+    });
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+async function renderPauseTotalsToday(){
+  const container = document.getElementById('pauseTotalsToday');
+  if(!container) return;
+  const nonIndep = config.agents.filter(a => !isIndependant(a));
+  if(nonIndep.length===0){
+    container.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>';
+    return;
+  }
+  const dateStr = todayStr();
+  const freeBudget = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
+
+  const rows = await Promise.all(nonIndep.map(async agent=>{
+    const log = await getDayLog(agent, dateStr);
+    const lunchPairs = extractBreakPairs(log.events).filter(p=>p.end);
+    const lunchSec = lunchPairs.reduce((s,p)=> s + Math.max(0, (toMinutes(p.end.slice(0,5)) - toMinutes(p.start.slice(0,5)))*60), 0);
+    const { usedSec: freeSec } = freeBreakUsageToday(log.events, dateStr);
+    const freeBonus = log.freeBreakBonusMin || 0;
+    return { agent, lunchMin: Math.round(lunchSec/60), freeMin: Math.round(freeSec/60), freeBudget: freeBudget + freeBonus, freeBonus };
+  }));
+
+  // Ceux qui ont pris quelque chose (déjeuner et/ou pause libre) en premier, puis les autres.
+  rows.sort((a,b)=>{
+    const diff = (b.lunchMin + b.freeMin) - (a.lunchMin + a.freeMin);
+    return diff !== 0 ? diff : a.agent.localeCompare(b.agent);
+  });
+
+  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>🍽️ Déjeuner</th><th>☕ Pause libre</th><th>Total pauses</th></tr></thead><tbody>';
+  let totalLunch = 0, totalFree = 0;
+  rows.forEach(r=>{
+    totalLunch += r.lunchMin; totalFree += r.freeMin;
+    const freeOver = r.freeMin > r.freeBudget;
+    html += `<tr>
+      <td><b>${r.agent}</b></td>
+      <td>${r.lunchMin > 0 ? `${r.lunchMin} min` : '<span style="color:var(--muted);">—</span>'}</td>
+      <td>${r.freeMin > 0 ? `<span class="${freeOver?'tag warn':''}">${r.freeMin} / ${r.freeBudget} min${r.freeBonus>0?' 🎁':''}</span>` : `<span style="color:var(--muted);">0 / ${r.freeBudget} min</span>`}</td>
+      <td><b>${r.lunchMin + r.freeMin} min</b></td>
+    </tr>`;
+  });
+  html += `<tr style="font-weight:800; border-top:2px solid var(--border);">
+    <td>TOTAL équipe</td><td>${totalLunch} min</td><td>${totalFree} min</td><td>${totalLunch+totalFree} min</td>
+  </tr>`;
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
 }
 
 async function renderNotifStatusPanel(){
@@ -3952,17 +4429,36 @@ async function renderNotifStatusPanel(){
   };
 
   let html = `<div class="section-sub" style="margin-top:-6px;">Version actuellement chargée ici : <b>${APP_VERSION}</b>. Si un agent affiche une version différente (ou plus ancienne), il travaille encore avec l'ancien code — demande-lui de fermer complètement l'onglet et de rouvrir le lien (pas juste actualiser).</div>`;
-  html += '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Notifications</th><th>Version app</th><th>Dernière vérification</th></tr></thead><tbody>';
-  for(const agent of config.agents){
-    if(isIndependant(agent)) continue;
+  html += '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Notifications</th><th>Version app</th><th>Dernière vérification</th><th>☕ Pause totale aujourd\'hui</th></tr></thead><tbody>';
+  const todayDateStr = todayStr();
+  const agentsToShow = config.agents.filter(a => !isIndependant(a));
+  const rowsData = await Promise.all(agentsToShow.map(async agent=>{
+    // Temps de pause total du jour = déjeuner (créneaux refermés) + pause libre (avec bonus éventuel).
+    const todayLog = await getDayLog(agent, todayDateStr);
+    const lunchSec = extractBreakPairs(todayLog.events)
+      .filter(p=>p.end)
+      .reduce((sum,p)=> sum + Math.max(0, toMinutes(p.end.slice(0,5))*60 - toMinutes(p.start.slice(0,5))*60), 0);
+    const { usedSec: freeSec } = freeBreakUsageToday(todayLog.events, todayDateStr);
+    const totalPauseMin = Math.round((lunchSec + freeSec) / 60);
+    const freeBudget = (config.freeBreakMinutes != null ? config.freeBreakMinutes : 35) + (todayLog.freeBreakBonusMin || 0);
+
     let row = null;
     try{
       const res = await storageGet(`notifStatus:${agent}`);
       if(res && res.value) row = JSON.parse(res.value);
     }catch(e){}
+
+    return { agent, row, totalPauseMin, freeBudget };
+  }));
+
+  rowsData.forEach(({ agent, row, totalPauseMin, freeBudget })=>{
+    const pauseHtml = totalPauseMin > 0
+      ? `<span class="tag ${totalPauseMin > freeBudget + 60 ? 'warn' : 'ok'}">${totalPauseMin} min</span>`
+      : '<span style="color:var(--muted);">—</span>';
+
     if(!row){
-      html += `<tr><td><b>${agent}</b></td><td><span class="tag absent">Jamais vérifié</span></td><td style="color:var(--muted);">—</td><td style="color:var(--muted);">—</td></tr>`;
-      continue;
+      html += `<tr><td><b>${agent}</b></td><td><span class="tag absent">Jamais vérifié</span></td><td style="color:var(--muted);">—</td><td style="color:var(--muted);">—</td><td>${pauseHtml}</td></tr>`;
+      return;
     }
     const meta = labels[row.status] || { txt: row.status, cls: 'warn' };
     const isOutdated = row.version && row.version !== APP_VERSION;
@@ -3971,8 +4467,8 @@ async function renderNotifStatusPanel(){
       : '<span class="tag warn">Inconnue (très ancienne version)</span>';
     const d = new Date(row.updatedAt);
     const dLabel = isNaN(d) ? '—' : d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-    html += `<tr class="${isOutdated?'late':''}"><td><b>${agent}</b></td><td><span class="tag ${meta.cls}">${meta.txt}</span></td><td>${versionHtml}</td><td style="color:var(--muted);">${dLabel}</td></tr>`;
-  }
+    html += `<tr class="${isOutdated?'late':''}"><td><b>${agent}</b></td><td><span class="tag ${meta.cls}">${meta.txt}</span></td><td>${versionHtml}</td><td style="color:var(--muted);">${dLabel}</td><td>${pauseHtml}</td></tr>`;
+  });
   html += '</tbody></table></div>';
   el.innerHTML = html;
 }
@@ -3987,11 +4483,9 @@ async function renderTodaySnapshot(){
     return;
   }
 
-  const rows = [];
-  for(const agent of config.agents){
+  const rows = await Promise.all(config.agents.map(async agent=>{
     if(isIndependant(agent)){
-      rows.push({ agent, isIndep: true, problem: false, hasAnyEvent: false });
-      continue;
+      return { agent, isIndep: true, problem: false, hasAnyEvent: false };
     }
     const log = await getDayLog(agent, dateStr);
     const infr = await getInfractions(agent, dateStr);
@@ -4001,8 +4495,8 @@ async function renderTodaySnapshot(){
     const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
     const justifiedAbsence = log.justifiedAbsence || null;
     const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence;
-    rows.push({ agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, problem, hasAnyEvent: log.events.length>0, isIndep: false });
-  }
+    return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, problem, hasAnyEvent: log.events.length>0, isIndep: false };
+  }));
 
   const problems = rows.filter(r=>r.problem);
   if(problems.length===0){
@@ -4041,13 +4535,515 @@ async function renderTodaySnapshot(){
   container.innerHTML = html;
 }
 
+// ============================================================
+// 💰 CHIFFRE D'AFFAIRES PATRON — payé au contrat, avec taux de retour et bonus configurables
+// ============================================================
+async function getTotalContractsToday(){
+  const dateStr = todayStr();
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  prodBoardCache[dateStr] = board;
+  let total = 0;
+  config.agents.forEach(agent=>{
+    const p = (board.agents && board.agents[agent]) || { realized: 0 };
+    total += p.realized || 0;
+  });
+  return total;
+}
+
+async function getTotalContractsMonth(year, month){
+  const totals = await Promise.all(config.agents.map(agent=> monthlyRealizedContracts(agent, year, month)));
+  return totals.reduce((s,x)=> s+x, 0);
+}
+
+function computeBossRevenue(totalContracts){
+  const commission = config.bossCommissionPerContract || 0;
+  const returnRate = config.bossReturnRatePct || 0;
+  const bonusPct = config.bossBonusPct || 0;
+  const effectiveContracts = totalContracts * (1 - returnRate/100);
+  const base = effectiveContracts * commission;
+  const bonus = base * (bonusPct/100);
+  return { totalContracts, effectiveContracts, base, bonus, total: base + bonus };
+}
+
+async function renderBossRevenue(){
+  const el = document.getElementById('bossRevenuePanel');
+  if(!el) return;
+  if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
+  const commission = config.bossCommissionPerContract || 0;
+  if(commission <= 0){
+    el.innerHTML = '<div class="empty">Règle ta commission par contrat dans Réglages → 💰 Ton chiffre d\'affaires pour activer ce calcul.</div>';
+    return;
+  }
+  const now = new Date();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+
+  const [todayTotal, monthTotal] = await Promise.all([
+    getTotalContractsToday(),
+    getTotalContractsMonth(year, month)
+  ]);
+  const todayCalc = computeBossRevenue(todayTotal);
+  const monthCalc = computeBossRevenue(monthTotal);
+
+  const card = (label, calc)=> `
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(255,215,0,0.35); flex:1; min-width:230px;">
+      <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">${label}</div>
+      <div style="font-size:28px; font-weight:900; color:var(--gold);">${Math.round(calc.total).toLocaleString('fr-FR')} DH</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
+        ${calc.totalContracts} contrats bruts → ${Math.round(calc.effectiveContracts*10)/10} effectifs (-${config.bossReturnRatePct||0}% retour estimé)<br>
+        Commission de base : <b style="color:var(--text);">${Math.round(calc.base).toLocaleString('fr-FR')} DH</b>
+        ${config.bossBonusPct>0 ? `<br>Bonus (+${config.bossBonusPct}%) : <b style="color:var(--green);">+${Math.round(calc.bonus).toLocaleString('fr-FR')} DH</b>` : ''}
+      </div>
+    </div>`;
+
+  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card("Aujourd'hui", todayCalc)}${card('Ce mois', monthCalc)}</div>`;
+}
+
+// ============================================================
+// 💼 MASSE SALARIALE PRÉVISIONNELLE DU MOIS
+// ============================================================
+async function computeTotalPayrollMonth(year, month){
+  const contractsUnderSupervision = await contractsUnderAllSupervisors(year, month);
+  let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
+  await Promise.all(config.agents.map(async agent=>{
+    const pay = getAgentPay(agent);
+    const monthStats = await monthlyStats(agent, year, month);
+    const assiduiteAcquise = monthStats.retardsCumules < 3;
+    const res = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
+    const supervisorBonus = isSupervisor(agent) ? Math.round(contractsUnderSupervision * (pay.supervisorPrimePerContract || 0)) : 0;
+    const total = (res ? res.total : 0) + supervisorBonus;
+    if(pay.isIndep) totalIndep += total;
+    else if(pay.noObjectif) totalBackoffice += total;
+    else totalTeam += total;
+  }));
+  return { totalTeam, totalIndep, totalBackoffice, grandTotal: totalTeam + totalBackoffice + totalIndep };
+}
+
+async function renderPayrollSummary(){
+  const el = document.getElementById('payrollSummaryPanel');
+  if(!el) return;
+  if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
+  el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
+
+  const now = new Date();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+
+  const { totalTeam, totalIndep, totalBackoffice, grandTotal } = await computeTotalPayrollMonth(year, month);
+  el.innerHTML = `
+    <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid var(--border);">
+      <div style="font-size:13px; color:var(--muted); margin-bottom:6px;">Total tout compris (salariés + backoffice + indépendants)</div>
+      <div style="font-size:30px; font-weight:900; color:var(--green);">${Math.round(grandTotal).toLocaleString('fr-FR')} DH</div>
+      <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:12px; font-size:13px; color:var(--muted);">
+        <span>Salariés : <b style="color:var(--text);">${Math.round(totalTeam).toLocaleString('fr-FR')} DH</b></span>
+        ${totalBackoffice>0 ? `<span>Backoffice/sans objectif : <b style="color:var(--text);">${Math.round(totalBackoffice).toLocaleString('fr-FR')} DH</b></span>` : ''}
+        ${totalIndep>0 ? `<span>Indépendants : <b style="color:var(--independant);">${Math.round(totalIndep).toLocaleString('fr-FR')} DH</b></span>` : ''}
+      </div>
+    </div>`;
+}
+
+// ============================================================
+// 📈 TENDANCE — contrats des 14 derniers jours
+// ============================================================
+// ============================================================
+// 🧾 BILAN NET DU MOIS — chiffre d'affaires - charges - masse salariale
+// ============================================================
+async function renderNetBalance(){
+  const el = document.getElementById('netBalancePanel');
+  if(!el) return;
+  const commission = config.bossCommissionPerContract || 0;
+  if(commission <= 0){
+    el.innerHTML = '<div class="empty">Règle ta commission par contrat (💰 Ton chiffre d\'affaires) pour activer ce calcul.</div>';
+    return;
+  }
+  if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
+  el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
+
+  const now = new Date();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+
+  const [monthContracts, payroll] = await Promise.all([
+    getTotalContractsMonth(year, month),
+    computeTotalPayrollMonth(year, month)
+  ]);
+  const revenue = computeBossRevenue(monthContracts);
+  const charges = totalMonthlyCharges();
+  const net = revenue.total - charges - payroll.grandTotal;
+  const positive = net >= 0;
+
+  const chargesDetail = [];
+  const c = config.charges || {};
+  if(c.lignes>0) chargesDetail.push(`Lignes : ${c.lignes.toLocaleString('fr-FR')} DH`);
+  if(c.loyerBureau>0) chargesDetail.push(`Loyer bureau : ${c.loyerBureau.toLocaleString('fr-FR')} DH`);
+  if(c.loyerAppart>0) chargesDetail.push(`Loyer appart : ${c.loyerAppart.toLocaleString('fr-FR')} DH`);
+  if(c.syndic>0) chargesDetail.push(`Syndic : ${c.syndic.toLocaleString('fr-FR')} DH`);
+  if(c.internet>0) chargesDetail.push(`Internet : ${c.internet.toLocaleString('fr-FR')} DH`);
+  (config.customCharges||[]).forEach(x=>{ if(x.amount>0) chargesDetail.push(`${x.name} : ${x.amount.toLocaleString('fr-FR')} DH`); });
+
+  el.innerHTML = `
+    <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid ${positive?'rgba(52,183,116,0.45)':'rgba(229,90,90,0.45)'};">
+      <div style="font-size:13px; color:var(--muted); margin-bottom:6px;">Chiffre d'affaires − charges − masse salariale, ce mois</div>
+      <div style="font-size:32px; font-weight:900; color:${positive?'var(--green)':'var(--red)'};">${positive?'+':''}${Math.round(net).toLocaleString('fr-FR')} DH</div>
+      <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:14px; font-size:13px; color:var(--muted);">
+        <span>💰 Chiffre d'affaires : <b style="color:var(--gold);">${Math.round(revenue.total).toLocaleString('fr-FR')} DH</b></span>
+        <span>💸 Charges : <b style="color:var(--red);">-${Math.round(charges).toLocaleString('fr-FR')} DH</b></span>
+        <span>💼 Masse salariale : <b style="color:var(--red);">-${Math.round(payroll.grandTotal).toLocaleString('fr-FR')} DH</b></span>
+      </div>
+      ${chargesDetail.length ? `<div style="margin-top:12px; font-size:11.5px; color:var(--muted);">Détail charges : ${chargesDetail.join(' · ')}</div>` : ''}
+    </div>`;
+}
+
+async function renderTrendChart(){
+  const el = document.getElementById('trendChartPanel');
+  if(!el) return;
+  if(config.agents.length===0){ el.innerHTML = ''; return; }
+
+  const days = [];
+  for(let i=13; i>=0; i--){
+    const d = new Date();
+    d.setDate(d.getDate()-i);
+    days.push(todayStr(d));
+  }
+  const totals = await Promise.all(days.map(async dateStr=>{
+    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = board;
+    let total = 0;
+    config.agents.forEach(agent=>{
+      const p = (board.agents && board.agents[agent]) || { realized: 0 };
+      total += p.realized || 0;
+    });
+    return { dateStr, total };
+  }));
+
+  const max = Math.max(1, ...totals.map(t=>t.total));
+  const bars = totals.map(t=>{
+    const h = Math.max(4, Math.round((t.total/max)*90));
+    const d = new Date(t.dateStr+'T00:00:00');
+    const isToday = t.dateStr === todayStr();
+    return `<div style="display:flex; flex-direction:column; align-items:center; gap:4px; flex:1;">
+      <div style="font-size:11px; font-weight:700; color:${isToday?'var(--gold)':'var(--text)'};">${t.total}</div>
+      <div style="width:100%; max-width:26px; height:${h}px; background:${isToday?'var(--gold)':'linear-gradient(180deg, var(--accent), var(--accent-dim))'}; border-radius:4px 4px 0 0;"></div>
+      <div style="font-size:10px; color:var(--muted);">${d.getDate()}/${d.getMonth()+1}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid var(--border); overflow-x:auto;">
+    <div style="display:flex; align-items:flex-end; gap:4px; height:140px; min-width:480px;">${bars}</div>
+  </div>`;
+}
+
+// ============================================================
+// 📅 COMPARAISON — ce mois vs le mois dernier, à date équivalente
+// ============================================================
+async function renderMonthComparison(){
+  const el = document.getElementById('monthComparisonPanel');
+  if(!el) return;
+  if(config.agents.length===0){ el.innerHTML = ''; return; }
+
+  const now = new Date();
+  const dayOfMonth = now.getDate();
+  const thisYear = now.getFullYear(), thisMonth = now.getMonth()+1;
+  let lastMonth = thisMonth - 1, lastMonthYear = thisYear;
+  if(lastMonth === 0){ lastMonth = 12; lastMonthYear = thisYear - 1; }
+  const daysInLastMonth = new Date(lastMonthYear, lastMonth, 0).getDate();
+  const uptoDayLastMonth = Math.min(dayOfMonth, daysInLastMonth);
+
+  const sumRange = async (year, month, uptoDay)=>{
+    const dates = [];
+    for(let d=1; d<=uptoDay; d++) dates.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+    const boards = await Promise.all(dates.map(async dateStr=>{
+      const b = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+      prodBoardCache[dateStr] = b;
+      return b;
+    }));
+    let total = 0;
+    boards.forEach(board=> config.agents.forEach(agent=>{
+      const p = (board.agents && board.agents[agent]) || { realized: 0 };
+      total += p.realized || 0;
+    }));
+    return total;
+  };
+
+  const [thisTotal, lastTotal] = await Promise.all([
+    sumRange(thisYear, thisMonth, dayOfMonth),
+    sumRange(lastMonthYear, lastMonth, uptoDayLastMonth)
+  ]);
+
+  const diff = thisTotal - lastTotal;
+  const pctDiff = lastTotal>0 ? Math.round((diff/lastTotal)*100) : (thisTotal>0 ? 100 : 0);
+  const better = diff >= 0;
+  const monthLabel = now.toLocaleDateString('fr-FR', { month:'long' });
+  const lastMonthLabel = new Date(lastMonthYear, lastMonth-1, 1).toLocaleDateString('fr-FR', { month:'long' });
+
+  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid var(--border); flex:1; min-width:170px;">
+      <div style="font-size:12px; color:var(--muted); text-transform:capitalize;">${monthLabel} (jour 1 à ${dayOfMonth})</div>
+      <div style="font-size:26px; font-weight:900;">${thisTotal}</div>
+    </div>
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid var(--border); flex:1; min-width:170px;">
+      <div style="font-size:12px; color:var(--muted); text-transform:capitalize;">${lastMonthLabel} (mêmes jours)</div>
+      <div style="font-size:26px; font-weight:900; color:var(--muted);">${lastTotal}</div>
+    </div>
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid ${better?'rgba(52,183,116,0.4)':'rgba(229,90,90,0.4)'}; flex:1; min-width:170px;">
+      <div style="font-size:12px; color:var(--muted);">Évolution</div>
+      <div style="font-size:26px; font-weight:900; color:${better?'var(--green)':'var(--red)'};">${better?'+':''}${diff} (${better?'+':''}${pctDiff}%)</div>
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// 😴 ALERTE — agents à 0 contrat plusieurs jours ouvrés d'affilée
+// ============================================================
+// ============================================================
+// 📅 PROJECTION FIN DE MOIS — au rythme actuel, atteindra le mini ou pas ?
+// Fonction partagée : utilisée ici ET dans la table Supervision, pour un calcul toujours cohérent.
+// ============================================================
+async function computeMonthProjection(agent, year, month){
+  if(isIndependant(agent)) return null;
+  const pay = getAgentPay(agent);
+  const mini = pay.noObjectif ? 0 : (pay.objectifMensuel || 0);
+  if(mini <= 0) return null;
+
+  const realized = await monthlyRealizedContracts(agent, year, month);
+  const now = new Date();
+  const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
+  const totalWorkingDays = workingDaysInMonth(year, month);
+  const elapsedWorkingDays = isCurrentMonth ? workingDaysElapsedInMonth() : totalWorkingDays;
+  const remainingWorkingDays = Math.max(0, totalWorkingDays - elapsedWorkingDays);
+
+  const pace = elapsedWorkingDays > 0 ? realized / elapsedWorkingDays : 0;
+  const projected = Math.round(realized + pace * remainingWorkingDays);
+  const onTrack = realized >= mini || projected >= mini;
+  return { agent, mini, realized, pace: Math.round(pace*10)/10, projected, remainingWorkingDays, onTrack };
+}
+
+async function renderProjectionPanel(){
+  const el = document.getElementById('projectionPanel');
+  if(!el) return;
+  const nonIndep = config.agents.filter(a=>!isIndependant(a));
+  if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent salarié.</div>'; return; }
+  const now = new Date();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+
+  const results = (await Promise.all(nonIndep.map(a=> computeMonthProjection(a, year, month)))).filter(r=>r);
+  if(results.length===0){ el.innerHTML = '<div class="empty">Aucun agent avec un mini réglé ce mois.</div>'; return; }
+  results.sort((a,b)=>{
+    if(a.onTrack !== b.onTrack) return a.onTrack ? 1 : -1;
+    return (a.projected-a.mini) - (b.projected-b.mini);
+  });
+
+  el.innerHTML = results.map(r=>{
+    const bg = r.onTrack ? 'var(--panel2)' : 'var(--red-bg)';
+    const border = r.onTrack ? 'rgba(52,183,116,0.4)' : 'rgba(229,90,90,0.4)';
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:${bg}; border:1px solid ${border}; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+      <div><b>${r.agent}</b> <span style="color:var(--muted); font-size:12.5px;">— ${r.realized}/${r.mini} actuellement, rythme ${r.pace}/jour, ${r.remainingWorkingDays}j ouvrés restants</span></div>
+      <span class="tag ${r.onTrack?'ok':'late'}">${r.onTrack ? `✅ Projeté ${r.projected} — en bonne voie` : `⚠️ Projeté ${r.projected} — objectif à risque`}</span>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// 🎓 ADF OUBLIÉS — session ouverte depuis plus de 2h
+// ============================================================
+async function renderAdfStuckPanel(){
+  const el = document.getElementById('adfStuckPanel');
+  if(!el) return;
+  const supervisors = listSupervisors();
+  if(supervisors.length===0){ el.innerHTML = '<div class="empty">Aucun superviseur configuré.</div>'; return; }
+  const records = await Promise.all(supervisors.map(async sup=> ({ sup, record: await getADFRecord(sup) })));
+  const stuck = [];
+  const now = Date.now();
+  const THRESHOLD_MS = 2*60*60*1000;
+  records.forEach(({sup, record})=>{
+    if(!record || !['pending','confirmed','finishing'].includes(record.status)) return;
+    const startedAt = new Date(record.startedAt).getTime();
+    if(isNaN(startedAt)) return;
+    if(now - startedAt > THRESHOLD_MS){
+      stuck.push({ sup, agent: record.agent, status: record.status, elapsedMin: Math.round((now-startedAt)/60000) });
+    }
+  });
+  if(stuck.length===0){ el.innerHTML = '<div class="empty">✅ Aucun ADF bloqué en ce moment.</div>'; return; }
+  const statusLabel = { pending: 'en attente de confirmation', confirmed: 'en cours', finishing: 'terminé côté agent, superviseur pas revenu' };
+  el.innerHTML = stuck.map(s=>`
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:var(--red-bg); border:1px solid rgba(229,90,90,0.4); margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+      <div><b>${s.sup}</b> ↔ ${s.agent} <span style="color:var(--muted); font-size:12.5px;">(${statusLabel[s.status]||s.status})</span></div>
+      <span class="tag late">🎓 Ouvert depuis ${Math.floor(s.elapsedMin/60)}h${String(s.elapsedMin%60).padStart(2,'0')}</span>
+    </div>`).join('');
+}
+
+// ============================================================
+// 🔁 RÉCIDIVISTES — 2+ infractions téléphone/YouTube ce mois
+// ============================================================
+async function renderRepeatOffendersPanel(){
+  const el = document.getElementById('repeatOffendersPanel');
+  if(!el) return;
+  const nonIndep = config.agents.filter(a=>!isIndependant(a));
+  if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent.</div>'; return; }
+  const now = new Date();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dateStrs = [];
+  for(let d=1; d<=daysInMonth; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+
+  const results = await Promise.all(nonIndep.map(async agent=>{
+    const allInfr = await Promise.all(dateStrs.map(d=> getInfractions(agent, d)));
+    const count = allInfr.reduce((s,list)=> s + list.filter(i=>i.type==='phone_youtube').length, 0);
+    return { agent, count };
+  }));
+  const offenders = results.filter(r=>r.count>=2).sort((a,b)=> (b.count-a.count) || a.agent.localeCompare(b.agent));
+  if(offenders.length===0){ el.innerHTML = '<div class="empty">✅ Aucun récidiviste ce mois.</div>'; return; }
+  el.innerHTML = offenders.map(o=>`
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:var(--red-bg); border:1px solid rgba(229,90,90,0.4); margin-bottom:8px;">
+      <b>${o.agent}</b>
+      <span class="tag late">🔁 ${o.count} infractions téléphone/YouTube ce mois</span>
+    </div>`).join('');
+}
+
+// ============================================================
+// 📊 MEILLEUR / PIRE JOUR DU MOIS
+// ============================================================
+async function renderBestWorstDayPanel(){
+  const el = document.getElementById('bestWorstDayPanel');
+  if(!el) return;
+  if(config.agents.length===0){ el.innerHTML = ''; return; }
+  const now = new Date();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+  const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
+  const daysToCheck = isCurrentMonth ? now.getDate() : new Date(year, month, 0).getDate();
+
+  const dateStrs = [];
+  for(let d=1; d<=daysToCheck; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+
+  const totals = await Promise.all(dateStrs.map(async dateStr=>{
+    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = board;
+    let total = 0;
+    config.agents.forEach(agent=>{
+      const p = (board.agents && board.agents[agent]) || { realized: 0 };
+      total += p.realized || 0;
+    });
+    return { dateStr, total };
+  }));
+  const withActivity = totals.filter(t=>t.total>0);
+  if(withActivity.length===0){ el.innerHTML = '<div class="empty">Pas encore de contrat ce mois.</div>'; return; }
+  const best = withActivity.reduce((a,b)=> b.total>a.total?b:a);
+  const worst = withActivity.reduce((a,b)=> b.total<a.total?b:a);
+  const fmt = (dateStr)=> new Date(dateStr+'T00:00:00').toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+
+  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(52,183,116,0.4); flex:1; min-width:200px;">
+      <div style="font-size:12px; color:var(--muted);">🏆 Meilleur jour</div>
+      <div style="font-size:26px; font-weight:900; color:var(--green);">${best.total}</div>
+      <div style="font-size:12.5px; color:var(--muted); text-transform:capitalize;">${fmt(best.dateStr)}</div>
+    </div>
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,90,90,0.4); flex:1; min-width:200px;">
+      <div style="font-size:12px; color:var(--muted);">📉 Pire jour (avec activité)</div>
+      <div style="font-size:26px; font-weight:900; color:var(--red);">${worst.total}</div>
+      <div style="font-size:12.5px; color:var(--muted); text-transform:capitalize;">${fmt(worst.dateStr)}</div>
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// 🎯 PROCHES DU PALIER DE PRIME — à 1-2 contrats de leur mini
+// ============================================================
+async function renderNearBonusPanel(){
+  const el = document.getElementById('nearBonusPanel');
+  if(!el) return;
+  const nonIndep = config.agents.filter(a=>!isIndependant(a) && !getAgentPay(a).noObjectif);
+  if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent concerné.</div>'; return; }
+  const now = new Date();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+
+  const results = await Promise.all(nonIndep.map(async agent=>{
+    const pay = getAgentPay(agent);
+    const mini = pay.objectifMensuel || 0;
+    if(mini <= 0) return null;
+    const realized = await monthlyRealizedContracts(agent, year, month);
+    const gap = mini - realized;
+    if(gap <= 0 || gap > 2) return null;
+    return { agent, gap, realized, mini };
+  }));
+  const near = results.filter(r=>r).sort((a,b)=> (a.gap-b.gap) || a.agent.localeCompare(b.agent));
+  if(near.length===0){ el.innerHTML = '<div class="empty">Personne n\'est à 1-2 contrats de son palier en ce moment.</div>'; return; }
+  el.innerHTML = near.map(n=>`
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:var(--panel2); border:1px solid rgba(255,215,0,0.4); margin-bottom:8px;">
+      <b>${n.agent}</b>
+      <span class="tag warn">🎯 À ${n.gap} contrat${n.gap>1?'s':''} de son palier (${n.realized}/${n.mini})</span>
+    </div>`).join('');
+}
+
+async function renderInactiveAgentsPanel(){
+  const el = document.getElementById('inactiveAgentsPanel');
+  if(!el) return;
+  const nonIndep = config.agents.filter(a=>!isIndependant(a));
+  if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent salarié.</div>'; return; }
+
+  // Les 5 derniers jours ouvrés (lundi-vendredi), pour repérer une série de 0 consécutifs jusqu'à
+  // aujourd'hui (une pause ou un jour férié n'interrompt pas artificiellement la détection).
+  const days = [];
+  let cursor = new Date();
+  while(days.length < 5){
+    const dow = cursor.getDay();
+    if(dow !== 0 && dow !== 6) days.unshift(todayStr(cursor));
+    cursor.setDate(cursor.getDate()-1);
+  }
+  const boards = {};
+  await Promise.all(days.map(async dateStr=>{
+    boards[dateStr] = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = boards[dateStr];
+  }));
+
+  const alerts = [];
+  nonIndep.forEach(agent=>{
+    let streak = 0;
+    for(let i=days.length-1; i>=0; i--){
+      const board = boards[days[i]];
+      const p = (board.agents && board.agents[agent]) || { realized: 0 };
+      if((p.realized||0) === 0) streak++;
+      else break;
+    }
+    if(streak >= 1) alerts.push({ agent, streak });
+  });
+  alerts.sort((a,b)=> (b.streak - a.streak) || a.agent.localeCompare(b.agent));
+
+  if(alerts.length===0){
+    el.innerHTML = '<div class="empty">✅ Personne n\'est à 0 aujourd\'hui.</div>';
+    return;
+  }
+  el.innerHTML = alerts.map(a=>{
+    const severe = a.streak >= 2;
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:${severe?'var(--red-bg)':'var(--amber-bg)'}; border:1px solid ${severe?'rgba(229,90,90,0.4)':'rgba(229,168,61,0.4)'}; margin-bottom:8px;">
+      <b>${a.agent}</b>
+      <span class="tag ${severe?'late':'warn'}">${severe?'🚨':'⚠️'} 0 contrat depuis ${a.streak} jour${a.streak>1?'s':''} ouvré${a.streak>1?'s':''}</span>
+    </div>`;
+  }).join('');
+}
+
 async function renderAllMonthly(){
   await renderTodaySnapshot();
   await renderObjectifSnapshot();
+  await renderPauseTotalsToday();
   const monthVal = document.getElementById('monthSelect').value;
   const kpiRow = document.getElementById('kpiRow');
   const overviewContainer = document.getElementById('overviewContainer');
   const escaladeContainer = document.getElementById('escaladeContainer');
+
+  await renderBossRevenue();
+  await renderPayrollSummary();
+  await renderNetBalance();
+  await renderTrendChart();
+  await renderMonthComparison();
+  await renderInactiveAgentsPanel();
+  await renderProjectionPanel();
+  await renderAdfStuckPanel();
+  await renderRepeatOffendersPanel();
+  await renderBestWorstDayPanel();
+  await renderNearBonusPanel();
 
   if(!monthVal || config.agents.length===0){
     kpiRow.innerHTML = '';
@@ -4057,11 +5053,8 @@ async function renderAllMonthly(){
   }
   const [year, month] = monthVal.split('-').map(Number);
 
-  const stats = [];
-  for(const agent of config.agents){
-    stats.push(await monthlyStats(agent, year, month));
-  }
-  stats.sort((a,b)=> b.total - a.total);
+  const stats = await Promise.all(config.agents.map(agent => monthlyStats(agent, year, month)));
+  stats.sort((a,b)=> b.total !== a.total ? b.total - a.total : a.agent.localeCompare(b.agent));
   _lastMonthlyStats = stats;
 
   const nonIndepStats = stats.filter(s => !isIndependant(s.agent));
@@ -4472,7 +5465,7 @@ async function monthlyDeductions(agent, year, month){
         } else if(i.type === 'resiliation'){
           const amt = i.amount || 0;
           total += amt;
-          items.push({ date: dateStr, label: `Résiliation client${i.note ? ' — '+i.note : ''}`, amount: Math.round(amt) });
+          items.push({ date: dateStr, label: `Retour client${i.note ? ' — '+i.note : ''}`, amount: Math.round(amt) });
         }
       });
       continue;
@@ -4519,7 +5512,7 @@ async function monthlyDeductions(agent, year, month){
         // S'applique aussi aux indépendants : reprise de commission sur résiliation client.
         const amt = i.amount || 0;
         total += amt;
-        items.push({ date: dateStr, label: `Résiliation client${i.note ? ' — '+i.note : ''}`, amount: Math.round(amt) });
+        items.push({ date: dateStr, label: `Retour client${i.note ? ' — '+i.note : ''}`, amount: Math.round(amt) });
       }
     });
   }
@@ -5059,9 +6052,9 @@ async function arenaAddRetraction(delta){
   await saveMonthlyRetractCount(currentArenaAgent, year, month, nextCount);
   const afterNet = Math.max(0, beforeNet - (nextCount - current));
   if(nextCount > current){
-    showToast(`🔻 Contrat résilié pris en compte : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'warn');
+    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'warn');
   } else if(nextCount < current){
-    showToast(`↩️ Résiliation annulée : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'ok');
+    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'ok');
   }
   await renderArena();
   if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
@@ -5121,8 +6114,8 @@ async function renderArena(){
     const rc = await getMonthlyRetractCount(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     const grossContracts = netContracts + rc;
     document.getElementById('arenaRetractCount').textContent = rc>0
-      ? `${rc} résilié${rc>1?'s':''} — ${grossContracts} signés → ${netContracts} nets ce mois`
-      : `Aucune résiliation ce mois — ${netContracts} contrat${netContracts>1?'s':''} net${netContracts>1?'s':''}`;
+      ? `${rc} rétracté${rc>1?'s':''} — ${grossContracts} signés → ${netContracts} nets ce mois`
+      : `Aucune rétraction ce mois — ${netContracts} contrat${netContracts>1?'s':''} net${netContracts>1?'s':''}`;
   }
   document.getElementById('arenaDesiredObjBox').style.display = (currentArenaAgent && isMonthScope) ? 'block' : 'none';
   if(currentArenaAgent && isMonthScope){
@@ -5346,9 +6339,9 @@ async function cashAddRetraction(delta){
   await saveMonthlyRetractCount(currentCashAgent, year, month, nextCount);
   const afterNet = Math.max(0, beforeNet - (nextCount - current));
   if(nextCount > current){
-    showToast(`🔻 Contrat résilié pris en compte : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'warn');
+    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'warn');
   } else if(nextCount < current){
-    showToast(`↩️ Résiliation annulée : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'ok');
+    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'ok');
   }
   await renderCash();
   if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
@@ -5473,8 +6466,8 @@ async function renderCash(){
   if(cashRetractEl){
     const grossForIndicator = monthContracts + monthRetractions;
     cashRetractEl.textContent = monthRetractions>0
-      ? `${monthRetractions} résilié${monthRetractions>1?'s':''} — ${grossForIndicator} signés → ${monthContracts} nets ce mois`
-      : `Aucune résiliation ce mois — ${monthContracts} contrat${monthContracts>1?'s':''} net${monthContracts>1?'s':''}`;
+      ? `${monthRetractions} rétracté${monthRetractions>1?'s':''} — ${grossForIndicator} signés → ${monthContracts} nets ce mois`
+      : `Aucune rétraction ce mois — ${monthContracts} contrat${monthContracts>1?'s':''} net${monthContracts>1?'s':''}`;
   }
   renderCashObjectifsRecap();
 
@@ -5484,7 +6477,7 @@ async function renderCash(){
     const s = await monthlyObjectifStatus(a, now.getFullYear(), now.getMonth()+1);
     allRankings.push(s);
   }
-  allRankings.sort((a,b)=> b.realized - a.realized);
+  allRankings.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
   const nAg = allRankings.length;
   const leaderAgent = allRankings[0];
   const secondAgent = allRankings[1];
@@ -5574,7 +6567,7 @@ async function computeSalaryLeaderboard(){
     const supervisorBonus = isSupervisor(ag) ? Math.round(contractsUnderSupervision * (p.supervisorPrimePerContract || 0)) : 0;
     rows.push({ agent: ag, total: res.total + supervisorBonus, contracts: res.status.realized, isIndep });
   }
-  rows.sort((a,b)=> b.total - a.total);
+  rows.sort((a,b)=> b.total !== a.total ? b.total - a.total : a.agent.localeCompare(b.agent));
   rows.forEach((r,i)=> r.rank = i+1);
   return rows;
 }
@@ -5616,7 +6609,7 @@ function renderCashObjectifsRecap(){
       </div>
       <div style="margin-top:16px; display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--muted); border-top:1px solid var(--border); padding-top:12px;">
         <div>✅ <b style="color:var(--text);">${monthContracts}</b> contrat${monthContracts>1?'s':''} net${monthContracts>1?'s':''} ce mois</div>
-        ${monthRetractions>0 ? `<div>🔻 <b style="color:var(--red);">${monthRetractions}</b> résilié${monthRetractions>1?'s':''} — <b style="color:var(--text);">${grossContracts}</b> signé${grossContracts>1?'s':''} au total</div>` : `<div>🔻 Aucun contrat résilié ce mois</div>`}
+        ${monthRetractions>0 ? `<div>🔻 <b style="color:var(--red);">${monthRetractions}</b> rétracté${monthRetractions>1?'s':''} — <b style="color:var(--text);">${grossContracts}</b> signé${grossContracts>1?'s':''} au total</div>` : `<div>🔻 Aucun contrat rétracté ce mois</div>`}
       </div>
     </div>`;
 }
@@ -5626,7 +6619,7 @@ function renderCashRealGrid(){
   const { pay, todayCount, weekData, weekSal, daySal, monthRes, assiduiteAcquise, isIndep, monthContracts, monthRetractions, isSupervisorAgent, contractsUnderSupervision, supervisorBonus } = cashRealCache;
   const st = monthRes ? monthRes.status : null;
   const grossContracts = monthContracts + monthRetractions;
-  const retractLine = monthRetractions>0 ? `<div class="miss"><span>Contrats résiliés (${monthRetractions})</span><b>${grossContracts} signés → ${monthContracts} nets</b></div>` : '';
+  const retractLine = monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${grossContracts} signés → ${monthContracts} nets</b></div>` : '';
   const supervisorBonusLine = (isSupervisorAgent && supervisorBonus>0) ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : '';
   const monthTotalWithSupervisor = (monthRes ? monthRes.total : 0) + (isSupervisorAgent ? supervisorBonus : 0);
 
@@ -5942,7 +6935,8 @@ async function renderSupervision(){
 
   rows.sort((a,b)=>{
     if(a.isIndep !== b.isIndep) return (a.isIndep?1:0) - (b.isIndep?1:0);
-    return b.pctMonth - a.pctMonth;
+    if(b.pctMonth !== a.pctMonth) return b.pctMonth - a.pctMonth;
+    return a.agent.localeCompare(b.agent);
   });
 
   if(myToken !== supervisionRenderToken) return; // une saisie plus récente a déjà démarré, on abandonne celle-ci
@@ -5998,32 +6992,40 @@ async function renderSupervision(){
 
   let html = pressureHtml + `
     <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
-    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3.</div>
+    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour souhaité par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon.</div>
     <div style="overflow-x:auto;">
     <table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>Jour</th><th>Semaine</th><th>Mois</th><th>%</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
+      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>💬 Conseil</th><th>Jour (souhaité/réalisé)</th><th>Semaine</th><th>Mois</th><th>%</th><th>📅 Projection</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
     </tr></thead><tbody>`;
 
   if(teamRows.length === 0){
-    html += `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px;">Aucun agent salarié pour le moment.</td></tr>`;
+    html += `<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:16px;">Aucun agent salarié pour le moment.</td></tr>`;
   } else {
-    html += teamRows.map(r=>{
+    const rowsHtml = await Promise.all(teamRows.map(async r=>{
       const isMe = r.agent === supervisor;
       const pctCls = r.pctMonth >= 100 ? 'good' : (r.pctMonth >= 50 ? 'mid' : 'bad');
       const badge = dailyProgressBadge(r.dayRealized);
       const rowStyle = (r.monthObj>0 && !r.atteint && r.pctMonth<70) || r.dayRealized<=0 ? 'background:var(--red-bg);' : '';
+      const comment = supervisorActionComment(r.dayRealized);
+      const proj = await computeMonthProjection(r.agent, now.getFullYear(), now.getMonth()+1);
+      const projHtml = proj
+        ? `<span class="tag ${proj.onTrack?'ok':'late'}" title="Rythme ${proj.pace}/jour, ${proj.remainingWorkingDays}j restants">${proj.onTrack?'✅':'⚠️'} ${proj.projected}</span>`
+        : '<span style="color:var(--muted);">—</span>';
       return `<tr style="${rowStyle}">
         <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}</td>
         <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
         <td><span class="tag ${badge.cls}" style="${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></td>
-        <td>${r.dayRealized}/${r.dayObjective||'—'}</td>
+        <td style="font-size:12.5px; max-width:220px; ${r.dayRealized<=0?'color:var(--red); font-weight:700;':'color:var(--muted);'}">${isMe ? '' : comment}</td>
+        <td>${r.dayObjective || '—'} / ${r.dayRealized}</td>
         <td>${r.weekReal}/${r.weekObjective||'—'}</td>
         <td><b>${r.monthReal}</b>/${r.monthObj||'—'}</td>
         <td class="lb-pct ${pctCls}">${r.monthObj>0 ? r.pctMonth+'%' : '—'}</td>
+        <td>${projHtml}</td>
         <td><span class="tag ${r.retardsCumules>=3?'late':(r.retardsCumules>=1?'warn':'ok')}">${r.tier ? r.tier.label : 'Aucun retard'}</span></td>
         <td><b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></td>
       </tr>`;
-    }).join('');
+    }));
+    html += rowsHtml.join('');
   }
 
   html += `</tbody>
@@ -6242,6 +7244,18 @@ async function saveProdConfig(){
   pc.daysPerWeek = parseInt(document.getElementById('prodDaysWeek').value) || 5;
   // pc.daysPerMonth n'est plus réglable manuellement : recalculé automatiquement à chaque appel de getProdConfig()
   collectAgentPayFromUI();
+
+  const bossCommissionEl = document.getElementById('cfgBossCommission');
+  if(bossCommissionEl){
+    config.bossCommissionPerContract = parseFloat(bossCommissionEl.value);
+    if(isNaN(config.bossCommissionPerContract) || config.bossCommissionPerContract < 0) config.bossCommissionPerContract = 0;
+    config.bossReturnRatePct = parseFloat(document.getElementById('cfgBossReturnRate').value);
+    if(isNaN(config.bossReturnRatePct) || config.bossReturnRatePct < 0) config.bossReturnRatePct = 0;
+    config.bossBonusPct = parseFloat(document.getElementById('cfgBossBonusPct').value);
+    if(isNaN(config.bossBonusPct) || config.bossBonusPct < 0) config.bossBonusPct = 0;
+  }
+  collectChargesFromUI();
+
   await saveConfigSilent();
   const note = document.getElementById('prodSaveNote');
   note.textContent = 'Enregistré ✓';
@@ -6250,6 +7264,9 @@ async function saveProdConfig(){
   renderMonthlyObjectif();
   renderArena();
   renderSupervision();
+  renderBossRevenue();
+  renderPayrollSummary();
+  renderNetBalance();
 }
 
 async function renderMonthlyObjectif(){
@@ -6273,7 +7290,8 @@ async function renderMonthlyObjectif(){
   }
   rows.sort((a,b)=>{
     if(b.pct !== a.pct) return b.pct - a.pct;
-    return b.realized - a.realized;
+    if(b.realized !== a.realized) return b.realized - a.realized;
+    return a.agent.localeCompare(b.agent);
   });
   rows.forEach((r,i)=> r.rank = i+1);
 
