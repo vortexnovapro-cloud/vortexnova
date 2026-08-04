@@ -2056,30 +2056,33 @@ async function onAgentChange(){
   primeInactivityAlerts();
 
   const msgBox = document.getElementById('inactivityReturnMsg');
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('agentCardContent').style.display = 'block';
+  lockedOutSince = null;
+  lockedOutAgent = null;
+  msgBox.style.display = 'none';
 
-  if(lockedOutSince){
-    const wasAgent = lockedOutAgent;
-    const durationMs = Date.now() - lockedOutSince.getTime();
-    document.getElementById('lockScreen').style.display = 'none';
-    document.getElementById('agentCardContent').style.display = 'block';
-    lockedOutSince = null;
-    lockedOutAgent = null;
+  // On vérifie TOUJOURS dans les données sauvegardées s'il reste un délogage resté ouvert pour cet agent
+  // aujourd'hui — pas seulement dans la mémoire de l'onglet en cours. Ça couvre le cas très courant où
+  // l'agent recharge la page, ferme/rouvre l'onglet, ou change d'appareil pendant qu'il était délogué :
+  // sans ça, le délogage restait marqué "pas reconnecté" pour toujours, même une fois l'agent bien revenu.
+  if(selected){
+    const dateStr = todayStr();
+    const log = await getDayLog(selected, dateStr);
+    const openLockout = extractLockouts(log.events).find(l => !l.end);
+    if(openLockout){
+      const toSec = (t)=> toMinutes(t.slice(0,5))*60 + Number(t.slice(6,8)||0);
+      const nowD = new Date();
+      const nowSec = nowD.getHours()*3600 + nowD.getMinutes()*60 + nowD.getSeconds();
+      const durationSec = Math.max(0, nowSec - toSec(openLockout.start));
+      log.events.push({ type: 'auto_in', time: nowTimeStr(), durationSec });
+      await saveDayLog(selected, dateStr, log);
 
-    if(selected && selected === wasAgent){
-      const durationLabel = formatDuration(durationMs);
+      const durationLabel = formatDuration(durationSec*1000);
       msgBox.textContent = `⏱ Bon retour ! Tu étais délogé et inactif pendant ${durationLabel}.`;
       msgBox.style.display = 'block';
       setTimeout(()=>{ msgBox.style.display = 'none'; }, 6000);
-
-      const dateStr = todayStr();
-      const log = await getDayLog(selected, dateStr);
-      log.events.push({ type: 'auto_in', time: nowTimeStr(), durationSec: Math.round(durationMs/1000) });
-      await saveDayLog(selected, dateStr, log);
-    } else {
-      msgBox.style.display = 'none';
     }
-  } else {
-    msgBox.style.display = 'none';
   }
 
   currentAgent = selected;
