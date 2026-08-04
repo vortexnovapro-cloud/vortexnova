@@ -471,7 +471,10 @@
   function isSmallDevice(){
     var ua = navigator.userAgent || '';
     var mobileUA = /Android|iPhone|iPod|iPad|Windows Phone|Mobile|BlackBerry|Opera Mini/i.test(ua);
-    var narrow = Math.min(window.innerWidth, window.screen.width) < 900;
+    // On se base uniquement sur la résolution PHYSIQUE de l'écran (window.screen.width), jamais sur la
+    // taille de la fenêtre du navigateur (window.innerWidth) : une fenêtre réduite, non maximisée, ou un
+    // écran partagé en deux sur un vrai PC portable ne doit jamais déclencher le blocage à tort.
+    var narrow = window.screen.width < 700;
     return mobileUA || narrow;
   }
   if(sessionStorage.getItem('vn_admin_bypass') === '1') return;
@@ -856,6 +859,29 @@ function tryDeviceGateAdmin(){
           <div style="margin-top:16px;">
             <button onclick="saveDayCorrection()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer la correction</button>
             <div class="save-note" id="corrSaveNote"></div>
+          </div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(255,215,0,0.3);">
+          <label style="margin-bottom:6px;">🎁 Offrir du temps de pause</label>
+          <div class="section-sub">Récompense ponctuelle : ajoute des minutes de pause libre en plus, pour une date précise, à un ou plusieurs agents de ton choix — s'ajoute à leurs 35 min habituelles ce jour-là uniquement.</div>
+          <div style="margin-top:12px;">
+            <label style="margin-bottom:6px;">Agents</label>
+            <div id="giftBreakAgentChips" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+          </div>
+          <div class="settings-grid" style="grid-template-columns: 1fr 1fr; margin-top:14px;">
+            <div>
+              <label>Date</label>
+              <input type="date" id="giftBreakDate">
+            </div>
+            <div>
+              <label>Minutes offertes</label>
+              <input type="number" id="giftBreakMinutes" min="1" step="5" value="15">
+            </div>
+          </div>
+          <div style="margin-top:14px;">
+            <button onclick="giftBreakMinutes()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--gold);color:#1a1408;font-weight:700;cursor:pointer;">🎁 Offrir</button>
+            <div class="save-note" id="giftBreakNote"></div>
           </div>
         </div>
 
@@ -1642,6 +1668,7 @@ function populateAgentSelect(){
   populateArenaAgentSelect();
   populateSupervisionAgentSelect();
   populatePrimeAgentSelect();
+  renderGiftBreakAgentChips();
 }
 
 function populateArenaAgentSelect(){
@@ -1766,6 +1793,8 @@ function tryAdminLogin(){
     renderMonthlyObjectif();
     initPrimeDefaults();
     renderManualPrimesList();
+    initGiftBreakDefaults();
+    renderGiftBreakAgentChips();
   } else {
     alert('Mot de passe incorrect.');
   }
@@ -2324,6 +2353,55 @@ async function saveDayCorrection(){
   if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
 }
 
+// ---- 🎁 Offrir du temps de pause (bonus ponctuel, par agent, par jour) ----
+let giftBreakSelectedAgents = new Set();
+
+function renderGiftBreakAgentChips(){
+  const wrap = document.getElementById('giftBreakAgentChips');
+  if(!wrap) return;
+  let html = '';
+  config.agents.forEach(a=>{
+    if(isIndependant(a)) return; // pas de pause à pointer pour un indépendant
+    const safe = a.replace(/'/g, "\\'");
+    const sel = giftBreakSelectedAgents.has(a);
+    html += `<button type="button" class="admin-tab-btn ${sel?'active':''}" onclick="toggleGiftBreakAgent('${safe}')">${a}</button>`;
+  });
+  wrap.innerHTML = html || '<div class="empty">Ajoute des agents dans Réglages.</div>';
+}
+
+function toggleGiftBreakAgent(agent){
+  if(giftBreakSelectedAgents.has(agent)) giftBreakSelectedAgents.delete(agent);
+  else giftBreakSelectedAgents.add(agent);
+  renderGiftBreakAgentChips();
+}
+
+function initGiftBreakDefaults(){
+  const dateEl = document.getElementById('giftBreakDate');
+  if(dateEl && !dateEl.value) dateEl.value = todayStr();
+}
+
+async function giftBreakMinutes(){
+  const dateStr = document.getElementById('giftBreakDate').value || todayStr();
+  const minutes = parseInt(document.getElementById('giftBreakMinutes').value);
+  const note = document.getElementById('giftBreakNote');
+
+  if(giftBreakSelectedAgents.size === 0){ alert('Sélectionne au moins un agent.'); return; }
+  if(isNaN(minutes) || minutes <= 0){ alert('Indique un nombre de minutes valide.'); return; }
+
+  for(const agent of giftBreakSelectedAgents){
+    const log = await getDayLog(agent, dateStr);
+    log.freeBreakBonusMin = (log.freeBreakBonusMin || 0) + minutes;
+    await saveDayLog(agent, dateStr, log);
+  }
+
+  note.textContent = `+${minutes} min offertes à ${giftBreakSelectedAgents.size} agent(s) le ${dateStr} ✓`;
+  setTimeout(()=>note.textContent='', 3500);
+  giftBreakSelectedAgents.clear();
+  renderGiftBreakAgentChips();
+  if(dateStr === todayStr()) refreshFreeBreakUI();
+  renderReport();
+}
+
 // ---- PAUSE LIBRE (35 min/jour à prendre quand on veut, en plusieurs fois si besoin) ----
 // Utilise des types d'événements dédiés (free_break_start / free_break_end), complètement séparés du
 // couple break_start/break_end réservé au déjeuner (horaire fixe) — les deux systèmes ne se mélangent jamais.
@@ -2371,7 +2449,7 @@ async function refreshFreeBreakUI(){
   box.style.display = 'block';
   const dateStr = todayStr();
   const log = await getDayLog(currentAgent, dateStr);
-  freeBreakCache = { events: log.events, dateStr };
+  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
   updateFreeBreakDisplay();
 }
 
@@ -2382,7 +2460,8 @@ function updateFreeBreakDisplay(){
   const endBtn = document.getElementById('btnFreeBreakEnd');
   if(!timerEl || !currentAgent) return;
 
-  const budgetSec = (config.freeBreakMinutes!=null ? config.freeBreakMinutes : 35) * 60;
+  const bonusMin = freeBreakCache.bonusMin || 0;
+  const budgetSec = ((config.freeBreakMinutes!=null ? config.freeBreakMinutes : 35) + bonusMin) * 60;
   const { usedSec, activeStart } = freeBreakUsageToday(freeBreakCache.events || []);
   const remainingSec = budgetSec - usedSec;
 
@@ -2396,13 +2475,14 @@ function updateFreeBreakDisplay(){
   timerEl.textContent = fmt(remainingSec);
   timerEl.style.color = remainingSec < 0 ? 'var(--red)' : (remainingSec < 300 ? 'var(--amber)' : 'var(--text)');
 
+  const bonusNote = bonusMin>0 ? ` (dont 🎁 ${bonusMin} min offertes aujourd'hui)` : '';
   if(activeStart){
-    msgEl.textContent = remainingSec >= 0 ? 'Pause en cours — reviens avant la fin du décompte.' : `Pause en cours — tu as dépassé ton temps de ${fmt(Math.abs(remainingSec)).replace('-','')}.`;
+    msgEl.textContent = remainingSec >= 0 ? `Pause en cours — reviens avant la fin du décompte.${bonusNote}` : `Pause en cours — tu as dépassé ton temps de ${fmt(Math.abs(remainingSec)).replace('-','')}.`;
     startBtn.style.display = 'none';
     endBtn.style.display = 'block';
   } else {
     msgEl.textContent = remainingSec > 0
-      ? `Il te reste ${Math.ceil(remainingSec/60)} minute${Math.ceil(remainingSec/60)>1?'s':''} de pause aujourd'hui.`
+      ? `Il te reste ${Math.ceil(remainingSec/60)} minute${Math.ceil(remainingSec/60)>1?'s':''} de pause aujourd'hui.${bonusNote}`
       : 'Tu as utilisé toute ta pause libre du jour.';
     startBtn.style.display = 'block';
     endBtn.style.display = 'none';
@@ -2424,7 +2504,7 @@ async function startFreeBreak(){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type: 'free_break_start', time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  freeBreakCache = { events: log.events, dateStr };
+  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
   updateFreeBreakDisplay();
 }
 
@@ -2434,7 +2514,7 @@ async function endFreeBreak(){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type: 'free_break_end', time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  freeBreakCache = { events: log.events, dateStr };
+  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
   updateFreeBreakDisplay();
 }
 
@@ -2563,7 +2643,7 @@ async function renderAgentHistory(){
     if(log.events.length===0 && infr.length===0){
       tagsHtml = '<span class="tag absent">Aucun pointage</span>';
     } else {
-      const ev = evaluateDay(log.events, dateStr);
+      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 0){
         const sanction = ev.lateMinutes <= 10 ? '-30min salaire' : 'journée non payée';
         tagsHtml += `<span class="tag late">Retard ${ev.lateMinutes}min · ${sanction}</span>`;
@@ -2655,7 +2735,7 @@ function matchBreaksToSchedule(breakPairs, schedBreaks, toleranceMin){
   });
 }
 
-function evaluateDay(events, dateStr){
+function evaluateDay(events, dateStr, freeBreakBonusMin){
   const sched = scheduleForDate(dateStr || todayStr());
   const inEvt = events.find(e=>e.type==='in');
   const outEvt = [...events].reverse().find(e=>e.type==='out');
@@ -2687,8 +2767,9 @@ function evaluateDay(events, dateStr){
   });
 
   // Pause libre (35 min par défaut, à prendre quand on veut) : additionnée sur toute la journée, pas
-  // horaire par horaire — seul le total compte, jamais un dépassement de créneau précis.
-  const freeBudgetMin = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
+  // horaire par horaire — seul le total compte, jamais un dépassement de créneau précis. Un bonus offert
+  // ponctuellement par l'admin (récompense du jour) s'ajoute au budget de base, uniquement ce jour-là.
+  const freeBudgetMin = (config.freeBreakMinutes != null ? config.freeBreakMinutes : 35) + (freeBreakBonusMin || 0);
   const { usedSec: freeBreakUsedSec } = freeBreakUsageToday(events, dateStr || todayStr());
   const freeBreakUsedMin = Math.round(freeBreakUsedSec/60);
   const freeBreakOverMin = Math.max(0, freeBreakUsedMin - freeBudgetMin);
@@ -2698,6 +2779,7 @@ function evaluateDay(events, dateStr){
     depart: outEvt ? outEvt.time.slice(0,5) : null,
     lateMinutes,
     breakIssues,
+    freeBreakBonusMin: freeBreakBonusMin || 0,
     freeBreakUsedMin,
     freeBreakBudgetMin: freeBudgetMin,
     freeBreakOverMin,
@@ -2722,7 +2804,7 @@ async function renderReport(){
       continue;
     }
     const log = await getDayLog(agent, dateStr);
-    const ev = evaluateDay(log.events, dateStr);
+    const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
     const infractions = await getInfractions(agent, dateStr);
     const lockouts = extractLockouts(log.events);
     rows.push({ agent, ...ev, infractions, lockouts, isIndep: false });
@@ -2864,7 +2946,7 @@ async function monthlyStats(agent, year, month){
   let retards = 0, pauseOver = 0, phoneYoutube = 0, objectif = 0;
   dayData.forEach(({dateStr, log, infr})=>{
     if(log.events.length>0){
-      const ev = evaluateDay(log.events, dateStr);
+      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 0) retards++;
       if(ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0) pauseOver++;
     }
@@ -3074,7 +3156,7 @@ async function renderExploDailyDetail(agents, dateList){
           statusHtml = noActivity ? '<span class="tag absent">Absent</span>' : '<span class="tag warn">Pas de pointage</span>';
           rowCls = noActivity ? 'late' : 'warn';
         } else {
-          const ev = evaluateDay(log.events, dateStr);
+          const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
           if(ev.lateMinutes > 10){ statusHtml = `<span class="tag late">Retard ${ev.lateMinutes}min (non payé)</span>`; rowCls = 'late'; }
           else if(ev.lateMinutes > 0){ statusHtml = `<span class="tag warn">Retard ${ev.lateMinutes}min</span>`; rowCls = 'warn'; }
           else statusHtml = '<span class="tag ok">Présent à l\'heure</span>';
@@ -3310,7 +3392,7 @@ async function renderTodaySnapshot(){
     }
     const log = await getDayLog(agent, dateStr);
     const infr = await getInfractions(agent, dateStr);
-    const ev = evaluateDay(log.events, dateStr);
+    const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
     const anyBreakOver = ev.breakIssues.some(b=>b.over);
     const lockoutMin = totalLockoutMinutes(log.events);
     const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
@@ -3792,7 +3874,7 @@ async function monthlyDeductions(agent, year, month){
     }
 
     if(!isIndep && log && log.events.length > 0){
-      const ev = evaluateDay(log.events, dateStr);
+      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 10){
         dayFullyUnpaid = true;
         const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
@@ -5182,7 +5264,7 @@ async function renderSupervision(){
     let statusLabel = 'Indépendant', statusCls = 'independant';
     if(!isIndep && log){
       const last = lastEventType(log.events);
-      const ev = evaluateDay(log.events, dateStr);
+      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(last === null){ statusLabel = "Pas encore pointé"; statusCls = 'absent'; }
       else if(last === 'out'){ statusLabel = 'Journée terminée'; statusCls = 'ok'; }
       else if(last === 'break_start'){ statusLabel = 'En pause'; statusCls = 'warn'; }
