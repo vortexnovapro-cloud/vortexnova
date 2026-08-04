@@ -462,8 +462,29 @@
   <div style="font-size:14px; color:var(--muted); max-width:320px; margin-bottom:20px;">Cette application n'est pas disponible sur téléphone. Merci d'ouvrir ce lien depuis un ordinateur ou un PC portable.</div>
   <button id="deviceGateAdminLink" style="background:none; border:none; color:var(--accent); font-size:13px; font-weight:600; cursor:pointer;" onclick="showDeviceGateAdmin()">Je suis admin</button>
   <div id="deviceGateAdminBox" style="display:none; margin-top:16px;">
-    <input type="password" id="deviceGateAdminPw" placeholder="Mot de passe admin" style="padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:14px; text-align:center;" onkeydown="if(event.key==='Enter')tryDeviceGateAdmin()">
+    <div style="position:relative; display:inline-block;">
+      <input type="password" id="deviceGateAdminPw" placeholder="Mot de passe admin" style="padding:10px 40px 10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:14px; text-align:center;" onkeydown="if(event.key==='Enter')tryDeviceGateAdmin()">
+      <button type="button" onclick="const i=document.getElementById('deviceGateAdminPw'); const b=this; if(i.type==='password'){i.type='text'; b.textContent='🙈';} else {i.type='password'; b.textContent='👁️';} i.focus();" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️</button>
+    </div>
     <div style="margin-top:10px;"><button onclick="tryDeviceGateAdmin()" style="padding:9px 18px; border-radius:8px; border:none; background:var(--accent); color:white; font-weight:700; cursor:pointer; font-size:13px;">Valider</button></div>
+  </div>
+</div>
+
+<div id="pwModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:99998; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:28px 24px; max-width:340px; width:100%; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.5);">
+    <div style="font-size:30px; margin-bottom:8px;">🔒</div>
+    <div id="pwModalTitle" style="font-size:15px; font-weight:800; margin-bottom:18px; color:var(--text);">Mot de passe</div>
+    <div style="position:relative;">
+      <input type="password" id="pwModalInput" autocomplete="off"
+        style="width:100%; padding:13px 44px 13px 14px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:16px; box-sizing:border-box;"
+        onkeydown="if(event.key==='Enter'){ event.preventDefault(); confirmPwModal(); } if(event.key==='Escape') cancelPwModal();">
+      <button type="button" onclick="togglePwModalVisibility()" id="pwModalEyeBtn" title="Afficher/masquer le mot de passe"
+        style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:19px; padding:6px; line-height:1;">👁️</button>
+    </div>
+    <div style="margin-top:20px; display:flex; gap:10px; justify-content:center;">
+      <button onclick="cancelPwModal()" style="padding:11px 22px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:600; cursor:pointer;">Annuler</button>
+      <button onclick="confirmPwModal()" style="padding:11px 22px; border-radius:9px; border:none; background:var(--accent); color:white; font-weight:700; cursor:pointer;">Valider</button>
+    </div>
   </div>
 </div>
 <script>
@@ -732,7 +753,10 @@ function tryDeviceGateAdmin(){
   <div class="view" id="view-admin">
     <div class="gate" id="adminGate">
       <label>Mot de passe admin</label>
-      <input type="password" id="adminPwInput" placeholder="••••" onkeydown="if(event.key==='Enter')tryAdminLogin()">
+      <div style="position:relative;">
+        <input type="password" id="adminPwInput" placeholder="••••" style="padding-right:40px;" onkeydown="if(event.key==='Enter')tryAdminLogin()">
+        <button type="button" onclick="const i=document.getElementById('adminPwInput'); const b=this; if(i.type==='password'){i.type='text'; b.textContent='🙈';} else {i.type='password'; b.textContent='👁️';} i.focus();" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:17px;">👁️</button>
+      </div>
       <button onclick="tryAdminLogin()">Entrer</button>
       <div style="color:var(--muted); font-size:12px; margin-top:14px;">Mot de passe oublié ? Contacte la personne qui gère cette application.</div>
     </div>
@@ -2119,10 +2143,64 @@ async function saveConfig(){
 }
 
 // ---- AGENT SIDE ----
-function checkAgentPassword(name){
+// Une fois le mot de passe entré correctement pour un agent, ça reste valable pour tous les onglets
+// (Pointage, Arena, Cash, Supervision) durant toute la session — pas besoin de le retaper à chaque fois
+// qu'on change d'onglet. Se réinitialise seulement si la page est rechargée.
+let authenticatedAgentsThisSession = new Set();
+
+// Modale de mot de passe maison (au lieu de window.prompt, qui n'a jamais masqué la saisie) — champ
+// masqué par défaut avec un bouton œil pour l'afficher en clair si besoin.
+let pwModalResolve = null;
+function showPasswordModal(title){
+  return new Promise(resolve=>{
+    pwModalResolve = resolve;
+    document.getElementById('pwModalTitle').textContent = title;
+    const input = document.getElementById('pwModalInput');
+    input.value = '';
+    input.type = 'password';
+    document.getElementById('pwModalEyeBtn').textContent = '👁️';
+    document.getElementById('pwModal').style.display = 'flex';
+    setTimeout(()=> input.focus(), 50);
+  });
+}
+function togglePwModalVisibility(){
+  const input = document.getElementById('pwModalInput');
+  const btn = document.getElementById('pwModalEyeBtn');
+  if(input.type === 'password'){ input.type = 'text'; btn.textContent = '🙈'; }
+  else { input.type = 'password'; btn.textContent = '👁️'; }
+  input.focus();
+}
+function confirmPwModal(){
+  const val = document.getElementById('pwModalInput').value;
+  document.getElementById('pwModal').style.display = 'none';
+  if(pwModalResolve) pwModalResolve(val);
+  pwModalResolve = null;
+}
+function cancelPwModal(){
+  document.getElementById('pwModal').style.display = 'none';
+  if(pwModalResolve) pwModalResolve(null);
+  pwModalResolve = null;
+}
+
+async function checkAgentPassword(name){
   const pw = config.agentPasswords && config.agentPasswords[name];
   if(!pw) return true;
-  const entered = window.prompt(`Mot de passe pour ${name} :`);
+  if(authenticatedAgentsThisSession.has(name)) return true;
+  const entered = await showPasswordModal(`Mot de passe pour ${name}`);
+  if(entered === null) return false;
+  if(entered === pw){ authenticatedAgentsThisSession.add(name); return true; }
+  alert('Mot de passe incorrect.');
+  return false;
+}
+
+// Reconfirmation d'identité — ignore volontairement le cache de session ci-dessus. Utilisée chaque fois
+// que l'agent a pu quitter son poste (retour de délogage pour inactivité, retour de pause déjeuner,
+// retour de pause libre, retour d'ADF) : on veut vérifier que c'est bien lui qui revient, pas quelqu'un
+// d'autre assis à sa place — le simple fait d'avoir déjà tapé le mot de passe plus tôt ne suffit pas ici.
+async function requirePasswordReentry(name){
+  const pw = config.agentPasswords && config.agentPasswords[name];
+  if(!pw) return true;
+  const entered = await showPasswordModal(`Confirme que c'est bien toi — mot de passe pour ${name}`);
   if(entered === null) return false;
   if(entered === pw) return true;
   alert('Mot de passe incorrect.');
@@ -2139,7 +2217,7 @@ async function onAgentChange(){
     return;
   }
 
-  if(selected && !checkAgentPassword(selected)){
+  if(selected && !await checkAgentPassword(selected)){
     sel.value = '';
     return;
   }
@@ -2162,6 +2240,15 @@ async function onAgentChange(){
     const log = await getDayLog(selected, dateStr);
     const openLockout = extractLockouts(log.events).find(l => !l.end);
     if(openLockout){
+      // On ne referme JAMAIS un délogage sans reconfirmation du mot de passe — le but est justement de
+      // vérifier que c'est bien l'agent qui revient, pas quelqu'un d'autre. Si la reconfirmation échoue,
+      // on n'inscrit rien et l'agent n'est pas connecté : il doit retenter.
+      if(!await requirePasswordReentry(selected)){
+        sel.value = '';
+        document.getElementById('lockScreen').style.display = 'block';
+        document.getElementById('agentCardContent').style.display = 'none';
+        return;
+      }
       const toSec = (t)=> toMinutes(t.slice(0,5))*60 + Number(t.slice(6,8)||0);
       const nowD = new Date();
       const nowSec = nowD.getHours()*3600 + nowD.getMinutes()*60 + nowD.getSeconds();
@@ -2669,8 +2756,16 @@ function tickFreeBreak(){
   if(activeStart) updateFreeBreakDisplay();
 }
 
+// Vrai si LA SESSION du superviseur est "verrouillée" par un ADF qu'il vient d'annoncer/démarrer (statut
+// pending ou confirmed) — dans ce cas, plus aucune action de pointage sur son propre poste ne doit passer
+// sans reconfirmation du mot de passe, puisqu'il est censé être physiquement ailleurs.
+function isMySessionLockedByADF(){
+  return !!(myADFStatus && myADFStatus.role === 'supervisor' && ['pending','confirmed'].includes(myADFStatus.record.status));
+}
+
 async function startFreeBreak(){
   if(!currentAgent) return;
+  if(isMySessionLockedByADF() && !await requirePasswordReentry(currentAgent)) return;
   primeInactivityAlerts();
   const dateStr = todayStr();
   const log = await getDayLog(currentAgent, dateStr);
@@ -2682,6 +2777,7 @@ async function startFreeBreak(){
 
 async function endFreeBreak(){
   if(!currentAgent) return;
+  if(!await requirePasswordReentry(currentAgent)) return;
   const dateStr = todayStr();
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type: 'free_break_end', time: nowTimeStr() });
@@ -2835,12 +2931,16 @@ async function startADF(){
 
 async function cancelADF(){
   if(!currentAgent) return;
+  // On ne laisse personne annuler un ADF en cours sans prouver que c'est bien le superviseur — sa
+  // session est considérée "verrouillée" côté ADF dès qu'il l'a démarré.
+  if(!await requirePasswordReentry(currentAgent)) return;
   await clearADFRecord(currentAgent);
   await refreshADFStatus();
 }
 
 async function beginADFOnAgentSide(){
   if(!myADFStatus || myADFStatus.role !== 'agent') return;
+  if(!await requirePasswordReentry(currentAgent)) return;
   const record = myADFStatus.record;
   record.status = 'confirmed';
   record.confirmedAt = new Date().toISOString();
@@ -2862,6 +2962,9 @@ async function endADFOnAgentSide(){
 
 async function confirmReturnADF(){
   if(!myADFStatus || myADFStatus.role !== 'supervisor') return;
+  // Le superviseur revient à SON poste après avoir été ailleurs (chez l'agent formé) — même logique
+  // de reconfirmation que pour un retour de pause ou de délogage.
+  if(!await requirePasswordReentry(currentAgent)) return;
   await clearADFRecord(currentAgent);
   myADFStatus = null;
   renderADFBox();
@@ -3010,6 +3113,8 @@ async function refreshAgentButtons(){
 
 async function logEvent(type){
   if(!currentAgent){ alert("Sélectionne ton nom d'abord."); return; }
+  if(type === 'break_end' && !await requirePasswordReentry(currentAgent)) return;
+  if(type !== 'break_end' && isMySessionLockedByADF() && !await requirePasswordReentry(currentAgent)) return;
   primeInactivityAlerts();
   const dateStr = todayStr();
   const log = await getDayLog(currentAgent, dateStr);
@@ -4867,7 +4972,7 @@ function rankEmoji(rank, total){
 async function onArenaAgentChange(){
   const sel = document.getElementById('arenaAgentSelect');
   const selected = sel.value;
-  if(selected && !checkAgentPassword(selected)){
+  if(selected && !await checkAgentPassword(selected)){
     sel.value = '';
     currentArenaAgent = null;
     document.getElementById('arenaContent').style.display = 'none';
@@ -5166,9 +5271,15 @@ async function renderArena(){
       <div class="lb-stat"><b>${isMonthScope ? (miniVal > 0 ? miniVal : (isFreeRow ? '∞' : '—')) : '—'}</b>${isMonthScope ? 'mini' : ''}</div>
       <div class="lb-stat lb-stat-desired"><b>${desiredVal != null ? desiredVal : '—'}</b>souhaité</div>
       <div class="lb-stat"><b>${r.realized}</b>signés</div>
-      <div style="display:flex; flex-direction:column; gap:3px; align-items:flex-end;">
-        <div style="font-size:13px; font-weight:800; color:${miniColor};" title="% de l'objectif mini">${miniLabel}</div>
-        <div style="font-size:13px; font-weight:800; color:${desiredColor};" title="% de l'objectif souhaité">${desiredLabel}</div>
+      <div style="display:flex; flex-direction:column; gap:5px; align-items:flex-end;">
+        <div style="text-align:right;">
+          <div style="font-size:13px; font-weight:800; color:${miniColor}; line-height:1.1;">${miniLabel}</div>
+          <div style="font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:0.3px;">mini</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:13px; font-weight:800; color:${desiredColor}; line-height:1.1;">${desiredLabel}</div>
+          <div style="font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:0.3px;">souhaité</div>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -5247,7 +5358,7 @@ async function cashAddRetraction(delta){
 async function onCashAgentChange(){
   const sel = document.getElementById('cashAgentSelect');
   const selected = sel.value;
-  if(selected && !checkAgentPassword(selected)){
+  if(selected && !await checkAgentPassword(selected)){
     sel.value = '';
     currentCashAgent = null;
     document.getElementById('cashContent').style.display = 'none';
@@ -5710,7 +5821,7 @@ function renderCashLeaderboard(rows){
 async function onSupervisionAgentChange(){
   const sel = document.getElementById('supervisionAgentSelect');
   const selected = sel.value;
-  if(selected && !checkAgentPassword(selected)){
+  if(selected && !await checkAgentPassword(selected)){
     sel.value = '';
     currentSupervisionAgent = null;
     document.getElementById('supervisionContent').style.display = 'none';
