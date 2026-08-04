@@ -1438,6 +1438,13 @@ function tickInactivityWatcher(){
     return;
   }
   if(currentAgent && isWithinScheduledHours()){
+    if(isOnAnyBreakNow(freeBreakCache.events || [])){
+      // En pause (déjeuner ou pause libre) : le chrono d'inactivité est simplement mis en sommeil, pas de
+      // compte à rebours, pas d'alerte, pas de déconnexion — personne ne doit être délogé en pause.
+      lastActivityAt = Date.now();
+      clearInactivityWarnings();
+      return;
+    }
     const timeoutMs = (config.inactivityTimeoutMin||5) * 60 * 1000;
     const remainingMs = timeoutMs - (Date.now() - lastActivityAt);
     const warnSecs = (config.inactivityWarnSeconds && config.inactivityWarnSeconds.length===3) ? config.inactivityWarnSeconds : [30,10,5];
@@ -2526,6 +2533,19 @@ function lastEventType(events){
   return null;
 }
 
+// Vrai si l'agent est actuellement en pause — déjeuner (break_start sans break_end après) OU pause libre
+// (free_break_start sans free_break_end après). Le chrono d'inactivité ne doit jamais tourner pendant
+// une pause légitime : personne ne touche à l'écran en pause déjeuner, ce n'est pas de l'inactivité fautive.
+function isOnAnyBreakNow(events){
+  let lunchOpen = false;
+  for(let i=events.length-1;i>=0;i--){
+    if(events[i].type === 'break_end'){ lunchOpen = false; break; }
+    if(events[i].type === 'break_start'){ lunchOpen = true; break; }
+  }
+  const { activeStart } = freeBreakUsageToday(events || []);
+  return lunchOpen || !!activeStart;
+}
+
 async function refreshAgentButtons(){
   const btnIn = document.getElementById('btnIn');
   const btnBreakStart = document.getElementById('btnBreakStart');
@@ -2587,6 +2607,7 @@ async function logEvent(type){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type, time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
+  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
   await refreshAgentButtons();
   await refreshAgentStatus();
 }
@@ -2681,11 +2702,27 @@ function extractLockouts(events){
 // (durationSec connu, càd l'agent s'est reconnecté). Une période encore ouverte (jamais reconnecté)
 // n'est pas comptée automatiquement ici : elle nécessite une correction manuelle par l'admin
 // (Admin → Journée) puisqu'on ne peut pas savoir avec certitude combien de temps ça va durer.
+// Le temps qui chevauche une pause légitime (déjeuner ou pause libre) est retranché : être inactif en
+// pause n'a jamais été une faute, y compris pour d'anciens délogages enregistrés avant ce correctif.
 function totalLockoutMinutes(events){
   const lockouts = extractLockouts(events);
+  const toSec = (t)=> toMinutes(t.slice(0,5))*60 + Number(t.slice(6,8)||0);
+
+  const breakIntervals = [];
+  extractBreakPairs(events).forEach(p=>{ if(p.end) breakIntervals.push({ start: toSec(p.start), end: toSec(p.end) }); });
+  extractFreeBreakPairs(events).forEach(p=>{ if(p.end) breakIntervals.push({ start: toSec(p.start), end: toSec(p.end) }); });
+
   let totalSec = 0;
   lockouts.forEach(l=>{
-    if(l.end && l.durationSec != null) totalSec += l.durationSec;
+    if(!l.end || l.durationSec == null) return;
+    const lStart = toSec(l.start);
+    const lEnd = lStart + l.durationSec;
+    let overlapSec = 0;
+    breakIntervals.forEach(b=>{
+      const ovStart = Math.max(lStart, b.start), ovEnd = Math.min(lEnd, b.end);
+      if(ovEnd > ovStart) overlapSec += (ovEnd - ovStart);
+    });
+    totalSec += Math.max(0, l.durationSec - overlapSec);
   });
   return Math.round(totalSec / 60);
 }
