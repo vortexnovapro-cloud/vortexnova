@@ -6984,13 +6984,35 @@ async function renderSupervision(){
     pressureHtml = `<div class="section-title" style="margin-top:0;">✅ Aucune alerte</div><div class="section-sub">Tous les agents avec un objectif réglé sont dans les clous ou l'ont déjà atteint.</div>`;
   }
 
+  // ---- 🎯 Objectif souhaité et réalisé — aujourd'hui (bloc dédié, bien visible) ----
+  const teamRows = rows.filter(r=>!r.isIndep);
+  let objBlockHtml = `<div class="section-title" style="margin-top:0;">🎯 Objectif souhaité et réalisé — aujourd'hui</div>
+    <div class="section-sub">L'objectif que chaque agent s'est fixé lui-même ce matin, et où il en est réellement, tout de suite.</div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-bottom:8px;">`;
+  teamRows.forEach(r=>{
+    const hasObj = r.dayObjective > 0;
+    const pct = hasObj ? Math.min(100, Math.round((r.dayRealized/r.dayObjective)*100)) : 0;
+    const hit = hasObj && r.dayRealized >= r.dayObjective;
+    const barColor = hit ? 'var(--green)' : (pct>=50 ? 'var(--amber)' : 'var(--red)');
+    objBlockHtml += `<div style="padding:12px 14px; border-radius:12px; background:var(--panel2); border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};">
+      <div style="font-weight:800; font-size:14px; margin-bottom:6px;">${r.agent}</div>
+      ${hasObj
+        ? `<div class="arena-prog-bar" style="height:8px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor};"></div></div>
+           <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:13px;">
+             <span style="color:var(--muted);">Souhaité : <b style="color:var(--text);">${r.dayObjective}</b></span>
+             <span style="color:${barColor}; font-weight:800;">Réalisé : ${r.dayRealized}</span>
+           </div>`
+        : `<div style="font-size:12.5px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé : <b style="color:var(--text);">${r.dayRealized}</b></div>`}
+    </div>`;
+  });
+  objBlockHtml += '</div>';
+
   // ---- Détail équipe : jour / semaine / mois / assiduité / salaire ----
   // Les indépendants sont volontairement dans un tableau à part : leurs contrats (et leur éventuel défi
   // perso) ne doivent jamais se mélanger dans l'objectif et le total de l'équipe salariée ci-dessus.
-  const teamRows = rows.filter(r=>!r.isIndep);
   const indepRows = rows.filter(r=>r.isIndep);
 
-  let html = pressureHtml + `
+  let html = pressureHtml + objBlockHtml + `
     <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
     <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour souhaité par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon.</div>
     <div style="overflow-x:auto;">
