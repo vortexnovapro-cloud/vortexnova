@@ -510,6 +510,8 @@ function tryDeviceGateAdmin(){
   </div>
 </header>
 
+<div id="inactivityWarnBanner" onclick="confirmPresenceFromAlert()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; text-align:center; background: var(--red-bg); color: var(--red); padding:14px 16px; font-size:15px; font-weight:800; animation: pulseWarn 1s infinite; cursor:pointer; box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
+
 <main>
 
   <!-- AGENT VIEW -->
@@ -533,7 +535,6 @@ function tryDeviceGateAdmin(){
       <div class="clock" id="liveClock">--:--:--</div>
       <div class="schedule-detail" id="scheduleDetail"></div>
       <div id="inactivityReturnMsg" style="display:none; text-align:center; background: var(--amber-bg); color: var(--amber); border-radius:10px; padding:10px 14px; font-size:13.5px; font-weight:600; margin-bottom:18px;"></div>
-      <div id="inactivityWarnBanner" onclick="confirmPresenceFromAlert()" style="display:none; text-align:center; background: var(--red-bg); color: var(--red); border-radius:10px; padding:12px 14px; font-size:14px; font-weight:800; margin-bottom:18px; animation: pulseWarn 1s infinite; cursor:pointer;"></div>
       <div class="status-line" id="statusLine"></div>
 
       <div class="btn-grid">
@@ -591,12 +592,17 @@ function tryDeviceGateAdmin(){
 
         <div class="arena-hero" id="arenaHero"></div>
 
-        <div id="arenaObjectifBox" class="settings-box" style="margin-bottom:22px; display:none;">
-          <label>Ton objectif du jour</label>
-          <div class="section-sub" style="margin-top:-4px;">Fixe-le le matin — le logiciel calcule automatiquement tes projections semaine & mois.</div>
-          <div class="arena-objectif-form">
-            <input type="number" id="arenaObjectifInput" min="0" max="99" placeholder="0">
-            <button class="arena-btn arena-btn-set" onclick="saveArenaObjectif()">Valider mon objectif</button>
+        <div id="arenaObjectifBox" class="settings-box" style="margin-bottom:22px; display:none; border-color:rgba(255,215,0,0.45); background:linear-gradient(135deg, rgba(255,215,0,0.06), var(--panel));">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="font-size:30px; line-height:1;">🎯</div>
+            <div>
+              <div style="font-size:16px; font-weight:900; color:var(--text);">Ton objectif du jour</div>
+              <div style="font-size:13px; color:var(--muted); margin-top:2px;">Fixe-le le matin — le logiciel calcule automatiquement tes projections semaine & mois.</div>
+            </div>
+          </div>
+          <div class="arena-objectif-form" style="margin-top:18px;">
+            <input type="number" id="arenaObjectifInput" min="0" max="99" placeholder="0" style="width:100px; font-size:26px; padding:14px; border:2px solid rgba(255,215,0,0.4);">
+            <button class="arena-btn" onclick="saveArenaObjectif()" style="background:var(--gold); color:#1a1408; font-size:16px; padding:16px 30px;">✅ Valider mon objectif</button>
           </div>
         </div>
 
@@ -611,12 +617,17 @@ function tryDeviceGateAdmin(){
           <span id="arenaRetractCount" style="font-size:13px; color:var(--muted);"></span>
         </div>
 
-        <div id="arenaDesiredObjBox" class="settings-box" style="margin-top:14px; margin-bottom:22px; display:none;">
-          <label>🎯 Ton objectif perso pour ce mois</label>
-          <div class="section-sub" style="margin-top:-4px;">En plus du mini demandé par l'admin — vise ce que tu veux, personne ne t'y oblige. Une 2e barre suit ta progression.</div>
-          <div class="arena-objectif-form">
-            <input type="number" id="arenaDesiredObjInput" min="0" max="999" placeholder="Ex: 45">
-            <button class="arena-btn arena-btn-set" onclick="saveArenaDesiredObjectif()">Valider mon objectif du mois</button>
+        <div id="arenaDesiredObjBox" class="settings-box" style="margin-top:14px; margin-bottom:22px; display:none; border-color:rgba(61,139,253,0.45); background:linear-gradient(135deg, rgba(61,139,253,0.06), var(--panel));">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="font-size:30px; line-height:1;">🚀</div>
+            <div>
+              <div style="font-size:16px; font-weight:900; color:var(--text);">Ton objectif perso pour ce mois</div>
+              <div style="font-size:13px; color:var(--muted); margin-top:2px;">En plus du mini demandé par l'admin — vise ce que tu veux, personne ne t'y oblige. Une 2e barre suit ta progression.</div>
+            </div>
+          </div>
+          <div class="arena-objectif-form" style="margin-top:18px;">
+            <input type="number" id="arenaDesiredObjInput" min="0" max="999" placeholder="Ex: 45" style="width:110px; font-size:26px; padding:14px; border:2px solid rgba(61,139,253,0.4);">
+            <button class="arena-btn" onclick="saveArenaDesiredObjectif()" style="background:var(--accent); color:white; font-size:16px; padding:16px 30px;">✅ Valider mon objectif du mois</button>
           </div>
         </div>
 
@@ -776,7 +787,11 @@ function tryDeviceGateAdmin(){
           <div id="exploDailyDetail" style="margin-top:24px;"></div>
         </div>
 
-        <div class="section-title" style="margin-top:0;">Aujourd'hui, en un coup d'œil</div>
+        <div class="section-title" style="margin-top:0;">🔔 Statut notifications par agent</div>
+        <div class="section-sub">Basé sur la dernière fois que chaque agent s'est connecté. Un agent qui n'a jamais ouvert VortexNova depuis la mise à jour, ou qui n'apparaît pas ici, n'a pas encore été vérifié.</div>
+        <div id="notifStatusPanel"></div>
+
+        <div class="section-title">Aujourd'hui, en un coup d'œil</div>
         <div id="todaySnapshot"></div>
 
         <div class="section-title">🎯 Objectif choisi & réalisé — aujourd'hui</div>
@@ -1294,7 +1309,8 @@ function registerActivity(){
 // Demande la permission de notification système dès qu'un agent se connecte (geste utilisateur requis) —
 // et débloque l'audio du navigateur au passage pour que les bips fonctionnent même sans clic ultérieur.
 let notifUnavailableWarned = false;
-function primeInactivityAlerts(){
+function primeInactivityAlerts(agentOverride){
+  const agent = agentOverride !== undefined ? agentOverride : currentAgent;
   try{
     if(!inactivityAudioCtx) inactivityAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(inactivityAudioCtx.state === 'suspended') inactivityAudioCtx.resume();
@@ -1308,32 +1324,55 @@ function primeInactivityAlerts(){
       notifUnavailableWarned = true;
       console.warn('VortexNova : notifications système indisponibles en local (file://). Le son, le titre d\'onglet et la bannière fonctionnent quand même.');
     }
+    reportNotifStatus(agent, 'file_protocol');
     return;
   }
   if('Notification' in window && Notification.permission === 'default'){
-    Notification.requestPermission().catch(()=>{});
+    Notification.requestPermission().then(()=> reportNotifStatus(agent, Notification.permission)).catch(()=>{});
   }
+  reportNotifStatus(agent, ('Notification' in window) ? Notification.permission : 'unsupported');
 }
 
-function playInactivityBeep(urgent){
+// Enregistre, pour l'agent connecté, si son navigateur autorise les notifications — consultable ensuite
+// par l'admin dans Vue d'ensemble → 🔔 Statut notifications, pour vérifier que tout le monde peut bien
+// les recevoir sans avoir à demander à chacun individuellement.
+async function reportNotifStatus(agent, status){
+  if(!agent) return;
+  try{
+    await storageSet(`notifStatus:${agent}`, JSON.stringify({
+      status: status || 'unknown',
+      updatedAt: new Date().toISOString()
+    }));
+  }catch(e){}
+}
+
+function playInactivityBeep(level){
   try{
     if(!inactivityAudioCtx) inactivityAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(inactivityAudioCtx.state === 'suspended') inactivityAudioCtx.resume();
     const ctx = inactivityAudioCtx;
-    const beepOnce = (delay)=>{
+    const beepOnce = (delay, freq, vol, durMs)=>{
       setTimeout(()=>{
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = urgent ? 1046 : 784;
-        gain.gain.value = 0.18;
+        osc.type = 'square'; // plus perçant qu'un sinus, se remarque mieux dans un bureau bruyant
+        osc.frequency.value = freq;
+        gain.gain.value = vol;
         osc.connect(gain); gain.connect(ctx.destination);
         osc.start();
-        setTimeout(()=> osc.stop(), 180);
+        setTimeout(()=> osc.stop(), durMs);
       }, delay);
     };
-    beepOnce(0);
-    if(urgent) beepOnce(260);
+    if(level >= 3){
+      // 3e alerte : le plus fort, le plus long, quadruple bip rapproché — impossible à louper.
+      beepOnce(0, 1046, 0.5, 280); beepOnce(320, 1318, 0.5, 280);
+      beepOnce(640, 1568, 0.55, 320); beepOnce(1000, 1568, 0.55, 380);
+    } else if(level === 2){
+      beepOnce(0, 1046, 0.42, 260); beepOnce(320, 1318, 0.42, 260); beepOnce(640, 1568, 0.45, 300);
+    } else {
+      // 1ère alerte : un seul bip, plus doux, mais audible — ce n'est plus silencieux.
+      beepOnce(0, 784, 0.28, 220);
+    }
   }catch(e){}
 }
 
@@ -1346,6 +1385,27 @@ function flashDocTitle(msg){
   }, 800);
 }
 
+// Icône ronde bien voyante (générée une fois, en mémoire) pour que la notification système se distingue
+// clairement des autres notifications dans la pile Windows/Mac — orange pour l'alerte 1, rouge pour 2/3.
+let inactivityIconCache = {};
+function getInactivityIcon(color){
+  if(inactivityIconCache[color]) return inactivityIconCache[color];
+  try{
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(64,64,60,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 84px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('!', 64, 70);
+    const url = c.toDataURL('image/png');
+    inactivityIconCache[color] = url;
+    return url;
+  }catch(e){ return undefined; }
+}
+
 function confirmPresenceFromAlert(){
   window.focus();
   registerActivity();
@@ -1353,60 +1413,40 @@ function confirmPresenceFromAlert(){
 
 function showInactivityWarning(secondsLeft, level){
   const banner = document.getElementById('inactivityWarnBanner');
+  playInactivityBeep(level);
 
-  if(level === 1){
-    // 1ère alerte : purement visuelle, aucun son (utile en plein appel téléphonique) — bannière très
-    // voyante (couleur vive + pulsation) et titre d'onglet clignotant, mais pas de bip ni de notification sonore.
-    flashDocTitle(`⚠️ ES-TU ACTIF ? (${secondsLeft}s)`);
-    if(banner){
-      banner.textContent = `EST-CE QUE TU ES ACTIF ? Si OUI, clique ICI. (déconnexion dans ${secondsLeft}s)`;
-      banner.style.background = 'var(--amber-bg)';
-      banner.style.color = 'var(--amber)';
-      banner.style.display = 'block';
-    }
-    // Notification silencieuse (silent:true) si le navigateur le permet — juste un signal visuel côté OS.
-    // requireInteraction:true : reste affichée tant que l'agent ne clique pas dessus (sur Windows/Linux).
-    if('Notification' in window && Notification.permission === 'granted'){
-      try{
-        const notif = new Notification('EST-CE QUE TU ES ACTIF ?', {
-          body: `Si OUI, clique ICI. (déconnexion dans ${secondsLeft}s)`,
-          tag: 'vortexnova-inactivity',
-          silent: true,
-          requireInteraction: true
-        });
-        notif.onclick = ()=>{ confirmPresenceFromAlert(); notif.close(); };
-      }catch(e){}
-    }
-    return;
-  }
-
-  // 2e et 3e alerte : son en plus (plus urgent sur la 3e), notification sonore, bannière rouge.
-  const urgent = level >= 3;
-  playInactivityBeep(urgent);
-
-  const title = level === 2
-    ? 'ATTENTION, PAS DE RÉPONSE DE TA PART'
+  const isTop = level >= 2;
+  const title = level === 1 ? 'EST-CE QUE TU ES ACTIF ?'
+    : level === 2 ? 'ATTENTION, PAS DE RÉPONSE DE TA PART'
     : 'DERNIER AVERTISSEMENT AVANT DÉCONNEXION';
-  const bodyText = level === 2
-    ? `TU VAS ÊTRE DÉLOGUÉ. Clique ICI pour montrer que tu es ACTIF. (${secondsLeft}s)`
+  const bodyText = level === 1 ? `Si OUI, clique ICI. (déconnexion dans ${secondsLeft}s)`
+    : level === 2 ? `TU VAS ÊTRE DÉLOGUÉ. Clique ICI pour montrer que tu es ACTIF. (${secondsLeft}s)`
     : `Clique ICI VITE. (${secondsLeft}s)`;
 
-  flashDocTitle(`🔴 ${title} (${secondsLeft}s)`);
+  flashDocTitle(`${isTop?'🔴':'⚠️'} ${title} (${secondsLeft}s)`);
+
+  if(banner){
+    banner.textContent = `${title} ! ${bodyText}`;
+    banner.style.background = isTop ? 'var(--red-bg)' : 'var(--amber-bg)';
+    banner.style.color = isTop ? 'var(--red)' : 'var(--amber)';
+    banner.style.display = 'block';
+  }
+
+  // requireInteraction + renotify:true, sur les 3 niveaux : sans renotify, réutiliser le même tag fait que
+  // Windows/Chrome REMPLACE silencieusement la notification précédente sans la faire réapparaître ni
+  // rejouer un son — c'était très probablement la vraie cause du "on ne voit jamais rien" : seule la toute
+  // première alerte surgissait vraiment, les 2 suivantes s'actualisaient en douce sans se faire remarquer.
   if('Notification' in window && Notification.permission === 'granted'){
     try{
       const notif = new Notification(title, {
         body: bodyText,
         tag: 'vortexnova-inactivity',
-        requireInteraction: true
+        icon: getInactivityIcon(isTop ? '#e5484d' : '#e5a83d'),
+        requireInteraction: true,
+        renotify: true
       });
       notif.onclick = ()=>{ confirmPresenceFromAlert(); notif.close(); };
     }catch(e){}
-  }
-  if(banner){
-    banner.textContent = `${title} ! ${bodyText}`;
-    banner.style.background = 'var(--red-bg)';
-    banner.style.color = 'var(--red)';
-    banner.style.display = 'block';
   }
 }
 
@@ -1784,7 +1824,7 @@ function showAdminSub(sub){
     const btnId = s==='prod' ? 'subtabProd' : 'subtab'+s.charAt(0).toUpperCase()+s.slice(1);
     document.getElementById(btnId).classList.toggle('active', s===sub);
   });
-  if(sub==='overview'){ initExploDefaults(); renderAllMonthly(); renderExplorateur(); }
+  if(sub==='overview'){ initExploDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
 }
@@ -1797,6 +1837,7 @@ function tryAdminLogin(){
     initExploDefaults();
     renderAllMonthly();
     renderExplorateur();
+    renderNotifStatusPanel();
     renderReport();
     renderProdAdmin();
     renderMonthlyObjectif();
@@ -2053,7 +2094,7 @@ async function onAgentChange(){
     return;
   }
 
-  primeInactivityAlerts();
+  primeInactivityAlerts(selected || null);
 
   const msgBox = document.getElementById('inactivityReturnMsg');
   document.getElementById('lockScreen').style.display = 'none';
@@ -3416,6 +3457,40 @@ async function renderObjectifSnapshot(){
   }).join('') + `</div>`;
 }
 
+async function renderNotifStatusPanel(){
+  const el = document.getElementById('notifStatusPanel');
+  if(!el) return;
+  if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
+
+  const labels = {
+    granted: { txt: '✅ Autorisées', cls: 'ok' },
+    denied: { txt: '🚫 Bloquées — à réactiver manuellement', cls: 'late' },
+    default: { txt: '⏳ Pas encore répondu', cls: 'warn' },
+    unsupported: { txt: '❓ Navigateur incompatible', cls: 'warn' },
+    file_protocol: { txt: '📁 Fichier local — notif impossible (utilise le lien https)', cls: 'late' }
+  };
+
+  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Statut</th><th>Dernière vérification</th></tr></thead><tbody>';
+  for(const agent of config.agents){
+    if(isIndependant(agent)) continue;
+    let row = null;
+    try{
+      const res = await storageGet(`notifStatus:${agent}`);
+      if(res && res.value) row = JSON.parse(res.value);
+    }catch(e){}
+    if(!row){
+      html += `<tr><td><b>${agent}</b></td><td><span class="tag absent">Jamais vérifié</span></td><td style="color:var(--muted);">—</td></tr>`;
+      continue;
+    }
+    const meta = labels[row.status] || { txt: row.status, cls: 'warn' };
+    const d = new Date(row.updatedAt);
+    const dLabel = isNaN(d) ? '—' : d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    html += `<tr><td><b>${agent}</b></td><td><span class="tag ${meta.cls}">${meta.txt}</span></td><td style="color:var(--muted);">${dLabel}</td></tr>`;
+  }
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
 async function renderTodaySnapshot(){
   const container = document.getElementById('todaySnapshot');
   if(!container) return;
@@ -4631,15 +4706,18 @@ async function renderArena(){
     }
 
     const displayObj = hasObj ? myRow.objective : (isFreeAgent ? '∞' : '?');
+    const scopeTitle = isMonthScope ? '🎯 OBJECTIF DU MOIS' : '🎯 OBJECTIF DU JOUR';
+    const pctColor = !hasObj ? 'var(--muted)' : (myRow.pct>=100 ? 'var(--green)' : (myRow.pct>=50 ? 'var(--amber)' : 'var(--red)'));
     hero.innerHTML = `
       <div class="arena-rank-badge ${badgeCls}">${rankEmoji(myRow.rank, rankings.length)} ${myRow.rank}${myRow.rank===1?'er':'e'} / ${rankings.length}${isFreeAgent ? ' '+statusEmoji : ''}</div>
+      <div style="font-size:13px; font-weight:800; letter-spacing:1px; color:var(--muted); margin-bottom:2px;">${scopeTitle}</div>
       <div class="arena-big-num">${myRow.realized}<span> / ${displayObj}</span></div>
       <div style="color:var(--muted); font-size:13px;">${unitLabel}</div>
       <div class="arena-msg ${msg.cls}">${msg.text}</div>
       <div class="arena-proj-row">${projRowHtml}</div>
       <div class="arena-prog-wrap">
         <div class="arena-prog-bar"><div class="arena-prog-fill ${fillCls}" style="width:${Math.min(100,pctFill)}%"></div></div>
-        <div class="arena-prog-lbl"><span>0</span><span>${hasObj ? myRow.pct+'% de l\'objectif' : (isFreeAgent ? `${statusLabel} (défi libre)` : myRow.pct+'% de l\'objectif')}</span><span>${displayObj}</span></div>
+        <div class="arena-prog-lbl"><span>0</span><span style="font-size:16px; font-weight:800; color:${pctColor};">${hasObj ? myRow.pct+'% de l\'objectif' : (isFreeAgent ? `${statusLabel} (défi libre)` : myRow.pct+'% de l\'objectif')}</span><span>${displayObj}</span></div>
       </div>
       ${desiredBarHtml}
       ${isMonthScope && !isFreeAgent ? '<div class="section-sub" style="margin-top:10px;">Le total du mois se met à jour automatiquement à chaque contrat ajouté ci-dessous.</div>' : ''}
