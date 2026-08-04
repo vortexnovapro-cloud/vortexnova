@@ -860,6 +860,16 @@ function tryDeviceGateAdmin(){
           <label style="margin:14px 0 10px;">Pauses de ce jour-là</label>
           <div id="corrBreaksList"></div>
 
+          <label style="margin:18px 0 10px;">🔒 Périodes d'inactivité (délogages) ce jour-là</label>
+          <div class="section-sub" style="margin-top:-6px;">Ajoute, corrige ou supprime les délogages pour inactivité — utile en cas de faux positif, ou pour retirer une déduction injustifiée. Laisse l'heure de fin vide si le délogage est encore "en cours".</div>
+          <div id="corrLockoutList"></div>
+          <button class="add-break-btn" onclick="addCorrLockoutRow()">+ Ajouter une période d'inactivité</button>
+
+          <label style="margin:18px 0 10px;">☕ Pause libre — périodes prises ce jour-là</label>
+          <div class="section-sub" style="margin-top:-6px;">Les pauses libres que l'agent a lui-même déclarées (Démarrer/Terminer ma pause) — modifiables ici si besoin.</div>
+          <div id="corrFreeBreakList"></div>
+          <button class="add-break-btn" onclick="addCorrFreeBreakRow()">+ Ajouter une période de pause libre</button>
+
           <div class="settings-grid" style="margin-top:18px;">
             <div>
               <label>🎯 Objectif du jour (contrats)</label>
@@ -1492,6 +1502,16 @@ function tickInactivityWatcher(){
     const warnSecs = (config.inactivityWarnSeconds && config.inactivityWarnSeconds.length===3) ? config.inactivityWarnSeconds : [30,10,5];
 
     if(remainingMs <= 0){
+      if(!inactivityWarnState.five){
+        // On n'a jamais eu l'occasion de montrer le dernier avertissement — ça arrive si un gros laps de
+        // temps a été « sauté » d'un coup (PC réveillé après une mise en veille, onglet resté très
+        // longtemps en arrière-plan malgré le Web Worker). Plutôt que de déloguer sans aucun avertissement
+        // montré, on l'affiche maintenant et on accorde un sursis équivalent avant la vraie déconnexion.
+        inactivityWarnState.thirty = true; inactivityWarnState.ten = true; inactivityWarnState.five = true;
+        showInactivityWarning(warnSecs[2], 3);
+        lastActivityAt = Date.now() - (timeoutMs - warnSecs[2]*1000);
+        return;
+      }
       triggerInactivityLockout();
       return;
     }
@@ -1825,7 +1845,7 @@ function showAdminSub(sub){
     document.getElementById(btnId).classList.toggle('active', s===sub);
   });
   if(sub==='overview'){ initExploDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); }
-  if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); }
+  if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
 }
 
@@ -2310,6 +2330,46 @@ function renderCorrBreaksEditor(pairs){
   }).join('');
 }
 
+// ---- Éditeur des périodes d'inactivité (délogages) — nombre libre de lignes, ajout/suppression ----
+let corrLockoutRows = [];
+function renderCorrLockoutEditor(){
+  const container = document.getElementById('corrLockoutList');
+  if(!container) return;
+  if(corrLockoutRows.length === 0){
+    container.innerHTML = '<div class="section-sub">Aucune période d\'inactivité ce jour-là.</div>';
+    return;
+  }
+  container.innerHTML = corrLockoutRows.map((r,i)=>`
+    <div class="break-row" style="grid-template-columns:1fr 110px 110px 40px;">
+      <div style="font-size:13px;color:var(--muted);align-self:center;">Délogage ${i+1}</div>
+      <input class="corr-lock-start" type="time" value="${(r.start||'').slice(0,5)}">
+      <input class="corr-lock-end" type="time" value="${(r.end||'').slice(0,5)}" placeholder="en cours">
+      <button onclick="removeCorrLockoutRow(${i})" title="Supprimer" style="color:var(--red);">×</button>
+    </div>`).join('');
+}
+function addCorrLockoutRow(){ corrLockoutRows.push({ start:'', end:'' }); renderCorrLockoutEditor(); }
+function removeCorrLockoutRow(i){ corrLockoutRows.splice(i,1); renderCorrLockoutEditor(); }
+
+// ---- Éditeur des périodes de pause libre — même principe ----
+let corrFreeBreakRows = [];
+function renderCorrFreeBreakEditor(){
+  const container = document.getElementById('corrFreeBreakList');
+  if(!container) return;
+  if(corrFreeBreakRows.length === 0){
+    container.innerHTML = '<div class="section-sub">Aucune pause libre prise ce jour-là.</div>';
+    return;
+  }
+  container.innerHTML = corrFreeBreakRows.map((r,i)=>`
+    <div class="break-row" style="grid-template-columns:1fr 110px 110px 40px;">
+      <div style="font-size:13px;color:var(--muted);align-self:center;">Pause ${i+1}</div>
+      <input class="corr-fb-start" type="time" value="${(r.start||'').slice(0,5)}">
+      <input class="corr-fb-end" type="time" value="${(r.end||'').slice(0,5)}" placeholder="en cours">
+      <button onclick="removeCorrFreeBreakRow(${i})" title="Supprimer" style="color:var(--red);">×</button>
+    </div>`).join('');
+}
+function addCorrFreeBreakRow(){ corrFreeBreakRows.push({ start:'', end:'' }); renderCorrFreeBreakEditor(); }
+function removeCorrFreeBreakRow(i){ corrFreeBreakRows.splice(i,1); renderCorrFreeBreakEditor(); }
+
 async function loadDayCorrectionForm(){
   const agent = document.getElementById('corrAgent').value;
   const dateInput = document.getElementById('corrDate');
@@ -2319,6 +2379,8 @@ async function loadDayCorrectionForm(){
     document.getElementById('corrIn').value = '';
     document.getElementById('corrOut').value = '';
     renderCorrBreaksEditor([]);
+    corrLockoutRows = []; renderCorrLockoutEditor();
+    corrFreeBreakRows = []; renderCorrFreeBreakEditor();
     document.getElementById('corrObjectif').value = '';
     document.getElementById('corrRealise').value = '';
     document.getElementById('corrJustifiedAbsence').value = '';
@@ -2333,6 +2395,10 @@ async function loadDayCorrectionForm(){
   document.getElementById('corrOut').value = outEvt ? outEvt.time.slice(0,5) : '';
   document.getElementById('corrJustifiedAbsence').value = log.justifiedAbsence || '';
   renderCorrBreaksEditor(extractBreakPairs(log.events));
+  corrLockoutRows = extractLockouts(log.events).map(l=>({ start: l.start||'', end: l.end||'' }));
+  renderCorrLockoutEditor();
+  corrFreeBreakRows = extractFreeBreakPairs(log.events).map(p=>({ start: p.start||'', end: p.end||'' }));
+  renderCorrFreeBreakEditor();
 
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   prodBoardCache[dateStr] = board;
@@ -2378,6 +2444,28 @@ async function saveDayCorrection(){
       if(e) events.push({ type: 'break_end', time: e + ':00' });
     });
     if(outTime) events.push({ type: 'out', time: outTime + ':00' });
+
+    // Périodes d'inactivité (délogages) — durée recalculée précisément à partir des heures saisies,
+    // puisque c'est cette durée exacte (pas juste les heures) qui sert au calcul de la retenue salariale.
+    document.querySelectorAll('#corrLockoutList .break-row').forEach(row=>{
+      const s = row.querySelector('.corr-lock-start').value;
+      const e = row.querySelector('.corr-lock-end').value;
+      if(!s) return;
+      events.push({ type: 'auto_out', time: s + ':00' });
+      if(e){
+        const durationSec = Math.max(0, (toMinutes(e) - toMinutes(s)) * 60);
+        events.push({ type: 'auto_in', time: e + ':00', durationSec });
+      }
+    });
+
+    // Périodes de pause libre — mêmes horodatages que ceux que l'agent aurait déclarés lui-même.
+    document.querySelectorAll('#corrFreeBreakList .break-row').forEach(row=>{
+      const s = row.querySelector('.corr-fb-start').value;
+      const e = row.querySelector('.corr-fb-end').value;
+      if(s) events.push({ type: 'free_break_start', time: s + ':00' });
+      if(e) events.push({ type: 'free_break_end', time: e + ':00' });
+    });
+
     events.sort((a,b)=> a.time.localeCompare(b.time));
     const logToSave = { events };
     if(justifiedAbsence) logToSave.justifiedAbsence = justifiedAbsence;
@@ -5971,11 +6059,27 @@ async function renderProdAdmin(){
   }
 }
 
-setInterval(()=>{
+// Le chronomètre d'inactivité tourne dans un Web Worker plutôt qu'un simple setInterval : quand l'onglet
+// est en arrière-plan longtemps (agent sur son CRM dans un autre onglet), Chrome ralentit volontairement
+// les minuteurs de la page principale (jusqu'à une seule vérification par minute) pour économiser des
+// ressources — ça peut faire "sauter" les alertes intermédiaires (30s/10s/5s) d'un coup. Un Web Worker
+// tourne dans un fil séparé que Chrome ne ralentit pas de la même façon, donc la vérification chaque
+// seconde reste fiable même quand personne ne regarde l'onglet.
+function tickMain(){
   document.getElementById('liveClock').textContent = nowTimeStr();
   tickInactivityWatcher();
   tickFreeBreak();
-}, 1000);
+}
+try{
+  const workerCode = 'setInterval(function(){ postMessage("tick"); }, 1000);';
+  const blob = new Blob([workerCode], { type: 'application/javascript' });
+  const inactivityWorker = new Worker(URL.createObjectURL(blob));
+  inactivityWorker.onmessage = tickMain;
+}catch(e){
+  // Si les Web Workers ne sont pas disponibles pour une raison quelconque, on retombe sur l'ancienne
+  // méthode — moins fiable en arrière-plan prolongé, mais mieux que rien.
+  setInterval(tickMain, 1000);
+}
 
 loadConfig();
 </script>
