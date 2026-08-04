@@ -789,7 +789,7 @@ function tryDeviceGateAdmin(){
           <div id="exploDailyDetail" style="margin-top:24px;"></div>
         </div>
 
-        <div class="section-title" style="margin-top:0;">🔔 Statut notifications par agent</div>
+        <div class="section-title" style="margin-top:0;">🔔 Statut notifications & version par agent</div>
         <div class="section-sub">Basé sur la dernière fois que chaque agent s'est connecté. Un agent qui n'a jamais ouvert VortexNova depuis la mise à jour, ou qui n'apparaît pas ici, n'a pas encore été vérifié.</div>
         <div id="notifStatusPanel"></div>
 
@@ -1236,6 +1236,11 @@ function tryDeviceGateAdmin(){
 </main>
 
 <script>
+// Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
+// l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
+// ancienne version restée ouverte (elle n'affecte aucun calcul).
+const APP_VERSION = '2026-08-04-r1';
+
 let config = {
   agents: [],
   agentsIndep: {},
@@ -1361,6 +1366,7 @@ async function reportNotifStatus(agent, status){
   try{
     await storageSet(`notifStatus:${agent}`, JSON.stringify({
       status: status || 'unknown',
+      version: APP_VERSION,
       updatedAt: new Date().toISOString()
     }));
   }catch(e){}
@@ -3840,7 +3846,8 @@ async function renderNotifStatusPanel(){
     file_protocol: { txt: '📁 Fichier local — notif impossible (utilise le lien https)', cls: 'late' }
   };
 
-  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Statut</th><th>Dernière vérification</th></tr></thead><tbody>';
+  let html = `<div class="section-sub" style="margin-top:-6px;">Version actuellement chargée ici : <b>${APP_VERSION}</b>. Si un agent affiche une version différente (ou plus ancienne), il travaille encore avec l'ancien code — demande-lui de fermer complètement l'onglet et de rouvrir le lien (pas juste actualiser).</div>`;
+  html += '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Notifications</th><th>Version app</th><th>Dernière vérification</th></tr></thead><tbody>';
   for(const agent of config.agents){
     if(isIndependant(agent)) continue;
     let row = null;
@@ -3849,13 +3856,17 @@ async function renderNotifStatusPanel(){
       if(res && res.value) row = JSON.parse(res.value);
     }catch(e){}
     if(!row){
-      html += `<tr><td><b>${agent}</b></td><td><span class="tag absent">Jamais vérifié</span></td><td style="color:var(--muted);">—</td></tr>`;
+      html += `<tr><td><b>${agent}</b></td><td><span class="tag absent">Jamais vérifié</span></td><td style="color:var(--muted);">—</td><td style="color:var(--muted);">—</td></tr>`;
       continue;
     }
     const meta = labels[row.status] || { txt: row.status, cls: 'warn' };
+    const isOutdated = row.version && row.version !== APP_VERSION;
+    const versionHtml = row.version
+      ? `<span class="tag ${isOutdated?'late':'ok'}">${row.version}${isOutdated?' — ancienne version !':''}</span>`
+      : '<span class="tag warn">Inconnue (très ancienne version)</span>';
     const d = new Date(row.updatedAt);
     const dLabel = isNaN(d) ? '—' : d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-    html += `<tr><td><b>${agent}</b></td><td><span class="tag ${meta.cls}">${meta.txt}</span></td><td style="color:var(--muted);">${dLabel}</td></tr>`;
+    html += `<tr class="${isOutdated?'late':''}"><td><b>${agent}</b></td><td><span class="tag ${meta.cls}">${meta.txt}</span></td><td>${versionHtml}</td><td style="color:var(--muted);">${dLabel}</td></tr>`;
   }
   html += '</tbody></table></div>';
   el.innerHTML = html;
