@@ -2610,6 +2610,7 @@ async function refreshAgentButtons(){
   const last = lastEventType(log.events);
 
   let statusText = '';
+  const lunchAlreadyTaken = extractBreakPairs(log.events).some(p => p.end); // une pause déjeuner déjà bouclée aujourd'hui
   if(last === null || last === 'out'){
     if(last === 'out'){
       statusText = 'Journée terminée. À demain !';
@@ -2618,14 +2619,22 @@ async function refreshAgentButtons(){
       statusText = "Tu n'as pas encore pointé aujourd'hui.";
     }
   } else if(last === 'in' || last === 'break_end'){
-    btnBreakStart.disabled = false; btnBreakStart.classList.add('ready');
     btnOut.disabled = false; btnOut.classList.add('stop-ready');
-    statusText = last === 'in'
-      ? 'Tu es arrivé — clique "Départ pause" avant une pause, ou "Départ" en fin de journée.'
-      : 'Tu as repris le travail — nouvelle pause ou fin de journée.';
+    if(lunchAlreadyTaken){
+      // Le déjeuner ne se prend qu'une seule fois par jour — au-delà, seule la pause libre (avec décompte)
+      // reste disponible pour souffler dans la journée.
+      statusText = last === 'break_end'
+        ? 'Tu as repris le travail — le déjeuner d\'aujourd\'hui est déjà pris, utilise ta pause libre si besoin.'
+        : 'Déjeuner déjà pris aujourd\'hui — utilise ta pause libre si besoin, ou "Départ" en fin de journée.';
+    } else {
+      btnBreakStart.disabled = false; btnBreakStart.classList.add('ready');
+      statusText = last === 'in'
+        ? 'Tu es arrivé — clique "Départ déjeuner" avant ta pause de midi, ou "Départ" en fin de journée.'
+        : 'Tu as repris le travail — nouvelle pause ou fin de journée.';
+    }
   } else if(last === 'break_start'){
     btnBreakEnd.disabled = false; btnBreakEnd.classList.add('ready');
-    statusText = 'Tu es en pause — clique "Retour pause" quand tu reviens.';
+    statusText = 'Tu es en pause déjeuner — clique "Retour déjeuner" quand tu reviens.';
   }
   document.getElementById('statusLine').textContent = statusText;
 
