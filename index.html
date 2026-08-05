@@ -1482,6 +1482,23 @@ function tryDeviceGateAdmin(){
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
 const APP_VERSION = '2026-08-05-r1';
 
+// Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
+// PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
+// (date + numéro de révision), pas juste "égal / différent" — pour ne jamais confondre "en retard" et
+// "en avance" (ex: un agent qui a déjà rechargé une version plus récente que celle actuellement affichée
+// ici ne doit jamais être étiqueté comme étant sur une "ancienne version").
+function compareAppVersions(v1, v2){
+  const parse = v => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})-r(\d+)$/.exec(v || '');
+    if(!m) return null;
+    return { date: `${m[1]}${m[2]}${m[3]}`, rev: parseInt(m[4], 10) };
+  };
+  const p1 = parse(v1), p2 = parse(v2);
+  if(!p1 || !p2) return v1 === v2 ? 0 : NaN; // format inattendu : on ne peut pas comparer fiablement
+  if(p1.date !== p2.date) return p1.date < p2.date ? -1 : 1;
+  return p1.rev - p2.rev;
+}
+
 let config = {
   agents: [],
   agentsIndep: {},
@@ -4547,7 +4564,7 @@ async function renderNotifStatusPanel(){
     file_protocol: { txt: '📁 Fichier local — notif impossible (utilise le lien https)', cls: 'late' }
   };
 
-  let html = `<div class="section-sub" style="margin-top:-6px;">Version actuellement chargée ici : <b>${APP_VERSION}</b>. Si un agent affiche une version différente (ou plus ancienne), il travaille encore avec l'ancien code — demande-lui de fermer complètement l'onglet et de rouvrir le lien (pas juste actualiser).</div>`;
+  let html = `<div class="section-sub" style="margin-top:-6px;">Version actuellement chargée ici : <b>${APP_VERSION}</b>. Un agent marqué « ancienne version » travaille encore avec du vieux code — demande-lui de fermer complètement l'onglet et de rouvrir le lien (pas juste actualiser). Une version affichée comme « plus récente » n'est jamais un problème (juste cet écran-ci pas encore rafraîchi).</div>`;
   html += '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Notifications</th><th>Version app</th><th>Dernière vérification</th><th>☕ Pause totale aujourd\'hui</th></tr></thead><tbody>';
   const todayDateStr = todayStr();
   const agentsToShow = config.agents.filter(a => !isIndependant(a));
@@ -4580,9 +4597,11 @@ async function renderNotifStatusPanel(){
       return;
     }
     const meta = labels[row.status] || { txt: row.status, cls: 'warn' };
-    const isOutdated = row.version && row.version !== APP_VERSION;
+    const cmp = row.version ? compareAppVersions(row.version, APP_VERSION) : null;
+    const isOutdated = cmp < 0; // strictement plus ancienne que la version actuellement affichée ici
+    const isNewer = cmp > 0; // a déjà une version plus récente (ex: rechargée avant que cet écran-ci ne soit lui-même rafraîchi) — jamais une alerte
     const versionHtml = row.version
-      ? `<span class="tag ${isOutdated?'late':'ok'}">${row.version}${isOutdated?' — ancienne version !':''}</span>`
+      ? `<span class="tag ${isOutdated?'late':(isNewer?'ok':'ok')}">${row.version}${isOutdated?' — ancienne version !':(isNewer?' — plus récente que cet écran':'')}</span>`
       : '<span class="tag warn">Inconnue (très ancienne version)</span>';
     const d = new Date(row.updatedAt);
     const dLabel = isNaN(d) ? '—' : d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
