@@ -1488,7 +1488,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-05-r9';
+const APP_VERSION = '2026-08-05-r10';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4909,10 +4909,10 @@ async function renderBossRevenue(){
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
-  const [todayTotal, monthTotal, payroll] = await Promise.all([
+  const [todayTotal, monthTotal, expense] = await Promise.all([
     getTotalContractsToday(),
     getTotalContractsMonth(year, month),
-    computeTotalPayrollMonth(year, month)
+    computeRealTimeExpenseMonth(year, month)
   ]);
   const todayCalc = computeBossRevenue(todayTotal);
   const monthCalc = computeBossRevenue(monthTotal);
@@ -4928,17 +4928,16 @@ async function renderBossRevenue(){
       </div>
     </div>`;
 
-  // Dépenses réelles, en direct : ce que l'équipe a déjà coûté depuis le 1er du mois jusqu'à maintenant
-  // — comme si tout le monde partait à l'instant. Recalculé avec exactement la même logique que la paie
-  // réelle (estimateSalaryMonthReal / monthlyDeductions) : au prorata des jours travaillés du mois,
-  // contrats réalisés, rétractations, retards, absences et primes déjà pris en compte — jamais projeté
-  // sur des jours pas encore arrivés.
+  // Dépenses réelles, en direct : ce qui est VRAIMENT dû à date, pas une projection de fin de mois —
+  // salaires fixes, primes fixes ET charges (loyers, lignes, internet, syndic...) comptés au prorata des
+  // jours ouvrés déjà écoulés ce mois-ci (jamais en entier avant que le mois ne soit fini). Contrats,
+  // primes d'objectif, primes manuelles et retenues restent inchangés : déjà "réels" par nature.
   const expenseCard = `
     <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.35); flex:1; min-width:230px;">
       <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">💸 Dépenses (temps réel)</div>
-      <div style="font-size:28px; font-weight:900; color:var(--red);">${Math.round(payroll.grandTotal).toLocaleString('fr-FR')} DH</div>
+      <div style="font-size:28px; font-weight:900; color:var(--red);">${Math.round(expense.grandTotal).toLocaleString('fr-FR')} DH</div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
-        Ce que l'équipe a réellement coûté depuis le 1er du mois jusqu'à maintenant, comme si tout le monde partait à l'instant : contrats réalisés, rétractations, retards, absences et primes déjà comptés, au prorata des jours travaillés.
+        Ce qui est réellement dû depuis le 1er du mois jusqu'à maintenant (${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés écoulés) : salaires et charges fixes au prorata des jours, contrats, retards, absences et primes déjà comptés.
       </div>
       <button onclick="
         const d=document.getElementById('expenseDetailPanel');
@@ -4950,12 +4949,13 @@ async function renderBossRevenue(){
 
   // Détail par personne, trié du plus coûteux au moins coûteux (alphabétique si égalité, même convention
   // que partout ailleurs dans l'appli) — replié par défaut, pour garder la vue d'ensemble propre.
-  const sortedDetails = [...(payroll.details||[])].sort((a,b)=> b.total - a.total || a.agent.localeCompare(b.agent));
+  const sortedDetails = [...(expense.details||[])].sort((a,b)=> b.total - a.total || a.agent.localeCompare(b.agent));
   const detailRows = sortedDetails.map(d=>{
     const catTag = d.isIndep ? ' <span class="tag independant">Indé</span>' : (d.noObjectif ? ` <span class="tag warn">${getNoObjectifLabelGeneric()}</span>` : '');
     return `<tr>
       <td><b>${d.agent}</b>${catTag}</td>
       <td>${d.contractsRealized}</td>
+      <td title="Fixe plein : ${d.fixedFull.toLocaleString('fr-FR')} DH">${d.fixedProrated.toLocaleString('fr-FR')} DH</td>
       <td>${d.deductionsTotal>0 ? `<span style="color:var(--red);">-${d.deductionsTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
       <td>${d.manualPrimesTotal>0 ? `<span style="color:var(--gold);">+${d.manualPrimesTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.supervisorBonus>0 ? `<span style="color:var(--gold);">+${d.supervisorBonus.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
@@ -4963,13 +4963,22 @@ async function renderBossRevenue(){
     </tr>`;
   }).join('');
 
+  const chargesFullAmt = totalMonthlyCharges();
+  const chargesRow = chargesFullAmt > 0 ? `<tr style="border-top:1px solid var(--border);">
+      <td><b>🏢 Charges (loyers, lignes, internet...)</b></td>
+      <td>—</td>
+      <td title="Charges pleines du mois : ${chargesFullAmt.toLocaleString('fr-FR')} DH">${expense.chargesProrated.toLocaleString('fr-FR')} DH</td>
+      <td>—</td><td>—</td><td>—</td>
+      <td><b style="color:var(--red);">${expense.chargesProrated.toLocaleString('fr-FR')} DH</b></td>
+    </tr>` : '';
+
   el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card("Aujourd'hui", todayCalc)}${expenseCard}${card('Ce mois', monthCalc)}</div>
     <div id="expenseDetailPanel" style="display:none; margin-top:14px; padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.25);">
-      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Ce que chacun a réellement coûté depuis le 1er du mois jusqu'à maintenant.</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Ce que chacun a réellement coûté depuis le 1er du mois jusqu'à maintenant — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés écoulés. Modifiable dans Réglages → Charges.</div>
       <div style="overflow-x:auto;">
         <table class="salary-table">
-          <thead><tr><th>Agent</th><th>Contrats réalisés</th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
-          <tbody>${detailRows}</tbody>
+          <thead><tr><th>Agent</th><th>Contrats réalisés</th><th>Fixe (prorata)</th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
+          <tbody>${detailRows}${chargesRow}</tbody>
         </table>
       </div>
     </div>`;
@@ -4981,7 +4990,6 @@ async function renderBossRevenue(){
 async function computeTotalPayrollMonth(year, month){
   const supervisionBonus = await supervisorMonthlyBonus(year, month);
   let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
-  const details = [];
   await Promise.all(config.agents.map(async agent=>{
     const pay = getAgentPay(agent);
     const monthStats = await monthlyStats(agent, year, month);
@@ -4992,18 +5000,81 @@ async function computeTotalPayrollMonth(year, month){
     if(pay.isIndep) totalIndep += total;
     else if(pay.noObjectif) totalBackoffice += total;
     else totalTeam += total;
-    // Détail par agent — réutilisé pour l'affichage "Voir le détail" des dépenses en temps réel dans
-    // Admin, sans refaire tout le calcul une deuxième fois.
+  }));
+  return { totalTeam, totalIndep, totalBackoffice, grandTotal: totalTeam + totalBackoffice + totalIndep };
+}
+
+// ============================================================
+// 💸 DÉPENSES RÉELLES EN TEMPS RÉEL — combien on doit VRAIMENT à date, pas une projection de fin de mois.
+// ============================================================
+// Différent de computeTotalPayrollMonth ci-dessus (qui sert de PROJECTION pour la paie de fin de mois —
+// salaire fixe et primes fixes comptés en entier dès le 1er, cohérent avec ce qui sera réellement payé
+// une fois le mois terminé). Ici la question est différente : "si on fermait la boutique maintenant,
+// combien doit-on à chacun aujourd'hui ?" Le salaire fixe, les primes fixes ET les charges (loyers,
+// lignes, internet, syndic, charges perso) sont donc prorata des jours ouvrés déjà écoulés dans le mois
+// — jamais comptés en entier avant que le mois ne soit terminé. La commission au contrat, les primes
+// d'objectif, les primes manuelles et les retenues restent inchangées : elles sont déjà "réelles" par
+// nature (basées sur des contrats ou des jours qui ont effectivement eu lieu).
+async function computeRealTimeExpenseMonth(year, month){
+  const now = nowMA();
+  const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
+  const totalWorkingDays = workingDaysInMonth(year, month);
+  const elapsedWorkingDays = isCurrentMonth ? workingDaysElapsedInMonth() : totalWorkingDays;
+  const prorata = totalWorkingDays > 0 ? Math.min(1, elapsedWorkingDays / totalWorkingDays) : 0;
+
+  const supervisionBonus = await supervisorMonthlyBonus(year, month);
+  let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
+  const details = [];
+
+  await Promise.all(config.agents.map(async agent=>{
+    const pay = getAgentPay(agent);
+    const monthStats = await monthlyStats(agent, year, month);
+    const assiduiteAcquise = monthStats.retardsCumules < 3;
+    const ded = await monthlyDeductions(agent, year, month);
+    const fixedFull = (pay.baseSalary||0) + (pay.primeFixeMensuelle||0) + (assiduiteAcquise ? (pay.primeAssiduite||0) : 0);
+    const fixedProrated = fixedFull * prorata;
+
+    let contractPart = 0, objectifPrimes = 0, realizedCount = 0;
+    if(pay.isIndep){
+      realizedCount = await monthlyRealizedContracts(agent, year, month);
+      contractPart = realizedCount * (pay.perContract||0);
+    } else {
+      const st = await monthlyObjectifStatus(agent, year, month);
+      realizedCount = st.realized;
+      contractPart = st.realized * (pay.perContract||0);
+      objectifPrimes = (st.primeObjectif||0) + (st.primeExtra||0);
+    }
+    const manualPrimes = await getManualPrimes(agent, year, month);
+    const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, realizedCount);
+    const supervisorBonusAmt = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
+
+    const total = fixedProrated + contractPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt - (ded.total||0);
+    const totalRounded = Math.round(total);
+
+    if(pay.isIndep) totalIndep += totalRounded;
+    else if(pay.noObjectif) totalBackoffice += totalRounded;
+    else totalTeam += totalRounded;
+
     details.push({
       agent, isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif,
-      total: Math.round(total),
-      contractsRealized: res ? (res.status.realized || 0) : 0,
-      deductionsTotal: res ? (res.deductions.total || 0) : 0,
-      manualPrimesTotal: res ? (res.manualPrimesTotal || 0) : 0,
-      supervisorBonus: Math.round(supervisorBonus)
+      total: totalRounded,
+      contractsRealized: realizedCount,
+      fixedProrated: Math.round(fixedProrated),
+      fixedFull: Math.round(fixedFull),
+      deductionsTotal: ded.total || 0,
+      manualPrimesTotal: manualPrimesTotal || 0,
+      supervisorBonus: Math.round(supervisorBonusAmt)
     });
   }));
-  return { totalTeam, totalIndep, totalBackoffice, grandTotal: totalTeam + totalBackoffice + totalIndep, details };
+
+  const chargesFull = totalMonthlyCharges();
+  const chargesProrated = Math.round(chargesFull * prorata);
+
+  return {
+    totalTeam, totalIndep, totalBackoffice, chargesProrated,
+    grandTotal: totalTeam + totalBackoffice + totalIndep + chargesProrated,
+    details, elapsedWorkingDays, totalWorkingDays
+  };
 }
 
 async function renderPayrollSummary(){
