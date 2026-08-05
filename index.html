@@ -744,7 +744,7 @@ function tryDeviceGateAdmin(){
 
         <div id="cashObjectifsRecap" style="margin:0 0 24px;"></div>
 
-        <div class="section-title" style="margin-top:0;">💵 RÉEL — ce que tu as VRAIMENT gagné</div>
+        <div class="section-title" style="margin-top:0;">💵 Détail — jour, semaine, repères</div>
         <div class="section-sub">Basé sur tes contrats réellement signés (bouton +1 contrat dans l'Arena).</div>
         <div class="cash-period-grid" id="cashRealGrid"></div>
 
@@ -923,6 +923,20 @@ function tryDeviceGateAdmin(){
 
           <div class="section-title" style="margin-top:0;">💰 Mon chiffre d'affaires</div>
           <div class="section-sub">Basé sur les contrats signés par toute l'équipe (agents + indépendants), ta commission et ton taux de retour réglés dans Réglages.</div>
+          <div class="admin-toolbar" style="margin-bottom:12px;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+              <div>
+                <label style="margin-bottom:4px;">📅 Période (gains & dépenses) — depuis</label>
+                <input type="date" id="expenseDateFrom" onchange="renderBossRevenue()">
+              </div>
+              <div>
+                <label style="margin-bottom:4px;">jusqu'à</label>
+                <input type="date" id="expenseDateTo" onchange="renderBossRevenue()">
+              </div>
+              <button type="button" onclick="setExpenseDateToday()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12px; cursor:pointer;">📅 Aujourd'hui</button>
+              <button type="button" onclick="resetExpenseDateRange()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--muted); font-weight:700; font-size:12px; cursor:pointer;">↺ Depuis le 1er du mois à aujourd'hui</button>
+            </div>
+          </div>
           <div id="bossRevenuePanel"></div>
 
           <div class="section-title">💼 Masse salariale prévisionnelle du mois</div>
@@ -1488,7 +1502,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-05-r10';
+const APP_VERSION = '2026-08-05-r13';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3974,13 +3988,18 @@ async function monthlyStats(agent, year, month){
     prodBoardCache[dateStr] = board;
     return { dateStr, log, infr, board };
   }));
-  let retards = 0, pauseOver = 0, absences = 0, phoneYoutube = 0, objectif = 0;
+  let retards = 0, pauseOver = 0, absences = 0, phoneYoutube = 0, objectif = 0, justifiedAbsenceCount = 0;
   dayData.forEach(({dateStr, log, infr, board})=>{
     // Retard/pause/absence ne sont évalués QUE les jours ouvrés (règlement : horaires lundi-vendredi,
     // jours fériés français exclus) — un week-end ou un jour férié sans pointage n'est jamais une
     // absence, personne n'y est censé travailler. Les infractions manuelles (téléphone, objectif), elles,
     // s'appliquent quel que soit le jour : un admin peut les saisir même un jour normalement non travaillé.
-    if(!log.justifiedAbsence && isWorkingDay(dateStr)){
+    if(log.justifiedAbsence && isWorkingDay(dateStr)){
+      // Purement informatif : une absence justifiée ne compte JAMAIS dans retardsCumules/l'escalade
+      // (règlement), mais l'agent doit quand même voir qu'elle a eu lieu et ce qu'elle lui a coûté —
+      // sinon le résumé du haut ("0 retard/absence") contredit le détail jour par jour plus bas.
+      justifiedAbsenceCount++;
+    } else if(!log.justifiedAbsence && isWorkingDay(dateStr)){
       if(log.events.length>0){
         const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
         if(ev.lateMinutes > 0) retards++;
@@ -4000,7 +4019,7 @@ async function monthlyStats(agent, year, month){
   });
   const retardsCumules = retards + pauseOver + absences;
   const total = retards + pauseOver + absences + phoneYoutube + objectif;
-  return { agent, retards, pauseOver, absences, retardsCumules, phoneYoutube, objectif, total };
+  return { agent, retards, pauseOver, absences, justifiedAbsenceCount, retardsCumules, phoneYoutube, objectif, total };
 }
 
 let _lastMonthlyStats = [];
@@ -4896,6 +4915,39 @@ function computeBossRevenue(totalContracts){
   return { totalContracts, effectiveContracts, base, bonus, total: base + bonus };
 }
 
+// Par défaut, la période "gains & dépenses temps réel" est AUJOURD'HUI seul (gagné aujourd'hui / dépensé
+// aujourd'hui) — modifiable librement par l'admin : bouton "📅 Aujourd'hui" pour revenir à ce défaut, ou
+// "↺ Depuis le 1er du mois à aujourd'hui" pour voir le cumul du mois en cours, ou dates libres.
+function setExpenseDateToday(){
+  const fromEl = document.getElementById('expenseDateFrom');
+  const toEl = document.getElementById('expenseDateTo');
+  if(fromEl) fromEl.value = todayStr();
+  if(toEl) toEl.value = todayStr();
+  renderBossRevenue();
+}
+function resetExpenseDateRange(){
+  const now = nowMA();
+  const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const fromEl = document.getElementById('expenseDateFrom');
+  const toEl = document.getElementById('expenseDateTo');
+  if(fromEl) fromEl.value = firstOfMonth;
+  if(toEl) toEl.value = todayStr();
+  renderBossRevenue();
+}
+function initExpenseDateDefaults(){
+  const fromEl = document.getElementById('expenseDateFrom');
+  const toEl = document.getElementById('expenseDateTo');
+  if(!fromEl || !toEl) return;
+  if(!fromEl.value) fromEl.value = todayStr();
+  if(!toEl.value) toEl.value = todayStr();
+}
+// Total des contrats bruts (toute l'équipe + indépendants) sur une période libre — même logique que
+// getTotalContractsToday/getTotalContractsMonth mais pour n'importe quelle plage de dates choisie.
+async function getTotalContractsForDateRange(fromDateStr, toDateStr){
+  const totals = await Promise.all(config.agents.map(agent=> realizedContractsForDateRange(agent, fromDateStr, toDateStr)));
+  return totals.reduce((s,x)=> s+x, 0);
+}
+
 async function renderBossRevenue(){
   const el = document.getElementById('bossRevenuePanel');
   if(!el) return;
@@ -4905,39 +4957,48 @@ async function renderBossRevenue(){
     el.innerHTML = '<div class="empty">Règle ta commission par contrat dans Réglages → 💰 Ton chiffre d\'affaires pour activer ce calcul.</div>';
     return;
   }
-  const now = nowMA();
-  const monthVal = document.getElementById('monthSelect')?.value;
-  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+  initExpenseDateDefaults();
+  let expenseFrom = document.getElementById('expenseDateFrom')?.value || todayStr();
+  let expenseTo = document.getElementById('expenseDateTo')?.value || todayStr();
+  if(expenseFrom > expenseTo){ [expenseFrom, expenseTo] = [expenseTo, expenseFrom]; } // sécurité si l'admin inverse les deux dates par erreur
 
-  const [todayTotal, monthTotal, expense] = await Promise.all([
-    getTotalContractsToday(),
-    getTotalContractsMonth(year, month),
-    computeRealTimeExpenseMonth(year, month)
+  const [periodTotal, expense] = await Promise.all([
+    getTotalContractsForDateRange(expenseFrom, expenseTo),
+    computeRealTimeExpenseForRange(expenseFrom, expenseTo)
   ]);
-  const todayCalc = computeBossRevenue(todayTotal);
-  const monthCalc = computeBossRevenue(monthTotal);
+  const periodCalc = computeBossRevenue(periodTotal);
+  const isSingleDay = expenseFrom === expenseTo;
+  const isTodayOnly = isSingleDay && expenseFrom === todayStr();
+  const periodLabel = isTodayOnly ? "Aujourd'hui"
+    : isSingleDay ? expenseFrom.split('-').reverse().join('/')
+    : `Du ${expenseFrom.split('-').reverse().join('/')} au ${expenseTo.split('-').reverse().join('/')}`;
 
-  const card = (label, calc)=> `
-    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(255,215,0,0.35); flex:1; min-width:230px;">
-      <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">${label}</div>
-      <div style="font-size:28px; font-weight:900; color:var(--gold);">${Math.round(calc.total).toLocaleString('fr-FR')} DH</div>
-      <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
-        ${calc.totalContracts} contrats bruts → ${Math.round(calc.effectiveContracts*10)/10} effectifs (-${config.bossReturnRatePct||0}% retour estimé)<br>
-        Commission de base : <b style="color:var(--text);">${Math.round(calc.base).toLocaleString('fr-FR')} DH</b>
-        ${config.bossBonusPct>0 ? `<br>Bonus (+${config.bossBonusPct}%) : <b style="color:var(--green);">+${Math.round(calc.bonus).toLocaleString('fr-FR')} DH</b>` : ''}
+  const card = (label, calc)=> {
+    const effectiveRate = calc.totalContracts>0 ? Math.round((calc.total/calc.totalContracts)*10)/10 : 0;
+    return `
+    <div style="padding:18px; border-radius:14px; background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid rgba(255,215,0,0.35); box-shadow:0 8px 22px rgba(0,0,0,0.3); flex:1; min-width:230px;">
+      <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-bottom:6px;">📈 ${label}</div>
+      <div style="font-size:30px; font-weight:900; color:var(--gold);">${Math.round(calc.total).toLocaleString('fr-FR')} DH</div>
+      <div class="cash-breakdown" style="margin-top:12px;">
+        <div><span>Contrats bruts</span><b>${calc.totalContracts}</b></div>
+        <div><span>Effectifs (-${config.bossReturnRatePct||0}% retour estimé)</span><b>${Math.round(calc.effectiveContracts*10)/10}</b></div>
+        <div><span>Commission de base</span><b>${Math.round(calc.base).toLocaleString('fr-FR')} DH</b></div>
+        ${config.bossBonusPct>0 ? `<div class="hit"><span>Bonus (+${config.bossBonusPct}%)</span><b>+${Math.round(calc.bonus).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${calc.totalContracts>0 ? `<div title="Ton gain total ÷ le nombre de contrats bruts signés — le rendement moyen réel par contrat, une fois le taux de retour et le bonus pris en compte."><span>Taux effectif / contrat brut</span><b>${effectiveRate.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
     </div>`;
+  };
 
   // Dépenses réelles, en direct : ce qui est VRAIMENT dû à date, pas une projection de fin de mois —
   // salaires fixes, primes fixes ET charges (loyers, lignes, internet, syndic...) comptés au prorata des
   // jours ouvrés déjà écoulés ce mois-ci (jamais en entier avant que le mois ne soit fini). Contrats,
   // primes d'objectif, primes manuelles et retenues restent inchangés : déjà "réels" par nature.
   const expenseCard = `
-    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.35); flex:1; min-width:230px;">
-      <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">💸 Dépenses (temps réel)</div>
+    <div style="padding:18px; border-radius:14px; background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid rgba(229,72,77,0.35); box-shadow:0 8px 22px rgba(0,0,0,0.3); flex:1; min-width:230px;">
+      <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-bottom:6px;">💸 Dépenses (temps réel)</div>
       <div style="font-size:28px; font-weight:900; color:var(--red);">${Math.round(expense.grandTotal).toLocaleString('fr-FR')} DH</div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
-        Ce qui est réellement dû depuis le 1er du mois jusqu'à maintenant (${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés écoulés) : salaires et charges fixes au prorata des jours, contrats, retards, absences et primes déjà comptés.
+        Ce qui est réellement dû du <b style="color:var(--text);">${expense.fromDateStr.split('-').reverse().join('/')}</b> au <b style="color:var(--text);">${expense.toDateStr.split('-').reverse().join('/')}</b> (${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés du mois) : salaires et charges fixes au prorata des jours, contrats, retards, absences et primes déjà comptés.
       </div>
       <button onclick="
         const d=document.getElementById('expenseDetailPanel');
@@ -4972,9 +5033,9 @@ async function renderBossRevenue(){
       <td><b style="color:var(--red);">${expense.chargesProrated.toLocaleString('fr-FR')} DH</b></td>
     </tr>` : '';
 
-  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card("Aujourd'hui", todayCalc)}${expenseCard}${card('Ce mois', monthCalc)}</div>
+  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${expenseCard}</div>
     <div id="expenseDetailPanel" style="display:none; margin-top:14px; padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.25);">
-      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Ce que chacun a réellement coûté depuis le 1er du mois jusqu'à maintenant — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés écoulés. Modifiable dans Réglages → Charges.</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.</div>
       <div style="overflow-x:auto;">
         <table class="salary-table">
           <thead><tr><th>Agent</th><th>Contrats réalisés</th><th>Fixe (prorata)</th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
@@ -5005,67 +5066,108 @@ async function computeTotalPayrollMonth(year, month){
 }
 
 // ============================================================
-// 💸 DÉPENSES RÉELLES EN TEMPS RÉEL — combien on doit VRAIMENT à date, pas une projection de fin de mois.
+// 💸 DÉPENSES / SALAIRE RÉELS EN TEMPS RÉEL — combien on doit VRAIMENT à date, pas une projection de fin
+// de mois. Utilisé à la fois par Admin (💸 Dépenses temps réel, tous les agents) ET par l'agent lui-même
+// dans Mon argent (💰 Ton salaire réel, maintenant) — un seul calcul, jamais deux versions différentes.
 // ============================================================
-// Différent de computeTotalPayrollMonth ci-dessus (qui sert de PROJECTION pour la paie de fin de mois —
-// salaire fixe et primes fixes comptés en entier dès le 1er, cohérent avec ce qui sera réellement payé
-// une fois le mois terminé). Ici la question est différente : "si on fermait la boutique maintenant,
-// combien doit-on à chacun aujourd'hui ?" Le salaire fixe, les primes fixes ET les charges (loyers,
-// lignes, internet, syndic, charges perso) sont donc prorata des jours ouvrés déjà écoulés dans le mois
-// — jamais comptés en entier avant que le mois ne soit terminé. La commission au contrat, les primes
-// d'objectif, les primes manuelles et les retenues restent inchangées : elles sont déjà "réelles" par
-// nature (basées sur des contrats ou des jours qui ont effectivement eu lieu).
-async function computeRealTimeExpenseMonth(year, month){
-  const now = nowMA();
-  const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
-  const totalWorkingDays = workingDaysInMonth(year, month);
-  const elapsedWorkingDays = isCurrentMonth ? workingDaysElapsedInMonth() : totalWorkingDays;
-  const prorata = totalWorkingDays > 0 ? Math.min(1, elapsedWorkingDays / totalWorkingDays) : 0;
-
-  const supervisionBonus = await supervisorMonthlyBonus(year, month);
-  let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
-  const details = [];
-
-  await Promise.all(config.agents.map(async agent=>{
-    const pay = getAgentPay(agent);
-    const monthStats = await monthlyStats(agent, year, month);
-    const assiduiteAcquise = monthStats.retardsCumules < 3;
-    const ded = await monthlyDeductions(agent, year, month);
-    const fixedFull = (pay.baseSalary||0) + (pay.primeFixeMensuelle||0) + (assiduiteAcquise ? (pay.primeAssiduite||0) : 0);
-    const fixedProrated = fixedFull * prorata;
-
-    let contractPart = 0, objectifPrimes = 0, realizedCount = 0;
-    if(pay.isIndep){
-      realizedCount = await monthlyRealizedContracts(agent, year, month);
-      contractPart = realizedCount * (pay.perContract||0);
-    } else {
-      const st = await monthlyObjectifStatus(agent, year, month);
-      realizedCount = st.realized;
-      contractPart = st.realized * (pay.perContract||0);
-      objectifPrimes = (st.primeObjectif||0) + (st.primeExtra||0);
-    }
-    const manualPrimes = await getManualPrimes(agent, year, month);
-    const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, realizedCount);
-    const supervisorBonusAmt = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
-
-    const total = fixedProrated + contractPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt - (ded.total||0);
-    const totalRounded = Math.round(total);
-
-    if(pay.isIndep) totalIndep += totalRounded;
-    else if(pay.noObjectif) totalBackoffice += totalRounded;
-    else totalTeam += totalRounded;
-
-    details.push({
-      agent, isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif,
-      total: totalRounded,
-      contractsRealized: realizedCount,
-      fixedProrated: Math.round(fixedProrated),
-      fixedFull: Math.round(fixedFull),
-      deductionsTotal: ded.total || 0,
-      manualPrimesTotal: manualPrimesTotal || 0,
-      supervisorBonus: Math.round(supervisorBonusAmt)
-    });
+// Différent de computeTotalPayrollMonth / estimateSalaryMonthReal (qui servent de PROJECTION pour la
+// paie de fin de mois — salaire fixe et primes fixes comptés en entier dès le 1er, cohérent avec ce qui
+// sera réellement payé une fois le mois terminé, et utilisés tels quels dans Réel du Cash / classements /
+// bilan). Ici la question est différente : "si on s'arrêtait maintenant (ou à la date choisie), combien
+// est VRAIMENT dû à date ?" Le salaire fixe et les charges sont donc comptés au prorata des jours ouvrés
+// déjà écoulés dans la fenêtre choisie — jamais en entier avant la fin du mois. La commission au contrat
+// et les retenues sont recalculées sur cette même fenêtre (déjà "réelles" par nature). Les primes
+// d'objectif/manuelles restent, elles, un constat du mois entier jusqu'à aujourd'hui (ce sont des paliers
+// mensuels, pas des montants qui s'accumulent jour après jour comme le fixe).
+function workingDaysInDateRange(fromDateStr, toDateStr){
+  let cur = new Date(fromDateStr + 'T00:00:00');
+  const end = new Date(toDateStr + 'T00:00:00');
+  let count = 0, guard = 0;
+  while(cur <= end && guard < 370){
+    if(isWorkingDay(todayStr(cur))) count++;
+    cur.setDate(cur.getDate()+1);
+    guard++;
+  }
+  return count;
+}
+async function realizedContractsForDateRange(agent, fromDateStr, toDateStr){
+  const dateStrs = [];
+  let cur = new Date(fromDateStr + 'T00:00:00');
+  const end = new Date(toDateStr + 'T00:00:00');
+  let guard = 0;
+  while(cur <= end && guard < 370){
+    dateStrs.push(todayStr(cur));
+    cur.setDate(cur.getDate()+1);
+    guard++;
+  }
+  const boards = await Promise.all(dateStrs.map(async dateStr=>{
+    if(prodBoardCache[dateStr]) return prodBoardCache[dateStr];
+    const board = await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = board;
+    return board;
   }));
+  let total = 0;
+  boards.forEach(board=>{
+    const p = (board.agents && board.agents[agent]) || null;
+    if(p) total += (p.realized || 0);
+  });
+  return total;
+}
+async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange){
+  const pay = getAgentPay(agent);
+  const monthStats = await monthlyStats(agent, year, month);
+  const assiduiteAcquise = monthStats.retardsCumules < 3;
+  const [ded, realizedCount, supervisionBonus] = await Promise.all([
+    monthlyDeductions(agent, year, month, dateRange),
+    realizedContractsForDateRange(agent, dateRange.from, dateRange.to),
+    supervisorMonthlyBonus(year, month)
+  ]);
+  const fixedFull = (pay.baseSalary||0) + (pay.primeFixeMensuelle||0) + (assiduiteAcquise ? (pay.primeAssiduite||0) : 0);
+  const fixedProrated = fixedFull * prorata;
+  const contractPart = realizedCount * (pay.perContract||0);
+
+  let objectifPrimes = 0;
+  if(!pay.isIndep){
+    const stFull = await monthlyObjectifStatus(agent, year, month);
+    objectifPrimes = (stFull.primeObjectif||0) + (stFull.primeExtra||0);
+  }
+  const manualPrimes = await getManualPrimes(agent, year, month);
+  const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, realizedCount);
+  const supervisorBonusAmt = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
+
+  const total = fixedProrated + contractPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt - (ded.total||0);
+  return {
+    agent, isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif,
+    total: Math.round(total),
+    fixedProrated: Math.round(fixedProrated), fixedFull: Math.round(fixedFull),
+    contractPart: Math.round(contractPart), contractsRealized: realizedCount,
+    objectifPrimes: Math.round(objectifPrimes),
+    deductionsTotal: ded.total || 0,
+    manualPrimesTotal: manualPrimesTotal || 0,
+    supervisorBonus: Math.round(supervisorBonusAmt),
+    assiduiteAcquise
+  };
+}
+async function computeRealTimeExpenseForRange(fromDateStr, toDateStr){
+  // Sécurité : jamais de jour futur, même si l'admin choisit une date "jusqu'à" dans le futur — sinon
+  // des jours pas encore arrivés seraient comptés comme des absences (voir monthlyDeductions).
+  const safeToDateStr = toDateStr > todayStr() ? todayStr() : toDateStr;
+  const [year, month] = safeToDateStr.split('-').slice(0,2).map(Number);
+  toDateStr = safeToDateStr;
+  const totalWorkingDays = workingDaysInMonth(year, month);
+  const elapsedWorkingDays = workingDaysInDateRange(fromDateStr, toDateStr);
+  const prorata = totalWorkingDays > 0 ? Math.min(1, elapsedWorkingDays / totalWorkingDays) : 0;
+  const dateRange = { from: fromDateStr, to: toDateStr };
+
+  let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
+  const details = await Promise.all(config.agents.map(agent=>
+    computeAgentRealTimeSalary(agent, year, month, prorata, dateRange)
+  ));
+  details.forEach(d=>{
+    if(d.isIndep) totalIndep += d.total;
+    else if(d.noObjectif) totalBackoffice += d.total;
+    else totalTeam += d.total;
+  });
 
   const chargesFull = totalMonthlyCharges();
   const chargesProrated = Math.round(chargesFull * prorata);
@@ -5073,7 +5175,7 @@ async function computeRealTimeExpenseMonth(year, month){
   return {
     totalTeam, totalIndep, totalBackoffice, chargesProrated,
     grandTotal: totalTeam + totalBackoffice + totalIndep + chargesProrated,
-    details, elapsedWorkingDays, totalWorkingDays
+    details, elapsedWorkingDays, totalWorkingDays, fromDateStr, toDateStr
   };
 }
 
@@ -5885,7 +5987,7 @@ async function monthlyObjectifStatus(agent, year, month){
   return { agent, objectif, realized, atteint, extraCount, primeObjectif, primeExtra, pct, remaining: Math.max(0, objectif - realized), isIndep: false };
 }
 
-async function monthlyDeductions(agent, year, month){
+async function monthlyDeductions(agent, year, month, dateRangeOverride){
   const pay = getAgentPay(agent);
   const isIndep = isIndependant(agent);
   const daysMonth = workingDaysInMonth(year, month);
@@ -5894,15 +5996,29 @@ async function monthlyDeductions(agent, year, month){
   const minuteRate = dailyFixedQuote / workMinutes;
   const halfHourDeduction = minuteRate * 30;
 
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const todayDateStr = todayStr();
-  const dateStrs = [];
-  // Idem : jamais de jour futur, sinon chaque jour pas encore arrivé serait compté comme une absence
-  // et sa retenue appliquée par avance — ce qui gonflerait artificiellement la perte du mois en cours.
-  for(let d=1; d<=daysInMonth; d++){
-    const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    if(ds > todayDateStr) break;
-    dateStrs.push(ds);
+  let dateStrs = [];
+  if(dateRangeOverride && dateRangeOverride.from && dateRangeOverride.to){
+    // Fenêtre explicite (ex: carte "Dépenses temps réel" avec dates choisies par l'admin) — le prorata du
+    // fixe reste calculé sur le mois entier (daysMonth ci-dessus), seule la fenêtre de jours à examiner
+    // pour les retenues (retard/absence/infractions) change.
+    let cur = new Date(dateRangeOverride.from + 'T00:00:00');
+    const end = new Date(dateRangeOverride.to + 'T00:00:00');
+    let guard = 0;
+    while(cur <= end && guard < 370){
+      dateStrs.push(todayStr(cur));
+      cur.setDate(cur.getDate()+1);
+      guard++;
+    }
+  } else {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const todayDateStr = todayStr();
+    // Idem : jamais de jour futur, sinon chaque jour pas encore arrivé serait compté comme une absence
+    // et sa retenue appliquée par avance — ce qui gonflerait artificiellement la perte du mois en cours.
+    for(let d=1; d<=daysInMonth; d++){
+      const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      if(ds > todayDateStr) break;
+      dateStrs.push(ds);
+    }
   }
 
   // Les indépendants ne pointent pas : pas de retenue liée au pointage ou à un objectif pour eux,
@@ -6109,7 +6225,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
         <div class="raa-hero-item">
           <div class="raa-hero-num" style="color:${captionColor};">${count}</div>
           <div class="raa-hero-lbl">retard${count>1?'s':''}/absence${count>1?'s':''}</div>
-          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''} · ${stats.absences} absence${stats.absences>1?'s':''}</div>
+          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''} · ${stats.absences} absence${stats.absences>1?'s':''}${stats.justifiedAbsenceCount>0 ? ` · ${stats.justifiedAbsenceCount} absence${stats.justifiedAbsenceCount>1?'s':''} justifiée${stats.justifiedAbsenceCount>1?'s':''} (hors compteur)` : ''}</div>
         </div>
         <div class="raa-hero-sep"></div>
         <div class="raa-hero-item">
@@ -7200,16 +7316,25 @@ async function renderCash(){
   const monthStats = await monthlyStats(agent, now.getFullYear(), now.getMonth()+1);
   const assiduiteAcquise = monthStats.retardsCumules < 3;
   const monthRes = await estimateSalaryMonthReal(agent, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
-  // Total réel incluant la prime de supervision — c'est CE total (pas monthRes.total seul) qui doit
-  // apparaître partout où on affiche "le vrai salaire" de l'agent : hero, grille détaillée ET classement.
-  const monthTotalWithSupervisor = monthRes ? monthRes.total + (isSupervisorAgent ? supervisorBonus : 0) : 0;
+
+  // Salaire RÉEL, temps réel : fixe/primes fixes au prorata des jours ouvrés déjà écoulés ce mois-ci —
+  // MÊME moteur que le "💸 Dépenses temps réel" de l'admin (computeAgentRealTimeSalary), pour que
+  // l'agent et l'admin voient toujours exactement le même chiffre. C'est CE total (pas monthRes.total,
+  // qui est une projection de fin de mois) qui doit apparaître en haut de la page : "combien j'ai
+  // vraiment gagné, là, maintenant".
+  const totalWorkingDaysThisMonth = workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
+  const elapsedWorkingDaysThisMonth = workingDaysElapsedInMonth();
+  const prorataThisMonth = totalWorkingDaysThisMonth>0 ? Math.min(1, elapsedWorkingDaysThisMonth/totalWorkingDaysThisMonth) : 0;
+  const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const realTimeSalary = await computeAgentRealTimeSalary(agent, now.getFullYear(), now.getMonth()+1, prorataThisMonth, { from: firstOfMonthStr, to: todayStr() });
+  const monthTotalWithSupervisor = realTimeSalary.total;
 
   const daysMonth = pc.daysPerMonth || 22;
   // Calcul dynamique du jour
   const daySal = calculateDailySalary(agent, todayCount, monthContracts);
   const weekSal = calculateWeeklySalary(agent, weekData.total, monthContracts);
 
-  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, monthStats, monthRes, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus };
+  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, monthStats, monthRes, realTimeSalary, totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus };
   const cashRetractEl = document.getElementById('cashRetractCount');
   if(cashRetractEl){
     const grossForIndicator = monthContracts + monthRetractions;
@@ -7281,19 +7406,37 @@ async function renderCash(){
   // Hero
   const hero = document.getElementById('cashHero');
 
+  const rt = realTimeSalary;
   if(pay.isIndep && monthRes){
-    const extraLabel = (pay.baseSalary || pay.primeFixeMensuelle || pay.primeAssiduite) ? ' + primes fixes réglées par l\'admin' : '';
     hero.innerHTML = `
-      <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — payé au contrat</div>
-      <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${monthTotalWithSupervisor.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${monthRes.status.realized} contrat${monthRes.status.realized>1?'s':''} × ${pay.perContract} DH${extraLabel}</div>
-      <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>`;
+      <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ton salaire réel, maintenant</div>
+      <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} × ${pay.perContract} DH${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''}</div>
+      <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
+      <div class="cash-breakdown" style="margin-top:14px;">
+        <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
+        ${rt.fixedFull>0 ? `<div><span>Fixe + prime fixe (prorata)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
+        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+      </div>`;
   } else if(monthRes){
     hero.innerHTML = `
-      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 Ton salaire du mois (réel)</div>
-      <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${monthTotalWithSupervisor.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">Brut avant retenues : ${monthRes.brut.toLocaleString('fr-FR')} DH${monthRes.deductions.total>0 ? ` — retenues : -${monthRes.deductions.total.toLocaleString('fr-FR')} DH` : ''}</div>
-      <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>`;
+      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 Ton salaire réel, maintenant</div>
+      <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''}</div>
+      <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
+      <div class="cash-breakdown" style="margin-top:14px;">
+        <div><span>Fixe + prime fixe (prorata ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>
+        <div class="${assiduiteAcquise?'hit':'miss'}"><span>Prime assiduité</span><b>${assiduiteAcquise ? 'incluse ci-dessus' : 'Perdue (retards)'}</b></div>
+        ${pay.perContract>0 ? `<div><span>${rt.contractsRealized} × ${pay.perContract} DH</span><b>${(rt.contractsRealized*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        <div class="${rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif (${monthRes.status.objectif||'—'})</span><b>${rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : (monthRes.status.objectif ? 'Pas encore atteint' : 'Non réglé')}</b></div>
+        ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
+        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+      </div>`;
   }
 
   renderCashRealGrid();
@@ -7365,12 +7508,7 @@ function renderCashObjectifsRecap(){
 
 function renderCashRealGrid(){
   if(!cashRealCache) return;
-  const { pay, todayCount, weekData, weekSal, daySal, monthRes, assiduiteAcquise, isIndep, monthContracts, monthRetractions, isSupervisorAgent, contractsUnderSupervision, supervisorBonus } = cashRealCache;
-  const st = monthRes ? monthRes.status : null;
-  const grossContracts = monthContracts + monthRetractions;
-  const retractLine = monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${grossContracts} signés → ${monthContracts}</b></div>` : '';
-  const supervisorBonusLine = (isSupervisorAgent && supervisorBonus>0) ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : '';
-  const monthTotalWithSupervisor = (monthRes ? monthRes.total : 0) + (isSupervisorAgent ? supervisorBonus : 0);
+  const { pay, todayCount, weekData, weekSal, daySal, monthRes, isIndep, monthContracts } = cashRealCache;
 
   if(isIndep){
     const grid = document.getElementById('cashRealGrid');
@@ -7385,21 +7523,6 @@ function renderCashRealGrid(){
         <div class="cp-label">Cette semaine</div>
         <div class="cp-amount">${weekSal.toLocaleString('fr-FR')} DH</div>
         <div class="cp-sub">${weekData.total} contrat${weekData.total>1?'s':''} sur ${weekData.daysElapsed}j</div>
-      </div>
-      <div class="cash-period-card" style="border-color:rgba(155,89,182,0.4); background:var(--panel);">
-        <div class="cp-label">Ce mois (total)</div>
-        <div class="cp-amount">${monthTotalWithSupervisor.toLocaleString('fr-FR')} DH</div>
-        <div class="cp-sub">${monthRes.status.realized} contrat${monthRes.status.realized > 1 ? 's' : ''} × ${pay.perContract} DH</div>
-        <div class="cash-breakdown">
-          <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
-          ${pay.baseSalary>0 ? `<div><span>Fixe mensuel</span><b>${pay.baseSalary.toLocaleString('fr-FR')} DH</b></div>` : ''}
-          ${pay.primeFixeMensuelle>0 ? `<div><span>Prime fixe mensuelle</span><b>${pay.primeFixeMensuelle.toLocaleString('fr-FR')} DH</b></div>` : ''}
-          ${pay.primeAssiduite>0 ? `<div class="hit"><span>Prime assiduité</span><b>+${pay.primeAssiduite.toLocaleString('fr-FR')} DH</b></div>` : ''}
-          ${supervisorBonusLine}
-          ${monthRes.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${monthRes.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
-          ${retractLine}
-          ${monthRes.deductions && monthRes.deductions.total>0 ? `<div class="miss"><span>Retenues (${monthRes.deductions.items.length})</span><b>-${monthRes.deductions.total.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        </div>
       </div>`;
     return;
   }
@@ -7407,13 +7530,14 @@ function renderCashRealGrid(){
   if(!monthRes) return;
   const grid = document.getElementById('cashRealGrid');
 
-  // Repère fixe (hors commissions imprévisibles) : ce que la partie garantie du salaire représente sur
-  // le mois complet, et où on en est aujourd'hui au prorata des jours ouvrés déjà écoulés.
-  const now = nowMA();
-  const totalWorkingDaysThisMonth = workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
-  const elapsedWorkingDays = workingDaysElapsedInMonth();
-  const fixedFullMonth = Math.round(pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite);
-  const fixedToDate = totalWorkingDaysThisMonth>0 ? Math.round(fixedFullMonth * (elapsedWorkingDays/totalWorkingDaysThisMonth)) : 0;
+  // Repère fixe (hors commissions imprévisibles) : détail ligne par ligne (fixe, prime fixe, prime
+  // assiduité, prime objectif), et où on en est aujourd'hui au prorata des jours ouvrés déjà écoulés.
+  // Le total en haut de page (hero, ⏫ #cashHero) montre déjà le total complet — cette grille complète
+  // avec jour / semaine / ce détail.
+  const { totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth: elapsedWorkingDays, assiduiteAcquise, realTimeSalary: rt } = cashRealCache;
+  const fixedOnlyFull = Math.round(pay.baseSalary + pay.primeFixeMensuelle);
+  const fixedOnlyToDate = totalWorkingDaysThisMonth>0 ? Math.round(fixedOnlyFull * (elapsedWorkingDays/totalWorkingDaysThisMonth)) : 0;
+  const totalGuaranteedToDate = fixedOnlyToDate + (assiduiteAcquise ? (pay.primeAssiduite||0) : 0) + (rt ? rt.objectifPrimes : 0);
 
   grid.innerHTML = `
     <div class="cash-period-card">
@@ -7435,28 +7559,15 @@ function renderCashRealGrid(){
         ${pay.perContract>0 ? `<div><span>${weekData.total} × ${pay.perContract} DH</span><b>${(weekData.total*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : `<div><span style="color:var(--muted);">Les contrats de la semaine comptent pour l'objectif du mois</span></div>`}
       </div>
     </div>
-    <div class="cash-period-card" style="border-color:rgba(255,215,0,0.3);">
-      <div class="cp-label">Salaire Brut Avant Retour</div>
-      <div class="cp-amount">${monthTotalWithSupervisor.toLocaleString('fr-FR')} DH</div>
-      <div class="cp-sub">${st.realized} contrat${st.realized>1?'s':''}${st.objectif?` / objectif ${st.objectif}`:''} · brut avant retenues : ${monthRes.brut.toLocaleString('fr-FR')} DH</div>
+    <div class="cash-period-card" style="border-color:rgba(61,139,253,0.35); background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015));">
+      <div class="cp-label">💼 Repère fixe & primes</div>
+      <div class="cp-sub" style="margin-bottom:10px;">Le détail de la partie garantie, hors commissions au contrat qui dépendent de tes ventes.</div>
       <div class="cash-breakdown">
-        <div><span>Fixe + prime fixe</span><b>${(pay.baseSalary+pay.primeFixeMensuelle).toLocaleString('fr-FR')} DH</b></div>
-        <div class="${assiduiteAcquise?'hit':'miss'}"><span>Prime assiduité</span><b>${assiduiteAcquise ? '+'+pay.primeAssiduite.toLocaleString('fr-FR')+' DH' : 'Perdue (retards)'}</b></div>
-        ${pay.perContract>0 ? `<div><span>${st.realized} × ${pay.perContract} DH</span><b>${(st.realized*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : ''}
-        <div class="${st.atteint?'hit':'miss'}"><span>Prime objectif (${st.objectif||'—'})</span><b>${st.atteint ? '+'+st.primeObjectif.toLocaleString('fr-FR')+' DH' : (st.objectif ? `Manque ${st.remaining}` : 'Non réglé')}</b></div>
-        ${st.extraCount>0 ? `<div class="hit"><span>Bonus ${st.extraCount} contrat(s) au-delà</span><b>+${st.primeExtra.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${supervisorBonusLine}
-        ${monthRes.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${monthRes.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${retractLine}
-        ${monthRes.deductions.total>0 ? `<div class="miss"><span>Retenues règlement (${monthRes.deductions.items.length})</span><b>-${monthRes.deductions.total.toLocaleString('fr-FR')} DH</b></div>` : ''}
-      </div>
-    </div>
-    <div class="cash-period-card" style="border-color:rgba(61,139,253,0.35);">
-      <div class="cp-label">💼 Salaire brut — repère fixe</div>
-      <div class="cp-sub" style="margin-bottom:10px;">La partie garantie (fixe + prime fixe + prime assiduité), hors commissions au contrat qui dépendent de tes ventes.</div>
-      <div class="cash-breakdown">
-        <div><span>Si tu travailles le mois <b>entier</b></span><b style="color:var(--gold);">${fixedFullMonth.toLocaleString('fr-FR')} DH</b></div>
-        <div class="hit"><span>Acquis à <b>ce jour</b> (${elapsedWorkingDays}/${totalWorkingDaysThisMonth}j ouvrés)</span><b style="color:var(--green);">${fixedToDate.toLocaleString('fr-FR')} DH</b></div>
+        <div><span>Fixe + prime fixe (mois entier)</span><b>${fixedOnlyFull.toLocaleString('fr-FR')} DH</b></div>
+        <div class="hit"><span>↳ acquis à ce jour (${elapsedWorkingDays}/${totalWorkingDaysThisMonth}j)</span><b style="color:var(--green);">${fixedOnlyToDate.toLocaleString('fr-FR')} DH</b></div>
+        <div class="${assiduiteAcquise?'hit':'miss'}"><span>Prime assiduité</span><b>${assiduiteAcquise ? '+'+(pay.primeAssiduite||0).toLocaleString('fr-FR')+' DH' : 'Perdue (retards)'}</b></div>
+        <div class="${rt && rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif</span><b>${rt && rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : 'Pas encore atteint'}</b></div>
+        <div style="border-top:1px dashed var(--border); margin-top:6px; padding-top:8px;"><span>Total garanti à ce jour</span><b style="color:var(--gold);">${totalGuaranteedToDate.toLocaleString('fr-FR')} DH</b></div>
       </div>
     </div>`;
 }
