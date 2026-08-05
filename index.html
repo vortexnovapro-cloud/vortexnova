@@ -1502,7 +1502,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-05-r13';
+const APP_VERSION = '2026-08-05-r14';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -5634,7 +5634,7 @@ async function renderAllMonthly(){
 
   const maxTotal = Math.max(1, ...stats.map(s=>s.total));
   let html = `<table><thead><tr>
-    <th>Agent</th><th>Retards arrivée</th><th>Retards pause</th><th>Absences</th><th>Cumul assiduité</th><th>Téléphone/YouTube</th><th>Objectifs non atteints</th><th>Total infractions</th><th>Niveau</th>
+    <th>Agent</th><th>Retards arrivée</th><th>Retards pause</th><th>Absences</th><th>Absences justifiées</th><th>Cumul assiduité</th><th>Prime assiduité</th><th>Téléphone/YouTube</th><th>Objectifs non atteints</th><th>Total infractions</th><th>Niveau</th>
   </tr></thead><tbody>`;
   stats.forEach(s=>{
     const isIndep = isIndependant(s.agent);
@@ -5648,7 +5648,9 @@ async function renderAllMonthly(){
       <td>${isIndep ? '—' : s.retards}</td>
       <td>${isIndep ? '—' : s.pauseOver}</td>
       <td>${isIndep ? '—' : s.absences}</td>
+      <td>${isIndep ? '—' : (s.justifiedAbsenceCount>0 ? `<span title="Hors compteur, ne compte pas dans le cumul assiduité">${s.justifiedAbsenceCount}</span>` : '0')}</td>
       <td>${isIndep ? '—' : `<b>${s.retardsCumules}</b>`}</td>
+      <td>${isIndep ? '—' : `<span class="tag ${s.retardsCumules>=3?'late':'ok'}">${s.retardsCumules>=3?'Perdue':'Acquise'}</span>`}</td>
       <td>${isIndep ? '—' : s.phoneYoutube}</td>
       <td>${isIndep ? '—' : s.objectif}</td>
       <td>
@@ -5688,11 +5690,11 @@ function jumpToAgentDay(agent, yearMonth){
 
 function exportOverviewCSV(){
   const monthVal = document.getElementById('monthSelect').value;
-  let csv = 'Agent;Independant;Retards arrivee;Retards pause;Absences;Cumul assiduite;Telephone-YouTube;Objectifs non atteints;Total infractions;Niveau\n';
+  let csv = 'Agent;Independant;Retards arrivee;Retards pause;Absences;Absences justifiees;Cumul assiduite;Prime assiduite;Telephone-YouTube;Objectifs non atteints;Total infractions;Niveau\n';
   _lastMonthlyStats.forEach(s=>{
     const isIndep = isIndependant(s.agent);
     const tier = tierForCount(s.retardsCumules);
-    csv += `${s.agent};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.absences};${isIndep?'':s.retardsCumules};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
+    csv += `${s.agent};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.absences};${isIndep?'':s.justifiedAbsenceCount};${isIndep?'':s.retardsCumules};${isIndep?'':(s.retardsCumules>=3?'Perdue':'Acquise')};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
   });
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
