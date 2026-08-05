@@ -727,7 +727,7 @@ function tryDeviceGateAdmin(){
           <div class="sim-slider-row" style="justify-content:center;">
             <label style="margin:0; font-size:13px;">Objectif mensuel visé :</label>
             <input type="number" id="cashSimMonthlyInput" min="0" step="1" value="44" oninput="onCashSimMonthlyInput()" style="width:90px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:#ffd700; font-weight:800; text-align:center; font-size:16px;">
-            <span style="font-size:12px; color:var(--muted);">contrats nets / mois</span>
+            <span style="font-size:12px; color:var(--muted);">contrats / mois</span>
           </div>
           <div id="cashSimMinLabel" style="text-align:center; font-size:12px; color:var(--muted); margin-top:-6px;"></div>
           <div class="wolf-meter-wrap">
@@ -886,7 +886,7 @@ function tryDeviceGateAdmin(){
           <div class="mega-section-sub">Ton chiffre d'affaires personnel, et ce que l'équipe coûte ce mois-ci.</div>
 
           <div class="section-title" style="margin-top:0;">💰 Mon chiffre d'affaires</div>
-          <div class="section-sub">Basé sur les contrats nets signés par toute l'équipe (agents + indépendants), ta commission et ton taux de retour réglés dans Réglages.</div>
+          <div class="section-sub">Basé sur les contrats signés par toute l'équipe (agents + indépendants), ta commission et ton taux de retour réglés dans Réglages.</div>
           <div id="bossRevenuePanel"></div>
 
           <div class="section-title">💼 Masse salariale prévisionnelle du mois</div>
@@ -1065,7 +1065,7 @@ function tryDeviceGateAdmin(){
 
         <div class="settings-box">
           <label style="margin-bottom:14px;">Enregistrer une infraction (téléphone/YouTube, objectif non atteint)</label>
-          <div class="section-sub" style="margin-top:-10px;">Une rétraction client n'est pas une faute de l'agent : elle n'est plus listée ici, elle est déjà prise en compte via les contrats nets (déclaration de rétraction côté agent).</div>
+          <div class="section-sub" style="margin-top:-10px;">Une rétraction client n'est pas une faute de l'agent : elle n'est plus listée ici, elle est déjà prise en compte via les contrats (déclaration de rétraction côté agent).</div>
           <div class="infr-form" id="infrForm">
             <div>
               <label style="margin-bottom:4px;">Agent</label>
@@ -1106,7 +1106,7 @@ function tryDeviceGateAdmin(){
         <div class="settings-box">
           <label>Rémunération — valeurs par défaut</label>
           <div class="section-sub">S'appliquent aux agents sans réglage individuel. Tu peux surcharger agent par agent ci-dessous.</div>
-          <div class="section-sub" style="margin-top:-10px;">💡 Modèle par défaut : <b>Fixe + prime assiduité (si aucun retard grave) + prime objectif (dès le minimum de contrats nets atteint) + bonus par contrat au-delà de l'objectif</b>. Le champ « DH/contrat » ci-dessous est optionnel : laisse-le à 0 si tes agents ne touchent rien avant d'avoir atteint leur objectif (comme dans ton exemple 3000+500+500+(20×100)).</div>
+          <div class="section-sub" style="margin-top:-10px;">💡 Modèle par défaut : <b>Fixe + prime assiduité (si aucun retard grave) + prime objectif (dès le minimum de contrats atteint) + bonus par contrat au-delà de l'objectif</b>. Le champ « DH/contrat » ci-dessous est optionnel : laisse-le à 0 si tes agents ne touchent rien avant d'avoir atteint leur objectif (comme dans ton exemple 3000+500+500+(20×100)).</div>
           <div class="settings-grid">
             <div>
               <label>Fixe mensuel (DH)</label>
@@ -1121,7 +1121,7 @@ function tryDeviceGateAdmin(){
               <input type="number" id="prodDefaultPrimeAssid" min="0" step="50">
             </div>
             <div>
-              <label>Objectif mensuel (contrats nets)</label>
+              <label>Objectif mensuel (contrats)</label>
               <input type="number" id="prodDefaultObjMensuel" min="0" step="1">
             </div>
             <div>
@@ -1149,7 +1149,7 @@ function tryDeviceGateAdmin(){
               <input type="number" id="prodDaysMonth" min="1" max="31" value="22" readonly style="opacity:0.65;cursor:not-allowed;">
             </div>
           </div>
-          <div class="section-sub" style="margin-top:-8px;">💡 « Jours ouvrés ce mois » est calculé automatiquement : lundi → vendredi, jours fériés français exclus (Jour de l'an, Lundi de Pâques, 1er mai, 8 mai, Ascension, Lundi de Pentecôte, 14 juillet, Assomption, Toussaint, Armistice, Noël) — se met à jour tout seul chaque mois, rien à régler. La « prime superviseur » est versée aux agents marqués <b>📊 Superviseur</b> (onglet Réglages), calculée sur les contrats nets signés par toute l'équipe ce mois-ci ; tu peux la personnaliser agent par agent dans le tableau ci-dessous.</div>
+          <div class="section-sub" style="margin-top:-8px;">💡 « Jours ouvrés ce mois » est calculé automatiquement : lundi → vendredi, jours fériés français exclus (Jour de l'an, Lundi de Pâques, 1er mai, 8 mai, Ascension, Lundi de Pentecôte, 14 juillet, Assomption, Toussaint, Armistice, Noël) — se met à jour tout seul chaque mois, rien à régler. La « prime superviseur » est versée aux agents marqués <b>📊 Superviseur</b> (onglet Réglages), calculée sur les contrats signés par toute l'équipe ce mois-ci ; tu peux la personnaliser agent par agent dans le tableau ci-dessous.</div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(255,215,0,0.4);">
@@ -1237,7 +1237,7 @@ function tryDeviceGateAdmin(){
                 <input type="number" id="primeCount" min="1" step="1" value="1" style="width:90px;">
               </div>
               <div id="primeCondWrap" style="display:none;">
-                <label style="margin-bottom:4px;">Objectif à atteindre (contrats nets)</label>
+                <label style="margin-bottom:4px;">Objectif à atteindre (contrats)</label>
                 <input type="number" id="primeTarget" min="1" step="1" style="width:110px;">
               </div>
               <button onclick="addManualPrime()">Ajouter</button>
@@ -1273,7 +1273,7 @@ function tryDeviceGateAdmin(){
         <div id="prodAdminTable"></div>
 
         <div class="section-title" style="margin-top:34px;">🎯 Objectif mensuel & primes — <span id="objMonthLabel"></span></div>
-        <div class="section-sub">Objectif en <b>contrats nets</b> sur le mois, propre à chaque agent (réglé dans le tableau ci-dessus). Prime versée dès l'objectif atteint, + bonus par contrat supplémentaire au-delà.</div>
+        <div class="section-sub">Objectif en <b>contrats</b> sur le mois, propre à chaque agent (réglé dans le tableau ci-dessus). Prime versée dès l'objectif atteint, + bonus par contrat supplémentaire au-delà.</div>
         <div class="admin-toolbar">
           <input type="month" id="objMonthSelect" onchange="renderMonthlyObjectif()">
         </div>
@@ -2527,7 +2527,7 @@ async function saveManualPrimes(agent, year, month, arr){
 // Calcule le total gagné pour une liste de primes manuelles, selon leur type :
 // - unique : le montant compte une seule fois, toujours acquis.
 // - occurrences : montant × nombre de fois (le nombre est modifiable par l'admin à tout moment).
-// - conditional : montant acquis uniquement si le nombre de contrats nets du mois atteint l'objectif fixé.
+// - conditional : montant acquis uniquement si le nombre de contrats du mois atteint l'objectif fixé.
 function computeManualPrimesTotal(list, realizedThisMonth){
   let total = 0;
   (list||[]).forEach(p=>{
@@ -3954,7 +3954,7 @@ async function renderExploMonthlySummary(agents, dateList){
         <div><b>${agent}</b>${isIndep?' <span class="tag independant">Indé</span>':''}</div>
         <div style="font-size:12px; color:var(--muted);">Mini obligatoire : ${miniBadge}</div>
         <div style="font-size:12px; color:var(--muted);">Visé (agent) : ${desiredBadge}</div>
-        <div style="font-size:12px; color:var(--muted);">Réalisé net : <b style="color:var(--green);">${realized}</b></div>
+        <div style="font-size:12px; color:var(--muted);">Réalisé : <b style="color:var(--green);">${realized}</b></div>
       </div>`;
     }
 
@@ -3965,7 +3965,7 @@ async function renderExploMonthlySummary(agents, dateList){
       <div><b>👥 Total groupe</b></div>
       <div style="font-size:12px; color:var(--muted);">Mini obligatoire (${nbMiniSet} agent${nbMiniSet>1?'s':''} réglé${nbMiniSet>1?'s':''}) : <b style="color:var(--text);">${totalMini>0? totalMini : '—'}</b> ${teamPctMini!=null ? `<span class="tag ${teamPctMini>=100?'ok':'late'}">${teamPctMini}%</span>` : ''}</div>
       <div style="font-size:12px; color:var(--muted);">Visé cumulé (${nbDesiredSet} agent${nbDesiredSet>1?'s':''}) : <b style="color:var(--text);">${totalDesired>0? totalDesired : '—'}</b></div>
-      <div style="font-size:12px; color:var(--muted);">Réalisé net équipe : <b style="color:var(--green);">${totalRealizedTeam}</b>${totalRealizedIndep>0 ? ` <span style="color:var(--independant);">(+${totalRealizedIndep} indépendant${totalRealizedIndep>1?'s':''})</span>` : ''}</div>
+      <div style="font-size:12px; color:var(--muted);">Réalisé équipe : <b style="color:var(--green);">${totalRealizedTeam}</b>${totalRealizedIndep>0 ? ` <span style="color:var(--independant);">(+${totalRealizedIndep} indépendant${totalRealizedIndep>1?'s':''})</span>` : ''}</div>
       <div style="font-size:11px; color:var(--muted);">${nbMiniHit}/${nbMiniSet||0} mini atteint(s) · ${nbDesiredHit}/${nbDesiredSet||0} objectif(s) perso atteint(s)</div>
     </div>`;
 
@@ -4100,7 +4100,7 @@ async function addManualPrime(){
     prime.count = Math.max(1, count);
   } else if(type === 'conditional'){
     const target = parseInt(document.getElementById('primeTarget').value);
-    if(isNaN(target) || target <= 0){ alert('Indique l\'objectif (nombre de contrats nets) à atteindre.'); return; }
+    if(isNaN(target) || target <= 0){ alert('Indique l\'objectif (nombre de contrats) à atteindre.'); return; }
     prime.targetObjective = target;
   }
 
@@ -5344,8 +5344,8 @@ async function monthlyRetractions(agent, year, month){
   return await getMonthlyRetractCount(agent, year, month);
 }
 
-// Contrats nets du mois = contrats signés (compteurs +1/-1 de l'Arena/Cash) MOINS les rétractations
-// enregistrées ce mois-là. C'est cette valeur nette qui alimente ensuite tout le reste de l'appli :
+// Contrats du mois = contrats signés (compteurs +1/-1 de l'Arena/Cash) MOINS les rétractations
+// enregistrées ce mois-là. C'est cette valeur qui alimente ensuite tout le reste de l'appli :
 // objectifs, classements, salaires, supervision.
 async function monthlyRealizedContracts(agent, year, month){
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -6046,15 +6046,15 @@ async function arenaAddRetraction(delta){
   const current = await getMonthlyRetractCount(currentArenaAgent, year, month);
   const nextCount = Math.max(0, current + delta);
   if(delta > 0 && beforeNet <= 0){
-    alert("Aucun contrat net à retirer ce mois-ci.");
+    alert("Aucun contrat à retirer ce mois-ci.");
     return;
   }
   await saveMonthlyRetractCount(currentArenaAgent, year, month, nextCount);
   const afterNet = Math.max(0, beforeNet - (nextCount - current));
   if(nextCount > current){
-    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'warn');
+    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats ce mois`, 'warn');
   } else if(nextCount < current){
-    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'ok');
+    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats ce mois`, 'ok');
   }
   await renderArena();
   if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
@@ -6100,7 +6100,7 @@ async function renderArena(){
     });
     rows.forEach((r,i)=> r.rank = i+1);
     rankings = rows;
-    unitLabel = 'contrats nets ce mois';
+    unitLabel = 'contrats ce mois';
   }
 
   document.getElementById('arenaDateLabel').textContent = dateLabelText;
@@ -6114,8 +6114,8 @@ async function renderArena(){
     const rc = await getMonthlyRetractCount(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     const grossContracts = netContracts + rc;
     document.getElementById('arenaRetractCount').textContent = rc>0
-      ? `${rc} rétracté${rc>1?'s':''} — ${grossContracts} signés → ${netContracts} nets ce mois`
-      : `Aucune rétraction ce mois — ${netContracts} contrat${netContracts>1?'s':''} net${netContracts>1?'s':''}`;
+      ? `${rc} rétracté${rc>1?'s':''} — ${grossContracts} signés → ${netContracts} ce mois`
+      : `Aucune rétraction ce mois — ${netContracts} contrat${netContracts>1?'s':''}`;
   }
   document.getElementById('arenaDesiredObjBox').style.display = (currentArenaAgent && isMonthScope) ? 'block' : 'none';
   if(currentArenaAgent && isMonthScope){
@@ -6333,15 +6333,15 @@ async function cashAddRetraction(delta){
   const current = await getMonthlyRetractCount(currentCashAgent, year, month);
   const nextCount = Math.max(0, current + delta);
   if(delta > 0 && beforeNet <= 0){
-    alert("Aucun contrat net à retirer ce mois-ci.");
+    alert("Aucun contrat à retirer ce mois-ci.");
     return;
   }
   await saveMonthlyRetractCount(currentCashAgent, year, month, nextCount);
   const afterNet = Math.max(0, beforeNet - (nextCount - current));
   if(nextCount > current){
-    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'warn');
+    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats ce mois`, 'warn');
   } else if(nextCount < current){
-    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats nets ce mois`, 'ok');
+    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats ce mois`, 'ok');
   }
   await renderCash();
   if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
@@ -6410,7 +6410,7 @@ function onCashSimMonthlyInput(){
   renderCashSim(monthlyTarget);
 }
 
-// Total des contrats nets de l'équipe "de base" (tous agents sauf les superviseurs, quel qu'il soit) —
+// Total des contrats de l'équipe "de base" (tous agents sauf les superviseurs, quel qu'il soit) —
 // même règle que dans Supervision, réutilisée ici pour que la prime de supervision d'un superviseur
 // apparaisse aussi dans SON PROPRE Cash (réel et simulation), pas seulement dans l'onglet Supervision.
 async function contractsUnderAllSupervisors(year, month){
@@ -6466,8 +6466,8 @@ async function renderCash(){
   if(cashRetractEl){
     const grossForIndicator = monthContracts + monthRetractions;
     cashRetractEl.textContent = monthRetractions>0
-      ? `${monthRetractions} rétracté${monthRetractions>1?'s':''} — ${grossForIndicator} signés → ${monthContracts} nets ce mois`
-      : `Aucune rétraction ce mois — ${monthContracts} contrat${monthContracts>1?'s':''} net${monthContracts>1?'s':''}`;
+      ? `${monthRetractions} rétracté${monthRetractions>1?'s':''} — ${grossForIndicator} signés → ${monthContracts} ce mois`
+      : `Aucune rétraction ce mois — ${monthContracts} contrat${monthContracts>1?'s':''}`;
   }
   renderCashObjectifsRecap();
 
@@ -6485,7 +6485,7 @@ async function renderCash(){
   const lastAgent = allRankings[nAg-1];
   const penultAgent = allRankings[nAg-2];
 
-  // Détection des ex-aequo (même nombre de contrats nets, hors zéro).
+  // Détection des ex-aequo (même nombre de contrats, hors zéro).
   const tieGroups = {};
   allRankings.forEach(r=>{
     if(r.realized <= 0) return;
@@ -6495,7 +6495,7 @@ async function renderCash(){
 
   const dynamicLines = [];
   if(leaderAgent && leaderAgent.realized > 0){
-    dynamicLines.push(`🔥 ${leaderAgent.agent} mène le mois avec ${leaderAgent.realized} contrat${leaderAgent.realized>1?'s':''} net${leaderAgent.realized>1?'s':''} !`);
+    dynamicLines.push(`🔥 ${leaderAgent.agent} mène le mois avec ${leaderAgent.realized} contrat${leaderAgent.realized>1?'s':''} !`);
   }
   if(secondAgent && secondAgent.realized > 0 && nAg > 1){
     dynamicLines.push(`🥈 ${secondAgent.agent} tient la 2e place avec ${secondAgent.realized} contrat${secondAgent.realized>1?'s':''} — pas loin du sommet.`);
@@ -6608,7 +6608,7 @@ function renderCashObjectifsRecap(){
         <div>${desiredBlock}</div>
       </div>
       <div style="margin-top:16px; display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--muted); border-top:1px solid var(--border); padding-top:12px;">
-        <div>✅ <b style="color:var(--text);">${monthContracts}</b> contrat${monthContracts>1?'s':''} net${monthContracts>1?'s':''} ce mois</div>
+        <div>✅ <b style="color:var(--text);">${monthContracts}</b> contrat${monthContracts>1?'s':''} ce mois</div>
         ${monthRetractions>0 ? `<div>🔻 <b style="color:var(--red);">${monthRetractions}</b> rétracté${monthRetractions>1?'s':''} — <b style="color:var(--text);">${grossContracts}</b> signé${grossContracts>1?'s':''} au total</div>` : `<div>🔻 Aucun contrat rétracté ce mois</div>`}
       </div>
     </div>`;
@@ -6619,7 +6619,7 @@ function renderCashRealGrid(){
   const { pay, todayCount, weekData, weekSal, daySal, monthRes, assiduiteAcquise, isIndep, monthContracts, monthRetractions, isSupervisorAgent, contractsUnderSupervision, supervisorBonus } = cashRealCache;
   const st = monthRes ? monthRes.status : null;
   const grossContracts = monthContracts + monthRetractions;
-  const retractLine = monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${grossContracts} signés → ${monthContracts} nets</b></div>` : '';
+  const retractLine = monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${grossContracts} signés → ${monthContracts}</b></div>` : '';
   const supervisorBonusLine = (isSupervisorAgent && supervisorBonus>0) ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : '';
   const monthTotalWithSupervisor = (monthRes ? monthRes.total : 0) + (isSupervisorAgent ? supervisorBonus : 0);
 
@@ -6689,12 +6689,12 @@ function renderCashRealGrid(){
     <div class="cash-period-card" style="border-color:rgba(255,215,0,0.3);">
       <div class="cp-label">Salaire Brut Avant Retour</div>
       <div class="cp-amount">${monthTotalWithSupervisor.toLocaleString('fr-FR')} DH</div>
-      <div class="cp-sub">${st.realized} contrat${st.realized>1?'s':''} net${st.realized>1?'s':''}${st.objectif?` / objectif ${st.objectif}`:''} · brut avant retenues : ${monthRes.brut.toLocaleString('fr-FR')} DH</div>
+      <div class="cp-sub">${st.realized} contrat${st.realized>1?'s':''}${st.objectif?` / objectif ${st.objectif}`:''} · brut avant retenues : ${monthRes.brut.toLocaleString('fr-FR')} DH</div>
       <div class="cash-breakdown">
         <div><span>Fixe + prime fixe</span><b>${(pay.baseSalary+pay.primeFixeMensuelle).toLocaleString('fr-FR')} DH</b></div>
         <div class="${assiduiteAcquise?'hit':'miss'}"><span>Prime assiduité</span><b>${assiduiteAcquise ? '+'+pay.primeAssiduite.toLocaleString('fr-FR')+' DH' : 'Perdue (retards)'}</b></div>
         ${pay.perContract>0 ? `<div><span>${st.realized} × ${pay.perContract} DH</span><b>${(st.realized*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : ''}
-        <div class="${st.atteint?'hit':'miss'}"><span>Prime objectif (${st.objectif||'—'} nets)</span><b>${st.atteint ? '+'+st.primeObjectif.toLocaleString('fr-FR')+' DH' : (st.objectif ? `Manque ${st.remaining}` : 'Non réglé')}</b></div>
+        <div class="${st.atteint?'hit':'miss'}"><span>Prime objectif (${st.objectif||'—'})</span><b>${st.atteint ? '+'+st.primeObjectif.toLocaleString('fr-FR')+' DH' : (st.objectif ? `Manque ${st.remaining}` : 'Non réglé')}</b></div>
         ${st.extraCount>0 ? `<div class="hit"><span>Bonus ${st.extraCount} contrat(s) au-delà</span><b>+${st.primeExtra.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${supervisorBonusLine}
         ${monthRes.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${monthRes.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -6802,7 +6802,7 @@ function renderCashLeaderboard(rows){
     const indepTag = r.isIndep ? ' 🧑‍💼' : '';
     return `<div class="cash-lb-row ${rowCls}">
       <div class="cash-lb-rank">${rankEmoji(r.rank, rows.length)}</div>
-      <div class="cash-lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}<small>${r.contracts} contrat${r.contracts>1?'s':''} net${r.contracts>1?'s':''} ce mois</small></div>
+      <div class="cash-lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}<small>${r.contracts} contrat${r.contracts>1?'s':''} ce mois</small></div>
       <div class="cash-lb-amount">${isMe ? r.total.toLocaleString('fr-FR')+' DH' : '🔒'}</div>
     </div>`;
   }).join('');
@@ -7174,7 +7174,7 @@ async function renderSupervision(){
       const statusTag = pct >= 100 ? ' <span class="tag ok">✅ atteint</span>' : (below ? ' <span class="tag late">🚨 en dessous</span>' : '');
       return `<div class="escalade-card" style="border-color:${borderColor};${below?'background:var(--red-bg);':''}">
         <div class="name">${r.agent}${r.isIndep ? ' <span class="tag independant" style="margin-left:4px;">Indé</span>' : ''}${statusTag}</div>
-        <div class="count">${r.monthReal} / ${r.desiredObj} contrats nets (${pct}%)</div>
+        <div class="count">${r.monthReal} / ${r.desiredObj} contrats (${pct}%)</div>
         <div class="supervision-progress" style="margin-top:8px;"><div class="fill ${cls}" style="width:${Math.min(100,pct)}%;"></div></div>
         ${below ? `<div style="margin-top:8px;font-size:12.5px;color:var(--red);font-weight:700;">Il manque ${manque} — ${perDayNeeded} contrat${perDayNeeded>1?'s':''}/jour requis pour rattraper</div>` : ''}
       </div>`;
@@ -7242,7 +7242,7 @@ async function renderAgentPayTable(){
   const totalWorkingDays = workingDaysInMonth(year, month);
   const elapsedWorkingDays = workingDaysElapsedInMonth();
   let html = `<table class="salary-table"><thead><tr>
-    <th>Agent</th><th>Fixe/mois</th><th>DH/contrat</th><th>Prime assid.</th><th>Objectif mensuel (nets, mini)</th><th>🎯 Objectif visé (agent, ce mois)</th><th>Prime objectif</th><th>Bonus extra/contrat</th><th>Prime fixe/mois</th><th>📊 Prime superviseur/contrat équipe</th><th>Statut</th>
+    <th>Agent</th><th>Fixe/mois</th><th>DH/contrat</th><th>Prime assid.</th><th>Objectif mensuel (mini)</th><th>🎯 Objectif visé (agent, ce mois)</th><th>Prime objectif</th><th>Bonus extra/contrat</th><th>Prime fixe/mois</th><th>📊 Prime superviseur/contrat équipe</th><th>Statut</th>
   </tr></thead><tbody>`;
   config.agents.forEach((agent,i)=>{
     const p = getAgentPay(agent);
@@ -7376,7 +7376,7 @@ async function renderMonthlyObjectif(){
   const contractsUnderSupervisionMo = await contractsUnderAllSupervisors(year, month);
 
   let html = `<table class="salary-table"><thead><tr>
-    <th>Rang</th><th>Agent</th><th>Objectif net (mini)</th><th>🎯 Objectif visé (agent)</th><th>Réalisé</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
+    <th>Rang</th><th>Agent</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>Réalisé</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
   </tr></thead><tbody>`;
   let totalBrutTeam = 0, totalBrutIndep = 0, totalBrutBackoffice = 0;
   for(const r of rows){
@@ -7528,7 +7528,7 @@ async function renderProdAdmin(){
     // sur les contrats des agents de base (hors superviseurs), puis appliquée au taux propre à chaque superviseur.
     const contractsUnderSupervisionSim = await contractsUnderAllSupervisors(simYear, simMonth);
     let sim = `<table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Fixe/mois</th><th>DH/contrat</th><th>Contrats jour</th><th>Brut jour (simul.)</th><th>Contrats nets (mois)</th><th>Brut total mois (simul.)</th>
+      <th>Agent</th><th>Fixe/mois</th><th>DH/contrat</th><th>Contrats jour</th><th>Brut jour (simul.)</th><th>Contrats (mois)</th><th>Brut total mois (simul.)</th>
     </tr></thead><tbody>`;
     let totalDaySal = 0, totalMonthBrut = 0, totalMonthBrutIndep = 0;
     for(const r of rankings){
@@ -7560,7 +7560,7 @@ async function renderProdAdmin(){
       <td style="color:var(--green);">${totalMonthBrut.toLocaleString('fr-FR')} DH${totalMonthBrutIndep>0 ? `<div style="font-size:11px;color:var(--independant);font-weight:700;">+${totalMonthBrutIndep.toLocaleString('fr-FR')} DH indépendants</div>` : ''}</td>
     </tr>`;
     sim += '</tbody></table>';
-    sim += `<div class="section-sub" style="margin-top:12px;">Brut jour = quote-part du fixe (fixe / ${workingDaysInMonth(simYear, simMonth)} jours ouvrés de ce mois-là) + contrats du jour × DH/contrat + bonus extra proportionnel si objectif mensuel atteint. Brut total mois = fixe + prime fixe + prime assiduité + contrats nets du mois × DH/contrat + prime d'objectif mensuel (si atteint) + bonus par contrat au-delà + prime de supervision (si superviseur) — détail dans le tableau "🎯 Objectif mensuel & primes" ci-dessous. Le total en bas de tableau sépare la masse salariale de l'équipe (salariés + backoffice) de celle des indépendants, qui ne pèse jamais sur l'objectif ni le budget d'équipe.</div>`;
+    sim += `<div class="section-sub" style="margin-top:12px;">Brut jour = quote-part du fixe (fixe / ${workingDaysInMonth(simYear, simMonth)} jours ouvrés de ce mois-là) + contrats du jour × DH/contrat + bonus extra proportionnel si objectif mensuel atteint. Brut total mois = fixe + prime fixe + prime assiduité + contrats du mois × DH/contrat + prime d'objectif mensuel (si atteint) + bonus par contrat au-delà + prime de supervision (si superviseur) — détail dans le tableau "🎯 Objectif mensuel & primes" ci-dessous. Le total en bas de tableau sépare la masse salariale de l'équipe (salariés + backoffice) de celle des indépendants, qui ne pèse jamais sur l'objectif ni le budget d'équipe.</div>`;
     simEl.innerHTML = sim;
   }
 }
