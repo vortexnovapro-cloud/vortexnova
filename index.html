@@ -1488,7 +1488,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-05-r5';
+const APP_VERSION = '2026-08-05-r8';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4395,6 +4395,87 @@ async function removeManualPrime(agent, year, month, primeId){
   renderMonthlyObjectif();
 }
 
+// Carré compact "Visé vs Réalisé" — design partagé entre Admin (🎯 Objectif choisi & réalisé) et
+// Supervision (🎯 Objectif visé et réalisé), pour que les deux affichent exactement la même chose de la
+// même façon, au lieu de deux présentations différentes pour la même idée. Vide si personne n'a fixé
+// d'objectif (rien de pertinent à comparer ce jour/cette période-là).
+// Petit hash déterministe (pas de vraie randomisation) — pour qu'un même jour affiche toujours le même
+// commentaire au fil des rafraîchissements en direct (pas de message qui change toutes les 2 secondes),
+// tout en variant réellement d'un jour à l'autre et d'un palier de performance à l'autre.
+function simpleSeedHash(str){
+  let h = 0;
+  for(let i=0; i<str.length; i++){ h = ((h<<5) - h + str.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+
+// Banque de commentaires par palier de performance (visé vs réalisé) — ton pro mais taquin, jamais
+// méchant. Plus on vise haut et plus on réalise, plus c'est élogieux ; en dessous, on encourage avec une
+// petite pointe de pression pour relancer la machine. Plusieurs variantes par palier pour ne jamais
+// retomber sur exactement le même message.
+const TEAM_PCT_MESSAGES = [
+  { min: 130, msgs: [
+    "🤯 Objectif pulvérisé, on ne motive plus, on applaudit.",
+    "👑 Viser haut ET dépasser à ce point, chapeau bas.",
+    "🚀 L'équipe a dépassé l'objectif... et la fusée continue de monter.",
+    "🎉 Ce niveau-là, ça se fête (raisonnablement, on est lundi peut-être)."
+  ]},
+  { min: 100, msgs: [
+    "🏆 Objectif atteint et dépassé, du travail propre.",
+    "🔥 Visé et réalisé, exactement comme il fallait le faire.",
+    "💯 C'est fait, et bien fait. Respect à l'équipe.",
+    "🥇 Objectif du jour : coché. La suite maintenant."
+  ]},
+  { min: 70, msgs: [
+    "💪 Presque au bout, ne lâchez rien maintenant.",
+    "📈 Bon rythme, l'objectif est clairement à portée aujourd'hui.",
+    "⏳ Encore quelques contrats et c'est plié pour la journée.",
+    "🔋 Dernière ligne droite, un petit coup de collier suffit."
+  ]},
+  { min: 40, msgs: [
+    "⚙️ Ça avance, mais il va falloir appuyer un peu plus fort.",
+    "🎯 Milieu de parcours : rien n'est perdu, tout reste à jouer.",
+    "☕ La pause est finie, on relance la machine ?",
+    "📊 On y est à moitié, la seconde moitié compte double."
+  ]},
+  { min: -1, msgs: [
+    "🐢 Ça démarre... doucement. Très doucement.",
+    "⏰ Le temps tourne, l'objectif du jour aussi.",
+    "🚨 Il va falloir se réveiller si on veut viser l'objectif aujourd'hui.",
+    "🌱 Pas encore ça, mais la journée est loin d'être finie."
+  ]}
+];
+function pickTeamPctMessage(pct, seed){
+  const tier = TEAM_PCT_MESSAGES.find(t=>pct>=t.min);
+  const idx = simpleSeedHash(`${seed}|${tier.min}`) % tier.msgs.length;
+  return tier.msgs[idx];
+}
+
+function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRealized, seed){
+  if(totalTarget <= 0) return '';
+  const pct = Math.round((totalRealized/totalTarget)*100);
+  const color = pct>=100 ? 'var(--green)' : (pct>=50 ? 'var(--amber)' : 'var(--red)');
+  const ringPct = Math.min(100, pct);
+  // Le réalisé compte TOUT LE MONDE (agents + indépendants, objectif fixé ou non) — la précision juste
+  // en dessous indique la part qui vient des indépendants, pour ne jamais laisser croire que ce chiffre
+  // ne concerne que les salariés.
+  const indepNote = indepRealized > 0
+    ? `<div style="font-size:11px; color:var(--independant); margin-top:8px;">dont ${indepRealized} fait${indepRealized>1?'s':''} par les indépendants</div>`
+    : '';
+  const message = pickTeamPctMessage(pct, seed || 'default');
+  return `<div style="width:246px; margin:0 auto 20px; padding:22px 18px 18px; border-radius:22px; background:linear-gradient(165deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid ${pct>=100?'rgba(52,183,116,0.45)':'var(--border)'}; box-shadow:0 10px 28px rgba(0,0,0,0.35); text-align:center;">
+    <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px; font-weight:700;">🎯 Total équipe</div>
+    <div style="position:relative; width:152px; height:152px; margin:16px auto 10px; border-radius:50%; background:conic-gradient(${color} ${ringPct}%, rgba(255,255,255,0.07) 0);">
+      <div style="position:absolute; inset:9px; border-radius:50%; background:var(--panel2); display:flex; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="font-size:30px; font-weight:900; color:${color}; line-height:1;">${totalRealized}<span style="font-size:14px; color:var(--muted); font-weight:700;">/${totalTarget}</span></div>
+        <div style="font-size:14px; font-weight:800; color:${color}; margin-top:4px;">${pct}%</div>
+      </div>
+    </div>
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Visé vs réalisé${agentCount ? ` · ${agentCount} agent(s)` : ''}</div>
+    <div style="font-size:13px; font-weight:700; color:${color}; line-height:1.4;">${message}</div>
+    ${indepNote}
+  </div>`;
+}
+
 function initObjSnapDefaults(){
   const dateEl = document.getElementById('objSnapDate');
   if(dateEl && !dateEl.value) dateEl.value = todayStr();
@@ -4481,7 +4562,7 @@ async function renderObjectifSnapshot(){
       return { agent, objective: p.objective || 0, realized: p.realized || 0, isIndep: true };
     });
 
-    renderObjSnapSingleDay(container, rows, indepRows);
+    renderObjSnapSingleDay(container, rows, indepRows, dateStr);
     return;
   }
 
@@ -4505,7 +4586,12 @@ async function renderObjectifSnapshot(){
     return a.agent.localeCompare(b.agent);
   });
 
+  const rowsWithAnyObj = rows.filter(r=>r.daysWithObjective > 0);
+  const totalTargetRange = rowsWithAnyObj.reduce((s,r)=>s+r.totalObjective, 0);
+  const totalRealizedRange = rowsWithAnyObj.reduce((s,r)=>s+r.totalRealized, 0);
+
   let html = `<div class="section-sub" style="margin-top:-4px; margin-bottom:10px;">Du ${dateList[0]} au ${dateList[dateList.length-1]} (${dateList.length} jour${dateList.length>1?'s':''}).</div>`;
+  html += renderVisReelSquareCard(totalRealizedRange, totalTargetRange, rowsWithAnyObj.length, 0, `${dateList[0]}_${dateList[dateList.length-1]}`);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
   rows.forEach(r=>{
     const hasAny = r.daysWithObjective > 0;
@@ -4527,9 +4613,17 @@ async function renderObjectifSnapshot(){
   container.innerHTML = html;
 }
 
-function renderObjSnapSingleDay(container, rows, indepRows){
+function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
+  // Visé = tous ceux qui ont fixé un objectif (agents comme indépendants). Réalisé = TOUT LE MONDE,
+  // objectif fixé ou non — le total doit refléter l'activité réelle de toute l'équipe ce jour-là.
+  const allDayRows = rows.concat(indepRows);
+  const rowsWithObj = allDayRows.filter(r=>r.objective > 0);
+  const totalTargetDay = rowsWithObj.reduce((s,r)=>s+r.objective, 0);
+  const totalRealizedDay = allDayRows.reduce((s,r)=>s+r.realized, 0);
+  const indepRealizedDay = indepRows.reduce((s,r)=>s+r.realized, 0);
 
-  let html = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
+  let html = renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr);
+  html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
 
   rows.forEach(r=>{
     const noObj = r.objective === 0;
@@ -4770,9 +4864,10 @@ async function renderBossRevenue(){
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
-  const [todayTotal, monthTotal] = await Promise.all([
+  const [todayTotal, monthTotal, payroll] = await Promise.all([
     getTotalContractsToday(),
-    getTotalContractsMonth(year, month)
+    getTotalContractsMonth(year, month),
+    computeTotalPayrollMonth(year, month)
   ]);
   const todayCalc = computeBossRevenue(todayTotal);
   const monthCalc = computeBossRevenue(monthTotal);
@@ -4788,7 +4883,21 @@ async function renderBossRevenue(){
       </div>
     </div>`;
 
-  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card("Aujourd'hui", todayCalc)}${card('Ce mois', monthCalc)}</div>`;
+  // Dépenses réelles, en direct : ce que l'équipe a déjà coûté depuis le 1er du mois jusqu'à maintenant
+  // — comme si tout le monde partait à l'instant. Recalculé avec exactement la même logique que la paie
+  // réelle (estimateSalaryMonthReal / monthlyDeductions) : au prorata des jours travaillés du mois,
+  // contrats réalisés, rétractations, retards, absences et primes déjà pris en compte — jamais projeté
+  // sur des jours pas encore arrivés.
+  const expenseCard = `
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.35); flex:1; min-width:230px;">
+      <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">💸 Dépenses (temps réel)</div>
+      <div style="font-size:28px; font-weight:900; color:var(--red);">${Math.round(payroll.grandTotal).toLocaleString('fr-FR')} DH</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
+        Ce que l'équipe a réellement coûté depuis le 1er du mois jusqu'à maintenant, comme si tout le monde partait à l'instant : contrats réalisés, rétractations, retards, absences et primes déjà comptés, au prorata des jours travaillés.
+      </div>
+    </div>`;
+
+  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card("Aujourd'hui", todayCalc)}${expenseCard}${card('Ce mois', monthCalc)}</div>`;
 }
 
 // ============================================================
@@ -7361,7 +7470,9 @@ async function renderSupervision(){
     const pay = getAgentPay(agent);
     const dayProd = getAgentProd(dateBoard, agent);
     const dayRealized = dayProd.realized || 0;
-    const dayObjective = isIndep ? 0 : (dayProd.objective || 0);
+    // Un indépendant peut lui aussi se fixer un défi du jour dans l'Arena (facultatif) — on ne le
+    // force plus à 0 ici, pour qu'il apparaisse comme les autres dans le bloc visé/réalisé du jour.
+    const dayObjective = dayProd.objective || 0;
     const weekObjective_ = isIndep ? 0 : dayObjective * (pc.daysPerWeek || 5);
     const monthObj_ = isIndep ? 0 : (pay.objectifMensuel || 0);
 
@@ -7504,29 +7615,27 @@ async function renderSupervision(){
 
   // ---- 🎯 Objectif visé et réalisé — aujourd'hui (bloc dédié, bien visible) ----
   const teamRows = rows.filter(r=>!r.isIndep);
-  const teamRowsWithDayObj = teamRows.filter(r=>r.dayObjective > 0);
-  const totalDayObjSet = teamRowsWithDayObj.reduce((s,r)=>s+r.dayObjective, 0);
-  const totalDayRealizedForSet = teamRowsWithDayObj.reduce((s,r)=>s+r.dayRealized, 0);
-  const totalDayRealizedAll = teamRows.reduce((s,r)=>s+r.dayRealized, 0);
-  const totalDayPct = totalDayObjSet > 0 ? Math.round((totalDayRealizedForSet/totalDayObjSet)*100) : 0;
+  // Ce bloc-ci inclut les indépendants (contrairement à teamRows, réutilisé plus bas pour la conformité
+  // pointage — qui ne les concerne pas). Visé = tous ceux qui ont fixé un objectif ce matin, agents comme
+  // indépendants. Réalisé (total) = TOUT LE MONDE, objectif fixé ou non — l'activité réelle de la journée.
+  const objDisplayRows = rows;
+  const objRowsWithDayObj = objDisplayRows.filter(r=>r.dayObjective > 0);
+  const totalDayObjSet = objRowsWithDayObj.reduce((s,r)=>s+r.dayObjective, 0);
+  const totalDayRealizedAll = objDisplayRows.reduce((s,r)=>s+r.dayRealized, 0);
+  const indepDayRealized = objDisplayRows.filter(r=>r.isIndep).reduce((s,r)=>s+r.dayRealized, 0);
   let objBlockHtml = `<div class="section-title" style="margin-top:0;">🎯 Objectif visé et réalisé — aujourd'hui</div>
     <div class="section-sub">L'objectif que chaque agent s'est fixé lui-même ce matin, et où il en est réellement, tout de suite.</div>`;
-  if(totalDayObjSet > 0){
-    objBlockHtml += `<div class="supervision-card" style="text-align:center; margin-bottom:12px;">
-      <div class="label">🎯 Total équipe — visé vs réalisé aujourd'hui</div>
-      <div class="big ${totalDayPct>=100?'gold':(totalDayPct>=50?'green':'red')}">${totalDayRealizedForSet}<span style="font-size:20px;color:var(--muted);"> / ${totalDayObjSet}</span></div>
-      <div class="sub">${totalDayPct}% des objectifs du jour cumulés (${teamRowsWithDayObj.length} agent(s) en ayant fixé un)${totalDayRealizedAll !== totalDayRealizedForSet ? ` · ${totalDayRealizedAll} contrats au total équipe aujourd'hui, objectif fixé ou non` : ''}</div>
-      <div class="supervision-progress"><div class="fill ${totalDayPct>=100?'over':(totalDayPct<50?'under':'')}" style="width:${Math.min(100,totalDayPct)}%;"></div></div>
-    </div>`;
-  }
+  // Même carré "Total équipe" que dans Admin → 🎯 Objectif choisi & réalisé, pour une présentation
+  // identique partout où visé et réalisé sont comparés.
+  objBlockHtml += renderVisReelSquareCard(totalDayRealizedAll, totalDayObjSet, objRowsWithDayObj.length, indepDayRealized, dateStr);
   objBlockHtml += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-bottom:8px;">`;
-  teamRows.forEach(r=>{
+  objDisplayRows.forEach(r=>{
     const hasObj = r.dayObjective > 0;
     const pct = hasObj ? Math.min(100, Math.round((r.dayRealized/r.dayObjective)*100)) : 0;
     const hit = hasObj && r.dayRealized >= r.dayObjective;
     const barColor = hit ? 'var(--green)' : (pct>=50 ? 'var(--amber)' : 'var(--red)');
     objBlockHtml += `<div style="padding:12px 14px; border-radius:12px; background:var(--panel2); border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};">
-      <div style="font-weight:800; font-size:14px; margin-bottom:6px;">${r.agent}</div>
+      <div style="display:flex; align-items:center; gap:6px; font-weight:800; font-size:14px; margin-bottom:6px;">${r.agent}${r.isIndep ? ' <span class="tag independant" style="font-weight:700;">Indé</span>' : ''}</div>
       ${hasObj
         ? `<div class="arena-prog-bar" style="height:8px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor};"></div></div>
            <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:13px;">
