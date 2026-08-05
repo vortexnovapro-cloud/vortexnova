@@ -579,6 +579,11 @@ function tryDeviceGateAdmin(){
 
 <div id="inactivityWarnBanner" onclick="confirmPresenceFromAlert()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; text-align:center; background: var(--red-bg); color: var(--red); padding:14px 16px; font-size:15px; font-weight:800; animation: pulseWarn 1s infinite; cursor:pointer; box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
 
+<div id="appUpdateBanner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9998; text-align:center; background: var(--amber-bg); color: var(--amber); padding:12px 16px; font-size:13.5px; font-weight:700; box-shadow:0 4px 20px rgba(0,0,0,0.4);">
+  <span id="appUpdateBannerText"></span>
+  <button onclick="location.reload()" style="margin-left:10px; padding:5px 12px; border-radius:8px; border:1px solid var(--amber); background:transparent; color:var(--amber); font-weight:800; cursor:pointer;">🔄 Recharger</button>
+</div>
+
 <main>
 
   <!-- AGENT VIEW -->
@@ -1480,7 +1485,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-05-r1';
+const APP_VERSION = '2026-08-05-r2';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -1909,6 +1914,47 @@ function showToast(msg, tone){
   }, 3200);
 }
 
+// ============================================================
+// 🔄 AVERTISSEMENT DE MISE À JOUR — envoyé à TOUT LE MONDE (pas seulement l'admin)
+// ============================================================
+// Publie la version de CE client dans un document Firestore partagé (uniquement si elle est plus
+// récente que celle déjà connue — jamais l'inverse, sinon un agent resté très en retard pourrait faire
+// "reculer" la valeur partagée et masquer une mise à jour déjà déployée à tout le monde). Puis écoute ce
+// document en direct : dès qu'une version plus récente est publiée par n'importe qui (même pendant que
+// cet onglet reste ouvert), la bannière apparaît immédiatement, sans avoir besoin de raviver la page.
+// Si ce client a déjà la dernière version connue, un petit message discret confirme que tout est à jour.
+async function checkAppVersionStatus(){
+  if(!firebaseReady || !db) return;
+  try{
+    const current = await storageGet('latestAppVersion');
+    const currentVal = current && current.value;
+    if(!currentVal || compareAppVersions(APP_VERSION, currentVal) > 0){
+      await storageSet('latestAppVersion', APP_VERSION);
+    }
+  }catch(e){}
+
+  try{
+    db.collection('vortexnova').doc('latestAppVersion').onSnapshot(doc=>{
+      if(!doc.exists) return;
+      renderAppVersionBanner(doc.data().value);
+    });
+  }catch(e){}
+}
+
+function renderAppVersionBanner(latest){
+  const banner = document.getElementById('appUpdateBanner');
+  const textEl = document.getElementById('appUpdateBannerText');
+  if(!banner || !textEl) return;
+  const cmp = compareAppVersions(APP_VERSION, latest);
+  if(cmp < 0){
+    textEl.textContent = `⚠️ Une nouvelle version de l'appli est disponible (${latest}) — tu utilises encore l'ancienne (${APP_VERSION}). Ferme complètement cet onglet puis rouvre le lien (un simple rafraîchissement ne suffit pas toujours).`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+    showToast('✅ Tout est OK, tu utilises bien la dernière version disponible.', 'ok');
+  }
+}
+
 function checkStorageAvailable(){
   if(!firebaseReady){
     const banner = document.createElement('div');
@@ -2004,6 +2050,7 @@ async function loadConfig(){
   loadProdConfigUI();
   document.getElementById('prodAdminDate').value = todayStr();
   loadProdConfigUI();
+  checkAppVersionStatus();
 }
 async function saveConfigSilent(){
   await storageSet('config', JSON.stringify(config));
@@ -4565,17 +4612,22 @@ async function renderNotifStatusPanel(){
   };
 
   let html = `<div class="section-sub" style="margin-top:-6px;">Version actuellement chargée ici : <b>${APP_VERSION}</b>. Un agent marqué « ancienne version » travaille encore avec du vieux code — demande-lui de fermer complètement l'onglet et de rouvrir le lien (pas juste actualiser). Une version affichée comme « plus récente » n'est jamais un problème (juste cet écran-ci pas encore rafraîchi).</div>`;
-  html += '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Notifications</th><th>Version app</th><th>Dernière vérification</th><th>☕ Pause totale aujourd\'hui</th></tr></thead><tbody>';
+  html += '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>Notifications</th><th>Version app</th><th>Dernière vérification</th><th>🍽️ Pause déjeuner</th><th>☕ Pause libre</th></tr></thead><tbody>';
   const todayDateStr = todayStr();
   const agentsToShow = config.agents.filter(a => !isIndependant(a));
+  const todaySched = scheduleForDate(todayDateStr);
+  const lunchSched = todaySched.breaks.find(b=>/d.jeuner|dejeuner|lunch/i.test(b.name));
+  const lunchBudgetMin = lunchSched ? Math.max(0, toMinutes(lunchSched.end) - toMinutes(lunchSched.start)) : 60;
   const rowsData = await Promise.all(agentsToShow.map(async agent=>{
-    // Temps de pause total du jour = déjeuner (créneaux refermés) + pause libre (avec bonus éventuel).
+    // Pause déjeuner et pause libre affichées séparément — deux natures différentes (horaire fixe vs
+    // temps libre à prendre quand on veut), donc deux budgets et deux seuils d'alerte différents.
     const todayLog = await getDayLog(agent, todayDateStr);
     const lunchSec = extractBreakPairs(todayLog.events)
       .filter(p=>p.end)
       .reduce((sum,p)=> sum + Math.max(0, toMinutes(p.end.slice(0,5))*60 - toMinutes(p.start.slice(0,5))*60), 0);
     const { usedSec: freeSec } = freeBreakUsageToday(todayLog.events, todayDateStr);
-    const totalPauseMin = Math.round((lunchSec + freeSec) / 60);
+    const lunchMin = Math.round(lunchSec / 60);
+    const freeMin = Math.round(freeSec / 60);
     const freeBudget = (config.freeBreakMinutes != null ? config.freeBreakMinutes : 35) + (todayLog.freeBreakBonusMin || 0);
 
     let row = null;
@@ -4584,16 +4636,19 @@ async function renderNotifStatusPanel(){
       if(res && res.value) row = JSON.parse(res.value);
     }catch(e){}
 
-    return { agent, row, totalPauseMin, freeBudget };
+    return { agent, row, lunchMin, freeMin, freeBudget };
   }));
 
-  rowsData.forEach(({ agent, row, totalPauseMin, freeBudget })=>{
-    const pauseHtml = totalPauseMin > 0
-      ? `<span class="tag ${totalPauseMin > freeBudget + 60 ? 'warn' : 'ok'}">${totalPauseMin} min</span>`
+  rowsData.forEach(({ agent, row, lunchMin, freeMin, freeBudget })=>{
+    const lunchHtml = lunchMin > 0
+      ? `<span class="tag ${lunchMin > lunchBudgetMin + 15 ? 'warn' : 'ok'}">${lunchMin} / ${lunchBudgetMin} min</span>`
+      : '<span style="color:var(--muted);">—</span>';
+    const freeHtml = freeMin > 0
+      ? `<span class="tag ${freeMin > freeBudget ? 'warn' : 'ok'}">${freeMin} / ${freeBudget} min</span>`
       : '<span style="color:var(--muted);">—</span>';
 
     if(!row){
-      html += `<tr><td><b>${agent}</b></td><td><span class="tag absent">Jamais vérifié</span></td><td style="color:var(--muted);">—</td><td style="color:var(--muted);">—</td><td>${pauseHtml}</td></tr>`;
+      html += `<tr><td><b>${agent}</b></td><td><span class="tag absent">Jamais vérifié</span></td><td style="color:var(--muted);">—</td><td style="color:var(--muted);">—</td><td>${lunchHtml}</td><td>${freeHtml}</td></tr>`;
       return;
     }
     const meta = labels[row.status] || { txt: row.status, cls: 'warn' };
@@ -4605,7 +4660,7 @@ async function renderNotifStatusPanel(){
       : '<span class="tag warn">Inconnue (très ancienne version)</span>';
     const d = new Date(row.updatedAt);
     const dLabel = isNaN(d) ? '—' : d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-    html += `<tr class="${isOutdated?'late':''}"><td><b>${agent}</b></td><td><span class="tag ${meta.cls}">${meta.txt}</span></td><td>${versionHtml}</td><td style="color:var(--muted);">${dLabel}</td><td>${pauseHtml}</td></tr>`;
+    html += `<tr class="${isOutdated?'late':''}"><td><b>${agent}</b></td><td><span class="tag ${meta.cls}">${meta.txt}</span></td><td>${versionHtml}</td><td style="color:var(--muted);">${dLabel}</td><td>${lunchHtml}</td><td>${freeHtml}</td></tr>`;
   });
   html += '</tbody></table></div>';
   el.innerHTML = html;
@@ -7450,9 +7505,22 @@ async function renderSupervision(){
 
   // ---- 🎯 Objectif visé et réalisé — aujourd'hui (bloc dédié, bien visible) ----
   const teamRows = rows.filter(r=>!r.isIndep);
+  const teamRowsWithDayObj = teamRows.filter(r=>r.dayObjective > 0);
+  const totalDayObjSet = teamRowsWithDayObj.reduce((s,r)=>s+r.dayObjective, 0);
+  const totalDayRealizedForSet = teamRowsWithDayObj.reduce((s,r)=>s+r.dayRealized, 0);
+  const totalDayRealizedAll = teamRows.reduce((s,r)=>s+r.dayRealized, 0);
+  const totalDayPct = totalDayObjSet > 0 ? Math.round((totalDayRealizedForSet/totalDayObjSet)*100) : 0;
   let objBlockHtml = `<div class="section-title" style="margin-top:0;">🎯 Objectif visé et réalisé — aujourd'hui</div>
-    <div class="section-sub">L'objectif que chaque agent s'est fixé lui-même ce matin, et où il en est réellement, tout de suite.</div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-bottom:8px;">`;
+    <div class="section-sub">L'objectif que chaque agent s'est fixé lui-même ce matin, et où il en est réellement, tout de suite.</div>`;
+  if(totalDayObjSet > 0){
+    objBlockHtml += `<div class="supervision-card" style="text-align:center; margin-bottom:12px;">
+      <div class="label">🎯 Total équipe — visé vs réalisé aujourd'hui</div>
+      <div class="big ${totalDayPct>=100?'gold':(totalDayPct>=50?'green':'red')}">${totalDayRealizedForSet}<span style="font-size:20px;color:var(--muted);"> / ${totalDayObjSet}</span></div>
+      <div class="sub">${totalDayPct}% des objectifs du jour cumulés (${teamRowsWithDayObj.length} agent(s) en ayant fixé un)${totalDayRealizedAll !== totalDayRealizedForSet ? ` · ${totalDayRealizedAll} contrats au total équipe aujourd'hui, objectif fixé ou non` : ''}</div>
+      <div class="supervision-progress"><div class="fill ${totalDayPct>=100?'over':(totalDayPct<50?'under':'')}" style="width:${Math.min(100,totalDayPct)}%;"></div></div>
+    </div>`;
+  }
+  objBlockHtml += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-bottom:8px;">`;
   teamRows.forEach(r=>{
     const hasObj = r.dayObjective > 0;
     const pct = hasObj ? Math.min(100, Math.round((r.dayRealized/r.dayObjective)*100)) : 0;
@@ -7843,6 +7911,7 @@ async function renderMonthlyObjectif(){
     <th>Rang</th><th>Agent</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>Réalisé</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
   </tr></thead><tbody>`;
   let totalBrutTeam = 0, totalBrutIndep = 0, totalBrutBackoffice = 0;
+  let totalDesiredObjSum = 0, totalRealizedForDesiredSum = 0;
   for(const r of rows){
     const pay = getAgentPay(r.agent);
     const noObj = pay.noObjectif;
@@ -7870,6 +7939,7 @@ async function renderMonthlyObjectif(){
     const rowClass = isFreeRow ? '' : (r.objectif>0 && r.atteint ? '' : (r.objectif>0 ? 'warn' : ''));
     const indepTag = r.isIndep ? ' <span class="tag independant">Indé</span>' : (noObj ? ` <span class="tag warn">${getNoObjectifLabel(r.agent)}</span>` : '');
     const desiredObjAdmin = await getMonthlyDesiredObjective(r.agent, year, month);
+    if(desiredObjAdmin > 0){ totalDesiredObjSum += desiredObjAdmin; totalRealizedForDesiredSum += r.realized; }
     const agentKeySafe = r.agent.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
     if(r.isIndep) totalBrutIndep += fullTotalWithSupervisor;
@@ -7895,6 +7965,16 @@ async function renderMonthlyObjectif(){
     </tr>`;
   }
   const totalMasseSalariale = totalBrutTeam + totalBrutBackoffice;
+  if(totalDesiredObjSum > 0){
+    const totalDesiredPct = Math.round((totalRealizedForDesiredSum/totalDesiredObjSum)*100);
+    html += `<tr style="font-weight:700; color:var(--gold); border-top:2px solid var(--border);">
+      <td colspan="3">TOTAL objectifs perso visés (agents en ayant fixé un)</td>
+      <td>${totalDesiredObjSum}</td>
+      <td><b>${totalRealizedForDesiredSum}</b></td>
+      <td>${totalDesiredPct}%</td>
+      <td colspan="4"></td>
+    </tr>`;
+  }
   html += `<tr style="font-weight:800; border-top:2px solid var(--border);">
     <td colspan="9">TOTAL masse salariale (salariés + ${getNoObjectifLabelGeneric()}, hors indépendants)</td>
     <td style="color:var(--green);">${totalMasseSalariale.toLocaleString('fr-FR')} DH</td>
