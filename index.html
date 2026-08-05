@@ -1502,7 +1502,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-05-r14';
+const APP_VERSION = '2026-08-05-r15';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -7304,13 +7304,25 @@ async function renderCash(){
   const desiredObjective = await getMonthlyDesiredObjective(agent, now.getFullYear(), now.getMonth()+1);
 
   // Si cet agent est lui-même superviseur, sa prime de supervision (sur les contrats de l'équipe de base,
-  // jamais les siens ni ceux des autres superviseurs) doit apparaître dans SON Cash — réel et simulation.
+  // jamais les siens ni ceux des autres superviseurs) doit apparaître dans SON Cash — réel et simulation —
+  // ET dans "Aujourd'hui"/"Cette semaine", pas seulement dans le total du mois. Sinon un superviseur voit
+  // "333 DH aujourd'hui" alors qu'il a en réalité touché sa prime d'équipe ce jour-là (ex: +630 DH ce
+  // mois, qui ne vient jamais de nulle part un jour donné — elle s'accumule jour après jour comme le reste).
   const isSupervisorAgent = isSupervisor(agent);
   let contractsUnderSupervision = 0, supervisorBonus = 0;
+  let contractsUnderSupervisionDay = 0, supervisorBonusDay = 0, contractsUnderSupervisionWeek = 0, supervisorBonusWeek = 0;
   if(isSupervisorAgent){
-    const supervisionBonusCash = await supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1);
+    const [supervisionBonusCash, bonusDayMap, bonusWeekMap] = await Promise.all([
+      supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1),
+      supervisorBonusForDates([dateStr]),
+      supervisorBonusForDates(currentWeekDateStrs())
+    ]);
     contractsUnderSupervision = supervisionBonusCash.contracts[agent] || 0;
     supervisorBonus = supervisionBonusCash.dh[agent] || 0;
+    contractsUnderSupervisionDay = bonusDayMap.contracts[agent] || 0;
+    supervisorBonusDay = bonusDayMap.dh[agent] || 0;
+    contractsUnderSupervisionWeek = bonusWeekMap.contracts[agent] || 0;
+    supervisorBonusWeek = bonusWeekMap.dh[agent] || 0;
   }
 
   // Calculé pour tout le monde, y compris les indépendants : monthlyStats renvoie des zéros pour eux
@@ -7332,11 +7344,12 @@ async function renderCash(){
   const monthTotalWithSupervisor = realTimeSalary.total;
 
   const daysMonth = pc.daysPerMonth || 22;
-  // Calcul dynamique du jour
-  const daySal = calculateDailySalary(agent, todayCount, monthContracts);
-  const weekSal = calculateWeeklySalary(agent, weekData.total, monthContracts);
+  // Calcul dynamique du jour — + prime de supervision du jour/semaine pour un superviseur, sinon "Aujourd'hui"
+  // ne reflète qu'une partie de ce qu'il a réellement touché (voir note ci-dessus).
+  const daySal = calculateDailySalary(agent, todayCount, monthContracts) + supervisorBonusDay;
+  const weekSal = calculateWeeklySalary(agent, weekData.total, monthContracts) + supervisorBonusWeek;
 
-  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, monthStats, monthRes, realTimeSalary, totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus };
+  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, monthStats, monthRes, realTimeSalary, totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus, contractsUnderSupervisionDay, supervisorBonusDay, contractsUnderSupervisionWeek, supervisorBonusWeek };
   const cashRetractEl = document.getElementById('cashRetractCount');
   if(cashRetractEl){
     const grossForIndicator = monthContracts + monthRetractions;
@@ -7536,7 +7549,7 @@ function renderCashRealGrid(){
   // assiduité, prime objectif), et où on en est aujourd'hui au prorata des jours ouvrés déjà écoulés.
   // Le total en haut de page (hero, ⏫ #cashHero) montre déjà le total complet — cette grille complète
   // avec jour / semaine / ce détail.
-  const { totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth: elapsedWorkingDays, assiduiteAcquise, realTimeSalary: rt } = cashRealCache;
+  const { totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth: elapsedWorkingDays, assiduiteAcquise, realTimeSalary: rt, isSupervisorAgent, supervisorBonusDay, contractsUnderSupervisionDay, supervisorBonusWeek, contractsUnderSupervisionWeek } = cashRealCache;
   const fixedOnlyFull = Math.round(pay.baseSalary + pay.primeFixeMensuelle);
   const fixedOnlyToDate = totalWorkingDaysThisMonth>0 ? Math.round(fixedOnlyFull * (elapsedWorkingDays/totalWorkingDaysThisMonth)) : 0;
   const totalGuaranteedToDate = fixedOnlyToDate + (assiduiteAcquise ? (pay.primeAssiduite||0) : 0) + (rt ? rt.objectifPrimes : 0);
@@ -7545,20 +7558,22 @@ function renderCashRealGrid(){
     <div class="cash-period-card">
       <div class="cp-label">Aujourd'hui</div>
       <div class="cp-amount">${daySal.toLocaleString('fr-FR')} DH</div>
-      <div class="cp-sub">${todayCount} contrat${todayCount>1?'s':''} signé${todayCount>1?'s':''}</div>
+      <div class="cp-sub">${todayCount} contrat${todayCount>1?'s':''} signé${todayCount>1?'s':''}${isSupervisorAgent ? ` · ${contractsUnderSupervisionDay} contrat${contractsUnderSupervisionDay>1?'s':''} d'équipe` : ''}</div>
       <div class="cash-breakdown">
         <div><span>Quote-part fixe</span><b>${Math.round((pay.baseSalary+pay.primeFixeMensuelle)/(getProdConfig().daysPerMonth||22)).toLocaleString('fr-FR')} DH</b></div>
         ${pay.perContract>0 ? `<div><span>${todayCount} × ${pay.perContract} DH</span><b>${(todayCount*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : `<div><span style="color:var(--muted);">Les contrats du jour comptent pour l'objectif du mois</span></div>`}
-        ${monthContracts >= (pay.objectifMensuel||0) && pay.primeExtraContrat>0 ? `<div class="hit"><span>Bonus extra (proportionnel)</span><b>+${(daySal - Math.round((pay.baseSalary+pay.primeFixeMensuelle)/(getProdConfig().daysPerMonth||22)) - todayCount*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${monthContracts >= (pay.objectifMensuel||0) && pay.primeExtraContrat>0 ? `<div class="hit"><span>Bonus extra (proportionnel)</span><b>+${Math.max(0, daySal - supervisorBonusDay - Math.round((pay.baseSalary+pay.primeFixeMensuelle)/(getProdConfig().daysPerMonth||22)) - todayCount*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${isSupervisorAgent ? `<div class="${supervisorBonusDay>0?'hit':''}"><span>Prime supervision (${contractsUnderSupervisionDay} contrat${contractsUnderSupervisionDay>1?'s':''} équipe)</span><b>${supervisorBonusDay>0?'+':''}${supervisorBonusDay.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
     </div>
     <div class="cash-period-card">
       <div class="cp-label">Cette semaine</div>
       <div class="cp-amount">${weekSal.toLocaleString('fr-FR')} DH</div>
-      <div class="cp-sub">${weekData.total} contrat${weekData.total>1?'s':''} · ${weekData.daysElapsed} jour(s) écoulé(s)</div>
+      <div class="cp-sub">${weekData.total} contrat${weekData.total>1?'s':''} · ${weekData.daysElapsed} jour(s) écoulé(s)${isSupervisorAgent ? ` · ${contractsUnderSupervisionWeek} contrat${contractsUnderSupervisionWeek>1?'s':''} d'équipe` : ''}</div>
       <div class="cash-breakdown">
         <div><span>Quote-part fixe × ${weekData.daysElapsed}j</span><b>${Math.round(((pay.baseSalary+pay.primeFixeMensuelle)/(getProdConfig().daysPerMonth||22))*weekData.daysElapsed).toLocaleString('fr-FR')} DH</b></div>
         ${pay.perContract>0 ? `<div><span>${weekData.total} × ${pay.perContract} DH</span><b>${(weekData.total*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : `<div><span style="color:var(--muted);">Les contrats de la semaine comptent pour l'objectif du mois</span></div>`}
+        ${isSupervisorAgent ? `<div class="${supervisorBonusWeek>0?'hit':''}"><span>Prime supervision (${contractsUnderSupervisionWeek} contrat${contractsUnderSupervisionWeek>1?'s':''} équipe)</span><b>${supervisorBonusWeek>0?'+':''}${supervisorBonusWeek.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
     </div>
     <div class="cash-period-card" style="border-color:rgba(61,139,253,0.35); background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015));">
