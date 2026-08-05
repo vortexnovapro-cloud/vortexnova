@@ -198,6 +198,30 @@
   .tier-3{ background: rgba(229,168,61,0.18); color: var(--amber); }
   .tier-5, .tier-6{ background: rgba(229,72,77,0.18); color: var(--red); }
 
+  /* ⏰ Rappel règlement — retards & absences (version légère, un coup d'œil) */
+  .raa-wrap{ background: var(--panel2); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .raa-hero{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:14px; }
+  .raa-hero-item{ flex:1; min-width:110px; text-align:center; }
+  .raa-hero-num{ font-size:26px; font-weight:900; line-height:1.1; }
+  .raa-hero-lbl{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin-top:4px; }
+  .raa-hero-breakdown{ font-size:10.5px; color:var(--muted); margin-top:3px; opacity:0.8; }
+  .raa-hero-sep{ width:1px; align-self:stretch; background:var(--border); }
+  .raa-track-wrap{ margin: 6px 4px 8px; }
+  .raa-track{ position:relative; height:6px; background:var(--panel); border-radius:4px; margin: 18px 6px 8px; }
+  .raa-track-fill{ position:absolute; left:0; top:0; height:100%; border-radius:4px; background:var(--amber); transition:width 0.3s; }
+  .raa-dot{ position:absolute; top:50%; transform:translate(-50%,-50%); width:16px; height:16px; border-radius:50%; background:var(--panel); border:3px solid var(--border); }
+  .raa-dot.done{ border-color: var(--green); background: var(--green); }
+  .raa-dot.danger.done{ border-color: var(--red); background: var(--red); }
+  .raa-dot.current{ border-color: var(--amber); background: var(--amber); box-shadow:0 0 0 5px rgba(229,168,61,0.22); }
+  .raa-dot-lbl{ position:absolute; top:16px; left:50%; transform:translateX(-50%); font-size:11px; color:var(--muted); font-weight:700; white-space:nowrap; }
+  .raa-caption{ text-align:center; font-size:13px; font-weight:600; margin: 22px 0 4px; }
+  .raa-toggle{ display:block; margin:12px auto 0; background:none; border:none; color:var(--muted); font-size:12px; cursor:pointer; text-decoration:underline; padding:4px; }
+  .raa-detail{ margin-top:12px; border-top:1px solid var(--border); padding-top:12px; }
+  .raa-detail-row{ display:flex; justify-content:space-between; gap:10px; padding:6px 0; font-size:12.5px; color:var(--muted); border-bottom:1px solid var(--border); }
+  .raa-detail-row:last-child{ border-bottom:none; }
+  .raa-detail-row b{ color:var(--text); }
+  .raa-empty{ text-align:center; color:var(--muted); padding:20px; }
+
   .kpi-row{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 14px; margin-bottom: 24px; }
   .kpi-card{ background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align:center; }
   .kpi-card .num{ font-size: 26px; font-weight: 800; }
@@ -716,6 +740,10 @@ function tryDeviceGateAdmin(){
         <div class="section-sub">Basé sur tes contrats réellement signés (bouton +1 contrat dans l'Arena).</div>
         <div class="cash-period-grid" id="cashRealGrid"></div>
 
+        <div class="section-title">⏰ Retards et Absences</div>
+        <div class="section-sub">Ta situation ce mois-ci par rapport au règlement interne — retards, absences, et ce que ça te coûte.</div>
+        <div id="cashRetardsAbsencesPanel"></div>
+
         <div class="section-title">🎰 SIMULATION — et si tu visais plus haut ?</div>
         <div class="section-sub">Vise par jour <b>ou</b> directement par mois — les deux champs se mettent à jour ensemble.</div>
         <div class="sim-controls">
@@ -958,6 +986,18 @@ function tryDeviceGateAdmin(){
 
           <div class="section-title">Suivi des retards — prime d'assiduité</div>
           <div id="escaladeContainer"></div>
+
+          <div class="section-title">⏰ Retards et Absences — détail par agent</div>
+          <div class="section-sub">Même rappel du règlement que dans « Mon argent », pour n'importe quel agent et n'importe quel mois (mois choisi ci-dessus).</div>
+          <div class="admin-toolbar" style="margin-top:0;">
+            <div>
+              <label style="margin-bottom:4px;">Agent</label>
+              <select id="raaAgentSelect" onchange="renderRetardsAbsencesAdmin()">
+                <option value="">— Choisis un agent —</option>
+              </select>
+            </div>
+          </div>
+          <div id="adminRetardsAbsencesPanel" style="margin-top:14px;"></div>
         </div>
 
         <div class="mega-section theme-gray">
@@ -989,15 +1029,16 @@ function tryDeviceGateAdmin(){
           </div>
 
           <div style="margin-bottom:14px;">
-            <label style="margin-bottom:6px;">🗓️ Absence justifiée</label>
+            <label style="margin-bottom:6px;">🗓️ Statut spécial du jour</label>
             <select id="corrJustifiedAbsence">
-              <option value="">Aucune (jour normal)</option>
+              <option value="">Aucun (jour normal)</option>
               <option value="full">Journée complète — retenue pleine, PAS compté retard</option>
               <option value="half">Demi-journée — retenue à moitié, PAS compté retard</option>
-              <option value="full_paid">Journée complète — SANS retenue (payée), PAS compté retard</option>
-              <option value="half_paid">Demi-journée — SANS retenue (payée), PAS compté retard</option>
+              <option value="full_paid">🏖️ Congé payé — journée complète, SANS retenue, PAS compté retard</option>
+              <option value="half_paid">🏖️ Congé payé — demi-journée, SANS retenue, PAS compté retard</option>
+              <option value="mise_a_pied">🚫 Mise à pied (disciplinaire) — journée NON PAYÉE, PAS compté comme un nouveau retard</option>
             </select>
-            <div class="section-sub" style="margin-top:6px;">Pour un congé maladie, un rendez-vous administratif justifié, etc. Choisis "SANS retenue" pour un congé payé (ex: congé payé légal, jour férié travaillé compensé) — dans tous les cas, ce n'est <b>jamais</b> compté comme un retard et la prime d'assiduité n'est pas affectée.</div>
+            <div class="section-sub" style="margin-top:6px;">Pour un congé maladie, un rendez-vous administratif justifié, etc. Choisis "SANS retenue" pour un congé payé (ex: congé payé légal, jour férié travaillé compensé). La <b>Mise à pied</b> est la sanction disciplinaire du règlement interne (5ᵉ/6ᵉ retard ou absence) : à saisir toi-même le jour où tu l'appliques — la journée n'est pas payée, mais elle ne recompte pas comme un retard supplémentaire (elle est déjà la conséquence des précédents). Dans tous les autres cas ci-dessus, ce n'est <b>jamais</b> compté comme un retard et la prime d'assiduité n'est pas affectée.</div>
           </div>
 
           <div class="settings-grid">
@@ -1149,7 +1190,7 @@ function tryDeviceGateAdmin(){
               <input type="number" id="prodDaysMonth" min="1" max="31" value="22" readonly style="opacity:0.65;cursor:not-allowed;">
             </div>
           </div>
-          <div class="section-sub" style="margin-top:-8px;">💡 « Jours ouvrés ce mois » est calculé automatiquement : lundi → vendredi, jours fériés français exclus (Jour de l'an, Lundi de Pâques, 1er mai, 8 mai, Ascension, Lundi de Pentecôte, 14 juillet, Assomption, Toussaint, Armistice, Noël) — se met à jour tout seul chaque mois, rien à régler. La « prime superviseur » est versée aux agents marqués <b>📊 Superviseur</b> (onglet Réglages), calculée sur les contrats signés par toute l'équipe ce mois-ci ; tu peux la personnaliser agent par agent dans le tableau ci-dessous.</div>
+          <div class="section-sub" style="margin-top:-8px;">💡 « Jours ouvrés ce mois » est calculé automatiquement : lundi → vendredi, jours fériés français exclus (Jour de l'an, Lundi de Pâques, 1er mai, 8 mai, Ascension, Lundi de Pentecôte, 14 juillet, Assomption, Toussaint, Armistice, Noël) — se met à jour tout seul chaque mois, rien à régler. La « prime superviseur » est versée aux agents marqués <b>📊 Superviseur</b> (onglet Réglages), calculée sur les contrats signés par toute l'équipe ce mois-ci ; tu peux la personnaliser agent par agent dans le tableau ci-dessous. Un superviseur en retard de plus de 10 minutes (ou absent) un jour donné perd sa journée de salaire fixe ET sa part de commission de ce jour-là : elle est redistribuée à parts égales entre les superviseurs présents ce même jour. En dessous de 10 minutes de retard, il garde sa part (seule sa demi-heure de salaire perso est retenue).</div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(255,215,0,0.4);">
@@ -1323,7 +1364,7 @@ function tryDeviceGateAdmin(){
               <input type="time" id="cfgEnd">
             </div>
             <div>
-              <label>Tolérance retard (minutes)</label>
+              <label>Tolérance prise de pause déjeuner (minutes)</label>
               <input type="number" id="cfgTolerance" min="0">
             </div>
             <div>
@@ -1343,7 +1384,7 @@ function tryDeviceGateAdmin(){
               <input type="number" id="cfgInactivityWarn3" min="1">
             </div>
             <div>
-              <label>Tolérance horaire début de pause (minutes)</label>
+              <label>Tolérance horaire début des autres pauses (minutes)</label>
               <input type="number" id="cfgBreakTolerance" min="0">
             </div>
             <div>
@@ -1352,7 +1393,7 @@ function tryDeviceGateAdmin(){
             </div>
           </div>
           <div class="section-sub" style="margin-top:-10px;">💡 Les 3 alertes (son + notification + titre d'onglet clignotant) se déclenchent avant la déconnexion automatique, dans l'ordre indiqué. Elles doivent être inférieures au délai de déconnexion ci-dessus (par défaut : 30s, 10s, 5s avant).</div>
-          <div class="section-sub" style="margin:-10px 0 18px;">La tolérance horaire s'applique uniquement à l'<b>heure de début</b> de la pause (utile pour les agents en appel téléphonique). La <b>durée</b> de la pause, elle, reste stricte : aucun dépassement toléré, quelle que soit l'heure de début.</div>
+          <div class="section-sub" style="margin:-10px 0 18px;">Ces deux tolérances s'appliquent uniquement à l'<b>heure de début</b> d'une pause (déjeuner pour la première, les autres pauses de la journée pour la seconde) — utile pour un agent en appel téléphonique qui ne peut pas décrocher pile à l'heure prévue. La <b>durée</b> de la pause, elle, reste stricte : aucun dépassement toléré, quelle que soit l'heure de début. Le <b>retard à l'arrivée</b> n'a lui aucune tolérance (règlement interne : dès la 1ère minute, sans exception) — ces réglages n'ont donc aucun effet dessus.</div>
 
           <label style="margin-bottom:10px;">🍽️ Déjeuner (horaire fixe)</label>
           <div class="section-sub" style="margin-top:-6px;">Le seul créneau à heure fixe — les agents pointent "Départ déjeuner" / "Retour déjeuner" dans cette fenêtre.</div>
@@ -1699,7 +1740,7 @@ async function triggerInactivityLockout(){
 
 function isWithinScheduledHours(){
   const sched = scheduleForDate(todayStr());
-  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+  const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
   return nowMin >= toMinutes(sched.start) && nowMin <= toMinutes(sched.end);
 }
 
@@ -1763,15 +1804,26 @@ function infrSanctionText(inf){
   return INFR_TYPES[inf.type].sanction;
 }
 
+// Le back-office est utilisé depuis la France, les agents pointent au Maroc : sans ce verrou, l'heure
+// "actuelle" dépend du fuseau horaire réglé sur l'appareil qui exécute le code (ordinateur mal
+// configuré, hébergement à l'étranger...), ce qui peut décaler les pointages d'une heure et déclencher
+// de faux retards. nowMA() renvoie systématiquement l'heure/le jour tels qu'ils sont au Maroc
+// (Africa/Casablanca), quel que soit l'appareil. À utiliser pour toute lecture d'heure/date "actuelle"
+// (getHours/getMinutes/getFullYear/etc.) — jamais pour des mesures de durée (garder Date.now()) ni pour
+// des horodatages d'audit (garder new Date().toISOString()).
+function nowMA(){
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Casablanca' }));
+}
+
 function todayStr(d){
-  const dt = d || new Date();
+  const dt = d || nowMA();
   const y = dt.getFullYear();
   const m = String(dt.getMonth()+1).padStart(2,'0');
   const day = String(dt.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
 }
 function nowTimeStr(){
-  const dt = new Date();
+  const dt = nowMA();
   return String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0') + ':' + String(dt.getSeconds()).padStart(2,'0');
 }
 function toMinutes(hhmm){
@@ -1926,7 +1978,7 @@ async function loadConfig(){
   loadArenaMessagesUI();
 
   const monthInput = document.getElementById('monthSelect');
-  const now = new Date();
+  const now = nowMA();
   monthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const objMonthInput = document.getElementById('objMonthSelect');
   if(objMonthInput) objMonthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
@@ -1977,7 +2029,30 @@ function populateAgentSelect(){
   populateArenaAgentSelect();
   populateSupervisionAgentSelect();
   populatePrimeAgentSelect();
+  populateRaaAgentSelect();
   renderGiftBreakAgentChips();
+}
+
+function populateRaaAgentSelect(){
+  const sel = document.getElementById('raaAgentSelect');
+  if(!sel) return;
+  const prevVal = sel.value;
+  sel.innerHTML = '<option value="">— Choisis un agent —</option>';
+  config.agents.filter(name=>!isIndependant(name)).forEach(name=>{
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  if(config.agents.includes(prevVal)) sel.value = prevVal;
+  renderRetardsAbsencesAdmin();
+}
+
+async function renderRetardsAbsencesAdmin(){
+  const agent = document.getElementById('raaAgentSelect')?.value || '';
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const now = nowMA();
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+  await renderRetardsAbsencesPanel('adminRetardsAbsencesPanel', agent, year, month);
 }
 
 function populateArenaAgentSelect(){
@@ -2446,7 +2521,7 @@ async function onAgentChange(){
         return;
       }
       const toSec = (t)=> toMinutes(t.slice(0,5))*60 + Number(t.slice(6,8)||0);
-      const nowD = new Date();
+      const nowD = nowMA();
       const nowSec = nowD.getHours()*3600 + nowD.getMinutes()*60 + nowD.getSeconds();
       const durationSec = Math.max(0, nowSec - toSec(openLockout.start));
       log.events.push({ type: 'auto_in', time: nowTimeStr(), durationSec });
@@ -2932,7 +3007,7 @@ function freeBreakUsageToday(events, dateStr){
   const isToday = targetDate === todayStr();
   let usedSec = 0;
   let activeStart = null;
-  const nowSec = isToday ? (()=>{ const d=new Date(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds(); })() : (toMinutes(scheduleForDate(targetDate).end)*60);
+  const nowSec = isToday ? (()=>{ const d=nowMA(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds(); })() : (toMinutes(scheduleForDate(targetDate).end)*60);
   pairs.forEach(p=>{
     const startSec = toMinutes(p.start.slice(0,5))*60 + Number(p.start.slice(6,8)||0);
     if(p.end){
@@ -3257,8 +3332,9 @@ function justifiedAbsenceLabel(type, short){
   const map = {
     full: short ? 'Absence justifiée (jour)' : 'Absence justifiée (journée)',
     half: short ? 'Absence justifiée (demi-j)' : 'Absence justifiée (demi-journée)',
-    full_paid: short ? 'Absence payée (jour)' : 'Absence justifiée payée (journée)',
-    half_paid: short ? 'Absence payée (demi-j)' : 'Absence justifiée payée (demi-journée)'
+    full_paid: short ? '🏖️ Congé payé (jour)' : '🏖️ Congé payé (journée)',
+    half_paid: short ? '🏖️ Congé payé (demi-j)' : '🏖️ Congé payé (demi-journée)',
+    mise_a_pied: short ? '🚫 Mise à pied (non payée)' : '🚫 Mise à pied (disciplinaire, non payée)'
   };
   return map[type] || 'Absence justifiée';
 }
@@ -3409,15 +3485,16 @@ async function refreshAgentStatus(){
   const rows = document.getElementById('agentStatusRows');
   if(!currentAgent){ box.style.display = 'none'; return; }
 
-  const now = new Date();
+  const now = nowMA();
   const stats = await monthlyStats(currentAgent, now.getFullYear(), now.getMonth()+1);
   const tier = tierForCount(stats.retardsCumules);
 
   box.style.display = 'block';
   let html = '';
-  html += `<div class="agent-status-row"><span>Retards ce mois-ci (cumul matin + pause)</span><span><b>${stats.retardsCumules}</b></span></div>`;
+  html += `<div class="agent-status-row"><span>Retards + absences ce mois-ci</span><span><b>${stats.retardsCumules}</b></span></div>`;
   html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont retards à l'arrivée</span><span>${stats.retards}</span></div>`;
   html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont retours de pause en retard</span><span>${stats.pauseOver}</span></div>`;
+  html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont absences</span><span>${stats.absences}</span></div>`;
   html += `<div class="agent-status-row"><span>Statut prime d'assiduité</span><span class="tag ${stats.retardsCumules>=3?'late':(stats.retardsCumules>=1?'warn':'ok')}">${stats.retardsCumules>=3?'Perdue (-500 DH)':(stats.retardsCumules>=1?'Décompte activé':'Acquise')}</span></div>`;
   if(tier.level>=5){
     html += `<div class="agent-status-row"><span>Niveau retours</span><span class="tag late">${tier.label}</span></div>`;
@@ -3440,7 +3517,7 @@ async function renderAgentHistory(){
 
   const days = [];
   for(let i=0; i<7; i++){
-    const d = new Date();
+    const d = nowMA();
     d.setDate(d.getDate() - i);
     days.push(todayStr(d));
   }
@@ -3546,7 +3623,21 @@ function scheduleForDate(dateStr){
   return { start: config.start, end: config.end, breaks, note };
 }
 
-function matchBreaksToSchedule(breakPairs, schedBreaks, toleranceMin){
+// Une pause "déjeuner" (nom du créneau) a sa propre tolérance de démarrage (config.tolerance —
+// "Tolérance prise de pause déjeuner"), distincte de celle des autres pauses de la journée
+// (config.breakStartToleranceMin — "Tolérance horaire début des autres pauses"). Aucune des deux ne
+// s'applique jamais au retard à l'arrivée (voir evaluateDay ci-dessous) ni à la durée d'une pause.
+function isLunchBreakName(name){
+  return /d.jeuner|dejeuner|lunch/i.test(name || '');
+}
+function toleranceForBreak(schedBreak){
+  if(isLunchBreakName(schedBreak && schedBreak.name)){
+    return config.tolerance != null ? config.tolerance : 15;
+  }
+  return config.breakStartToleranceMin != null ? config.breakStartToleranceMin : 15;
+}
+
+function matchBreaksToSchedule(breakPairs, schedBreaks){
   const usedSched = new Set();
   return breakPairs.map((pair, idx)=>{
     const startMin = toMinutes(pair.start.slice(0,5));
@@ -3558,11 +3649,12 @@ function matchBreaksToSchedule(breakPairs, schedBreaks, toleranceMin){
     });
     if(bestIdx === -1) return { pair, sched: null, startDiffMin: null, withinTolerance: false };
     usedSched.add(bestIdx);
+    const sched = schedBreaks[bestIdx];
     return {
       pair,
-      sched: schedBreaks[bestIdx],
+      sched,
       startDiffMin: bestDiff,
-      withinTolerance: bestDiff <= toleranceMin
+      withinTolerance: bestDiff <= toleranceForBreak(sched)
     };
   });
 }
@@ -3572,15 +3664,18 @@ function evaluateDay(events, dateStr, freeBreakBonusMin){
   const inEvt = events.find(e=>e.type==='in');
   const outEvt = [...events].reverse().find(e=>e.type==='out');
   const breakPairs = extractBreakPairs(events);
-  const toleranceMin = config.breakStartToleranceMin!=null ? config.breakStartToleranceMin : 15;
 
+  // Règlement interne — Politique des retards : "Toute minute de retard, même d'une seule minute,
+  // entraîne une retenue immédiate... sans exception ni tolérance." Aucune marge n'est donc appliquée
+  // ici, quel que soit un réglage de tolérance — ceux-ci ne concernent que l'heure de démarrage des
+  // pauses (voir toleranceForBreak ci-dessus), jamais l'heure d'arrivée.
   let lateMinutes = 0;
   if(inEvt){
     const diff = toMinutes(inEvt.time.slice(0,5)) - toMinutes(sched.start);
-    if(diff > (config.tolerance||0)) lateMinutes = diff;
+    if(diff > 0) lateMinutes = diff;
   }
 
-  const matches = matchBreaksToSchedule(breakPairs, sched.breaks, toleranceMin);
+  const matches = matchBreaksToSchedule(breakPairs, sched.breaks);
   const breakIssues = matches.map((m, i)=>{
     const s = m.sched;
     const expectedDuration = s ? (toMinutes(s.end) - toMinutes(s.start)) : null;
@@ -3745,7 +3840,7 @@ function exportCSV(){
   rows.forEach(r=>{
     const anyBreakOver = r.breakIssues?.some(b=>b.over) || false;
     let sanction = '';
-    if(r.justifiedAbsence) sanction = r.justifiedAbsence === 'full' ? 'absence justifiee (jour)' : 'absence justifiee (demi-jour)';
+    if(r.justifiedAbsence) sanction = justifiedAbsenceLabel(r.justifiedAbsence, true);
     else if(r.lateMinutes > 0) sanction = r.lateMinutes <= 10 ? '-30min salaire' : 'journee non payee';
     let statut = 'OK';
     if(r.isIndep) statut = 'Indépendant';
@@ -3774,31 +3869,55 @@ function tierForCount(count){
 
 async function monthlyStats(agent, year, month){
   if(isIndependant(agent)){
-    return { agent, retards: 0, pauseOver: 0, retardsCumules: 0, phoneYoutube: 0, objectif: 0, total: 0 };
+    return { agent, retards: 0, pauseOver: 0, absences: 0, retardsCumules: 0, phoneYoutube: 0, objectif: 0, total: 0 };
   }
   const daysInMonth = new Date(year, month, 0).getDate();
+  const todayDateStr = todayStr();
   const dateStrs = [];
-  for(let d=1; d<=daysInMonth; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-  const dayData = await Promise.all(dateStrs.map(async dateStr=>({
-    dateStr,
-    log: await getDayLog(agent, dateStr),
-    infr: await getInfractions(agent, dateStr)
-  })));
-  let retards = 0, pauseOver = 0, phoneYoutube = 0, objectif = 0;
-  dayData.forEach(({dateStr, log, infr})=>{
-    if(log.events.length>0 && !log.justifiedAbsence){
-      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
-      if(ev.lateMinutes > 0) retards++;
-      if(ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0) pauseOver++;
+  // On ne regarde jamais un jour futur (rien ne peut encore être pointé) ni un jour non travaillé
+  // (week-end, jour férié français) : personne n'est censé pointer ces jours-là, donc l'absence de
+  // pointage n'y est jamais une absence — seuls les jours ouvrés jusqu'à aujourd'hui sont évalués.
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if(ds > todayDateStr) break;
+    dateStrs.push(ds);
+  }
+  const dayData = await Promise.all(dateStrs.map(async dateStr=>{
+    const [log, infr, board] = await Promise.all([
+      getDayLog(agent, dateStr),
+      getInfractions(agent, dateStr),
+      prodBoardCache[dateStr] ? Promise.resolve(prodBoardCache[dateStr]) : getProdBoard(dateStr)
+    ]);
+    prodBoardCache[dateStr] = board;
+    return { dateStr, log, infr, board };
+  }));
+  let retards = 0, pauseOver = 0, absences = 0, phoneYoutube = 0, objectif = 0;
+  dayData.forEach(({dateStr, log, infr, board})=>{
+    // Retard/pause/absence ne sont évalués QUE les jours ouvrés (règlement : horaires lundi-vendredi,
+    // jours fériés français exclus) — un week-end ou un jour férié sans pointage n'est jamais une
+    // absence, personne n'y est censé travailler. Les infractions manuelles (téléphone, objectif), elles,
+    // s'appliquent quel que soit le jour : un admin peut les saisir même un jour normalement non travaillé.
+    if(!log.justifiedAbsence && isWorkingDay(dateStr)){
+      if(log.events.length>0){
+        const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+        if(ev.lateMinutes > 0) retards++;
+        if(ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0) pauseOver++;
+      } else {
+        // « Absent » = aucun pointage ET aucun contrat saisi ce jour-là (même définition que partout
+        // ailleurs dans l'appli). Compte comme un retard pour l'escalade « 3e retard OU absence »
+        // (Règlement interne — Prime d'assiduité & retards répétés).
+        const realizedToday = getAgentProd(board, agent).realized || 0;
+        if(realizedToday === 0) absences++;
+      }
     }
     infr.forEach(i=>{
       if(i.type==='phone_youtube') phoneYoutube++;
       if(i.type==='objectif') objectif++;
     });
   });
-  const retardsCumules = retards + pauseOver;
-  const total = retards + pauseOver + phoneYoutube + objectif;
-  return { agent, retards, pauseOver, retardsCumules, phoneYoutube, objectif, total };
+  const retardsCumules = retards + pauseOver + absences;
+  const total = retards + pauseOver + absences + phoneYoutube + objectif;
+  return { agent, retards, pauseOver, absences, retardsCumules, phoneYoutube, objectif, total };
 }
 
 let _lastMonthlyStats = [];
@@ -4574,7 +4693,7 @@ async function renderBossRevenue(){
     el.innerHTML = '<div class="empty">Règle ta commission par contrat dans Réglages → 💰 Ton chiffre d\'affaires pour activer ce calcul.</div>';
     return;
   }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4603,14 +4722,14 @@ async function renderBossRevenue(){
 // 💼 MASSE SALARIALE PRÉVISIONNELLE DU MOIS
 // ============================================================
 async function computeTotalPayrollMonth(year, month){
-  const contractsUnderSupervision = await contractsUnderAllSupervisors(year, month);
+  const supervisionMap = await contractsUnderSupervisionByAgent(year, month);
   let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
   await Promise.all(config.agents.map(async agent=>{
     const pay = getAgentPay(agent);
     const monthStats = await monthlyStats(agent, year, month);
     const assiduiteAcquise = monthStats.retardsCumules < 3;
     const res = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
-    const supervisorBonus = isSupervisor(agent) ? Math.round(contractsUnderSupervision * (pay.supervisorPrimePerContract || 0)) : 0;
+    const supervisorBonus = isSupervisor(agent) ? Math.round((supervisionMap[agent] || 0) * (pay.supervisorPrimePerContract || 0)) : 0;
     const total = (res ? res.total : 0) + supervisorBonus;
     if(pay.isIndep) totalIndep += total;
     else if(pay.noObjectif) totalBackoffice += total;
@@ -4625,7 +4744,7 @@ async function renderPayrollSummary(){
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
   el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
 
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4659,7 +4778,7 @@ async function renderNetBalance(){
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
   el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
 
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4701,7 +4820,7 @@ async function renderTrendChart(targetId){
 
   const days = [];
   for(let i=13; i>=0; i--){
-    const d = new Date();
+    const d = nowMA();
     d.setDate(d.getDate()-i);
     days.push(todayStr(d));
   }
@@ -4740,7 +4859,7 @@ async function renderMonthComparison(targetId){
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = ''; return; }
 
-  const now = new Date();
+  const now = nowMA();
   const dayOfMonth = now.getDate();
   const thisYear = now.getFullYear(), thisMonth = now.getMonth()+1;
   let lastMonth = thisMonth - 1, lastMonthYear = thisYear;
@@ -4805,7 +4924,7 @@ async function computeMonthProjection(agent, year, month){
   if(mini <= 0) return null;
 
   const realized = await monthlyRealizedContracts(agent, year, month);
-  const now = new Date();
+  const now = nowMA();
   const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
   const totalWorkingDays = workingDaysInMonth(year, month);
   const elapsedWorkingDays = isCurrentMonth ? workingDaysElapsedInMonth() : totalWorkingDays;
@@ -4822,7 +4941,7 @@ async function renderProjectionPanel(){
   if(!el) return;
   const nonIndep = config.agents.filter(a=>!isIndependant(a));
   if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent salarié.</div>'; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4880,7 +4999,7 @@ async function renderRepeatOffendersPanel(){
   if(!el) return;
   const nonIndep = config.agents.filter(a=>!isIndependant(a));
   if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent.</div>'; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -4908,7 +5027,7 @@ async function renderBestWorstDayPanel(targetId){
   const el = document.getElementById(targetId || 'bestWorstDayPanel');
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = ''; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
   const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
@@ -4955,7 +5074,7 @@ async function renderNearBonusPanel(){
   if(!el) return;
   const nonIndep = config.agents.filter(a=>!isIndependant(a) && !getAgentPay(a).noObjectif);
   if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent concerné.</div>'; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4986,7 +5105,7 @@ async function renderInactiveAgentsPanel(){
   // Les 5 derniers jours ouvrés (lundi-vendredi), pour repérer une série de 0 consécutifs jusqu'à
   // aujourd'hui (une pause ou un jour férié n'interrompt pas artificiellement la détection).
   const days = [];
-  let cursor = new Date();
+  let cursor = nowMA();
   while(days.length < 5){
     const dow = cursor.getDay();
     if(dow !== 0 && dow !== 6) days.unshift(todayStr(cursor));
@@ -5049,6 +5168,7 @@ async function renderAllMonthly(){
     kpiRow.innerHTML = '';
     overviewContainer.innerHTML = '<div class="empty">Ajoute des agents dans Réglages pour voir la vue d\'ensemble.</div>';
     escaladeContainer.innerHTML = '';
+    await renderRetardsAbsencesAdmin();
     return;
   }
   const [year, month] = monthVal.split('-').map(Number);
@@ -5061,17 +5181,19 @@ async function renderAllMonthly(){
   const nbNonConformes = nonIndepStats.filter(s=>s.total>0).length;
   const totalRetards = nonIndepStats.reduce((s,x)=>s+x.retards,0);
   const totalPauses = nonIndepStats.reduce((s,x)=>s+x.pauseOver,0);
+  const totalAbsences = nonIndepStats.reduce((s,x)=>s+x.absences,0);
   const totalAutres = nonIndepStats.reduce((s,x)=>s+x.phoneYoutube+x.objectif,0);
   kpiRow.innerHTML = `
     <div class="kpi-card ${nbNonConformes>0?'red':'green'}"><div class="num">${nbNonConformes}</div><div class="lbl">Agent(s) non conforme(s)</div></div>
     <div class="kpi-card amber"><div class="num">${totalRetards}</div><div class="lbl">Retards ce mois</div></div>
     <div class="kpi-card amber"><div class="num">${totalPauses}</div><div class="lbl">Pauses dépassées</div></div>
+    <div class="kpi-card red"><div class="num">${totalAbsences}</div><div class="lbl">Absences (non pointées)</div></div>
     <div class="kpi-card red"><div class="num">${totalAutres}</div><div class="lbl">Téléphone/YouTube + Objectifs</div></div>
   `;
 
   const maxTotal = Math.max(1, ...stats.map(s=>s.total));
   let html = `<table><thead><tr>
-    <th>Agent</th><th>Retards arrivée</th><th>Retards pause</th><th>Cumul assiduité</th><th>Téléphone/YouTube</th><th>Objectifs non atteints</th><th>Total infractions</th><th>Niveau</th>
+    <th>Agent</th><th>Retards arrivée</th><th>Retards pause</th><th>Absences</th><th>Cumul assiduité</th><th>Téléphone/YouTube</th><th>Objectifs non atteints</th><th>Total infractions</th><th>Niveau</th>
   </tr></thead><tbody>`;
   stats.forEach(s=>{
     const isIndep = isIndependant(s.agent);
@@ -5084,6 +5206,7 @@ async function renderAllMonthly(){
       <td><b>${s.agent}</b>${isIndep ? ' <span class="tag independant">Indé</span>' : ''}</td>
       <td>${isIndep ? '—' : s.retards}</td>
       <td>${isIndep ? '—' : s.pauseOver}</td>
+      <td>${isIndep ? '—' : s.absences}</td>
       <td>${isIndep ? '—' : `<b>${s.retardsCumules}</b>`}</td>
       <td>${isIndep ? '—' : s.phoneYoutube}</td>
       <td>${isIndep ? '—' : s.objectif}</td>
@@ -5104,12 +5227,13 @@ async function renderAllMonthly(){
     const tier = tierForCount(s.retardsCumules);
     esc += `<div class="escalade-card">
       <div class="name">${s.agent}</div>
-      <div class="count">${s.retardsCumules} retard${s.retardsCumules>1?'s':''} cumulés ce mois-ci <span style="color:var(--muted); font-weight:500;">(${s.retards} arrivée + ${s.pauseOver} pause)</span></div>
+      <div class="count">${s.retardsCumules} retard${s.retardsCumules>1?'s':''}/absence${s.retardsCumules>1?'s':''} cumulés ce mois-ci <span style="color:var(--muted); font-weight:500;">(${s.retards} arrivée + ${s.pauseOver} pause + ${s.absences} absence${s.absences>1?'s':''})</span></div>
       <span class="tier ${tier.cls}">${tier.label}</span>
     </div>`;
   });
   esc += '</div>';
   escaladeContainer.innerHTML = esc;
+  await renderRetardsAbsencesAdmin();
 }
 
 function jumpToAgentDay(agent, yearMonth){
@@ -5123,11 +5247,11 @@ function jumpToAgentDay(agent, yearMonth){
 
 function exportOverviewCSV(){
   const monthVal = document.getElementById('monthSelect').value;
-  let csv = 'Agent;Independant;Retards arrivee;Retards pause;Cumul assiduite;Telephone-YouTube;Objectifs non atteints;Total infractions;Niveau\n';
+  let csv = 'Agent;Independant;Retards arrivee;Retards pause;Absences;Cumul assiduite;Telephone-YouTube;Objectifs non atteints;Total infractions;Niveau\n';
   _lastMonthlyStats.forEach(s=>{
     const isIndep = isIndependant(s.agent);
     const tier = tierForCount(s.retardsCumules);
-    csv += `${s.agent};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.retardsCumules};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
+    csv += `${s.agent};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.absences};${isIndep?'':s.retardsCumules};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
   });
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -5174,6 +5298,17 @@ function frenchHolidaysSet(year){
   if(!_frenchHolidaysCache[year]) _frenchHolidaysCache[year] = frenchHolidaysForYear(year);
   return _frenchHolidaysCache[year];
 }
+// Vrai si dateStr (YYYY-MM-DD) est un jour ouvré : ni samedi/dimanche, ni jour férié français. Utilisé
+// pour ne jamais compter un jour non travaillé comme un retard ou une absence (règlement interne : les
+// horaires ne s'appliquent qu'aux jours ouvrés — cf. jours fériés listés dans Réglages → Horaires).
+function isWorkingDay(dateStr){
+  const dt = new Date(dateStr + 'T00:00:00');
+  const dow = dt.getDay();
+  if(dow===0 || dow===6) return false;
+  if(frenchHolidaysSet(dt.getFullYear()).has(dateStr)) return false;
+  return true;
+}
+
 function workingDaysInMonth(year, month){
   const daysInMonth = new Date(year, month, 0).getDate();
   const holidays = frenchHolidaysSet(year);
@@ -5188,11 +5323,11 @@ function workingDaysInMonth(year, month){
   return count;
 }
 function currentWorkingDaysInMonth(){
-  const now = new Date();
+  const now = nowMA();
   return workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
 }
 function workingDaysElapsedInMonth(){
-  const now = new Date();
+  const now = nowMA();
   const holidays = frenchHolidaysSet(now.getFullYear());
   let count = 0;
   for(let d=1; d<=now.getDate(); d++){
@@ -5268,7 +5403,7 @@ function getAgentPay(agent){
 // extra ne se déclenche jamais pour un indépendant, sans code séparé à maintenir)
 function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
   const pay = getAgentPay(agent);
-  const now = new Date();
+  const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
   const daysMonth = workingDaysInMonth(y, m);
@@ -5293,7 +5428,7 @@ function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
 function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month){
   const pay = getAgentPay(agent);
   const pc = getProdConfig();
-  const now = new Date();
+  const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
   const daysMonth = workingDaysInMonth(y, m);
@@ -5315,7 +5450,7 @@ function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month
 
 function estimateSalary(agent, contracts, monthContracts, year, month){
   const pay = getAgentPay(agent);
-  const now = new Date();
+  const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
   const daysMonth = workingDaysInMonth(y, m);
@@ -5370,7 +5505,7 @@ async function monthlyRealizedContracts(agent, year, month){
 
 // Contrats de la semaine (lundi → aujourd'hui)
 async function weekRealizedContracts(agent){
-  const now = new Date();
+  const now = nowMA();
   const dow = now.getDay();
   const daysSinceMonday = (dow + 6) % 7;
   const days = [];
@@ -5421,8 +5556,15 @@ async function monthlyDeductions(agent, year, month){
   const halfHourDeduction = minuteRate * 30;
 
   const daysInMonth = new Date(year, month, 0).getDate();
+  const todayDateStr = todayStr();
   const dateStrs = [];
-  for(let d=1; d<=daysInMonth; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  // Idem : jamais de jour futur, sinon chaque jour pas encore arrivé serait compté comme une absence
+  // et sa retenue appliquée par avance — ce qui gonflerait artificiellement la perte du mois en cours.
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if(ds > todayDateStr) break;
+    dateStrs.push(ds);
+  }
 
   // Les indépendants ne pointent pas : pas de retenue liée au pointage ou à un objectif pour eux,
   // donc on ne va même pas chercher le pointage jour par jour pour eux (plus rapide).
@@ -5451,6 +5593,13 @@ async function monthlyDeductions(agent, year, month){
         const amt = dailyFixedQuote / 2;
         total += amt;
         items.push({ date: dateStr, label: `Absence justifiée (demi-journée) — retenue fixe`, amount: Math.round(amt) });
+      } else if(log.justifiedAbsence === 'mise_a_pied'){
+        // Sanction disciplinaire (5e/6e retard ou absence du règlement interne) : journée non payée,
+        // comme "full", mais gardée sous un libellé distinct pour la traçabilité RH.
+        dayFullyUnpaid = true;
+        const amt = dailyFixedQuote;
+        total += amt;
+        items.push({ date: dateStr, label: `Mise à pied (disciplinaire) — journée non payée`, amount: Math.round(amt) });
       }
       // "full_paid" / "half_paid" : absence justifiée et payée intégralement — aucune retenue, juste
       // exclue du calcul de retard comme les deux cas ci-dessus.
@@ -5471,16 +5620,20 @@ async function monthlyDeductions(agent, year, month){
       continue;
     }
 
-    if(!isIndep && log && log.events.length > 0){
+    // Retard, inactivité et absence ne sont évalués QUE les jours ouvrés (règlement : lundi-vendredi,
+    // jours fériés français exclus) — un week-end ou un jour férié sans pointage n'est jamais pénalisé,
+    // personne n'y est censé travailler. Les infractions manuelles ci-dessous, elles, s'appliquent
+    // quel que soit le jour (un retour client peut arriver n'importe quand).
+    if(!isIndep && log && isWorkingDay(dateStr) && log.events.length > 0){
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 10){
         dayFullyUnpaid = true;
-        const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-        prodBoardCache[dateStr] = board;
-        const dayContracts = (board.agents && board.agents[agent] && board.agents[agent].realized) || 0;
-        const amt = dailyFixedQuote + dayContracts * pay.perContract;
+        // Règlement interne : au-delà de 10 minutes de retard, « la paye du jour n'est pas due » — mais
+        // « les contrats effectués durant la journée sont pris en compte ». Seule la quote-part fixe du
+        // jour est donc retenue ici ; la commission sur les contrats signés ce jour-là n'est PAS reprise.
+        const amt = dailyFixedQuote;
         total += amt;
-        items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min (>10) — journée non payée`, amount: Math.round(amt) });
+        items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min (>10) — journée non payée (contrats du jour restent payés)`, amount: Math.round(amt) });
       } else if(ev.lateMinutes > 0){
         total += halfHourDeduction;
         items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min`, amount: Math.round(halfHourDeduction) });
@@ -5497,6 +5650,21 @@ async function monthlyDeductions(agent, year, month){
           total += amt;
           items.push({ date: dateStr, label: `Inactivité ${lockoutMin}min (délogué)`, amount: Math.round(amt) });
         }
+      }
+    } else if(!isIndep && log && isWorkingDay(dateStr) && log.events.length === 0){
+      // Absence non déclarée (aucun pointage, aucune justification saisie par l'admin) : « Absent » =
+      // aucun pointage ET aucun contrat saisi ce jour-là (même définition que partout ailleurs dans
+      // l'appli). La quote-part fixe du jour est perdue, comme un retard >10min ; s'il y a malgré tout
+      // des contrats saisis ce jour-là (cas rare, ex: saisie a posteriori), on ne pénalise pas — ce n'est
+      // alors pas une "absence" au sens strict, juste un oubli de pointage.
+      const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+      prodBoardCache[dateStr] = board;
+      const dayContracts = getAgentProd(board, agent).realized || 0;
+      if(dayContracts === 0){
+        dayFullyUnpaid = true;
+        const amt = dailyFixedQuote;
+        total += amt;
+        items.push({ date: dateStr, label: `Absence (aucun pointage) — journée non payée`, amount: Math.round(amt) });
       }
     }
     infr.forEach(i=>{
@@ -5517,6 +5685,134 @@ async function monthlyDeductions(agent, year, month){
     });
   }
   return { total: Math.round(total), items };
+}
+
+// ============================================================
+// ⏰ RAPPEL RÈGLEMENT — RETARDS & ABSENCES (widget partagé Cash + Admin)
+// ============================================================
+// Version légère : en un coup d'œil, 3 chiffres (compteur, argent perdu, statut prime) + une frise de
+// progression vers les paliers 0/1/3/5/6 du règlement interne (même compteur retards+absences que
+// monthlyStats). Le détail texte du règlement est replié par défaut (bouton "Voir le détail"). Toujours
+// recalculé en direct depuis les vrais pointages du mois — jamais de jour futur pris en compte (cf.
+// monthlyStats/monthlyDeductions). Les paliers 5 et 6 (mise à pied, ratio de retours ÷2 puis 1:1) restent
+// des rappels textuels : la mise à pied se saisit manuellement (Admin → Corriger le pointage → Mise à
+// pied), et les retours sont suivis hors CRM (délai de 2 mois) — leur impact chiffré n'est donc qu'estimé.
+async function renderRetardsAbsencesPanel(containerId, agent, year, month){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  if(!agent){ el.innerHTML = '<div class="raa-empty">Sélectionne un agent.</div>'; return; }
+  if(isIndependant(agent)){ el.innerHTML = "<div class=\"raa-empty\">🧑‍💼 Indépendant — pas de pointage, cette section ne s'applique pas.</div>"; return; }
+
+  const pay = getAgentPay(agent);
+  const [stats, ded] = await Promise.all([
+    monthlyStats(agent, year, month),
+    monthlyDeductions(agent, year, month)
+  ]);
+  const count = stats.retardsCumules;
+  const tier = tierForCount(count);
+  const daysMonth = workingDaysInMonth(year, month);
+  const dailyFixedQuote = daysMonth > 0 ? (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth : 0;
+  const workMinutes = Math.max(60, toMinutes(config.end) - toMinutes(config.start));
+  const minuteRate = workMinutes > 0 ? dailyFixedQuote / workMinutes : 0;
+  const halfHourDeduction = minuteRate * 30;
+  const retardAbsenceLost = ded.items.filter(i=> /^(Retard|Absence|Mise à pied)/.test(i.label)).reduce((s,i)=> s + i.amount, 0);
+  const primeAssiduitePerdue = count >= 3;
+  const totalLostThisMonth = retardAbsenceLost + (primeAssiduitePerdue ? (pay.primeAssiduite||0) : 0);
+  const fmt = n => Math.round(n).toLocaleString('fr-FR');
+
+  // 5 paliers du règlement, espacés régulièrement sur la frise (0/1/3/5/6 → positions 0/25/50/75/100%).
+  const dots = [
+    { n: 0, pct: 0,   lbl: '0' },
+    { n: 1, pct: 25,  lbl: '1er retard' },
+    { n: 3, pct: 50,  lbl: '3e retard' },
+    { n: 5, pct: 75,  lbl: '5e retard' },
+    { n: 6, pct: 100, lbl: '6e retard' }
+  ];
+  const currentIdx = dots.findIndex(d=> d.n === tier.level);
+  const fillPct = currentIdx >= 0 ? dots[currentIdx].pct : 0;
+  const dotsHtml = dots.map(d=>{
+    let cls;
+    if(d.n < tier.level) cls = 'raa-dot done' + (d.n>=5 ? ' danger' : '');
+    else if(d.n === tier.level) cls = 'raa-dot current';
+    else cls = 'raa-dot';
+    return `<div class="${cls}" style="left:${d.pct}%;"><span class="raa-dot-lbl">${d.lbl}</span></div>`;
+  }).join('');
+
+  const captions = {
+    0: "Aucun souci ce mois-ci ✅",
+    1: "Compteur activé — prime encore acquise",
+    3: `Prime d'assiduité perdue (-${fmt(pay.primeAssiduite||0)} DH)`,
+    5: `Mise à pied + retours ÷2 (au lieu de ÷3)`,
+    6: `Mise à pied + retours 1:1 (au lieu de ÷3)`
+  };
+  const captionColor = tier.level>=5 ? 'var(--red)' : (tier.level>=3 ? 'var(--amber)' : (tier.level>=1 ? 'var(--muted)' : 'var(--green)'));
+
+  const detailRows = [
+    ['Retard 1 à 10 min', `-${fmt(halfHourDeduction)} DH immédiat (30 min de salaire)`],
+    ['Retard +10 min ou absence', `journée non payée (-${fmt(dailyFixedQuote)} DH), contrats du jour toujours payés`],
+    ["3e retard ou absence", `-${fmt(pay.primeAssiduite||0)} DH de prime d'assiduité (perdue pour tout le mois)`],
+    ["5e retard ou absence", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours ÷2 au lieu de ÷3 (hors CRM)`],
+    ["6e retard ou absence", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours 1:1 au lieu de ÷3 (hors CRM)`]
+  ];
+  if(stats.absences > 0){
+    detailRows.push([`Dont absences pures ce mois`, `${stats.absences} (aucun pointage, aucun contrat saisi)`]);
+  }
+  const detailHtml = detailRows.map(([k,v])=> `<div class="raa-detail-row"><span>${k}</span><b>${v}</b></div>`).join('');
+
+  // Journal des jours concernés — dates précises de chaque retard/absence/mise à pied du mois, pour
+  // vérifier en un clic sans avoir à rouvrir l'Explorateur (Admin → Vue d'ensemble).
+  const eventItems = ded.items
+    .filter(i=> /^(Retard|Absence|Mise à pied)/.test(i.label))
+    .sort((a,b)=> a.date.localeCompare(b.date));
+  const eventsHtml = eventItems.length
+    ? eventItems.map(i=>{
+        const d = new Date(i.date + 'T00:00:00');
+        const dLabel = d.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
+        return `<div class="raa-detail-row"><span>${dLabel} — ${i.label}</span><b style="color:var(--red);">-${fmt(i.amount)} DH</b></div>`;
+      }).join('')
+    : `<div class="raa-detail-row"><span>Aucun jour concerné ce mois-ci</span><b style="color:var(--green);">✅</b></div>`;
+
+  const detailId = containerId + '-detail';
+  const btnId = containerId + '-toggle';
+
+  el.innerHTML = `
+    <div class="raa-wrap">
+      <div class="raa-hero">
+        <div class="raa-hero-item">
+          <div class="raa-hero-num" style="color:${captionColor};">${count}</div>
+          <div class="raa-hero-lbl">retard${count>1?'s':''}/absence${count>1?'s':''}</div>
+          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''} · ${stats.absences} absence${stats.absences>1?'s':''}</div>
+        </div>
+        <div class="raa-hero-sep"></div>
+        <div class="raa-hero-item">
+          <div class="raa-hero-num" style="color:${totalLostThisMonth>0?'var(--red)':'var(--green)'};">${totalLostThisMonth>0?'-':''}${fmt(totalLostThisMonth)} DH</div>
+          <div class="raa-hero-lbl">perdu ce mois</div>
+        </div>
+        <div class="raa-hero-sep"></div>
+        <div class="raa-hero-item">
+          <div class="raa-hero-num" style="font-size:16px; color:${primeAssiduitePerdue?'var(--red)':'var(--green)'};">${primeAssiduitePerdue?'Perdue':'Acquise'}</div>
+          <div class="raa-hero-lbl">prime d'assiduité</div>
+        </div>
+      </div>
+
+      <div class="raa-track">
+        <div class="raa-track-fill" style="width:${fillPct}%; background:${tier.level>=5?'var(--red)':(tier.level>=3?'var(--amber)':'var(--green)')};"></div>
+        ${dotsHtml}
+      </div>
+      <div class="raa-caption" style="color:${captionColor};">${captions[tier.level]}</div>
+
+      <button class="raa-toggle" id="${btnId}" onclick="
+        const d=document.getElementById('${detailId}');
+        const show = d.style.display==='none';
+        d.style.display = show?'block':'none';
+        this.textContent = show?'🔽 Masquer le détail':'📋 Voir le détail du règlement + les jours concernés';
+      ">📋 Voir le détail du règlement + les jours concernés</button>
+      <div class="raa-detail" id="${detailId}" style="display:none;">
+        ${detailHtml}
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin:14px 0 4px;">📅 Jours concernés ce mois-ci</div>
+        ${eventsHtml}
+      </div>
+    </div>`;
 }
 
 async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
@@ -6000,7 +6296,7 @@ async function saveArenaDesiredObjectif(){
   if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
   const val = parseInt(document.getElementById('arenaDesiredObjInput').value);
   if(isNaN(val) || val < 0){ alert('Entre un nombre valide.'); return; }
-  const now = new Date();
+  const now = nowMA();
   await saveMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1, val);
   showToast(`🎯 Objectif du mois enregistré : ${val} contrats`, 'ok');
   await renderArena();
@@ -6040,7 +6336,7 @@ async function decrementRealized(){
 // juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
 async function arenaAddRetraction(delta){
   if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const now = new Date();
+  const now = nowMA();
   const year = now.getFullYear(), month = now.getMonth()+1;
   const beforeNet = await monthlyRealizedContracts(currentArenaAgent, year, month);
   const current = await getMonthlyRetractCount(currentArenaAgent, year, month);
@@ -6075,7 +6371,7 @@ async function renderArena(){
   const dateStr = todayStr();
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   prodBoardCache[dateStr] = board;
-  const now = new Date();
+  const now = nowMA();
 
   let rankings, dateLabelText, unitLabel, isMonthScope = (arenaScope === 'month');
 
@@ -6327,7 +6623,7 @@ async function cashAddContract(delta){
 // punition, juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
 async function cashAddRetraction(delta){
   if(!currentCashAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const now = new Date();
+  const now = nowMA();
   const year = now.getFullYear(), month = now.getMonth()+1;
   const beforeNet = await monthlyRealizedContracts(currentCashAgent, year, month);
   const current = await getMonthlyRetractCount(currentCashAgent, year, month);
@@ -6421,12 +6717,94 @@ async function contractsUnderAllSupervisors(year, month){
   return totals.reduce((a,b)=>a+b, 0);
 }
 
+// 🚦 Retard/absence d'un superviseur, jour par jour — utilisé UNIQUEMENT pour la prime de supervision
+// (jamais pour la prime d'assiduité de l'intéressé, qui suit sa propre règle ailleurs dans l'appli).
+// Éligible ce jour-là = a pointé ET son retard à l'arrivée ne dépasse pas 10 minutes — exactement le même
+// seuil que celui qui déclenche la « journée non payée » dans monthlyDeductions (règlement interne). Sous
+// ce seuil (1 à 10 min), il ne perd que -30min de salaire perso, pas sa part de commission d'équipe.
+// Au-delà de 10 min, comme il perd sa journée de salaire, il perd aussi sa part de commission de ce
+// jour-là, redistribuée aux superviseurs présents (cf. supervisorDailyShares). Une absence justifiée
+// (congé, etc.) n'est jamais pénalisante, comme partout ailleurs dans l'appli. « Absent » = aucun
+// pointage ET aucun contrat saisi ce jour-là par ce superviseur (même définition que pour les agents).
+async function isSupervisorEligibleOnDay(agent, dateStr, board){
+  const log = await getDayLog(agent, dateStr);
+  if(log.justifiedAbsence) return true;
+  const hasEvent = log.events && log.events.length > 0;
+  const realizedToday = getAgentProd(board, agent).realized || 0;
+  if(!hasEvent) return realizedToday > 0; // aucun pointage : éligible seulement s'il a quand même saisi un contrat
+  const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+  return ev.lateMinutes <= 10;
+}
+
+// Répartit, jour par jour, les contrats bruts signés par l'équipe de base (hors superviseurs) entre les
+// superviseurs éligibles ce jour-là (pointés à l'heure, ou absence justifiée). Un superviseur en retard
+// (au-delà de la tolérance) ou absent ce jour-là ne récupère rien sur ce jour précis : sa part est
+// redistribuée À PARTS ÉGALES entre les superviseurs éligibles ce même jour. Si aucun superviseur n'est
+// éligible un jour donné, la part de ce jour n'est versée à personne (elle n'est jamais reportée). Les
+// rétractations restent gérées au niveau du mois (comme partout ailleurs) : c'est pourquoi le résultat
+// final est exprimé en PART (0 à 1) de contractsUnderAllSupervisors, et non en contrats bruts directement —
+// voir contractsUnderSupervisionByAgent() ci-dessous, qui applique cette part au total NET du mois.
+async function supervisorDailyShares(year, month){
+  const supervisors = listSupervisors();
+  const shares = {};
+  supervisors.forEach(s=> shares[s] = 0);
+  if(supervisors.length === 0) return shares;
+
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const todayDateStr = todayStr();
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+
+  const dayData = [];
+  let grossTotal = 0;
+  for(let day=1; day<=daysInMonth; day++){
+    const dateStr = `${monthPrefix}${String(day).padStart(2,'0')}`;
+    if(dateStr > todayDateStr) break;
+    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = board;
+    let dayGross = 0;
+    config.agents.forEach(agent=>{
+      if(isSupervisor(agent)) return;
+      dayGross += getAgentProd(board, agent).realized || 0;
+    });
+    if(dayGross <= 0) continue;
+    grossTotal += dayGross;
+    dayData.push({ dateStr, board, dayGross });
+  }
+  if(grossTotal <= 0) return shares;
+
+  for(const { dateStr, board, dayGross } of dayData){
+    const eligibility = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
+    const eligible = eligibility.filter(e=>e.ok).map(e=>e.sup);
+    if(eligible.length === 0) continue;
+    const weight = dayGross / grossTotal;
+    const perSup = weight / eligible.length;
+    eligible.forEach(sup=> shares[sup] += perSup);
+  }
+  return shares;
+}
+
+// Point d'entrée à utiliser PARTOUT où la prime de supervision est calculée : renvoie, pour chaque
+// superviseur, le nombre de "contrats équivalents" à utiliser dans SON propre calcul (contrats × son
+// propre taux DH/contrat), déjà ajusté retard/absence + redistribution entre superviseurs présents.
+// Remplace l'ancien calcul uniforme (contractsUnderAllSupervisors appliqué tel quel à tout le monde).
+async function contractsUnderSupervisionByAgent(year, month){
+  const supervisors = listSupervisors();
+  const result = {};
+  supervisors.forEach(s=> result[s] = 0);
+  if(supervisors.length === 0) return result;
+  const totalNetContracts = await contractsUnderAllSupervisors(year, month);
+  if(totalNetContracts <= 0) return result;
+  const shares = await supervisorDailyShares(year, month);
+  supervisors.forEach(s=> result[s] = Math.round(totalNetContracts * (shares[s] || 0)));
+  return result;
+}
+
 async function renderCash(){
   if(!currentCashAgent) return;
   const agent = currentCashAgent;
   const pay = getAgentPay(agent);
   const pc = getProdConfig();
-  const now = new Date();
+  const now = nowMA();
   const dateStr = todayStr();
 
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
@@ -6443,7 +6821,8 @@ async function renderCash(){
   const isSupervisorAgent = isSupervisor(agent);
   let contractsUnderSupervision = 0, supervisorBonus = 0;
   if(isSupervisorAgent){
-    contractsUnderSupervision = await contractsUnderAllSupervisors(now.getFullYear(), now.getMonth()+1);
+    const supervisionMap = await contractsUnderSupervisionByAgent(now.getFullYear(), now.getMonth()+1);
+    contractsUnderSupervision = supervisionMap[agent] || 0;
     supervisorBonus = Math.round(contractsUnderSupervision * (pay.supervisorPrimePerContract || 0));
   }
 
@@ -6470,6 +6849,7 @@ async function renderCash(){
       : `Aucune rétraction ce mois — ${monthContracts} contrat${monthContracts>1?'s':''}`;
   }
   renderCashObjectifsRecap();
+  renderRetardsAbsencesPanel('cashRetardsAbsencesPanel', agent, now.getFullYear(), now.getMonth()+1);
 
   // Ticker — classement par CONTRATS (production), pour les annonces dynamiques 1er/2e/3e/avant-dernier/ex-aequo.
   const allRankings = [];
@@ -6555,8 +6935,8 @@ async function renderCash(){
 // Classement "argent réel" partagé entre le hero (rang affiché) et la liste du classement, pour que
 // les deux soient toujours parfaitement cohérents (même calcul, même total, même ordre).
 async function computeSalaryLeaderboard(){
-  const now = new Date();
-  const contractsUnderSupervision = await contractsUnderAllSupervisors(now.getFullYear(), now.getMonth()+1);
+  const now = nowMA();
+  const supervisionMap = await contractsUnderSupervisionByAgent(now.getFullYear(), now.getMonth()+1);
   const rows = [];
   for(const ag of config.agents){
     const isIndep = isIndependant(ag);
@@ -6564,7 +6944,7 @@ async function computeSalaryLeaderboard(){
     const assiduiteAcquise = monthStats.retardsCumules < 3;
     const res = await estimateSalaryMonthReal(ag, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
     const p = getAgentPay(ag);
-    const supervisorBonus = isSupervisor(ag) ? Math.round(contractsUnderSupervision * (p.supervisorPrimePerContract || 0)) : 0;
+    const supervisorBonus = isSupervisor(ag) ? Math.round((supervisionMap[ag] || 0) * (p.supervisorPrimePerContract || 0)) : 0;
     rows.push({ agent: ag, total: res.total + supervisorBonus, contracts: res.status.realized, isIndep });
   }
   rows.sort((a,b)=> b.total !== a.total ? b.total - a.total : a.agent.localeCompare(b.agent));
@@ -6660,7 +7040,7 @@ function renderCashRealGrid(){
 
   // Repère fixe (hors commissions imprévisibles) : ce que la partie garantie du salaire représente sur
   // le mois complet, et où on en est aujourd'hui au prorata des jours ouvrés déjà écoulés.
-  const now = new Date();
+  const now = nowMA();
   const totalWorkingDaysThisMonth = workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
   const elapsedWorkingDays = workingDaysElapsedInMonth();
   const fixedFullMonth = Math.round(pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite);
@@ -6854,7 +7234,7 @@ async function renderSupervision(){
   const supervisor = currentSupervisionAgent;
   const supervisorPay = getAgentPay(supervisor);
   const pc = getProdConfig();
-  const now = new Date();
+  const now = nowMA();
   const dateStr = todayStr();
   const daysRemaining = Math.max(0, currentWorkingDaysInMonth() - workingDaysElapsedInMonth());
 
@@ -6933,9 +7313,10 @@ async function renderSupervision(){
     teamMonthContracts += r.monthReal;
   });
 
+  // Classé par contrats réalisés ce mois-ci (le plus productif en premier), alphabétique si égalité.
   rows.sort((a,b)=>{
     if(a.isIndep !== b.isIndep) return (a.isIndep?1:0) - (b.isIndep?1:0);
-    if(b.pctMonth !== a.pctMonth) return b.pctMonth - a.pctMonth;
+    if(b.monthReal !== a.monthReal) return b.monthReal - a.monthReal;
     return a.agent.localeCompare(b.agent);
   });
 
@@ -6945,7 +7326,8 @@ async function renderSupervision(){
   // d'un superviseur, ni le sien (s'il vend aussi), ni ceux des AUTRES superviseurs (utile quand il y en a
   // plusieurs : chacun ne touche que sur son équipe de vendeurs, jamais sur ses collègues superviseurs).
   const myOwnRow = rows.find(r=>r.agent===supervisor);
-  const contractsUnderSupervision = rows.reduce((sum, r)=> isSupervisor(r.agent) ? sum : sum + r.monthReal, 0);
+  const supervisionMap = await contractsUnderSupervisionByAgent(now.getFullYear(), now.getMonth()+1);
+  const contractsUnderSupervision = supervisionMap[supervisor] || 0;
   const supervisorBonus = Math.round(contractsUnderSupervision * (supervisorPay.supervisorPrimePerContract || 0));
   const teamPct = totalMonthObj > 0 ? Math.round((totalMonthReal/totalMonthObj)*100) : 0;
 
@@ -7236,7 +7618,7 @@ async function renderAgentPayTable(){
     container.innerHTML = '<div class="empty" style="padding:20px;">Ajoute des agents dans Réglages.</div>';
     return;
   }
-  const now = new Date();
+  const now = nowMA();
   const year = now.getFullYear(), month = now.getMonth()+1;
   const desiredObjs = await Promise.all(config.agents.map(agent=>getMonthlyDesiredObjective(agent, year, month)));
   const totalWorkingDays = workingDaysInMonth(year, month);
@@ -7365,15 +7747,15 @@ async function renderMonthlyObjectif(){
   for(const agent of config.agents){
     rows.push(await monthlyObjectifStatus(agent, year, month));
   }
+  // Classé par contrats réalisés ce mois-ci (le plus productif en premier), alphabétique si égalité.
   rows.sort((a,b)=>{
-    if(b.pct !== a.pct) return b.pct - a.pct;
     if(b.realized !== a.realized) return b.realized - a.realized;
     return a.agent.localeCompare(b.agent);
   });
   rows.forEach((r,i)=> r.rank = i+1);
 
   // Même prime de supervision que dans le Cash et le classement des salaires, calculée une seule fois.
-  const contractsUnderSupervisionMo = await contractsUnderAllSupervisors(year, month);
+  const supervisionMapMo = await contractsUnderSupervisionByAgent(year, month);
 
   let html = `<table class="salary-table"><thead><tr>
     <th>Rang</th><th>Agent</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>Réalisé</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
@@ -7401,7 +7783,7 @@ async function renderMonthlyObjectif(){
     const monthStats = await monthlyStats(r.agent, year, month);
     const assiduiteAcquise = monthStats.retardsCumules < 3;
     const full = await estimateSalaryMonthReal(r.agent, year, month, assiduiteAcquise);
-    const supervisorBonusMo = isSupervisor(r.agent) ? Math.round(contractsUnderSupervisionMo * (pay.supervisorPrimePerContract || 0)) : 0;
+    const supervisorBonusMo = isSupervisor(r.agent) ? Math.round((supervisionMapMo[r.agent] || 0) * (pay.supervisorPrimePerContract || 0)) : 0;
     const fullTotalWithSupervisor = (full ? full.total : 0) + supervisorBonusMo;
     const rowClass = isFreeRow ? '' : (r.objectif>0 && r.atteint ? '' : (r.objectif>0 ? 'warn' : ''));
     const indepTag = r.isIndep ? ' <span class="tag independant">Indé</span>' : (noObj ? ` <span class="tag warn">${getNoObjectifLabel(r.agent)}</span>` : '');
@@ -7526,7 +7908,7 @@ async function renderProdAdmin(){
     const [simYear, simMonth] = dateStr.split('-').map(Number);
     // Même prime de supervision que dans le Cash et le classement des salaires — calculée une seule fois,
     // sur les contrats des agents de base (hors superviseurs), puis appliquée au taux propre à chaque superviseur.
-    const contractsUnderSupervisionSim = await contractsUnderAllSupervisors(simYear, simMonth);
+    const supervisionMapSim = await contractsUnderSupervisionByAgent(simYear, simMonth);
     let sim = `<table class="salary-table"><thead><tr>
       <th>Agent</th><th>Fixe/mois</th><th>DH/contrat</th><th>Contrats jour</th><th>Brut jour (simul.)</th><th>Contrats (mois)</th><th>Brut total mois (simul.)</th>
     </tr></thead><tbody>`;
@@ -7538,7 +7920,7 @@ async function renderProdAdmin(){
       const monthStats = await monthlyStats(r.agent, simYear, simMonth);
       const assiduiteAcquise = monthStats.retardsCumules < 3;
       const monthRes = await estimateSalaryMonthReal(r.agent, simYear, simMonth, assiduiteAcquise);
-      const supervisorBonusSim = isSupervisor(r.agent) ? Math.round(contractsUnderSupervisionSim * (pay.supervisorPrimePerContract || 0)) : 0;
+      const supervisorBonusSim = isSupervisor(r.agent) ? Math.round((supervisionMapSim[r.agent] || 0) * (pay.supervisorPrimePerContract || 0)) : 0;
       const monthTotalSim = (monthRes ? monthRes.total : 0) + supervisorBonusSim;
       const statusTag = pay.isIndep ? ' 🧑‍💼' : (pay.noObjectif ? ` <span style="color:var(--amber);">(${getNoObjectifLabel(r.agent)})</span>` : '');
       totalDaySal += daySal;
