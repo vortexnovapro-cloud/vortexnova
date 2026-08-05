@@ -1055,7 +1055,7 @@ function tryDeviceGateAdmin(){
           <div id="corrBreaksList"></div>
 
           <label style="margin:18px 0 10px;">🔒 Périodes d'inactivité (délogages) ce jour-là</label>
-          <div class="section-sub" style="margin-top:-6px;">Ajoute, corrige ou supprime les délogages pour inactivité — utile en cas de faux positif, ou pour retirer une déduction injustifiée. Laisse l'heure de fin vide si le délogage est encore "en cours".</div>
+          <div class="section-sub" style="margin-top:-6px;">Ajoute, corrige ou supprime les délogages pour inactivité — utile en cas de faux positif. Purement informatif, sans impact sur le salaire. Laisse l'heure de fin vide si le délogage est encore "en cours".</div>
           <div id="corrLockoutList"></div>
           <button class="add-break-btn" onclick="addCorrLockoutRow()">+ Ajouter une période d'inactivité</button>
 
@@ -4115,7 +4115,7 @@ async function renderExploDailyDetail(agents, dateList){
   }));
 
   let html = `<div class="section-title">📅 Détail jour par jour${dateList.length>1?` (${dateList.length} jours)`:''}</div>
-    <div class="section-sub" style="margin-top:-6px;">Retard compté dès 1 minute. « Absent » = aucun pointage ET aucun contrat saisi ce jour-là. Inactivité = temps délogué (déconnexion auto), déduit au prorata du salaire du jour.</div>
+    <div class="section-sub" style="margin-top:-6px;">Retard compté dès 1 minute. « Absent » = aucun pointage ET aucun contrat saisi ce jour-là. Inactivité = temps délogué (déconnexion auto), affiché à titre informatif uniquement, sans impact sur le salaire.</div>
     <div style="overflow-x:auto;"><table><thead><tr>
       <th>Date</th><th>Agent</th><th>Statut</th><th>Inactivité</th><th>Objectif jour</th><th>Réalisé jour</th><th>Infractions</th>
     </tr></thead><tbody>`;
@@ -4641,7 +4641,7 @@ async function renderTodaySnapshot(){
         tags += `<span class="tag late">Retard ${r.ev.lateMinutes}min · ${sanction}</span>`;
       }
       if(r.anyBreakOver) tags += `<span class="tag warn">Pause dépassée</span>`;
-      if(r.lockoutMin>0) tags += `<span class="tag warn">🔒 Inactivité ${r.lockoutMin}min · déduit au prorata</span>`;
+      if(r.lockoutMin>0) tags += `<span class="tag warn">🔒 Inactivité ${r.lockoutMin}min (info)</span>`;
       if(r.stillLockedOut) tags += `<span class="tag late">🔒 Toujours délogué — pas reconnecté</span>`;
       r.infr.forEach(i=>{
         const meta = INFR_TYPES[i.type];
@@ -4722,14 +4722,14 @@ async function renderBossRevenue(){
 // 💼 MASSE SALARIALE PRÉVISIONNELLE DU MOIS
 // ============================================================
 async function computeTotalPayrollMonth(year, month){
-  const supervisionMap = await contractsUnderSupervisionByAgent(year, month);
+  const supervisionBonus = await supervisorMonthlyBonus(year, month);
   let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
   await Promise.all(config.agents.map(async agent=>{
     const pay = getAgentPay(agent);
     const monthStats = await monthlyStats(agent, year, month);
     const assiduiteAcquise = monthStats.retardsCumules < 3;
     const res = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
-    const supervisorBonus = isSupervisor(agent) ? Math.round((supervisionMap[agent] || 0) * (pay.supervisorPrimePerContract || 0)) : 0;
+    const supervisorBonus = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
     const total = (res ? res.total : 0) + supervisorBonus;
     if(pay.isIndep) totalIndep += total;
     else if(pay.noObjectif) totalBackoffice += total;
@@ -5578,14 +5578,11 @@ async function monthlyDeductions(agent, year, month){
   const items = [];
 
   for(const { dateStr, log, infr } of dayData){
-    let dayFullyUnpaid = false;
-
     if(!isIndep && log && log.justifiedAbsence){
       // Absence justifiée : retenue comme d'habitude (quote-part du fixe, pleine ou à moitié), mais
       // JAMAIS comptée comme un retard — n'affecte donc jamais la prime d'assiduité. Les contrats du
       // jour restent payés normalement s'il y en a (ex: absence l'après-midi après avoir signé le matin).
       if(log.justifiedAbsence === 'full'){
-        dayFullyUnpaid = true;
         const amt = dailyFixedQuote;
         total += amt;
         items.push({ date: dateStr, label: `Absence justifiée (journée) — retenue fixe`, amount: Math.round(amt) });
@@ -5596,7 +5593,6 @@ async function monthlyDeductions(agent, year, month){
       } else if(log.justifiedAbsence === 'mise_a_pied'){
         // Sanction disciplinaire (5e/6e retard ou absence du règlement interne) : journée non payée,
         // comme "full", mais gardée sous un libellé distinct pour la traçabilité RH.
-        dayFullyUnpaid = true;
         const amt = dailyFixedQuote;
         total += amt;
         items.push({ date: dateStr, label: `Mise à pied (disciplinaire) — journée non payée`, amount: Math.round(amt) });
@@ -5627,7 +5623,6 @@ async function monthlyDeductions(agent, year, month){
     if(!isIndep && log && isWorkingDay(dateStr) && log.events.length > 0){
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 10){
-        dayFullyUnpaid = true;
         // Règlement interne : au-delà de 10 minutes de retard, « la paye du jour n'est pas due » — mais
         // « les contrats effectués durant la journée sont pris en compte ». Seule la quote-part fixe du
         // jour est donc retenue ici ; la commission sur les contrats signés ce jour-là n'est PAS reprise.
@@ -5639,17 +5634,12 @@ async function monthlyDeductions(agent, year, month){
         items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min`, amount: Math.round(halfHourDeduction) });
       }
 
-      // Inactivité (déconnexion auto) : déduction au prorata du temps réellement délogué, comme un
-      // retard mais basé sur la durée exacte plutôt qu'un forfait. Ne compte jamais comme un "retard"
-      // dans monthlyStats — ça n'impacte donc jamais la prime d'assiduité, uniquement le salaire du jour.
-      // Ignoré si la journée est déjà totalement non payée pour retard grave (pas de double déduction).
-      if(!dayFullyUnpaid){
-        const lockoutMin = totalLockoutMinutes(log.events);
-        if(lockoutMin > 0){
-          const amt = minuteRate * lockoutMin;
-          total += amt;
-          items.push({ date: dateStr, label: `Inactivité ${lockoutMin}min (délogué)`, amount: Math.round(amt) });
-        }
+      // Inactivité (déconnexion auto) : purement informatif, AUCUNE déduction de salaire — l'admin voit
+      // juste combien de temps l'agent est resté délogué, sans que ça n'affecte sa paye ni ne compte
+      // comme un retard dans monthlyStats (donc pas d'impact non plus sur la prime d'assiduité).
+      const lockoutMinInfo = totalLockoutMinutes(log.events);
+      if(lockoutMinInfo > 0){
+        items.push({ date: dateStr, label: `Inactivité ${lockoutMinInfo}min (délogué) — info, non déduit`, amount: 0 });
       }
     } else if(!isIndep && log && isWorkingDay(dateStr) && log.events.length === 0){
       // Absence non déclarée (aucun pointage, aucune justification saisie par l'admin) : « Absent » =
@@ -5661,7 +5651,6 @@ async function monthlyDeductions(agent, year, month){
       prodBoardCache[dateStr] = board;
       const dayContracts = getAgentProd(board, agent).realized || 0;
       if(dayContracts === 0){
-        dayFullyUnpaid = true;
         const amt = dailyFixedQuote;
         total += amt;
         items.push({ date: dateStr, label: `Absence (aucun pointage) — journée non payée`, amount: Math.round(amt) });
@@ -6723,10 +6712,13 @@ async function contractsUnderAllSupervisors(year, month){
 // seuil que celui qui déclenche la « journée non payée » dans monthlyDeductions (règlement interne). Sous
 // ce seuil (1 à 10 min), il ne perd que -30min de salaire perso, pas sa part de commission d'équipe.
 // Au-delà de 10 min, comme il perd sa journée de salaire, il perd aussi sa part de commission de ce
-// jour-là, redistribuée aux superviseurs présents (cf. supervisorDailyShares). Une absence justifiée
+// jour-là, redistribuée aux superviseurs présents (cf. supervisorBonusForDates). Une absence justifiée
 // (congé, etc.) n'est jamais pénalisante, comme partout ailleurs dans l'appli. « Absent » = aucun
 // pointage ET aucun contrat saisi ce jour-là par ce superviseur (même définition que pour les agents).
 async function isSupervisorEligibleOnDay(agent, dateStr, board){
+  // Jour non travaillé (week-end, jour férié) : jamais pénalisant, comme pour tous les retards/absences
+  // ailleurs dans l'appli — même si un contrat a été saisi par erreur ce jour-là par un autre agent.
+  if(!isWorkingDay(dateStr)) return true;
   const log = await getDayLog(agent, dateStr);
   if(log.justifiedAbsence) return true;
   const hasEvent = log.events && log.events.length > 0;
@@ -6736,67 +6728,105 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
   return ev.lateMinutes <= 10;
 }
 
-// Répartit, jour par jour, les contrats bruts signés par l'équipe de base (hors superviseurs) entre les
-// superviseurs éligibles ce jour-là (pointés à l'heure, ou absence justifiée). Un superviseur en retard
-// (au-delà de la tolérance) ou absent ce jour-là ne récupère rien sur ce jour précis : sa part est
-// redistribuée À PARTS ÉGALES entre les superviseurs éligibles ce même jour. Si aucun superviseur n'est
-// éligible un jour donné, la part de ce jour n'est versée à personne (elle n'est jamais reportée). Les
-// rétractations restent gérées au niveau du mois (comme partout ailleurs) : c'est pourquoi le résultat
-// final est exprimé en PART (0 à 1) de contractsUnderAllSupervisors, et non en contrats bruts directement —
-// voir contractsUnderSupervisionByAgent() ci-dessous, qui applique cette part au total NET du mois.
-async function supervisorDailyShares(year, month){
+// Calcule, jour par jour, le montant en DH de la prime de supervision de CHAQUE superviseur sur une liste
+// de dates arbitraire — RÈGLE : le nombre de contrats de l'équipe de base (hors superviseurs) est un
+// SEUL et MÊME chiffre réel pour tout le monde ce jour-là (jamais doublé, jamais divisé — c'est le vrai
+// total, identique à celui affiché ailleurs dans l'appli). Ce qui change, c'est le TAUX (DH/contrat) :
+// un superviseur ÉLIGIBLE ce jour-là (présent, à l'heure ou absence justifiée) touche son propre taux
+// (réglé dans Production) sur ce total. Un superviseur INÉLIGIBLE (retard >10min ou absent) touche 0 DH
+// ce jour-là — son taux est intégralement reversé, réparti à parts égales, sur le taux des superviseurs
+// éligibles ce même jour (ex : 2 superviseurs à 5 DH/contrat, l'un absent → l'autre touche 5+5=10 DH sur
+// CHAQUE contrat de l'équipe ce jour-là, pas sur deux fois plus de contrats). Si personne n'est éligible,
+// personne ne touche rien ce jour-là (jamais reporté). Retourne { dh, contracts } par superviseur —
+// "contracts" = somme des contrats réels de l'équipe sur les jours où CE superviseur était éligible
+// (utile pour afficher "X contrats × Y DH" de façon lisible), "dh" = montant réellement gagné.
+async function supervisorBonusForDates(dateStrs){
   const supervisors = listSupervisors();
-  const shares = {};
-  supervisors.forEach(s=> shares[s] = 0);
-  if(supervisors.length === 0) return shares;
+  const dh = {}, contracts = {};
+  supervisors.forEach(s=>{ dh[s] = 0; contracts[s] = 0; });
+  if(supervisors.length === 0) return { dh, contracts };
+
+  const rates = {};
+  supervisors.forEach(s=> rates[s] = getAgentPay(s).supervisorPrimePerContract || 0);
+
+  for(const dateStr of dateStrs){
+    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = board;
+    let dayPool = 0;
+    config.agents.forEach(agent=>{
+      if(isSupervisor(agent)) return;
+      dayPool += getAgentProd(board, agent).realized || 0;
+    });
+    if(dayPool <= 0) continue;
+
+    const eligibility = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
+    const eligible = eligibility.filter(e=>e.ok).map(e=>e.sup);
+    const ineligible = eligibility.filter(e=>!e.ok).map(e=>e.sup);
+    if(eligible.length === 0) continue;
+
+    const forfeitedRateTotal = ineligible.reduce((s,sup)=> s + rates[sup], 0);
+    const bonusRatePerEligible = forfeitedRateTotal / eligible.length;
+
+    eligible.forEach(sup=>{
+      const effectiveRate = rates[sup] + bonusRatePerEligible;
+      dh[sup] += dayPool * effectiveRate;
+      contracts[sup] += dayPool;
+    });
+  }
+  supervisors.forEach(s=> dh[s] = Math.round(dh[s]));
+  return { dh, contracts };
+}
+
+// Liste des dates (YYYY-MM-DD) de la semaine en cours, du lundi à aujourd'hui.
+function currentWeekDateStrs(){
+  const now = nowMA();
+  const dow = now.getDay();
+  const daysSinceMonday = (dow + 6) % 7;
+  const days = [];
+  for(let i=0; i<=daysSinceMonday; i++){
+    const d = new Date(now);
+    d.setDate(d.getDate() - (daysSinceMonday - i));
+    days.push(todayStr(d));
+  }
+  return days;
+}
+
+// Version "mois" : même règle que supervisorBonusForDates (taux effectif, jamais de contrats doublés),
+// mais avec le total NET du mois (contractsUnderAllSupervisors, rétractations déduites — même chiffre
+// que celui affiché dans "Équipe — objectif du mois" et partout ailleurs) plutôt que le total brut du
+// jour. Le taux effectif de chaque superviseur ce mois-ci = son gain brut / ses contrats bruts sur ses
+// jours éligibles (moyenne pondérée si son taux a varié dans le mois, ex : boosté certains jours
+// seulement) — ce taux est ensuite appliqué au total NET pour obtenir le montant final.
+async function supervisorMonthlyBonus(year, month){
+  const supervisors = listSupervisors();
+  const dh = {}, contracts = {};
+  supervisors.forEach(s=>{ dh[s] = 0; contracts[s] = 0; });
+  if(supervisors.length === 0) return { dh, contracts };
 
   const daysInMonth = new Date(year, month, 0).getDate();
   const todayDateStr = todayStr();
   const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
-
-  const dayData = [];
-  let grossTotal = 0;
-  for(let day=1; day<=daysInMonth; day++){
-    const dateStr = `${monthPrefix}${String(day).padStart(2,'0')}`;
-    if(dateStr > todayDateStr) break;
-    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-    prodBoardCache[dateStr] = board;
-    let dayGross = 0;
-    config.agents.forEach(agent=>{
-      if(isSupervisor(agent)) return;
-      dayGross += getAgentProd(board, agent).realized || 0;
-    });
-    if(dayGross <= 0) continue;
-    grossTotal += dayGross;
-    dayData.push({ dateStr, board, dayGross });
+  const dateStrs = [];
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = `${monthPrefix}${String(d).padStart(2,'0')}`;
+    if(ds > todayDateStr) break;
+    dateStrs.push(ds);
   }
-  if(grossTotal <= 0) return shares;
 
-  for(const { dateStr, board, dayGross } of dayData){
-    const eligibility = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
-    const eligible = eligibility.filter(e=>e.ok).map(e=>e.sup);
-    if(eligible.length === 0) continue;
-    const weight = dayGross / grossTotal;
-    const perSup = weight / eligible.length;
-    eligible.forEach(sup=> shares[sup] += perSup);
-  }
-  return shares;
-}
+  const [{ dh: grossDh, contracts: grossContracts }, netPool] = await Promise.all([
+    supervisorBonusForDates(dateStrs),
+    contractsUnderAllSupervisors(year, month)
+  ]);
+  if(netPool <= 0) return { dh, contracts };
 
-// Point d'entrée à utiliser PARTOUT où la prime de supervision est calculée : renvoie, pour chaque
-// superviseur, le nombre de "contrats équivalents" à utiliser dans SON propre calcul (contrats × son
-// propre taux DH/contrat), déjà ajusté retard/absence + redistribution entre superviseurs présents.
-// Remplace l'ancien calcul uniforme (contractsUnderAllSupervisors appliqué tel quel à tout le monde).
-async function contractsUnderSupervisionByAgent(year, month){
-  const supervisors = listSupervisors();
-  const result = {};
-  supervisors.forEach(s=> result[s] = 0);
-  if(supervisors.length === 0) return result;
-  const totalNetContracts = await contractsUnderAllSupervisors(year, month);
-  if(totalNetContracts <= 0) return result;
-  const shares = await supervisorDailyShares(year, month);
-  supervisors.forEach(s=> result[s] = Math.round(totalNetContracts * (shares[s] || 0)));
-  return result;
+  supervisors.forEach(sup=>{
+    const gC = grossContracts[sup] || 0;
+    if(gC <= 0) return; // aucun jour éligible ce mois-ci : rien touché
+    const effectiveRate = (grossDh[sup] || 0) / gC;
+    contracts[sup] = Math.round(netPool);
+    dh[sup] = Math.round(netPool * effectiveRate);
+  });
+  return { dh, contracts };
 }
 
 async function renderCash(){
@@ -6821,9 +6851,9 @@ async function renderCash(){
   const isSupervisorAgent = isSupervisor(agent);
   let contractsUnderSupervision = 0, supervisorBonus = 0;
   if(isSupervisorAgent){
-    const supervisionMap = await contractsUnderSupervisionByAgent(now.getFullYear(), now.getMonth()+1);
-    contractsUnderSupervision = supervisionMap[agent] || 0;
-    supervisorBonus = Math.round(contractsUnderSupervision * (pay.supervisorPrimePerContract || 0));
+    const supervisionBonusCash = await supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1);
+    contractsUnderSupervision = supervisionBonusCash.contracts[agent] || 0;
+    supervisorBonus = supervisionBonusCash.dh[agent] || 0;
   }
 
   // Calculé pour tout le monde, y compris les indépendants : monthlyStats renvoie des zéros pour eux
@@ -6936,7 +6966,7 @@ async function renderCash(){
 // les deux soient toujours parfaitement cohérents (même calcul, même total, même ordre).
 async function computeSalaryLeaderboard(){
   const now = nowMA();
-  const supervisionMap = await contractsUnderSupervisionByAgent(now.getFullYear(), now.getMonth()+1);
+  const supervisionBonusLb = await supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1);
   const rows = [];
   for(const ag of config.agents){
     const isIndep = isIndependant(ag);
@@ -6944,7 +6974,7 @@ async function computeSalaryLeaderboard(){
     const assiduiteAcquise = monthStats.retardsCumules < 3;
     const res = await estimateSalaryMonthReal(ag, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
     const p = getAgentPay(ag);
-    const supervisorBonus = isSupervisor(ag) ? Math.round((supervisionMap[ag] || 0) * (p.supervisorPrimePerContract || 0)) : 0;
+    const supervisorBonus = isSupervisor(ag) ? (supervisionBonusLb.dh[ag] || 0) : 0;
     rows.push({ agent: ag, total: res.total + supervisorBonus, contracts: res.status.realized, isIndep });
   }
   rows.sort((a,b)=> b.total !== a.total ? b.total - a.total : a.agent.localeCompare(b.agent));
@@ -7326,10 +7356,29 @@ async function renderSupervision(){
   // d'un superviseur, ni le sien (s'il vend aussi), ni ceux des AUTRES superviseurs (utile quand il y en a
   // plusieurs : chacun ne touche que sur son équipe de vendeurs, jamais sur ses collègues superviseurs).
   const myOwnRow = rows.find(r=>r.agent===supervisor);
-  const supervisionMap = await contractsUnderSupervisionByAgent(now.getFullYear(), now.getMonth()+1);
-  const contractsUnderSupervision = supervisionMap[supervisor] || 0;
-  const supervisorBonus = Math.round(contractsUnderSupervision * (supervisorPay.supervisorPrimePerContract || 0));
+  const todayDateStrForBonus = todayStr();
+  const weekDatesForBonus = currentWeekDateStrs();
+  const [bonusDayMap, bonusWeekMap, bonusMonthMap, totalBasePool] = await Promise.all([
+    supervisorBonusForDates([todayDateStrForBonus]),
+    supervisorBonusForDates(weekDatesForBonus),
+    supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1),
+    contractsUnderAllSupervisors(now.getFullYear(), now.getMonth()+1)
+  ]);
+  const rate = supervisorPay.supervisorPrimePerContract || 0;
+  const contractsDay = bonusDayMap.contracts[supervisor] || 0;
+  const contractsWeek = bonusWeekMap.contracts[supervisor] || 0;
+  const contractsUnderSupervision = bonusMonthMap.contracts[supervisor] || 0;
+  const bonusDay = bonusDayMap.dh[supervisor] || 0;
+  const bonusWeek = bonusWeekMap.dh[supervisor] || 0;
+  const supervisorBonus = bonusMonthMap.dh[supervisor] || 0;
+  // Taux effectif réellement appliqué aujourd'hui (peut dépasser le taux perso si un collègue
+  // superviseur est en retard >10min ou absent ce jour-là — sa part est reversée sur ce taux).
+  const effectiveRateToday = contractsDay > 0 ? (bonusDay / contractsDay) : rate;
   const teamPct = totalMonthObj > 0 ? Math.round((totalMonthReal/totalMonthObj)*100) : 0;
+  // Pourquoi "76" (équipe, y compris superviseurs) ne correspond pas directement à "46" (pool de
+  // commission, hors superviseurs) : la différence = les contrats PERSO de tous les superviseurs (le
+  // tien + ceux des autres s'il y en a), qui ne comptent jamais dans ta prime.
+  const allSupervisorsPersonal = Math.max(0, totalMonthReal - totalBasePool);
 
   // ---- Vue d'équipe + prime de supervision ----
   dashboard.innerHTML = `
@@ -7338,12 +7387,26 @@ async function renderSupervision(){
       <div class="big ${teamPct>=100?'gold':(teamPct>=50?'green':'red')}">${totalMonthReal}<span style="font-size:20px;color:var(--muted);"> / ${totalMonthObj||'—'}</span></div>
       <div class="sub">${totalMonthObj>0 ? `${teamPct}% de l'objectif d'équipe` : "Objectifs individuels non réglés"}${behindCount>0 ? ` · <span style="color:var(--red);font-weight:700;">🚨 ${behindCount} agent(s) en dessous de leur objectif</span>` : ''}</div>
       <div class="supervision-progress"><div class="fill ${teamPct>=100?'over':(teamPct<50?'under':'')}" style="width:${Math.min(100,teamPct)}%;"></div></div>
+      <div class="sub" style="margin-top:8px;font-size:11px;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}.</div>
     </div>
     <div class="supervision-card">
-      <div class="label">📊 Ta prime de supervision (mois)</div>
-      <div class="big gold">${supervisorBonus.toLocaleString('fr-FR')} DH</div>
-      <div class="sub">${contractsUnderSupervision} contrat${contractsUnderSupervision>1?'s':''} des agents de base (hors superviseurs) × ${(supervisorPay.supervisorPrimePerContract||0).toLocaleString('fr-FR')} DH${!supervisorPay.supervisorPrimePerContract ? " — montant à régler par l'admin dans Production" : ''}</div>
-      <div class="sub" style="margin-top:4px;font-size:11px;">Ne compte ni tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''}, ni ceux des autres superviseurs.</div>
+      <div class="label">📊 Ta prime de supervision</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:6px 0 4px;">
+        <div style="text-align:center;">
+          <div class="big gold" style="font-size:20px;">${bonusDay.toLocaleString('fr-FR')} DH</div>
+          <div class="sub" style="font-size:10.5px;">Jour (${contractsDay} contrat${contractsDay>1?'s':''})</div>
+        </div>
+        <div style="text-align:center; border-left:1px solid var(--border); border-right:1px solid var(--border);">
+          <div class="big gold" style="font-size:20px;">${bonusWeek.toLocaleString('fr-FR')} DH</div>
+          <div class="sub" style="font-size:10.5px;">Semaine (${contractsWeek} contrat${contractsWeek>1?'s':''})</div>
+        </div>
+        <div style="text-align:center;">
+          <div class="big gold" style="font-size:20px;">${supervisorBonus.toLocaleString('fr-FR')} DH</div>
+          <div class="sub" style="font-size:10.5px;">Mois (${contractsUnderSupervision} contrat${contractsUnderSupervision>1?'s':''})</div>
+        </div>
+      </div>
+      <div class="sub" style="margin-top:4px;">Ton taux : ${(rate).toLocaleString('fr-FR')} DH/contrat des agents de base${!rate ? " — montant à régler par l'admin dans Production" : ''}${effectiveRateToday > rate ? ` <b style="color:var(--gold);">→ ${effectiveRateToday.toLocaleString('fr-FR')} DH aujourd'hui</b> (part d'un collègue superviseur en retard/absent reversée sur ton taux)` : ''}</div>
+      <div class="sub" style="margin-top:4px;font-size:11px;">Ne compte ni tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''}, ni ceux des autres superviseurs — le nombre de contrats affiché est toujours le vrai total de l'équipe, jamais doublé. Semaine = lundi à aujourd'hui.</div>
     </div>
   `;
 
@@ -7755,7 +7818,7 @@ async function renderMonthlyObjectif(){
   rows.forEach((r,i)=> r.rank = i+1);
 
   // Même prime de supervision que dans le Cash et le classement des salaires, calculée une seule fois.
-  const supervisionMapMo = await contractsUnderSupervisionByAgent(year, month);
+  const supervisionBonusMoMap = await supervisorMonthlyBonus(year, month);
 
   let html = `<table class="salary-table"><thead><tr>
     <th>Rang</th><th>Agent</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>Réalisé</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
@@ -7783,7 +7846,7 @@ async function renderMonthlyObjectif(){
     const monthStats = await monthlyStats(r.agent, year, month);
     const assiduiteAcquise = monthStats.retardsCumules < 3;
     const full = await estimateSalaryMonthReal(r.agent, year, month, assiduiteAcquise);
-    const supervisorBonusMo = isSupervisor(r.agent) ? Math.round((supervisionMapMo[r.agent] || 0) * (pay.supervisorPrimePerContract || 0)) : 0;
+    const supervisorBonusMo = isSupervisor(r.agent) ? (supervisionBonusMoMap.dh[r.agent] || 0) : 0;
     const fullTotalWithSupervisor = (full ? full.total : 0) + supervisorBonusMo;
     const rowClass = isFreeRow ? '' : (r.objectif>0 && r.atteint ? '' : (r.objectif>0 ? 'warn' : ''));
     const indepTag = r.isIndep ? ' <span class="tag independant">Indé</span>' : (noObj ? ` <span class="tag warn">${getNoObjectifLabel(r.agent)}</span>` : '');
@@ -7908,7 +7971,7 @@ async function renderProdAdmin(){
     const [simYear, simMonth] = dateStr.split('-').map(Number);
     // Même prime de supervision que dans le Cash et le classement des salaires — calculée une seule fois,
     // sur les contrats des agents de base (hors superviseurs), puis appliquée au taux propre à chaque superviseur.
-    const supervisionMapSim = await contractsUnderSupervisionByAgent(simYear, simMonth);
+    const supervisionBonusSimMap = await supervisorMonthlyBonus(simYear, simMonth);
     let sim = `<table class="salary-table"><thead><tr>
       <th>Agent</th><th>Fixe/mois</th><th>DH/contrat</th><th>Contrats jour</th><th>Brut jour (simul.)</th><th>Contrats (mois)</th><th>Brut total mois (simul.)</th>
     </tr></thead><tbody>`;
@@ -7920,7 +7983,7 @@ async function renderProdAdmin(){
       const monthStats = await monthlyStats(r.agent, simYear, simMonth);
       const assiduiteAcquise = monthStats.retardsCumules < 3;
       const monthRes = await estimateSalaryMonthReal(r.agent, simYear, simMonth, assiduiteAcquise);
-      const supervisorBonusSim = isSupervisor(r.agent) ? Math.round((supervisionMapSim[r.agent] || 0) * (pay.supervisorPrimePerContract || 0)) : 0;
+      const supervisorBonusSim = isSupervisor(r.agent) ? (supervisionBonusSimMap.dh[r.agent] || 0) : 0;
       const monthTotalSim = (monthRes ? monthRes.total : 0) + supervisorBonusSim;
       const statusTag = pay.isIndep ? ' 🧑‍💼' : (pay.noObjectif ? ` <span style="color:var(--amber);">(${getNoObjectifLabel(r.agent)})</span>` : '');
       totalDaySal += daySal;
