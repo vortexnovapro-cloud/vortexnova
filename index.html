@@ -1699,7 +1699,7 @@ async function triggerInactivityLockout(){
 
 function isWithinScheduledHours(){
   const sched = scheduleForDate(todayStr());
-  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+  const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
   return nowMin >= toMinutes(sched.start) && nowMin <= toMinutes(sched.end);
 }
 
@@ -1763,15 +1763,26 @@ function infrSanctionText(inf){
   return INFR_TYPES[inf.type].sanction;
 }
 
+// Le back-office est utilisé depuis la France, les agents pointent au Maroc : sans ce verrou, l'heure
+// "actuelle" dépend du fuseau horaire réglé sur l'appareil qui exécute le code (ordinateur mal
+// configuré, hébergement à l'étranger...), ce qui peut décaler les pointages d'une heure et déclencher
+// de faux retards. nowMA() renvoie systématiquement l'heure/le jour tels qu'ils sont au Maroc
+// (Africa/Casablanca), quel que soit l'appareil. À utiliser pour toute lecture d'heure/date "actuelle"
+// (getHours/getMinutes/getFullYear/etc.) — jamais pour des mesures de durée (garder Date.now()) ni pour
+// des horodatages d'audit (garder new Date().toISOString()).
+function nowMA(){
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Casablanca' }));
+}
+
 function todayStr(d){
-  const dt = d || new Date();
+  const dt = d || nowMA();
   const y = dt.getFullYear();
   const m = String(dt.getMonth()+1).padStart(2,'0');
   const day = String(dt.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
 }
 function nowTimeStr(){
-  const dt = new Date();
+  const dt = nowMA();
   return String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0') + ':' + String(dt.getSeconds()).padStart(2,'0');
 }
 function toMinutes(hhmm){
@@ -1926,7 +1937,7 @@ async function loadConfig(){
   loadArenaMessagesUI();
 
   const monthInput = document.getElementById('monthSelect');
-  const now = new Date();
+  const now = nowMA();
   monthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const objMonthInput = document.getElementById('objMonthSelect');
   if(objMonthInput) objMonthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
@@ -2446,7 +2457,7 @@ async function onAgentChange(){
         return;
       }
       const toSec = (t)=> toMinutes(t.slice(0,5))*60 + Number(t.slice(6,8)||0);
-      const nowD = new Date();
+      const nowD = nowMA();
       const nowSec = nowD.getHours()*3600 + nowD.getMinutes()*60 + nowD.getSeconds();
       const durationSec = Math.max(0, nowSec - toSec(openLockout.start));
       log.events.push({ type: 'auto_in', time: nowTimeStr(), durationSec });
@@ -2932,7 +2943,7 @@ function freeBreakUsageToday(events, dateStr){
   const isToday = targetDate === todayStr();
   let usedSec = 0;
   let activeStart = null;
-  const nowSec = isToday ? (()=>{ const d=new Date(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds(); })() : (toMinutes(scheduleForDate(targetDate).end)*60);
+  const nowSec = isToday ? (()=>{ const d=nowMA(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds(); })() : (toMinutes(scheduleForDate(targetDate).end)*60);
   pairs.forEach(p=>{
     const startSec = toMinutes(p.start.slice(0,5))*60 + Number(p.start.slice(6,8)||0);
     if(p.end){
@@ -3409,7 +3420,7 @@ async function refreshAgentStatus(){
   const rows = document.getElementById('agentStatusRows');
   if(!currentAgent){ box.style.display = 'none'; return; }
 
-  const now = new Date();
+  const now = nowMA();
   const stats = await monthlyStats(currentAgent, now.getFullYear(), now.getMonth()+1);
   const tier = tierForCount(stats.retardsCumules);
 
@@ -3440,7 +3451,7 @@ async function renderAgentHistory(){
 
   const days = [];
   for(let i=0; i<7; i++){
-    const d = new Date();
+    const d = nowMA();
     d.setDate(d.getDate() - i);
     days.push(todayStr(d));
   }
@@ -4574,7 +4585,7 @@ async function renderBossRevenue(){
     el.innerHTML = '<div class="empty">Règle ta commission par contrat dans Réglages → 💰 Ton chiffre d\'affaires pour activer ce calcul.</div>';
     return;
   }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4625,7 +4636,7 @@ async function renderPayrollSummary(){
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
   el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
 
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4659,7 +4670,7 @@ async function renderNetBalance(){
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
   el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
 
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4701,7 +4712,7 @@ async function renderTrendChart(targetId){
 
   const days = [];
   for(let i=13; i>=0; i--){
-    const d = new Date();
+    const d = nowMA();
     d.setDate(d.getDate()-i);
     days.push(todayStr(d));
   }
@@ -4740,7 +4751,7 @@ async function renderMonthComparison(targetId){
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = ''; return; }
 
-  const now = new Date();
+  const now = nowMA();
   const dayOfMonth = now.getDate();
   const thisYear = now.getFullYear(), thisMonth = now.getMonth()+1;
   let lastMonth = thisMonth - 1, lastMonthYear = thisYear;
@@ -4805,7 +4816,7 @@ async function computeMonthProjection(agent, year, month){
   if(mini <= 0) return null;
 
   const realized = await monthlyRealizedContracts(agent, year, month);
-  const now = new Date();
+  const now = nowMA();
   const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
   const totalWorkingDays = workingDaysInMonth(year, month);
   const elapsedWorkingDays = isCurrentMonth ? workingDaysElapsedInMonth() : totalWorkingDays;
@@ -4822,7 +4833,7 @@ async function renderProjectionPanel(){
   if(!el) return;
   const nonIndep = config.agents.filter(a=>!isIndependant(a));
   if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent salarié.</div>'; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4880,7 +4891,7 @@ async function renderRepeatOffendersPanel(){
   if(!el) return;
   const nonIndep = config.agents.filter(a=>!isIndependant(a));
   if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent.</div>'; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -4908,7 +4919,7 @@ async function renderBestWorstDayPanel(targetId){
   const el = document.getElementById(targetId || 'bestWorstDayPanel');
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = ''; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
   const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
@@ -4955,7 +4966,7 @@ async function renderNearBonusPanel(){
   if(!el) return;
   const nonIndep = config.agents.filter(a=>!isIndependant(a) && !getAgentPay(a).noObjectif);
   if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent concerné.</div>'; return; }
-  const now = new Date();
+  const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
@@ -4986,7 +4997,7 @@ async function renderInactiveAgentsPanel(){
   // Les 5 derniers jours ouvrés (lundi-vendredi), pour repérer une série de 0 consécutifs jusqu'à
   // aujourd'hui (une pause ou un jour férié n'interrompt pas artificiellement la détection).
   const days = [];
-  let cursor = new Date();
+  let cursor = nowMA();
   while(days.length < 5){
     const dow = cursor.getDay();
     if(dow !== 0 && dow !== 6) days.unshift(todayStr(cursor));
@@ -5188,11 +5199,11 @@ function workingDaysInMonth(year, month){
   return count;
 }
 function currentWorkingDaysInMonth(){
-  const now = new Date();
+  const now = nowMA();
   return workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
 }
 function workingDaysElapsedInMonth(){
-  const now = new Date();
+  const now = nowMA();
   const holidays = frenchHolidaysSet(now.getFullYear());
   let count = 0;
   for(let d=1; d<=now.getDate(); d++){
@@ -5268,7 +5279,7 @@ function getAgentPay(agent){
 // extra ne se déclenche jamais pour un indépendant, sans code séparé à maintenir)
 function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
   const pay = getAgentPay(agent);
-  const now = new Date();
+  const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
   const daysMonth = workingDaysInMonth(y, m);
@@ -5293,7 +5304,7 @@ function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
 function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month){
   const pay = getAgentPay(agent);
   const pc = getProdConfig();
-  const now = new Date();
+  const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
   const daysMonth = workingDaysInMonth(y, m);
@@ -5315,7 +5326,7 @@ function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month
 
 function estimateSalary(agent, contracts, monthContracts, year, month){
   const pay = getAgentPay(agent);
-  const now = new Date();
+  const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
   const daysMonth = workingDaysInMonth(y, m);
@@ -5370,7 +5381,7 @@ async function monthlyRealizedContracts(agent, year, month){
 
 // Contrats de la semaine (lundi → aujourd'hui)
 async function weekRealizedContracts(agent){
-  const now = new Date();
+  const now = nowMA();
   const dow = now.getDay();
   const daysSinceMonday = (dow + 6) % 7;
   const days = [];
@@ -6000,7 +6011,7 @@ async function saveArenaDesiredObjectif(){
   if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
   const val = parseInt(document.getElementById('arenaDesiredObjInput').value);
   if(isNaN(val) || val < 0){ alert('Entre un nombre valide.'); return; }
-  const now = new Date();
+  const now = nowMA();
   await saveMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1, val);
   showToast(`🎯 Objectif du mois enregistré : ${val} contrats`, 'ok');
   await renderArena();
@@ -6040,7 +6051,7 @@ async function decrementRealized(){
 // juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
 async function arenaAddRetraction(delta){
   if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const now = new Date();
+  const now = nowMA();
   const year = now.getFullYear(), month = now.getMonth()+1;
   const beforeNet = await monthlyRealizedContracts(currentArenaAgent, year, month);
   const current = await getMonthlyRetractCount(currentArenaAgent, year, month);
@@ -6075,7 +6086,7 @@ async function renderArena(){
   const dateStr = todayStr();
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   prodBoardCache[dateStr] = board;
-  const now = new Date();
+  const now = nowMA();
 
   let rankings, dateLabelText, unitLabel, isMonthScope = (arenaScope === 'month');
 
@@ -6327,7 +6338,7 @@ async function cashAddContract(delta){
 // punition, juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
 async function cashAddRetraction(delta){
   if(!currentCashAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const now = new Date();
+  const now = nowMA();
   const year = now.getFullYear(), month = now.getMonth()+1;
   const beforeNet = await monthlyRealizedContracts(currentCashAgent, year, month);
   const current = await getMonthlyRetractCount(currentCashAgent, year, month);
@@ -6426,7 +6437,7 @@ async function renderCash(){
   const agent = currentCashAgent;
   const pay = getAgentPay(agent);
   const pc = getProdConfig();
-  const now = new Date();
+  const now = nowMA();
   const dateStr = todayStr();
 
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
@@ -6555,7 +6566,7 @@ async function renderCash(){
 // Classement "argent réel" partagé entre le hero (rang affiché) et la liste du classement, pour que
 // les deux soient toujours parfaitement cohérents (même calcul, même total, même ordre).
 async function computeSalaryLeaderboard(){
-  const now = new Date();
+  const now = nowMA();
   const contractsUnderSupervision = await contractsUnderAllSupervisors(now.getFullYear(), now.getMonth()+1);
   const rows = [];
   for(const ag of config.agents){
@@ -6660,7 +6671,7 @@ function renderCashRealGrid(){
 
   // Repère fixe (hors commissions imprévisibles) : ce que la partie garantie du salaire représente sur
   // le mois complet, et où on en est aujourd'hui au prorata des jours ouvrés déjà écoulés.
-  const now = new Date();
+  const now = nowMA();
   const totalWorkingDaysThisMonth = workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
   const elapsedWorkingDays = workingDaysElapsedInMonth();
   const fixedFullMonth = Math.round(pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite);
@@ -6854,7 +6865,7 @@ async function renderSupervision(){
   const supervisor = currentSupervisionAgent;
   const supervisorPay = getAgentPay(supervisor);
   const pc = getProdConfig();
-  const now = new Date();
+  const now = nowMA();
   const dateStr = todayStr();
   const daysRemaining = Math.max(0, currentWorkingDaysInMonth() - workingDaysElapsedInMonth());
 
@@ -7236,7 +7247,7 @@ async function renderAgentPayTable(){
     container.innerHTML = '<div class="empty" style="padding:20px;">Ajoute des agents dans Réglages.</div>';
     return;
   }
-  const now = new Date();
+  const now = nowMA();
   const year = now.getFullYear(), month = now.getMonth()+1;
   const desiredObjs = await Promise.all(config.agents.map(agent=>getMonthlyDesiredObjective(agent, year, month)));
   const totalWorkingDays = workingDaysInMonth(year, month);
