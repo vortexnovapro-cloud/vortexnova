@@ -1553,7 +1553,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-06-r49';
+const APP_VERSION = '2026-08-06-r50';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4116,10 +4116,12 @@ async function monthlyStats(agent, year, month){
         const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
         if(ev.lateMinutes > 0) retards++;
         if(ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0) pauseOver++;
-      } else {
+      } else if(isDayOverForMessage(dateStr)){
         // « Absent » = aucun pointage ET aucun contrat saisi ce jour-là (même définition que partout
         // ailleurs dans l'appli). Compte comme un retard pour l'escalade « 3e retard OU absence »
-        // (Règlement interne — Prime d'assiduité & retards répétés).
+        // (Règlement interne — Prime d'assiduité & retards répétés). On ne juge ça QUE si la journée
+        // est vraiment terminée (jour passé, ou aujourd'hui après l'heure de fin) — sinon l'agent
+        // n'a simplement pas encore eu l'occasion de pointer, ce n'est pas une absence.
         const realizedToday = getAgentProd(board, agent).realized || 0;
         if(realizedToday === 0) absences++;
       }
@@ -4414,8 +4416,15 @@ async function renderExploDailyDetail(agents, dateList){
           statusHtml = `<span class="tag independant">🗓️ ${lbl}</span>`;
         } else if(!log.events || log.events.length === 0){
           const noActivity = realJour === 0 && objJour === 0;
-          statusHtml = noActivity ? '<span class="tag absent">Absent</span>' : '<span class="tag warn">Pas de pointage</span>';
-          rowCls = noActivity ? 'late' : 'warn';
+          // Idem que partout ailleurs : on n'affiche "Absent" que si la journée est vraiment terminée —
+          // sinon un agent qui n'a simplement pas encore pointé ce matin apparaîtrait à tort comme absent.
+          if(noActivity && !isDayOverForMessage(dateStr)){
+            statusHtml = '<span class="tag warn">Pas encore commencé</span>';
+            rowCls = '';
+          } else {
+            statusHtml = noActivity ? '<span class="tag absent">Absent</span>' : '<span class="tag warn">Pas de pointage</span>';
+            rowCls = noActivity ? 'late' : 'warn';
+          }
         } else {
           const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
           if(ev.lateMinutes > 10){ statusHtml = `<span class="tag late">Retard ${ev.lateMinutes}min (non payé)</span>`; rowCls = 'late'; }
@@ -6842,13 +6851,17 @@ async function buildWeeklyBriefingHtml(){
       const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
       weekRealized += realized;
       const log = await getDayLog(agent, d);
+      // On ne juge "absent" ou "0 contrat" que si la journée est vraiment terminée (jour passé, ou
+      // aujourd'hui après l'heure de fin configurée) — sinon un agent apparaît "absent"/"à 0" alors que
+      // sa journée n'a simplement pas encore commencé ou n'est pas finie.
+      const dayOver = isDayOverForMessage(d);
       if(log.justifiedAbsence){
         justifiedAbsenceCount++;
       } else if(!log.events || log.events.length === 0){
-        absenceCount++;
+        if(dayOver) absenceCount++;
       } else {
         daysPresent++;
-        if(realized === 0){ zeroDays++; zeroDayDates.push(d); }
+        if(realized === 0 && dayOver){ zeroDays++; zeroDayDates.push(d); }
         const ev = evaluateDay(log.events, d, log.freeBreakBonusMin || 0);
         if(ev.lateMinutes > 0) lateCount++;
       }
@@ -6863,7 +6876,7 @@ async function buildWeeklyBriefingHtml(){
     workingDates.forEach(d=>{
       const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
       weekRealized += realized;
-      if(realized === 0) zeroDayDates.push(d);
+      if(realized === 0 && isDayOverForMessage(d)) zeroDayDates.push(d);
     });
     return { agent, weekRealized, zeroDayDates, zeroDays: zeroDayDates.length };
   });
@@ -7418,12 +7431,15 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
       if(lockoutMinInfo > 0){
         items.push({ date: dateStr, label: `Inactivité ${lockoutMinInfo}min (délogué) — info, non déduit`, amount: 0 });
       }
-    } else if(!isIndep && log && isWorkingDay(dateStr) && log.events.length === 0){
+    } else if(!isIndep && log && isWorkingDay(dateStr) && log.events.length === 0 && isDayOverForMessage(dateStr)){
       // Absence non déclarée (aucun pointage, aucune justification saisie par l'admin) : « Absent » =
       // aucun pointage ET aucun contrat saisi ce jour-là (même définition que partout ailleurs dans
       // l'appli). La quote-part fixe du jour est perdue, comme un retard >10min ; s'il y a malgré tout
       // des contrats saisis ce jour-là (cas rare, ex: saisie a posteriori), on ne pénalise pas — ce n'est
-      // alors pas une "absence" au sens strict, juste un oubli de pointage.
+      // alors pas une "absence" au sens strict, juste un oubli de pointage. CRUCIAL : on ne retient de
+      // l'argent que si la journée est vraiment terminée (jour passé, ou aujourd'hui après l'heure de
+      // fin configurée) — sinon un agent perdrait sa paye du jour dès le matin, avant même d'avoir eu
+      // la possibilité de pointer.
       const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
       prodBoardCache[dateStr] = board;
       const dayContracts = getAgentProd(board, agent).realized || 0;
