@@ -795,6 +795,7 @@ function tryDeviceGateAdmin(){
       </select>
 
       <div id="supervisionContent" style="display:none; margin-top:18px;">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">🔄 Actualisation automatique toutes les 15s — les chiffres restent à jour sans avoir à recharger la page.</div>
         <div class="supervision-dashboard" id="supervisionDashboard"></div>
 
         <div id="supervisionDetail"></div>
@@ -816,7 +817,7 @@ function tryDeviceGateAdmin(){
     <div class="gate" id="adminGate">
       <label>Mot de passe admin</label>
       <div style="position:relative;">
-        <input type="password" id="adminPwInput" placeholder="••••" style="padding-right:40px; text-align:left;" onkeydown="if(event.key==='Enter')tryAdminLogin()">
+        <input type="password" id="adminPwInput" placeholder="••••" autocomplete="current-password" style="padding-right:40px; text-align:left;" onkeydown="if(event.key==='Enter')tryAdminLogin()">
         <button type="button" onclick="const i=document.getElementById('adminPwInput'); const b=this; if(i.type==='password'){i.type='text'; b.textContent='🙈';} else {i.type='password'; b.textContent='👁️';} i.focus();" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:17px;">👁️</button>
       </div>
       <button onclick="tryAdminLogin()">Entrer</button>
@@ -828,6 +829,7 @@ function tryDeviceGateAdmin(){
       <div style="margin-bottom:16px; padding:12px 16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
         <div id="syncStatusIndicator" style="font-size:13px; font-weight:700;">🟢 Synchronisé</div>
         <div style="font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.55;">Ce statut vient du navigateur, pas d'un vrai test de connexion à la base de données — il peut parfois rester bloqué sur « Hors ligne » même quand le réseau fonctionne. Si ça arrive : vérifie que l'appareil a bien internet (ouvre un autre site), puis <b>rafraîchis la page</b>. Dans tous les cas, rien n'est perdu — les écritures en attente sont gardées et s'envoient automatiquement dès que la connexion revient.</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">🔄 Actualisation automatique toutes les 15s dans « Vue d'ensemble » — les chiffres restent à jour sans avoir à recharger la page. Volontairement désactivée dans « Pointage du jour » et « Production » (formulaires de correction et de salaire) pour ne jamais effacer une saisie en cours.</div>
       </div>
 
       <div id="monthRolloverBanner" style="display:none; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); border-radius:12px; padding:14px 18px; margin-bottom:16px;">
@@ -1553,7 +1555,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-06-r51';
+const APP_VERSION = '2026-08-06-r53';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -1979,6 +1981,69 @@ function updateSyncIndicator(){
 window.addEventListener('online', updateSyncIndicator);
 window.addEventListener('offline', updateSyncIndicator);
 
+// ============================================================
+// 🔄 AUTO-REFRESH — Admin & Supervision se rafraîchissent tout seuls pour rester en temps réel, sans
+// avoir à recharger la page à la main. On revide les caches en mémoire (sinon on re-afficherait les
+// mêmes chiffres déjà en cache) puis on relance le rendu de l'onglet actuellement affiché — exactement
+// comme si on cliquait à nouveau dessus. Coupé automatiquement dès qu'on quitte Admin/Supervision ou
+// que l'onglet du navigateur passe en arrière-plan, pour ne pas gaspiller de lectures pour rien.
+// ============================================================
+const AUTO_REFRESH_INTERVAL_MS = 15000;
+let autoRefreshTimer = null;
+let autoRefreshKind = null; // 'admin' | 'supervision' | null
+
+function clearRenderCaches(){
+  prodBoardCache = {};
+  dayLogCache = {};
+  infrCache = {};
+  retractCache = {};
+  desiredObjCache = {};
+  manualPrimesCache = {};
+}
+
+let autoRefreshBusy = false;
+
+// Un formulaire en cours de saisie (input/select/textarea qui a le focus) ne doit JAMAIS être écrasé
+// par un rafraîchissement automatique — sinon une valeur en train d'être tapée (ex: un salaire dans
+// Production, une correction de pointage) pourrait disparaître sans prévenir. On saute simplement ce
+// tour-là ; le suivant réessaiera.
+function userIsTypingInForm(){
+  const el = document.activeElement;
+  if(!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+function startAutoRefresh(kind){
+  autoRefreshKind = kind;
+  if(autoRefreshTimer) return; // déjà en route, rien à faire de plus
+  autoRefreshTimer = setInterval(async ()=>{
+    if(document.hidden) return; // onglet en arrière-plan : on ne consomme rien pour rien
+    if(autoRefreshBusy) return; // un tour précédent tourne encore (ex: connexion lente) : on ne s'empile pas dessus
+    if(userIsTypingInForm()) return; // ne jamais couper quelqu'un en pleine saisie
+    autoRefreshBusy = true;
+    clearRenderCaches();
+    try{
+      if(autoRefreshKind === 'admin'){
+        // Volontairement limité à "Vue d'ensemble" (tableaux de bord en lecture seule) : les sous-onglets
+        // "Pointage du jour" et "Production" contiennent des formulaires de correction et des champs de
+        // salaire éditables — les rafraîchir automatiquement effacerait une saisie en cours. Ils restent
+        // à jour manuellement (comme avant), en changeant de sous-onglet ou en rechargeant la page.
+        const el = document.getElementById('admin-overview');
+        if(el && el.classList.contains('active')) showAdminSub('overview');
+      } else if(autoRefreshKind === 'supervision'){
+        await renderSupervision();
+      }
+    }catch(e){ console.warn('Auto-refresh error:', e); }
+    finally{ autoRefreshBusy = false; }
+  }, AUTO_REFRESH_INTERVAL_MS);
+}
+
+function stopAutoRefresh(){
+  if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+  autoRefreshKind = null;
+}
+
 async function storageSet(key, value){
   if(!firebaseReady) return null;
   pendingWriteCount++; updateSyncIndicator();
@@ -2343,6 +2408,15 @@ function showView(view){
   } else {
     unsubscribeProdBoard();
   }
+
+  // Auto-refresh actif seulement sur Admin (une fois connecté) et Supervision — ailleurs, coupé.
+  if(view==='admin' && document.getElementById('adminPanel').style.display==='block'){
+    startAutoRefresh('admin');
+  } else if(view==='supervision'){
+    startAutoRefresh('supervision');
+  } else {
+    stopAutoRefresh();
+  }
 }
 
 function showAdminSub(sub){
@@ -2377,6 +2451,7 @@ function tryAdminLogin(){
     renderManualPrimesList();
     initGiftBreakDefaults();
     renderGiftBreakAgentChips();
+    startAutoRefresh('admin');
   } else {
     alert('Mot de passe incorrect.');
   }
@@ -5069,10 +5144,9 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     });
     return byAgent;
   }
-  const teamRankByAgent = buildMonthlyRanking(rows);
-  const indepRankByAgent = buildMonthlyRanking(indepRows);
-  rows = [...rows].sort((a,b)=> teamRankByAgent[a.agent].rank - teamRankByAgent[b.agent].rank);
-  indepRows = [...indepRows].sort((a,b)=> indepRankByAgent[a.agent].rank - indepRankByAgent[b.agent].rank);
+  const allRankByAgent = buildMonthlyRanking(rows.concat(indepRows));
+  rows = [...rows].sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
+  indepRows = [...indepRows].sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
 
   let html = renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">';
@@ -5086,7 +5160,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     const mo = monthlyByAgent[r.agent];
     const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
     const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
-    const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, teamRankByAgent[r.agent]);
+    const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent]);
     const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
     const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
       <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
@@ -5122,7 +5196,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const mo = monthlyByAgent[r.agent];
       const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
       const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
-      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, indepRankByAgent[r.agent]);
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent]);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.vise>0 || commentLines.length) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
@@ -6058,25 +6132,30 @@ async function renderInactiveAgentsPanel(){
 }
 
 async function renderAllMonthly(){
-  await renderTodaySnapshot();
-  await renderObjectifSnapshot();
-  await renderPauseTotalsToday();
   const monthVal = document.getElementById('monthSelect').value;
   const kpiRow = document.getElementById('kpiRow');
   const overviewContainer = document.getElementById('overviewContainer');
   const escaladeContainer = document.getElementById('escaladeContainer');
 
-  await renderBossRevenue();
-  await renderPayrollSummary();
-  await renderNetBalance();
-  await renderTrendChart();
-  await renderMonthComparison();
-  await renderInactiveAgentsPanel();
-  await renderProjectionPanel();
-  await renderAdfStuckPanel();
-  await renderRepeatOffendersPanel();
-  await renderBestWorstDayPanel();
-  await renderNearBonusPanel();
+  // Ces 14 panneaux écrivent chacun dans son propre bloc, indépendamment les uns des autres — les lancer
+  // en parallèle au lieu d'un par un accélère nettement le rendu de Vue d'ensemble, ce qui compte
+  // d'autant plus maintenant que ce rendu tourne tout seul toutes les 15s (auto-refresh).
+  await Promise.all([
+    renderTodaySnapshot(),
+    renderObjectifSnapshot(),
+    renderPauseTotalsToday(),
+    renderBossRevenue(),
+    renderPayrollSummary(),
+    renderNetBalance(),
+    renderTrendChart(),
+    renderMonthComparison(),
+    renderInactiveAgentsPanel(),
+    renderProjectionPanel(),
+    renderAdfStuckPanel(),
+    renderRepeatOffendersPanel(),
+    renderBestWorstDayPanel(),
+    renderNearBonusPanel()
+  ]);
 
   if(!monthVal || config.agents.length===0){
     kpiRow.innerHTML = '';
@@ -6407,6 +6486,18 @@ function seedPick(list, seedStr){
   return list[h % list.length];
 }
 
+// Accord de genre pour s'adresser correctement à chaque agent dans les commentaires ("champion" vs
+// "championne", "fier" vs "fière"...) — liste connue de l'équipe actuelle. Un agent qui n'y figure pas
+// (nouvelle recrue non encore renseignée) retombe simplement sur la forme masculine par défaut plutôt
+// que de risquer un mauvais accord ; à compléter ici si l'équipe change.
+const AGENT_GENDER = {
+  'Modou':'m', 'Allan':'m', 'Sylla':'m', 'Traore':'m', 'Charles':'m',
+  'Ghita':'f', 'Brunelle':'f', 'Charifa':'f', 'Manar':'f', 'Nawel':'f', 'Daïlore':'f'
+};
+function genderPick(agentName, masc, fem){
+  return (AGENT_GENDER[firstName(agentName)] === 'f') ? fem : masc;
+}
+
 // Palette pro et sobre, pensée pour un rapport qu'on a envie de lire — pas de couleurs criardes : le
 // classement est en camel/ardoise (ce n'est pas une alerte), le minimum obligatoire reste le seul bloc à
 // utiliser un vrai rouge (c'est le seul avec un enjeu de paie), en version mate — jamais fluo — avec une
@@ -6432,101 +6523,116 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
   const VIOLET = '#7d739e', VIOLET_BG = 'rgba(125,115,158,0.12)';
   const ROSE = '#a5698a', ROSE_BG = 'rgba(165,105,138,0.12)';
 
-  // 1) Classement / rivalité — camel pour le 1er, ardoise pour les autres (couleurs "distinction", pas
-  // des couleurs d'alerte : ce bloc ne juge personne, il compare juste la production réelle).
+  // 1) Classement / rivalité — on s'adresse directement à l'agent ("tu"), jamais à la 3e personne, et on
+  // nomme le rival juste devant pour piquer la compétition. Le 1er est vraiment félicité (mérité, pas
+  // juste poli) ; les autres sont poussés à aller chercher celui/celle juste devant.
   if(rankInfo && rankInfo.total > 1){
     const rankTxt = rankInfo.rank === 1 ? '1er' : `${rankInfo.rank}e`;
     if(rankInfo.rank === 1){
       lines.push(mk('🏆', seedPick([
-        `${n} est ${rankTxt} de l'équipe avec ${monthlyRealized} contrats ce mois-ci !`,
-        `En tête ! ${n} mène l'équipe avec ${monthlyRealized} contrats ce mois-ci.`,
-        `${n} domine le classement du mois avec ${monthlyRealized} contrats. Bravo !`
+        `Tu domines le classement du mois avec ${monthlyRealized} contrats. Continue comme ça, la place se mérite chaque jour !`,
+        `1er de l'équipe, ${monthlyRealized} contrats : tu montres l'exemple à tout le monde. Beau travail !`,
+        genderPick(agentName,
+          `Personne devant toi ce mois-ci (${monthlyRealized} contrats) — champion du mois pour l'instant. Reste affamé, ne relâche rien !`,
+          `Personne devant toi ce mois-ci (${monthlyRealized} contrats) — championne du mois pour l'instant. Reste affamée, ne relâche rien !`
+        ),
+        `Tu écrases le classement avec ${monthlyRealized} contrats. La concurrence est loin derrière — savoure, mais reste sérieux jusqu'à la fin du mois !`
       ], seed), GOLD, GOLD_BG));
     } else if(rankInfo.prevGap > 0){
+      const rival = firstName(rankInfo.prevAgent);
+      const rivalObj = genderPick(rankInfo.prevAgent, 'le', 'la');
+      const gapTxt = `${rankInfo.prevGap} contrat${rankInfo.prevGap>1?'s':''}`;
       lines.push(mk('🥈', seedPick([
-        `${n} est ${rankTxt} avec ${monthlyRealized} contrats. Encore ${rankInfo.prevGap} pour dépasser ${firstName(rankInfo.prevAgent)} !`,
-        `${n} est ${rankTxt} (${monthlyRealized} contrats), à ${rankInfo.prevGap} contrat${rankInfo.prevGap>1?'s':''} de ${firstName(rankInfo.prevAgent)}. Ça se joue !`,
-        `Juste derrière ${firstName(rankInfo.prevAgent)} : ${n} est ${rankTxt} avec ${monthlyRealized} contrats, encore ${rankInfo.prevGap} pour passer devant.`
+        `Tu es ${rankTxt} avec ${monthlyRealized} contrats — encore ${gapTxt} et tu doubles ${rival} !`,
+        `${rival} est juste devant toi (${gapTxt} d'écart). Va ${rivalObj} chercher, c'est largement jouable !`,
+        `${rankTxt} de l'équipe avec ${monthlyRealized} contrats. Il te manque ${gapTxt} pour passer devant ${rival} — fais-le aujourd'hui !`,
+        `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon jour et le classement change !`
       ], seed), SLATE, SLATE_BG));
     } else {
-      lines.push(mk('🥈', `${n} est ${rankTxt} de l'équipe avec ${monthlyRealized} contrats ce mois-ci.`, SLATE, SLATE_BG));
+      lines.push(mk('🥈', `Tu es ${rankTxt} de l'équipe avec ${monthlyRealized} contrats ce mois-ci.`, SLATE, SLATE_BG));
     }
   }
 
-  // 2) Minimum obligatoire — LE chiffre qui compte vraiment pour la paie. On compare le rythme réel de
-  // l'agent (contrats faits / jours travaillés depuis le 1er) au rythme qu'il doit tenir sur les jours
-  // restants. Seul bloc à utiliser le rouge — mat, jamais fluo — réservé aux cas vraiment critiques.
+  // 2) Minimum obligatoire — LE chiffre qui compte vraiment pour la paie. On compare le rythme réel
+  // (contrats faits / jours travaillés depuis le 1er) au rythme qu'il faut tenir sur les jours restants.
+  // Seul bloc à utiliser le rouge — et à mesure que l'écart se creuse, le ton monte franchement : on
+  // encourage quand c'est acquis, on pousse quand ça se resserre, on met une vraie pression et on fait
+  // sentir le risque réel (le salaire) quand c'est mal engagé. Jamais d'humour ici, c'est du concret.
   if(mini > 0){
     const miniGap = Math.max(0, mini - monthlyRealized);
     if(miniGap <= 0){
       lines.push(mk('📌', seedPick([
-        `Minimum du mois déjà fait, bravo ${n} !`,
-        `${n} a sécurisé son minimum du mois. Beau travail !`,
-        `Minimum en poche pour ${n}. Le plus dur est fait !`
+        `Minimum du mois sécurisé, bravo ! Ton salaire de base est tranquille — maintenant, vise plus haut.`,
+        `C'est fait, ton minimum est en poche. Le plus dur est derrière toi, ne t'arrête pas en si bon chemin.`,
+        `Minimum atteint. Bon travail — chaque contrat en plus maintenant, c'est du bonus pur.`
       ], seed), SAGE, SAGE_BG));
     } else if(remainingDays <= 0){
-      lines.push(mk('📌', `Dernier jour pour boucler le minimum (${monthlyRealized}/${mini}) !`, CRITICAL, CRITICAL_BG, true));
+      lines.push(mk('📌', `Dernier jour pour boucler ton minimum (${monthlyRealized}/${mini}) ! C'est maintenant ou jamais.`, CRITICAL, CRITICAL_BG, true));
     } else {
       const neededPace = miniGap / remainingDays;
       if(currentPace >= neededPace){
         lines.push(mk('📌', seedPick([
-          `Pour le minimum, il faut ${fmtNum(neededPace)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour en ce moment. Ça passe très bien !`,
-          `${n} tient un bon rythme pour le minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à se faire.`,
-          `Minimum en bonne voie pour ${n} : ${fmtNum(currentPace)} contrat/jour en moyenne, largement au-dessus des ${fmtNum(neededPace)} nécessaires.`
+          `Pour ton minimum il faut ${fmtNum(neededPace)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. Large, continue comme ça.`,
+          `Tu tiens un bon rythme pour ton minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à te faire.`,
+          `Minimum en bonne voie : ${fmtNum(currentPace)} contrat/jour en moyenne, bien au-dessus de ce qu'il faut.`
         ], seed), SAGE, SAGE_BG));
       } else if(neededPace - currentPace <= 1){
         lines.push(mk('📌', seedPick([
-          `Pour le minimum, il faut ${fmtNum(neededPace)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Un petit effort et c'est bon.`,
-          `${n} est tout proche du rythme nécessaire pour le minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
-          `Presque le bon rythme pour le minimum : ${fmtNum(currentPace)}/jour, il en faudrait ${fmtNum(neededPace)}. Allez ${n}, tu y es presque !`
+          `Il faut ${fmtNum(neededPace)} contrat/jour pour ton minimum — tu es à ${fmtNum(currentPace)}/jour. Un petit effort et c'est réglé.`,
+          `Tu es tout proche du rythme pour ton minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
+          `Presque le bon rythme pour ton minimum. Un ou deux contrats de plus et c'est bouclé.`
         ], seed), AMBER, AMBER_BG));
       } else if(neededPace - currentPace <= 2.5){
         lines.push(mk('📌', seedPick([
-          `Pour le minimum, il faut ${fmtNum(neededPace)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Il faut vraiment pousser.`,
-          `${n}, le rythme est trop bas pour le minimum : ${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires. Il faut réagir vite.`,
-          `Attention ${n} : au rythme actuel (${fmtNum(currentPace)}/jour), le minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}, accélère !`
+          `Le rythme est en dessous de ce qu'il faut pour ton minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). Il faut réagir aujourd'hui, pas la semaine prochaine.`,
+          `Attention : au rythme actuel, ton minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}/jour — accélère.`,
+          `Ton minimum s'éloigne un peu. Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
         ], seed), TERRACOTTA, TERRACOTTA_BG));
       } else {
         lines.push(mk('📌', seedPick([
-          `Écart important sur le minimum : il faut ${fmtNum(neededPace)} contrat/jour, ${n} en fait ${fmtNum(currentPace)}/jour. Il faut réagir maintenant, pas dans une semaine.`,
-          `${n}, le minimum est en danger réel (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). C'est le moment de se reprendre en main.`,
-          `Alerte minimum pour ${n} : au rythme actuel, l'écart se creuse (${fmtNum(neededPace)}/jour requis). Il faut un vrai coup de collier dès aujourd'hui.`
+          `Ton minimum est en danger réel. Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Bouge-toi maintenant.`,
+          `Alerte minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
+          `C'est du sérieux : à ce rythme, ton minimum du mois ne sera pas atteint. Il faut un vrai sursaut, maintenant, pas dans trois jours.`
         ], seed), CRITICAL, CRITICAL_BG, true));
       }
     }
   }
 
-  // 3) Objectif visé — même logique de rythme que le minimum, mais toujours dans des couleurs
-  // "motivantes" (sarcelle/bleu/violet/vieux rose), jamais rouge : ce n'est qu'un bonus, jamais un risque.
+  // 3) Objectif visé — même logique de rythme que le minimum, mais toujours motivant (sarcelle/bleu/
+  // violet/vieux rose), jamais rouge : c'est un bonus, jamais un risque. Ton plus léger, un peu
+  // d'humour et de compétition permis ici, contrairement au bloc minimum.
   if(vise > 0){
     const viseGap = Math.max(0, vise - monthlyRealized);
     if(viseGap <= 0){
       lines.push(mk('🚀', seedPick([
-        `Objectif visé déjà atteint, énorme ${n} !`,
-        `${n} a atteint son objectif visé ce mois-ci. Quelle performance !`,
-        `Objectif visé en poche pour ${n}. Franchement du très bon travail !`
+        `Objectif visé déjà atteint, énorme travail !`,
+        `Tu as atteint ton objectif visé ce mois-ci. Quelle performance !`,
+        genderPick(agentName,
+          `Objectif visé en poche. Tu peux être fier de ton mois — et il reste encore des jours pour aller chercher encore plus !`,
+          `Objectif visé en poche. Tu peux être fière de ton mois — et il reste encore des jours pour aller chercher encore plus !`
+        )
       ], seed), TEAL, TEAL_BG));
     } else if(remainingDays <= 0){
-      lines.push(mk('🚀', `Dernier jour pour attraper l'objectif visé (${monthlyRealized}/${vise}) !`, ROSE, ROSE_BG));
+      lines.push(mk('🚀', `Dernier jour pour attraper ton objectif visé (${monthlyRealized}/${vise}) ! Un dernier coup et c'est fait.`, ROSE, ROSE_BG));
     } else {
       const neededPaceVise = viseGap / remainingDays;
       if(currentPace >= neededPaceVise){
         lines.push(mk('🚀', seedPick([
-          `Pour l'objectif visé, il faut ${fmtNum(neededPaceVise)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. En très bonne voie !`,
-          `${n} est sur le bon rythme pour l'objectif visé (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPaceVise)}). Continue, ça se voit !`,
-          `Objectif visé bien parti pour ${n} : ${fmtNum(currentPace)} contrat/jour, de quoi y arriver tranquillement.`
+          `Pour l'objectif visé il faut ${fmtNum(neededPaceVise)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. En très bonne voie !`,
+          `Tu es sur le bon rythme pour ton objectif visé (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPaceVise)}). Continue, ça se voit !`,
+          `Objectif visé bien parti : à ce rythme, tu y arrives tranquillement.`
         ], seed), BLUE, BLUE_BG));
       } else if(neededPaceVise - currentPace <= 1.5){
         lines.push(mk('🚀', seedPick([
-          `Pour l'objectif visé, il faudrait ${fmtNum(neededPaceVise)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Ça reste jouable, encore un effort !`,
-          `${n} est proche du rythme pour l'objectif visé (${fmtNum(neededPaceVise)}/jour nécessaires). Un petit coup de plus et c'est fait !`,
-          `Objectif visé encore atteignable pour ${n} : ${fmtNum(neededPaceVise)}/jour. Allez, on y croit !`
+          `Il faudrait ${fmtNum(neededPaceVise)} contrat/jour pour l'objectif visé — tu es à ${fmtNum(currentPace)}/jour. Ça reste jouable, encore un effort !`,
+          `Tu es proche du rythme pour ton objectif visé (${fmtNum(neededPaceVise)}/jour nécessaires). Un petit coup de plus et c'est fait !`,
+          `Objectif visé encore atteignable. Allez, on y croit !`
         ], seed), VIOLET, VIOLET_BG));
       } else {
         lines.push(mk('🚀', seedPick([
-          `Pour l'objectif visé, il faudrait ${fmtNum(neededPaceVise)} contrats/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Il va falloir forcer l'allure !`,
-          `${n}, l'objectif visé est ambitieux au rythme actuel (${fmtNum(currentPace)}/jour, il en faudrait ${fmtNum(neededPaceVise)}). Chaque contrat en plus rapproche du but !`,
-          `Objectif visé costaud pour l'instant (${fmtNum(neededPaceVise)}/jour nécessaires), mais rien n'est impossible. Accélère ${n}, on y croit !`
+          `Il faudrait ${fmtNum(neededPaceVise)} contrats/jour pour l'objectif visé — tu es à ${fmtNum(currentPace)}/jour. Il va falloir forcer l'allure !`,
+          `L'objectif visé est ambitieux au rythme actuel (${fmtNum(currentPace)}/jour, il en faudrait ${fmtNum(neededPaceVise)}). Chaque contrat en plus te rapproche du but !`,
+          `Objectif visé costaud pour l'instant (${fmtNum(neededPaceVise)}/jour nécessaires), mais rien n'est impossible. Accélère, on y croit !`
         ], seed), ROSE, ROSE_BG));
       }
     }
@@ -6581,19 +6687,42 @@ function lastNWorkingDaysBefore(dateStr, n){
 function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour){
   if(yesterdayRealized == null) return null;
   if(todayRealized === 0 && (nowHour == null || nowHour < 11)) return null;
-  const n = firstName(agentName);
   const SAGE = '#4f9d78', SAGE_BG = 'rgba(79,157,120,0.12)';
   const SLATE = '#7885ad', SLATE_BG = 'rgba(120,133,173,0.14)';
   const TERRACOTTA = '#b5595c', TERRACOTTA_BG = 'rgba(181,89,92,0.12)';
+  const CRITICAL = '#a83a3f', CRITICAL_BG = 'rgba(168,58,63,0.16)';
+
+  // LE scénario à éviter à tout prix : une journée complète à 0 contrat. Ton sérieux, pression réelle,
+  // jamais d'humour ici — c'est très exactement la peur n°1 du boss, elle doit se sentir dans le texte.
+  if(todayRealized === 0){
+    return { text: seedPick([
+      `0 contrat aujourd'hui. C'est le pire scénario possible — il faut comprendre ce qui s'est passé et repartir fort dès demain, sans exception.`,
+      `Journée à 0. C'est du sérieux : une journée comme ça ne doit surtout pas se répéter. Qu'est-ce qui a bloqué ?`,
+      `0 contrat aujourd'hui — inacceptable si ça devient une habitude. Il faut une vraie réaction dès demain matin.`
+    ], `${agentName}|zero`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
+  }
+
   if(todayRealized > yesterdayRealized){
     const diff = todayRealized - yesterdayRealized;
-    return { text: `📈 Progression : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (+${diff}). Continue comme ça, ${n} !`, color: SAGE, bg: SAGE_BG, critical:false };
+    return { text: seedPick([
+      `Progression : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (+${diff}). Continue sur cette lancée !`,
+      `+${diff} par rapport à hier (${todayRealized} contre ${yesterdayRealized}). Tu prends la bonne direction, garde ce rythme !`,
+      `Ça monte : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Beau sursaut, ne relâche rien !`
+    ], `${agentName}|up`), color: SAGE, bg: SAGE_BG, critical:false };
   }
   if(todayRealized === yesterdayRealized){
-    return { text: `➡️ Rythme régulier : ${todayRealized} aujourd'hui, comme hier. Stable, ${n} !`, color: SLATE, bg: SLATE_BG, critical:false };
+    return { text: seedPick([
+      `Rythme régulier : ${todayRealized} aujourd'hui, comme hier. Stable — maintenant, essaie de passer un cap.`,
+      `${todayRealized} aujourd'hui, pareil qu'hier. C'est stable, mais stable n'a jamais gagné un classement.`,
+      `Même total qu'hier (${todayRealized}). Correct, mais tu peux clairement faire mieux.`
+    ], `${agentName}|flat`), color: SLATE, bg: SLATE_BG, critical:false };
   }
   const diff = yesterdayRealized - todayRealized;
-  return { text: `📉 Un peu en retrait : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (-${diff}). Repars fort demain, ${n} !`, color: TERRACOTTA, bg: TERRACOTTA_BG, critical:false };
+  return { text: seedPick([
+    `Un peu en retrait : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (-${diff}). Repars fort demain !`,
+    `-${diff} par rapport à hier (${todayRealized} contre ${yesterdayRealized}). Ce n'est pas dramatique, mais il faut vite redresser la barre.`,
+    `Baisse aujourd'hui (${todayRealized} contre ${yesterdayRealized} hier). Analyse ce qui a coincé et reviens plus fort.`
+  ], `${agentName}|down`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical:false };
 }
 
 // Petit historique visuel des derniers jours ouvrés (barres + chiffres), lu de gauche (le plus ancien) à
@@ -6691,10 +6820,8 @@ async function buildDailyBriefingHtml(baseRows){
   }
 
   // Même convention partout : classé du plus au moins de contrats réalisés CE MOIS-CI, alphabétique si
-  // égalité. Équipe et indépendants classés séparément (statuts de paie différents).
-  const teamRows = rows.filter(r=>!r.isIndep).sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
-  const indepRows = rows.filter(r=>r.isIndep).sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
-
+  // égalité. Équipe ET indépendants dans le MÊME classement (un seul "1er du mois", pas deux vérités
+  // différentes) — seul l'affichage garde deux groupes séparés (statuts de paie différents à l'écran).
   function rankMap(list){
     const byAgent = {};
     list.forEach((r,i)=>{
@@ -6702,8 +6829,10 @@ async function buildDailyBriefingHtml(baseRows){
     });
     return byAgent;
   }
-  const teamRankByAgent = rankMap(teamRows);
-  const indepRankByAgent = rankMap(indepRows);
+  const allSorted = [...rows].sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
+  const allRankByAgent = rankMap(allSorted);
+  const teamRows = rows.filter(r=>!r.isIndep).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
+  const indepRows = rows.filter(r=>r.isIndep).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
 
   // Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
   // réalisé est > 0. C'est le repère qui compte le plus pour le boss (peur n°1 : une journée à 0).
@@ -6749,8 +6878,8 @@ async function buildDailyBriefingHtml(baseRows){
   }
 
   let html = alertBannerHtml + '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:13px;">';
-  teamRows.forEach(r=> html += cardFor(r, teamRankByAgent[r.agent]));
-  indepRows.forEach(r=> html += cardFor(r, indepRankByAgent[r.agent]));
+  teamRows.forEach(r=> html += cardFor(r, allRankByAgent[r.agent]));
+  indepRows.forEach(r=> html += cardFor(r, allRankByAgent[r.agent]));
   html += '</div>';
   return html;
 }
@@ -7018,9 +7147,9 @@ async function buildWeeklyBriefingHtml(){
   // Chiffres clés
   html += `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px;">
     <div style="flex:1; min-width:160px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
-      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Contrats équipe</div>
-      <div style="font-size:26px; font-weight:800; letter-spacing:-0.5px;">${totalTeamRealized}</div>
-      ${totalIndepRealized>0 ? `<div style="font-size:11px; color:var(--independant); margin-top:2px;">+${totalIndepRealized} indépendants</div>` : ''}
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Contrats (total)</div>
+      <div style="font-size:26px; font-weight:800; letter-spacing:-0.5px;">${totalTeamRealized + totalIndepRealized}</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${totalTeamRealized} équipe${totalIndepRealized>0 ? ` <span style="color:var(--independant);">+ ${totalIndepRealized} indép.</span>` : ''}</div>
     </div>
     <div style="flex:1; min-width:160px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
       <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Moyenne par agent</div>
@@ -9330,8 +9459,8 @@ async function renderSupervision(){
     });
     return byAgent;
   }
-  const supTeamRankByAgent = buildMonthlyRankingSup(objDisplayRows.filter(r=>!r.isIndep));
-  const supIndepRankByAgent = buildMonthlyRankingSup(objDisplayRows.filter(r=>r.isIndep));
+  // Équipe ET indépendants dans le même classement (un seul "1er du mois"), comme dans Admin.
+  const supRankByAgent = buildMonthlyRankingSup(objDisplayRows);
 
   objBlockHtml += `<div id="objSnapCardsSup" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px; margin-bottom:8px;">`;
   objDisplayRows.forEach(r=>{
@@ -9341,7 +9470,7 @@ async function renderSupervision(){
     const barColor = hit ? '#4f9d78' : (pct>=50 ? '#b98a42' : '#b5595c');
     const moMini = r.isIndep ? 0 : (r.monthObj || 0);
     const moVise = r.desiredObj || 0;
-    const rankInfoSup = r.isIndep ? supIndepRankByAgent[r.agent] : supTeamRankByAgent[r.agent];
+    const rankInfoSup = supRankByAgent[r.agent];
     const commentLinesSup = personalDailyComment(r.agent, r.monthReal, moMini, moVise, supDaysElapsed, supRemainingDays, rankInfoSup);
     const monthlyBlockSup = (moMini>0 || moVise>0 || commentLinesSup) ? `
       <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.07); font-size:12.5px;">
