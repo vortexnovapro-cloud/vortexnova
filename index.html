@@ -6,6 +6,10 @@
 <title>Pointage — VortexNova</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg: #0f1720;
@@ -151,9 +155,9 @@
   .mega-section.theme-red .mega-section-title{ color: #e55a5a; }
   .mega-section.theme-orange .mega-section-title{ color: #e5a83d; }
   .mega-section.theme-gray .mega-section-title{ color: #8fa1b3; }
-  .mega-section{ margin: 44px 0 20px; padding-top: 28px; border-top: 2px solid var(--border); }
+  .mega-section{ margin: 44px 0 20px; padding-top: 28px; border-top: 3px solid var(--border); }
   .mega-section:first-child{ margin-top: 0; padding-top: 0; border-top: none; }
-  .mega-section-title{ font-size: 20px; font-weight: 900; margin-bottom: 4px; display:flex; align-items:center; gap:10px; }
+  .mega-section-title{ font-size: 23px; font-weight: 900; margin-bottom: 4px; display:flex; align-items:center; gap:10px; letter-spacing:-0.2px; text-shadow:0 1px 0 rgba(0,0,0,0.15); }
   .mega-section-sub{ font-size: 13px; color: var(--muted); margin-bottom: 18px; }
   .section-sub{ font-size:12.5px; color:var(--muted); margin: -8px 0 16px; }
   .settings-box{ background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 24px; }
@@ -569,6 +573,7 @@ function tryDeviceGateAdmin(){
 
 <header>
   <h1>Pointage <span>VortexNova</span></h1>
+  <div id="syncStatusIndicator" style="font-size:11.5px; font-weight:700; margin:2px 0 6px; opacity:0.85;">🟢 Synchronisé</div>
   <div class="tabs">
     <button class="tab-btn active" id="tabAgentBtn" onclick="showView('agent')">Pointage</button>
     <button class="tab-btn" id="tabArenaBtn" onclick="showView('arena')">🏆 Mes Objectifs</button>
@@ -821,6 +826,27 @@ function tryDeviceGateAdmin(){
 
     <div id="adminPanel" style="display:none;">
 
+      <div id="monthRolloverBanner" style="display:none; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); border-radius:12px; padding:14px 18px; margin-bottom:16px;">
+        <div style="font-size:13.5px; font-weight:700; color:#d9a441;">📅 Un nouveau mois a commencé — pense à exporter le bilan complet du mois précédent avant qu'il ne soit plus sélectionné par défaut.</div>
+        <div style="display:flex; gap:8px; flex-shrink:0;">
+          <button type="button" onclick="exportPreviousMonthBilan()" style="padding:9px 16px; border-radius:8px; border:1px solid #d9a441; background:rgba(217,164,65,0.15); color:#d9a441; font-weight:700; font-size:12.5px; cursor:pointer;">📥 Exporter maintenant</button>
+          <button type="button" onclick="dismissMonthRolloverBanner()" style="padding:9px 16px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">Plus tard</button>
+        </div>
+      </div>
+
+      <div id="weeklyBriefingBanner" style="display:none; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; background:linear-gradient(135deg, rgba(184,147,90,0.26), rgba(184,147,90,0.12)); border:2px solid #c9a870; border-radius:16px; padding:22px 26px; margin-bottom:18px; animation: pulseWarn 2.4s infinite;">
+        <div style="display:flex; align-items:center; gap:16px;">
+          <div style="font-size:38px; line-height:1; flex-shrink:0;">📋</div>
+          <div>
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;"><span style="font-size:20px; font-weight:900; color:#c9a870; letter-spacing:0.1px;">Briefing hebdomadaire à faire</span><span style="font-size:11.5px; font-weight:800; background:#c9a870; color:#151d27; border-radius:20px; padding:3px 11px; letter-spacing:0.4px;">AUJOURD'HUI</span></div>
+            <div style="font-size:13.5px; font-weight:600; color:var(--text); opacity:0.9; margin-top:3px;">Rituel obligatoire, 1 fois par semaine, avec tous les agents présents — le Bilan de la semaine est prêt plus bas dans Vue d'ensemble.</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-shrink:0;">
+          <button type="button" onclick="acknowledgeWeeklyBriefing()" style="padding:12px 22px; border-radius:10px; border:1px solid #c9a870; background:rgba(184,147,90,0.24); color:#c9a870; font-weight:800; font-size:13.5px; cursor:pointer;">✅ Noté, briefing fait</button>
+        </div>
+      </div>
+
       <div class="admin-tabs">
         <button class="admin-tab-btn active" id="subtabOverview" onclick="showAdminSub('overview')">Vue d'ensemble</button>
         <button class="admin-tab-btn" id="subtabDay" onclick="showAdminSub('day')">Journée</button>
@@ -882,8 +908,23 @@ function tryDeviceGateAdmin(){
           <div class="section-title" style="margin-top:0;">En un coup d'œil</div>
           <div id="todaySnapshot"></div>
 
-          <div class="section-title">🎯 Objectif choisi & réalisé</div>
-          <div class="section-sub">L'objectif que chaque agent s'est fixé le matin dans l'Arena, et où il en est. Choisis un jour précis ou une période.</div>
+          <div class="section-title">⏱️ Temps de pause aujourd'hui</div>
+          <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut, réglable), suivis séparément pour chaque agent.</div>
+          <div id="pauseTotalsToday"></div>
+        </div>
+
+        <div class="mega-section theme-gold">
+          <div class="mega-section-title">🎯 Objectif du jour — Conseil du matin <span style="font-size:12px; font-weight:800; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.35); border-radius:20px; padding:3px 12px; letter-spacing:0.3px; color:var(--gold);">ENVOI WHATSAPP FACULTATIF</span></div>
+          <div class="mega-section-sub">Coaching du matin pour chaque agent : sa tendance des derniers jours et où il en est sur son mois, avec un conseil qui s'adapte à sa vraie situation — à consulter chaque matin. Seul l'envoi sur WhatsApp est optionnel (contrairement au Bilan de la journée, obligatoire en fin de journée).</div>
+          <div style="margin-bottom:14px;">
+            <button type="button" id="dailyBriefingExportBtnAdmin" onclick="exportBriefingImage('dailyBriefingAdmin','dailyBriefingExportBtnAdmin','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin','#e0c25e')" style="padding:9px 16px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.10); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (facultatif)</button>
+          </div>
+          <div id="dailyBriefingAdmin"></div>
+        </div>
+
+        <div class="mega-section theme-orange" style="border-top-width:4px;">
+          <div class="mega-section-title">📊 Bilan de la journée <span style="font-size:12px; font-weight:800; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.4); border-radius:20px; padding:3px 12px; letter-spacing:0.3px;">OBLIGATOIRE · WHATSAPP</span></div>
+          <div class="mega-section-sub">Le résultat final du jour pour chaque agent, comparé à hier, avec le classement du mois. À exporter et envoyer sur WhatsApp en fin de journée, à toute l'équipe. Choisis un jour précis ou une période.</div>
 
           <div class="admin-toolbar" style="margin-bottom:14px;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
@@ -910,11 +951,16 @@ function tryDeviceGateAdmin(){
               </div>
             </div>
           </div>
+          <div style="margin-bottom:14px;">
+            <button type="button" id="objSnapExportBtn" onclick="exportObjectifSnapshotImage()" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (bilan du jour)</button>
+          </div>
           <div id="objectifSnapshot"></div>
+        </div>
 
-          <div class="section-title">⏱️ Temps de pause aujourd'hui</div>
-          <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut, réglable), suivis séparément pour chaque agent.</div>
-          <div id="pauseTotalsToday"></div>
+        <div class="mega-section theme-orange" style="border-top-width:4px;">
+          <div class="mega-section-title">📋 Bilan de la semaine <span style="font-size:12px; font-weight:800; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.4); border-radius:20px; padding:3px 12px; letter-spacing:0.3px;">BRIEFING OBLIGATOIRE · 1×/SEMAINE</span></div>
+          <div class="mega-section-sub">Chiffres en temps réel de la semaine en cours (du lundi à aujourd'hui), points forts, points faibles, discipline et conseils — à faire une fois par semaine, avec tous les agents présents.</div>
+          <div id="weeklyBriefingAdmin"></div>
         </div>
 
         <div class="mega-section theme-green">
@@ -998,6 +1044,7 @@ function tryDeviceGateAdmin(){
               <input type="month" id="monthSelect" onchange="renderAllMonthly()">
             </div>
             <button class="link-btn" onclick="exportOverviewCSV()">Exporter la vue d'ensemble (CSV)</button>
+            <button class="link-btn" onclick="exportMonthlyBilanCSV()">📥 Exporter le bilan complet du mois (CSV)</button>
           </div>
 
           <div class="kpi-row" id="kpiRow"></div>
@@ -1502,7 +1549,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-05-r29';
+const APP_VERSION = '2026-08-06-r48';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -1890,6 +1937,12 @@ try{
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     firebaseReady = true;
+    // Persistance hors-ligne : si le réseau coupe (terrain, mauvaise connexion...), les écritures sont
+    // mises en attente localement (IndexedDB) et se synchronisent automatiquement dès que la connexion
+    // revient — rien n'est perdu. synchronizeTabs permet d'avoir plusieurs onglets ouverts sans erreur.
+    db.enablePersistence({ synchronizeTabs: true }).catch(err=>{
+      console.warn('Persistance hors-ligne non activée:', err.code || err);
+    });
   }
 }catch(e){ console.error('Firebase init error:', e); }
 
@@ -1901,19 +1954,57 @@ async function storageGet(key){
     return null;
   }catch(e){ console.error('storageGet error:', e); return null; }
 }
+// Indicateur de synchronisation, toujours visible en haut de l'app (pas juste un toast qui disparaît) :
+// vert = tout est sauvegardé, jaune = écriture en cours, rouge = hors ligne (grâce à la persistance
+// Firestore activée plus haut, rien n'est perdu — ça se synchronisera tout seul au retour du réseau).
+let pendingWriteCount = 0;
+function updateSyncIndicator(){
+  const el = document.getElementById('syncStatusIndicator');
+  if(!el) return;
+  if(!navigator.onLine){
+    el.textContent = '🔴 Hors ligne — en attente de connexion (rien n\'est perdu)';
+    el.style.color = '#e0555f';
+  } else if(pendingWriteCount > 0){
+    el.textContent = '🟡 Sauvegarde…';
+    el.style.color = '#d9a441';
+  } else {
+    el.textContent = '🟢 Synchronisé';
+    el.style.color = '#5cb896';
+  }
+}
+window.addEventListener('online', updateSyncIndicator);
+window.addEventListener('offline', updateSyncIndicator);
+
 async function storageSet(key, value){
   if(!firebaseReady) return null;
+  pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).set({ value });
     return { key, value };
-  }catch(e){ console.error('storageSet error:', e); return null; }
+  }catch(e){
+    // BUG CORRIGÉ : avant, une écriture échouée (coupure réseau, permission...) était avalée en
+    // silence — l'écran se comportait comme si tout était enregistré (formulaire vidé, etc.) alors que
+    // RIEN n'avait été sauvegardé. Vu que ce sont des données de paie, on prévient toujours, clairement.
+    console.error('storageSet error:', e);
+    showToast("⚠️ Échec de l'enregistrement — vérifie ta connexion et réessaie. Rien n'a été sauvegardé.", 'warn', 7000);
+    return null;
+  } finally {
+    pendingWriteCount = Math.max(0, pendingWriteCount-1); updateSyncIndicator();
+  }
 }
 async function storageDelete(key){
   if(!firebaseReady) return null;
+  pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).delete();
     return { key, deleted: true };
-  }catch(e){ console.error('storageDelete error:', e); return null; }
+  }catch(e){
+    console.error('storageDelete error:', e);
+    showToast("⚠️ Échec de la suppression — vérifie ta connexion et réessaie.", 'warn', 7000);
+    return null;
+  } finally {
+    pendingWriteCount = Math.max(0, pendingWriteCount-1); updateSyncIndicator();
+  }
 }
 
 let vnToastTimer = null;
@@ -2256,7 +2347,7 @@ function showAdminSub(sub){
     const btnId = s==='prod' ? 'subtabProd' : 'subtab'+s.charAt(0).toUpperCase()+s.slice(1);
     document.getElementById(btnId).classList.toggle('active', s===sub);
   });
-  if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); }
+  if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin'); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
 }
@@ -2266,11 +2357,15 @@ function tryAdminLogin(){
   if(val === config.adminPassword){
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminPanel').style.display = 'block';
+    checkMonthRollover();
+    checkWeeklyBriefingReminder();
     initExploDefaults();
     initObjSnapDefaults();
     renderAllMonthly();
     renderExplorateur();
     renderNotifStatusPanel();
+    renderDailyBriefingSection('dailyBriefingAdmin');
+    renderWeeklyBriefingSection('weeklyBriefingAdmin');
     renderReport();
     renderProdAdmin();
     renderMonthlyObjectif();
@@ -3619,10 +3714,16 @@ async function renderAgentHistory(){
     days.push(todayStr(d));
   }
 
+  // Les 7 jours sont indépendants les uns des autres : on les récupère tous en parallèle (au lieu d'un
+  // par un, deux lectures Firestore chacun) puis on construit le HTML dans l'ordre d'origine — plus
+  // rapide à l'ouverture de l'historique, sans rien changer au résultat affiché.
+  const dayData = await Promise.all(days.map(async dateStr=>{
+    const [log, infr] = await Promise.all([getDayLog(currentAgent, dateStr), getInfractions(currentAgent, dateStr)]);
+    return { dateStr, log, infr };
+  }));
+
   let html = '';
-  for(const dateStr of days){
-    const log = await getDayLog(currentAgent, dateStr);
-    const infr = await getInfractions(currentAgent, dateStr);
+  for(const { dateStr, log, infr } of dayData){
     const dObj = new Date(dateStr + 'T00:00:00');
     const dayLabel = dObj.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 
@@ -3962,6 +4063,13 @@ function tierForCount(count){
   if(count >= 3) return { level: 3, label: "Prime d'assiduité perdue (-500 DH)", cls: 'tier-3' };
   if(count >= 1) return { level: 1, label: 'Décompte activé', cls: 'tier-1' };
   return { level: 0, label: 'Aucun retard', cls: 'tier-0' };
+}
+
+// Seuil unique "prime d'assiduité perdue" (retardsCumules >= 3, cf. niveau 3 de tierForCount ci-dessus).
+// Centralisé ici pour ne plus avoir ce "3" recopié à 7 endroits différents dans le fichier — un seul
+// endroit à changer si la règle évolue un jour, zéro risque d'en oublier un.
+function isAssiduiteAcquise(monthStats){
+  return monthStats.retardsCumules < 3;
 }
 
 async function monthlyStats(agent, year, month){
@@ -4615,6 +4723,169 @@ function onObjSnapModeChange(){
   renderObjectifSnapshot();
 }
 
+async function exportObjectifSnapshotImage(){
+  const btn = document.getElementById('objSnapExportBtn');
+  const source = document.getElementById('objectifSnapshot');
+  if(!source || !source.innerHTML.trim()){
+    alert('Rien à exporter pour le moment.');
+    return;
+  }
+  const mode = document.getElementById('objSnapMode')?.value || 'single';
+  let caption = '';
+  if(mode === 'single'){
+    const d = document.getElementById('objSnapDate')?.value || todayStr();
+    const dObj = new Date(d + 'T00:00:00');
+    caption = dObj.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  } else {
+    const from = document.getElementById('objSnapDateFrom')?.value;
+    const to = document.getElementById('objSnapDateTo')?.value;
+    if(from && to){
+      const fFmt = new Date(from+'T00:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'long' });
+      const tFmt = new Date(to+'T00:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' });
+      caption = `Du ${fFmt} au ${tFmt}`;
+    }
+  }
+
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Génération...'; }
+
+  try{
+    if(typeof html2canvas === 'undefined'){
+      await new Promise((resolve, reject)=>{
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+
+    // Largeur dynamique selon le nombre d'agents : plus il y en a, plus l'image s'étale en largeur
+    // (plusieurs colonnes) plutôt qu'en hauteur — pour éviter la longue photo verticale illisible sans
+    // zoomer une fois partagée sur WhatsApp. On vise un rendu proche du carré.
+    const cardCount = source.querySelectorAll('.objsnap-card').length || 1;
+    const cols = Math.max(2, Math.min(6, Math.round(Math.sqrt(cardCount * 1.7))));
+    const wrapWidth = cols * 296 + 48;
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${wrapWidth}px; background:#151d27; padding:28px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2;`;
+    wrap.innerHTML = `
+      <div style="text-align:center; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08);">
+        <div style="display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:20px; background:rgba(184,147,90,0.12); border:1px solid rgba(184,147,90,0.32); margin-bottom:13px;">
+          <span style="font-size:10.5px; font-weight:700; color:#c9a870; letter-spacing:0.5px; text-transform:uppercase;">Bilan du jour</span>
+        </div>
+        <div style="font-size:23px; font-weight:800; color:#f0f3f6; letter-spacing:-0.3px;">Bilan de la journée</div>
+        <div style="font-size:14.5px; font-weight:500; color:#8b98a6; margin-top:6px; text-transform:capitalize;">${caption}</div>
+        <div style="font-size:10.5px; color:#5a6672; margin-top:11px; letter-spacing:0.6px; font-weight:600;">VORTEXNOVA · SUIVI D'ÉQUIPE</div>
+      </div>
+      <div>${source.innerHTML}</div>
+    `;
+    document.body.appendChild(wrap);
+
+    // On attend que la police Inter soit bien chargée avant de capturer l'image — sinon le premier
+    // export après ouverture de l'app peut retomber sur une police système le temps du chargement.
+    if(document.fonts && document.fonts.ready){
+      try{ await document.fonts.ready; }catch(e){}
+    }
+
+    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 2, useCORS: true });
+    document.body.removeChild(wrap);
+
+    const dateForFile = mode === 'single'
+      ? (document.getElementById('objSnapDate')?.value || todayStr())
+      : `${document.getElementById('objSnapDateFrom')?.value||''}_au_${document.getElementById('objSnapDateTo')?.value||''}`;
+
+    canvas.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bilan_du_jour_${dateForFile}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=> URL.revokeObjectURL(url), 5000);
+    }, 'image/png');
+
+  } catch(err){
+    console.error('Export image error:', err);
+    alert("Erreur lors de la génération de l'image. Réessaie, ou vérifie ta connexion internet (l'export a besoin de charger une petite librairie la première fois).");
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '📸 Envoyer sur WhatsApp (bilan du jour)'; }
+  }
+}
+
+// Export générique en image "à envoyer sur WhatsApp", réutilisable pour n'importe quel bloc de cartes
+// (actuellement : le Conseil du matin, côté Admin et côté Supervision). Même mécanique que
+// exportObjectifSnapshotImage (Bilan de la journée) : capture le conteneur de cartes tel quel, avec un
+// bandeau titre/date/pied de page ajouté pour l'export, dans une largeur qui reste lisible sur WhatsApp.
+async function exportBriefingImage(sourceId, btnId, titleText, badgeText, filenamePrefix, badgeColor){
+  const btn = document.getElementById(btnId);
+  const source = document.getElementById(sourceId);
+  if(!source || !source.innerHTML.trim()){
+    alert('Rien à exporter pour le moment.');
+    return;
+  }
+  const caption = nowMA().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const originalText = btn ? btn.textContent : '';
+  const color = badgeColor || '#c9a870';
+
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Génération...'; }
+
+  try{
+    if(typeof html2canvas === 'undefined'){
+      await new Promise((resolve, reject)=>{
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+
+    const cardCount = source.querySelectorAll('.objsnap-card').length || 1;
+    const cols = Math.max(2, Math.min(6, Math.round(Math.sqrt(cardCount * 1.7))));
+    const wrapWidth = cols * 296 + 48;
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${wrapWidth}px; background:#151d27; padding:28px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2;`;
+    wrap.innerHTML = `
+      <div style="text-align:center; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08);">
+        <div style="display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:20px; background:${color}22; border:1px solid ${color}55; margin-bottom:13px;">
+          <span style="font-size:10.5px; font-weight:700; color:${color}; letter-spacing:0.5px; text-transform:uppercase;">${badgeText}</span>
+        </div>
+        <div style="font-size:23px; font-weight:800; color:#f0f3f6; letter-spacing:-0.3px;">${titleText}</div>
+        <div style="font-size:14.5px; font-weight:500; color:#8b98a6; margin-top:6px; text-transform:capitalize;">${caption}</div>
+        <div style="font-size:10.5px; color:#5a6672; margin-top:11px; letter-spacing:0.6px; font-weight:600;">VORTEXNOVA · SUIVI D'ÉQUIPE</div>
+      </div>
+      <div>${source.innerHTML}</div>
+    `;
+    document.body.appendChild(wrap);
+
+    if(document.fonts && document.fonts.ready){
+      try{ await document.fonts.ready; }catch(e){}
+    }
+
+    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 2, useCORS: true });
+    document.body.removeChild(wrap);
+
+    canvas.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${filenamePrefix}_${todayStr()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=> URL.revokeObjectURL(url), 5000);
+    }, 'image/png');
+
+  } catch(err){
+    console.error('Export image error:', err);
+    alert("Erreur lors de la génération de l'image. Réessaie, ou vérifie ta connexion internet (l'export a besoin de charger une petite librairie la première fois).");
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = originalText || '📸 Envoyer sur WhatsApp'; }
+  }
+}
+
 function objSnapDateList(){
   const mode = document.getElementById('objSnapMode')?.value || 'single';
   if(mode === 'single'){
@@ -4664,19 +4935,9 @@ async function renderObjectifSnapshot(){
       const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
       return { agent, objective: p.objective || 0, realized: p.realized || 0 };
     });
-    // Tri par urgence : sans objectif fixé d'abord (rien n'a été choisi ce matin, à relancer), puis du
-    // moins avancé au plus avancé — pour repérer en un clin d'œil qui a besoin d'un coup de pouce.
-    rows.sort((a,b)=>{
-      const aSet = a.objective > 0, bSet = b.objective > 0;
-      if(aSet !== bSet) return aSet ? 1 : -1;
-      if(!aSet){
-        if(b.realized !== a.realized) return b.realized - a.realized;
-        return a.agent.localeCompare(b.agent);
-      }
-      const ratioDiff = (a.realized/a.objective) - (b.realized/b.objective);
-      if(ratioDiff !== 0) return ratioDiff;
-      return a.agent.localeCompare(b.agent);
-    });
+    // Même convention partout dans l'appli : classé du plus au moins de contrats réalisés, alphabétique
+    // si égalité (cohérent avec Explorateur, Supervision, classements...).
+    rows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
 
     // Un indépendant peut lui aussi se fixer un objectif du jour (défi facultatif) — s'il en a réglé un,
     // il s'affiche comme les autres (X / Y ✅), sinon on retombe sur un simple compteur de contrats.
@@ -4684,8 +4945,9 @@ async function renderObjectifSnapshot(){
       const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
       return { agent, objective: p.objective || 0, realized: p.realized || 0, isIndep: true };
     });
+    indepRows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
 
-    renderObjSnapSingleDay(container, rows, indepRows, dateStr);
+    await renderObjSnapSingleDay(container, rows, indepRows, dateStr);
     return;
   }
 
@@ -4702,12 +4964,9 @@ async function renderObjectifSnapshot(){
     });
     return { agent, daysWithObjective, daysHit, totalRealized, totalObjective, nbDays: dateList.length };
   });
-  rows.sort((a,b)=>{
-    const aRate = a.daysWithObjective>0 ? a.daysHit/a.daysWithObjective : -1;
-    const bRate = b.daysWithObjective>0 ? b.daysHit/b.daysWithObjective : -1;
-    if(aRate !== bRate) return aRate - bRate;
-    return a.agent.localeCompare(b.agent);
-  });
+  // Même convention partout : classé du plus au moins de contrats réalisés sur la période, alphabétique
+  // si égalité.
+  rows.sort((a,b)=> b.totalRealized !== a.totalRealized ? b.totalRealized - a.totalRealized : a.agent.localeCompare(b.agent));
 
   const rowsWithAnyObj = rows.filter(r=>r.daysWithObjective > 0);
   const totalTargetRange = rowsWithAnyObj.reduce((s,r)=>s+r.totalObjective, 0);
@@ -4736,7 +4995,7 @@ async function renderObjectifSnapshot(){
   container.innerHTML = html;
 }
 
-function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
+async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // Visé = tous ceux qui ont fixé un objectif (agents comme indépendants). Réalisé = TOUT LE MONDE,
   // objectif fixé ou non — le total doit refléter l'activité réelle de toute l'équipe ce jour-là.
   const allDayRows = rows.concat(indepRows);
@@ -4745,29 +5004,101 @@ function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   const totalRealizedDay = allDayRows.reduce((s,r)=>s+r.realized, 0);
   const indepRealizedDay = indepRows.reduce((s,r)=>s+r.realized, 0);
 
+  // Contexte MENSUEL par agent (mini obligatoire, visé, réalisé du mois) — en plus du jour, pour situer
+  // chacun par rapport à ses objectifs du mois entier, avec un rythme/jour nécessaire sur les jours ouvrés
+  // restants. Un seul calcul par agent, partagé entre sa carte "équipe" et sa carte "indépendant".
+  const [y, m] = dateStr.split('-').map(Number);
+  const remainingDays = workingDaysRemainingFrom(dateStr);
+  const daysElapsed = workingDaysElapsedThrough(dateStr);
+  const monthlyByAgent = {};
+  await Promise.all(allDayRows.map(async r=>{
+    const pay = getAgentPay(r.agent);
+    const [monthlyRealized, desired] = await Promise.all([
+      monthlyRealizedContracts(r.agent, y, m),
+      getMonthlyDesiredObjective(r.agent, y, m)
+    ]);
+    const mini = pay.isIndep || pay.noObjectif ? 0 : (pay.objectifMensuel || 0);
+    monthlyByAgent[r.agent] = { monthlyRealized, mini, vise: desired || 0 };
+  }));
+
+  // Veille (jour ouvré juste avant la date affichée) — pour comparer le bilan du jour à celui d'hier.
+  // Ça n'a de sens que dans CE panneau ("Bilan de la journée", pensé pour la fin de journée) : au
+  // "Conseil du matin", la journée vient de commencer et une comparaison à un jour complet serait injuste.
+  const yesterdayDate = lastNWorkingDaysBefore(dateStr, 1)[0] || null;
+  let yesterdayBoard = null;
+  if(yesterdayDate){
+    yesterdayBoard = prodBoardCache[yesterdayDate] || await getProdBoard(yesterdayDate);
+    prodBoardCache[yesterdayDate] = yesterdayBoard;
+  }
+  // Si on regarde AUJOURD'HUI, on tient compte de l'heure réelle (0 contrat à 8h du matin n'a rien
+  // d'anormal). Si on regarde un jour passé via le sélecteur de date, la journée est de toute façon
+  // terminée : on compare toujours le total final, sans jamais le masquer.
+  const hourForComparison = dateStr === todayStr() ? nowMA().getHours() : 23;
+
+  // Classement (rivalité saine) basé sur le TOTAL de contrats réalisés depuis le 1er du mois — équipe et
+  // indépendants sont classés séparément (statuts de paie différents, pas comparables directement). Les
+  // deux listes de cartes sont re-triées sur ce même critère, pour que l'ordre affiché corresponde
+  // exactement au rang ("2e", "4e"...) indiqué dans chaque carte — sinon le classement affiché ne veut
+  // rien dire (ex : tout le monde à 0 ce matin donnerait un tri alphabétique qui ne reflète pas le mois).
+  function buildMonthlyRanking(list){
+    const sorted = [...list].sort((a,b)=>{
+      const ra = monthlyByAgent[a.agent].monthlyRealized, rb = monthlyByAgent[b.agent].monthlyRealized;
+      return rb !== ra ? rb - ra : a.agent.localeCompare(b.agent);
+    });
+    const byAgent = {};
+    sorted.forEach((r,i)=>{
+      byAgent[r.agent] = {
+        rank: i+1,
+        total: sorted.length,
+        prevAgent: i>0 ? sorted[i-1].agent : null,
+        prevGap: i>0 ? Math.max(0, monthlyByAgent[sorted[i-1].agent].monthlyRealized - monthlyByAgent[r.agent].monthlyRealized) : 0
+      };
+    });
+    return byAgent;
+  }
+  const teamRankByAgent = buildMonthlyRanking(rows);
+  const indepRankByAgent = buildMonthlyRanking(indepRows);
+  rows = [...rows].sort((a,b)=> teamRankByAgent[a.agent].rank - teamRankByAgent[b.agent].rank);
+  indepRows = [...indepRows].sort((a,b)=> indepRankByAgent[a.agent].rank - indepRankByAgent[b.agent].rank);
+
   let html = renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr);
-  html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
+  html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">';
 
   rows.forEach(r=>{
     const noObj = r.objective === 0;
     const pct = noObj ? 0 : Math.min(100, Math.round((r.realized/r.objective)*100));
     const hit = !noObj && r.realized >= r.objective;
     const badge = dailyProgressBadge(r.realized);
-    const barColor = hit ? 'var(--green)' : (pct >= 50 ? 'var(--amber)' : 'var(--red)');
-    html += `<div style="padding:14px; border-radius:12px; background:var(--panel2); border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
-        <b style="font-size:15px;">${r.agent}</b>
+    const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
+    const mo = monthlyByAgent[r.agent];
+    const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
+    const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
+    const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, teamRankByAgent[r.agent]);
+    const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
+    const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
+      <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
+        ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;"><span>Minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
+        ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+        ${commentLinesToHtml(commentLines)}
+      </div>` : '';
+    html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          ${agentAvatarHtml(r.agent, 34)}
+          <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
+        </div>
         ${hit
-          ? '<span class="tag ok" style="white-space:nowrap;">✅ Atteint</span>'
-          : `<span class="tag ${badge.cls}" style="white-space:nowrap; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
+          ? '<span class="tag ok" style="white-space:nowrap; flex-shrink:0;">✅ Atteint</span>'
+          : `<span class="tag ${badge.cls}" style="white-space:nowrap; flex-shrink:0; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
       </div>
       ${noObj
-        ? '<div style="font-size:13px; color:var(--muted);">🎯 Objectif pas encore fixé ce matin</div>'
-        : `<div class="arena-prog-bar" style="height:9px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor};"></div></div>
-           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px;">
-             <span style="font-size:20px; font-weight:800; color:${barColor};">${r.realized}<span style="font-size:13px; color:var(--muted); font-weight:600;"> / ${r.objective}</span></span>
-             <span style="font-size:14px; font-weight:700; color:${barColor};">${pct}%</span>
+        ? '<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div>'
+        : `<div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
+           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
+             <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
+             <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%</span>
            </div>`}
+      ${monthlyBlock}
     </div>`;
   });
 
@@ -4775,12 +5106,26 @@ function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     indepRows.forEach(r=>{
       const hasObj = r.objective > 0;
       const hit = hasObj && r.realized >= r.objective;
-      html += `<div style="padding:14px; border-radius:12px; background:var(--panel2); border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--independant)'};">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
-          <b style="font-size:15px;">${r.agent}</b>
-          <span class="tag independant" style="white-space:nowrap;">🧑‍💼 Indé</span>
+      const mo = monthlyByAgent[r.agent];
+      const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
+      const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, indepRankByAgent[r.agent]);
+      const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
+      const monthlyBlock = (mo.vise>0 || commentLines.length) ? `
+        <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
+          ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+          ${commentLinesToHtml(commentLines)}
+        </div>` : '';
+      html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(155,89,182,0.3)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            ${agentAvatarHtml(r.agent, 34)}
+            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
+          </div>
+          <span class="tag independant" style="white-space:nowrap; flex-shrink:0;">Indé</span>
         </div>
-        <div style="font-size:14px; color:var(--muted);">${hasObj ? `Défi perso : <b style="color:var(--text);">${r.realized} / ${r.objective}</b>${hit?' ✅':''}` : `<b style="color:var(--text); font-size:18px;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui`}</div>
+        <div style="font-size:14.5px; color:var(--muted);">${hasObj ? `Défi perso : <b style="color:var(--text); font-weight:700;">${r.realized} / ${r.objective}</b>${hit?' ✅':''}` : `<b style="color:var(--text); font-size:21px; font-weight:800;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui`}</div>
+        ${monthlyBlock}
       </div>`;
     });
   }
@@ -5119,7 +5464,7 @@ async function computeTotalPayrollMonth(year, month){
   await Promise.all(config.agents.map(async agent=>{
     const pay = getAgentPay(agent);
     const monthStats = await monthlyStats(agent, year, month);
-    const assiduiteAcquise = monthStats.retardsCumules < 3;
+    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const res = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
     const supervisorBonus = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
     const total = (res ? res.total : 0) + supervisorBonus;
@@ -5195,7 +5540,7 @@ async function realizedContractsForDateRange(agent, fromDateStr, toDateStr){
 async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange){
   const pay = getAgentPay(agent);
   const monthStats = await monthlyStats(agent, year, month);
-  const assiduiteAcquise = monthStats.retardsCumules < 3;
+  const assiduiteAcquise = isAssiduiteAcquise(monthStats);
 
   // Prime de supervision : si la fenêtre demandée correspond exactement à "du 1er du mois à aujourd'hui"
   // (le cas standard — hero Cash, classement, masse salariale), on garde supervisorMonthlyBonus (taux
@@ -5808,6 +6153,82 @@ function exportOverviewCSV(){
   a.click();
 }
 
+// Bilan complet du mois : contrats, mini obligatoire, objectif visé, assiduité et salaire brut estimé
+// pour chaque agent — une seule ligne par agent, prête à archiver hors de l'app (Excel, comptabilité...).
+async function exportMonthlyBilanCSV(){
+  const monthVal = document.getElementById('monthSelect').value || todayStr().slice(0,7);
+  const [year, month] = monthVal.split('-').map(Number);
+  if(config.agents.length === 0){ alert('Ajoute des agents dans Réglages.'); return; }
+  const supervisionBonusMap = await supervisorMonthlyBonus(year, month);
+  const rows = await Promise.all(config.agents.map(async agent=>{
+    const isIndep = isIndependant(agent);
+    const pay = getAgentPay(agent);
+    const [st, desiredObjective, monthStats] = await Promise.all([
+      monthlyObjectifStatus(agent, year, month),
+      getMonthlyDesiredObjective(agent, year, month),
+      monthlyStats(agent, year, month)
+    ]);
+    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
+    const salRes = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
+    const supervisorBonus = isSupervisor(agent) ? (supervisionBonusMap.dh[agent] || 0) : 0;
+    return {
+      agent, isIndep,
+      realized: st.realized,
+      mini: isIndep ? 0 : (pay.objectifMensuel || 0),
+      vise: desiredObjective || 0,
+      retardsCumules: isIndep ? 0 : monthStats.retardsCumules,
+      assiduite: isIndep ? '' : (assiduiteAcquise ? 'Acquise' : 'Perdue'),
+      supervisorBonus,
+      salaire: salRes.total + supervisorBonus
+    };
+  }));
+  rows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
+  let csv = 'Agent;Independant;Contrats realises;Mini obligatoire;Objectif vise;Retards cumules;Assiduite;Prime supervision;Salaire brut estime (mois)\n';
+  rows.forEach(r=>{
+    csv += `${r.agent};${r.isIndep?'Oui':'Non'};${r.realized};${r.mini||''};${r.vise||''};${r.retardsCumules||''};${r.assiduite};${r.supervisorBonus||''};${r.salaire}\n`;
+  });
+  const totalSalaire = rows.reduce((s,r)=>s+r.salaire, 0);
+  csv += `;;;;;;;TOTAL;${totalSalaire}\n`;
+  const blob2 = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url2 = URL.createObjectURL(blob2);
+  const a2 = document.createElement('a');
+  a2.href = url2;
+  a2.download = `bilan_complet_${monthVal}.csv`;
+  a2.click();
+  showToast(`📥 Bilan de ${monthVal} exporté (${rows.length} agent${rows.length>1?'s':''})`, 'ok');
+}
+
+// Rappel de fin de mois : dès que l'admin se connecte un mois différent du dernier mois vu, on lui
+// propose d'exporter le bilan du mois précédent avant que "Mois analysé" ne bascule sur le nouveau mois
+// par défaut. Mémorisé localement (par appareil), donc n'apparaît qu'une fois par changement de mois.
+function checkMonthRollover(){
+  const nowMonthVal = todayStr().slice(0,7);
+  let lastSeen = null;
+  try{ lastSeen = localStorage.getItem('vn_lastSeenMonth'); }catch(e){}
+  if(lastSeen && lastSeen !== nowMonthVal){
+    const banner = document.getElementById('monthRolloverBanner');
+    if(banner){
+      banner.style.display = 'flex';
+      banner.dataset.prevMonth = lastSeen;
+    }
+  }
+  try{ localStorage.setItem('vn_lastSeenMonth', nowMonthVal); }catch(e){}
+}
+function exportPreviousMonthBilan(){
+  const banner = document.getElementById('monthRolloverBanner');
+  const prevMonth = banner ? banner.dataset.prevMonth : null;
+  if(prevMonth){
+    const sel = document.getElementById('monthSelect');
+    if(sel) sel.value = prevMonth;
+    exportMonthlyBilanCSV();
+  }
+  dismissMonthRolloverBanner();
+}
+function dismissMonthRolloverBanner(){
+  const banner = document.getElementById('monthRolloverBanner');
+  if(banner) banner.style.display = 'none';
+}
+
 // ============================================================
 // ARENA / PRODUCTION
 // ============================================================
@@ -5885,6 +6306,745 @@ function workingDaysElapsedInMonth(){
     count++;
   }
   return count;
+}
+// Jours ouvrés restants APRÈS une date donnée, jusqu'à la fin de ce même mois (exclut la date elle-même —
+// sa production est déjà comptée dans le réalisé, on ne calcule le rythme que sur ce qu'il reste à faire).
+function workingDaysRemainingFrom(dateStr){
+  const [y, m, dNum] = dateStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const holidays = frenchHolidaysSet(y);
+  let count = 0;
+  for(let d=dNum+1; d<=daysInMonth; d++){
+    const dt = new Date(y, m-1, d);
+    const dow = dt.getDay();
+    if(dow===0 || dow===6) continue;
+    if(holidays.has(todayStr(dt))) continue;
+    count++;
+  }
+  return count;
+}
+// Jours ouvrés écoulés depuis le 1er du mois JUSQU'À une date donnée (incluse) — sert à calculer le
+// rythme réel d'un agent (contrats réalisés / jours travaillés), pour comparer ce rythme à ce qu'il reste
+// à faire plutôt que de se baser sur un simple écart brut.
+function workingDaysElapsedThrough(dateStr){
+  const [y, m, dNum] = dateStr.split('-').map(Number);
+  const holidays = frenchHolidaysSet(y);
+  let count = 0;
+  for(let d=1; d<=dNum; d++){
+    const dt = new Date(y, m-1, d);
+    const dow = dt.getDay();
+    if(dow===0 || dow===6) continue;
+    if(holidays.has(todayStr(dt))) continue;
+    count++;
+  }
+  return count;
+}
+// Prénom seul, pour un commentaire plus personnel et plus chaleureux.
+function firstName(fullName){
+  return (fullName||'').trim().split(/\s+/)[0] || fullName;
+}
+
+// Petit avatar rond avec les initiales de l'agent — palette sobre et volontairement limitée (pas de
+// couleurs vives), pour donner un repère visuel rapide et un rendu "pro" sur les cartes de rapport,
+// cohérent avec le reste du design éditorial de ces cartes.
+function agentInitials(name){
+  const parts = (name||'').trim().split(/\s+/);
+  if(parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0]||'?').slice(0,2).toUpperCase();
+}
+const AGENT_AVATAR_PALETTE = ['#7885ad','#4f9d78','#b98a42','#a5698a','#5680ab','#8d7a63','#6b9b8f','#9a7bab'];
+function agentAvatarColor(name){
+  let h = 0;
+  for(let i=0; i<(name||'').length; i++){ h = (h*31 + name.charCodeAt(i)) >>> 0; }
+  return AGENT_AVATAR_PALETTE[h % AGENT_AVATAR_PALETTE.length];
+}
+function agentAvatarHtml(name, size){
+  const s = size || 32;
+  return `<div style="width:${s}px; height:${s}px; border-radius:50%; background:${agentAvatarColor(name)}22; border:1.5px solid ${agentAvatarColor(name)}66; color:${agentAvatarColor(name)}; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:${Math.round(s*0.38)}px; flex-shrink:0; font-family:'Inter',sans-serif; letter-spacing:0.3px;">${agentInitials(name)}</div>`;
+}
+
+// Commentaire perso pour CHAQUE agent, basé sur des faits, jamais du hasard : 1) son classement dans
+// l'équipe (rivalité saine, basée sur le total de contrats réalisés depuis le 1er du mois), 2) son
+// RYTHME réel — contrats réalisés / jours travaillés jusqu'ici — comparé au rythme qu'il doit tenir pour
+// atteindre son minimum obligatoire (c'est LUI qui donne la couleur/l'urgence du bloc minimum), 3) le
+// même calcul de rythme pour son objectif visé, avec sa propre couleur/urgence adaptée (encourage, met la
+// pression ou félicite selon la situation — plus jamais un simple "pas obligatoire"). Écrit en langage
+// simple, en plusieurs petites lignes courtes plutôt qu'un paragraphe, pour rester lisible même en photo
+// WhatsApp compressée. Plusieurs formulations possibles par situation (choisies selon l'agent et son
+// nombre de contrats du moment) pour ne jamais avoir exactement le même texte partout. mini/vise à 0 =
+// pas réglé pour cet agent, ignoré dans le calcul.
+
+// Choix stable mais varié : dépend du nom de l'agent ET de son nombre de contrats actuel, donc le texte
+// change naturellement d'un agent à l'autre et d'un jour à l'autre (dès que le compteur bouge), sans être
+// aléatoire à chaque rafraîchissement de la même situation.
+function seedPick(list, seedStr){
+  let h = 0;
+  for(let i=0; i<seedStr.length; i++){ h = (h*31 + seedStr.charCodeAt(i)) >>> 0; }
+  return list[h % list.length];
+}
+
+// Palette pro et sobre, pensée pour un rapport qu'on a envie de lire — pas de couleurs criardes : le
+// classement est en camel/ardoise (ce n'est pas une alerte), le minimum obligatoire reste le seul bloc à
+// utiliser un vrai rouge (c'est le seul avec un enjeu de paie), en version mate — jamais fluo — avec une
+// teinte plus soutenue réservée aux situations vraiment critiques. L'objectif visé (bonus, jamais
+// obligatoire) passe par une famille sarcelle/bleu/violet/vieux rose — jamais rouge — pour rester
+// motivant sans jamais ressembler à une alerte.
+function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo){
+  const n = firstName(agentName);
+  const fmtNum = x => (Math.round(x*10)/10).toLocaleString('fr-FR');
+  const mk = (emoji, text, color, bg, critical) => ({ text: `${emoji} ${text}`, color, bg, critical: !!critical });
+  const seed = `${agentName}|${monthlyRealized}`;
+  const lines = [];
+  const currentPace = daysElapsed > 0 ? monthlyRealized / daysElapsed : 0;
+
+  const GOLD = '#b8935a', GOLD_BG = 'rgba(184,147,90,0.14)';
+  const SLATE = '#7885ad', SLATE_BG = 'rgba(120,133,173,0.14)';
+  const SAGE = '#4f9d78', SAGE_BG = 'rgba(79,157,120,0.12)';
+  const AMBER = '#b98a42', AMBER_BG = 'rgba(185,138,66,0.12)';
+  const TERRACOTTA = '#b5595c', TERRACOTTA_BG = 'rgba(181,89,92,0.12)';
+  const CRITICAL = '#a83a3f', CRITICAL_BG = 'rgba(168,58,63,0.16)';
+  const TEAL = '#4a9891', TEAL_BG = 'rgba(74,152,145,0.12)';
+  const BLUE = '#5680ab', BLUE_BG = 'rgba(86,128,171,0.12)';
+  const VIOLET = '#7d739e', VIOLET_BG = 'rgba(125,115,158,0.12)';
+  const ROSE = '#a5698a', ROSE_BG = 'rgba(165,105,138,0.12)';
+
+  // 1) Classement / rivalité — camel pour le 1er, ardoise pour les autres (couleurs "distinction", pas
+  // des couleurs d'alerte : ce bloc ne juge personne, il compare juste la production réelle).
+  if(rankInfo && rankInfo.total > 1){
+    const rankTxt = rankInfo.rank === 1 ? '1er' : `${rankInfo.rank}e`;
+    if(rankInfo.rank === 1){
+      lines.push(mk('🏆', seedPick([
+        `${n} est ${rankTxt} de l'équipe avec ${monthlyRealized} contrats ce mois-ci !`,
+        `En tête ! ${n} mène l'équipe avec ${monthlyRealized} contrats ce mois-ci.`,
+        `${n} domine le classement du mois avec ${monthlyRealized} contrats. Bravo !`
+      ], seed), GOLD, GOLD_BG));
+    } else if(rankInfo.prevGap > 0){
+      lines.push(mk('🥈', seedPick([
+        `${n} est ${rankTxt} avec ${monthlyRealized} contrats. Encore ${rankInfo.prevGap} pour dépasser ${firstName(rankInfo.prevAgent)} !`,
+        `${n} est ${rankTxt} (${monthlyRealized} contrats), à ${rankInfo.prevGap} contrat${rankInfo.prevGap>1?'s':''} de ${firstName(rankInfo.prevAgent)}. Ça se joue !`,
+        `Juste derrière ${firstName(rankInfo.prevAgent)} : ${n} est ${rankTxt} avec ${monthlyRealized} contrats, encore ${rankInfo.prevGap} pour passer devant.`
+      ], seed), SLATE, SLATE_BG));
+    } else {
+      lines.push(mk('🥈', `${n} est ${rankTxt} de l'équipe avec ${monthlyRealized} contrats ce mois-ci.`, SLATE, SLATE_BG));
+    }
+  }
+
+  // 2) Minimum obligatoire — LE chiffre qui compte vraiment pour la paie. On compare le rythme réel de
+  // l'agent (contrats faits / jours travaillés depuis le 1er) au rythme qu'il doit tenir sur les jours
+  // restants. Seul bloc à utiliser le rouge — mat, jamais fluo — réservé aux cas vraiment critiques.
+  if(mini > 0){
+    const miniGap = Math.max(0, mini - monthlyRealized);
+    if(miniGap <= 0){
+      lines.push(mk('📌', seedPick([
+        `Minimum du mois déjà fait, bravo ${n} !`,
+        `${n} a sécurisé son minimum du mois. Beau travail !`,
+        `Minimum en poche pour ${n}. Le plus dur est fait !`
+      ], seed), SAGE, SAGE_BG));
+    } else if(remainingDays <= 0){
+      lines.push(mk('📌', `Dernier jour pour boucler le minimum (${monthlyRealized}/${mini}) !`, CRITICAL, CRITICAL_BG, true));
+    } else {
+      const neededPace = miniGap / remainingDays;
+      if(currentPace >= neededPace){
+        lines.push(mk('📌', seedPick([
+          `Pour le minimum, il faut ${fmtNum(neededPace)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour en ce moment. Ça passe très bien !`,
+          `${n} tient un bon rythme pour le minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à se faire.`,
+          `Minimum en bonne voie pour ${n} : ${fmtNum(currentPace)} contrat/jour en moyenne, largement au-dessus des ${fmtNum(neededPace)} nécessaires.`
+        ], seed), SAGE, SAGE_BG));
+      } else if(neededPace - currentPace <= 1){
+        lines.push(mk('📌', seedPick([
+          `Pour le minimum, il faut ${fmtNum(neededPace)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Un petit effort et c'est bon.`,
+          `${n} est tout proche du rythme nécessaire pour le minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
+          `Presque le bon rythme pour le minimum : ${fmtNum(currentPace)}/jour, il en faudrait ${fmtNum(neededPace)}. Allez ${n}, tu y es presque !`
+        ], seed), AMBER, AMBER_BG));
+      } else if(neededPace - currentPace <= 2.5){
+        lines.push(mk('📌', seedPick([
+          `Pour le minimum, il faut ${fmtNum(neededPace)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Il faut vraiment pousser.`,
+          `${n}, le rythme est trop bas pour le minimum : ${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires. Il faut réagir vite.`,
+          `Attention ${n} : au rythme actuel (${fmtNum(currentPace)}/jour), le minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}, accélère !`
+        ], seed), TERRACOTTA, TERRACOTTA_BG));
+      } else {
+        lines.push(mk('📌', seedPick([
+          `Écart important sur le minimum : il faut ${fmtNum(neededPace)} contrat/jour, ${n} en fait ${fmtNum(currentPace)}/jour. Il faut réagir maintenant, pas dans une semaine.`,
+          `${n}, le minimum est en danger réel (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). C'est le moment de se reprendre en main.`,
+          `Alerte minimum pour ${n} : au rythme actuel, l'écart se creuse (${fmtNum(neededPace)}/jour requis). Il faut un vrai coup de collier dès aujourd'hui.`
+        ], seed), CRITICAL, CRITICAL_BG, true));
+      }
+    }
+  }
+
+  // 3) Objectif visé — même logique de rythme que le minimum, mais toujours dans des couleurs
+  // "motivantes" (sarcelle/bleu/violet/vieux rose), jamais rouge : ce n'est qu'un bonus, jamais un risque.
+  if(vise > 0){
+    const viseGap = Math.max(0, vise - monthlyRealized);
+    if(viseGap <= 0){
+      lines.push(mk('🚀', seedPick([
+        `Objectif visé déjà atteint, énorme ${n} !`,
+        `${n} a atteint son objectif visé ce mois-ci. Quelle performance !`,
+        `Objectif visé en poche pour ${n}. Franchement du très bon travail !`
+      ], seed), TEAL, TEAL_BG));
+    } else if(remainingDays <= 0){
+      lines.push(mk('🚀', `Dernier jour pour attraper l'objectif visé (${monthlyRealized}/${vise}) !`, ROSE, ROSE_BG));
+    } else {
+      const neededPaceVise = viseGap / remainingDays;
+      if(currentPace >= neededPaceVise){
+        lines.push(mk('🚀', seedPick([
+          `Pour l'objectif visé, il faut ${fmtNum(neededPaceVise)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. En très bonne voie !`,
+          `${n} est sur le bon rythme pour l'objectif visé (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPaceVise)}). Continue, ça se voit !`,
+          `Objectif visé bien parti pour ${n} : ${fmtNum(currentPace)} contrat/jour, de quoi y arriver tranquillement.`
+        ], seed), BLUE, BLUE_BG));
+      } else if(neededPaceVise - currentPace <= 1.5){
+        lines.push(mk('🚀', seedPick([
+          `Pour l'objectif visé, il faudrait ${fmtNum(neededPaceVise)} contrat/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Ça reste jouable, encore un effort !`,
+          `${n} est proche du rythme pour l'objectif visé (${fmtNum(neededPaceVise)}/jour nécessaires). Un petit coup de plus et c'est fait !`,
+          `Objectif visé encore atteignable pour ${n} : ${fmtNum(neededPaceVise)}/jour. Allez, on y croit !`
+        ], seed), VIOLET, VIOLET_BG));
+      } else {
+        lines.push(mk('🚀', seedPick([
+          `Pour l'objectif visé, il faudrait ${fmtNum(neededPaceVise)} contrats/jour — ${n} en fait ${fmtNum(currentPace)}/jour. Il va falloir forcer l'allure !`,
+          `${n}, l'objectif visé est ambitieux au rythme actuel (${fmtNum(currentPace)}/jour, il en faudrait ${fmtNum(neededPaceVise)}). Chaque contrat en plus rapproche du but !`,
+          `Objectif visé costaud pour l'instant (${fmtNum(neededPaceVise)}/jour nécessaires), mais rien n'est impossible. Accélère ${n}, on y croit !`
+        ], seed), ROSE, ROSE_BG));
+      }
+    }
+  }
+
+  return lines.length ? lines : null;
+}
+
+// Transforme les lignes de personalDailyComment() en HTML — style éditorial épuré (pas de gros pavés de
+// couleur) : un simple point coloré + texte, une ligne fine par info, pour rester lisible, "pro" et
+// agréable à lire même quand une carte a 3 lignes. Seule la ligne "critique" (minimum vraiment en danger)
+// se détache avec un fond et une bordure, pour que l'œil aille dessus en premier sans que tout le reste
+// crie en même temps.
+function commentLinesToHtml(commentLines){
+  if(!commentLines) return '';
+  const rows = commentLines.map(l=>{
+    if(l.critical){
+      return `<div style="margin-top:2px; padding:9px 11px; border-radius:8px; background:${l.bg}; border:1px solid ${l.color}33; font-weight:600; font-size:13px; color:${l.color}; line-height:1.5; animation: pulseWarn 1.6s infinite;">${l.text}</div>`;
+    }
+    return `<div style="display:flex; align-items:flex-start; gap:7px; font-size:12.5px; color:var(--text); line-height:1.5; opacity:0.92;"><span style="color:${l.color}; font-size:8px; margin-top:5px; flex-shrink:0;">●</span><span>${l.text}</span></div>`;
+  });
+  return `<div style="margin-top:10px; display:flex; flex-direction:column; gap:7px;">${rows.join('')}</div>`;
+}
+
+// Les N derniers jours OUVRÉS strictement avant une date donnée, du plus récent (hier) au plus ancien —
+// sert de mémoire courte pour comparer "aujourd'hui vs hier" et dégager une tendance sur quelques jours,
+// comme un briefing qui a les derniers jours en tête plutôt que de juger un agent sur une seule journée.
+function lastNWorkingDaysBefore(dateStr, n){
+  const [y0, m0, d0] = dateStr.split('-').map(Number);
+  const result = [];
+  let cur = new Date(y0, m0-1, d0);
+  const holidaysByYear = {};
+  let guard = 0;
+  while(result.length < n && guard < n*4 + 20){
+    cur.setDate(cur.getDate()-1);
+    guard++;
+    const dow = cur.getDay();
+    if(dow===0 || dow===6) continue;
+    const yy = cur.getFullYear();
+    if(!holidaysByYear[yy]) holidaysByYear[yy] = frenchHolidaysSet(yy);
+    const ds = todayStr(cur);
+    if(holidaysByYear[yy].has(ds)) continue;
+    result.push(ds);
+  }
+  return result;
+}
+
+// Comparaison "aujourd'hui vs hier" — félicite une progression, note la régularité, ou encourage
+// gentiment en cas de baisse (jamais un ton sec). Retourne null s'il n'y a pas de veille comparable
+// (ex : lundi matin, ou tout début du mois), ET s'il est encore tôt le matin avec 0 contrat aujourd'hui —
+// comparer "0 aujourd'hui vs hier" à la prise de poste n'a aucun sens, la journée vient de commencer.
+function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour){
+  if(yesterdayRealized == null) return null;
+  if(todayRealized === 0 && (nowHour == null || nowHour < 11)) return null;
+  const n = firstName(agentName);
+  const SAGE = '#4f9d78', SAGE_BG = 'rgba(79,157,120,0.12)';
+  const SLATE = '#7885ad', SLATE_BG = 'rgba(120,133,173,0.14)';
+  const TERRACOTTA = '#b5595c', TERRACOTTA_BG = 'rgba(181,89,92,0.12)';
+  if(todayRealized > yesterdayRealized){
+    const diff = todayRealized - yesterdayRealized;
+    return { text: `📈 Progression : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (+${diff}). Continue comme ça, ${n} !`, color: SAGE, bg: SAGE_BG, critical:false };
+  }
+  if(todayRealized === yesterdayRealized){
+    return { text: `➡️ Rythme régulier : ${todayRealized} aujourd'hui, comme hier. Stable, ${n} !`, color: SLATE, bg: SLATE_BG, critical:false };
+  }
+  const diff = yesterdayRealized - todayRealized;
+  return { text: `📉 Un peu en retrait : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (-${diff}). Repars fort demain, ${n} !`, color: TERRACOTTA, bg: TERRACOTTA_BG, critical:false };
+}
+
+// Petit historique visuel des derniers jours ouvrés (barres + chiffres), lu de gauche (le plus ancien) à
+// droite (le plus récent, juste avant aujourd'hui) — pour voir la tendance d'un coup d'œil.
+function historyStripHtml(historyFull){
+  const valid = (historyFull||[]).filter(d => d && d.realized != null);
+  if(!valid.length) return '';
+  const max = Math.max(1, ...valid.map(d => d.realized||0));
+  const chronological = [...historyFull].reverse();
+  const bars = chronological.map(day=>{
+    const v = (day && day.realized) || 0;
+    const obj = (day && day.objective) || 0;
+    const h = Math.max(v===0?6:4, Math.round((v/max)*22));
+    // 3 couleurs distinctes, logiques (pas décoratives) : rouge = 0 contrat (LE cas à éviter, la peur
+    // n°1 du boss), orange = objectif fixé mais PAS atteint (au moins 1 contrat quand même — moins grave
+    // qu'un 0, mérite une couleur à part), vert = objectif fixé ET atteint. Bleu neutre = pas d'objectif
+    // fixé ce jour-là, donc aucun jugement possible faute de repère.
+    let barColor, missed;
+    if(v === 0){ barColor = '#e5484d'; missed = true; }
+    else if(obj > 0 && v < obj){ barColor = '#e5a83d'; missed = true; }
+    else if(obj > 0 && v >= obj){ barColor = '#34b774'; missed = false; }
+    else { barColor = '#5680ab'; missed = false; }
+    const glow = v === 0 ? 'box-shadow:0 0 7px rgba(229,72,77,0.6);' : '';
+    const numColor = v===0 ? '#e5484d' : (missed ? '#e5a83d' : 'var(--muted)');
+    return `<div style="display:flex; flex-direction:column; align-items:center; gap:3px; flex:1;">
+      <div style="width:100%; max-width:16px; height:22px; display:flex; align-items:flex-end;">
+        <div style="width:100%; height:${h}px; background:${barColor}; border-radius:3px; ${glow}"></div>
+      </div>
+      <div style="font-size:9.5px; color:${numColor}; font-weight:${(v===0||missed)?'700':'500'};">${v}</div>
+    </div>`;
+  }).join('');
+  return `<div style="margin-top:10px;"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours <span style="opacity:0.7;">(vert = objectif atteint, orange = objectif manqué, rouge = 0 contrat)</span></div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
+}
+
+// Construit le "briefing du jour" pour chaque agent — même principe que les cartes 🎯 Objectif choisi &
+// réalisé (classement + conseils adaptatifs), enrichi de la comparaison à la veille et de la tendance des
+// derniers jours. Fonction partagée entre Admin → Vue d'ensemble et Supervision, pour un rendu identique
+// aux deux endroits. `baseRows` est optionnel : quand l'appelant a déjà les chiffres du jour et du mois
+// sous la main (c'est le cas de Supervision, qui les calcule déjà pour son propre tableau), on les lui
+// passe directement au lieu de les relire une seconde fois — ça évite de doubler les lectures Firestore.
+// Format attendu : [{ agent, isIndep, todayRealized, todayObjective, monthlyRealized, mini, vise }].
+async function buildDailyBriefingHtml(baseRows){
+  if(config.agents.length === 0) return '<div class="empty">Ajoute des agents dans Réglages.</div>';
+  const dateStr = todayStr();
+  const [y, m] = dateStr.split('-').map(Number);
+  const remainingDays = workingDaysRemainingFrom(dateStr);
+  const daysElapsed = workingDaysElapsedThrough(dateStr);
+  const recentDates = lastNWorkingDaysBefore(dateStr, 5);
+  const boardsByDate = {};
+  await Promise.all(recentDates.map(async d=>{
+    boardsByDate[d] = prodBoardCache[d] || await getProdBoard(d);
+    prodBoardCache[d] = boardsByDate[d];
+  }));
+
+  let base;
+  if(baseRows && baseRows.length){
+    base = baseRows;
+  } else {
+    const todayBoard = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = todayBoard;
+    base = await Promise.all(config.agents.map(async agent=>{
+      const isIndep = isIndependant(agent);
+      const pay = getAgentPay(agent);
+      const todayProd = getAgentProd(todayBoard, agent);
+      const [monthlyRealized, desired] = await Promise.all([
+        monthlyRealizedContracts(agent, y, m),
+        getMonthlyDesiredObjective(agent, y, m)
+      ]);
+      const mini = (isIndep || pay.noObjectif) ? 0 : (pay.objectifMensuel || 0);
+      return { agent, isIndep, todayRealized: todayProd.realized || 0, todayObjective: todayProd.objective || 0, monthlyRealized, mini, vise: desired || 0 };
+    }));
+  }
+
+  const rows = base.map(b=>{
+    const yesterdayDate = recentDates[0] || null;
+    const yesterdayRealized = yesterdayDate ? (getAgentProd(boardsByDate[yesterdayDate], b.agent).realized || 0) : null;
+    // historyFull garde objectif ET réalisé de chaque jour (pour calculer la série "jours sans finir à 0") ;
+    // history ne garde que le réalisé (pour le petit graphique en barres).
+    const historyFull = recentDates.map(d => getAgentProd(boardsByDate[d], b.agent));
+    const history = historyFull.map(p => p.realized || 0);
+    return { ...b, yesterdayRealized, history, historyFull };
+  });
+
+  // Alerte "objectif du matin pas fixé" — le pire des scénarios pour le boss, c'est un agent qui démarre
+  // sa journée sans même s'être fixé un objectif. Passé 10h (heure Maroc), on le signale clairement, et
+  // on prévient le boss par notification navigateur s'il a activé les alertes.
+  const nowHourMA = nowMA().getHours();
+  const missingObjectiveAgents = rows.filter(r=>!r.isIndep && r.todayObjective===0).map(r=>r.agent);
+  let alertBannerHtml = '';
+  if(nowHourMA >= 10 && missingObjectiveAgents.length > 0){
+    alertBannerHtml = `<div style="margin-bottom:14px; padding:13px 16px; border-radius:12px; background:rgba(181,89,92,0.12); border:1px solid rgba(181,89,92,0.35); font-family:'Inter',sans-serif;">
+      <b style="color:#b5595c; font-size:13.5px;">⏰ ${missingObjectiveAgents.length} agent${missingObjectiveAgents.length>1?'s':''} n'${missingObjectiveAgents.length>1?'ont':'a'} toujours pas fixé son objectif du matin</b>
+      <div style="margin-top:5px; font-size:12.5px; color:var(--muted);">${missingObjectiveAgents.join(', ')}</div>
+    </div>`;
+  }
+
+  // Même convention partout : classé du plus au moins de contrats réalisés CE MOIS-CI, alphabétique si
+  // égalité. Équipe et indépendants classés séparément (statuts de paie différents).
+  const teamRows = rows.filter(r=>!r.isIndep).sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
+  const indepRows = rows.filter(r=>r.isIndep).sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
+
+  function rankMap(list){
+    const byAgent = {};
+    list.forEach((r,i)=>{
+      byAgent[r.agent] = { rank: i+1, total: list.length, prevAgent: i>0 ? list[i-1].agent : null, prevGap: i>0 ? Math.max(0, list[i-1].monthlyRealized - r.monthlyRealized) : 0 };
+    });
+    return byAgent;
+  }
+  const teamRankByAgent = rankMap(teamRows);
+  const indepRankByAgent = rankMap(indepRows);
+
+  // Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
+  // réalisé est > 0. C'est le repère qui compte le plus pour le boss (peur n°1 : une journée à 0).
+  function computeZeroStreak(todayRealized, historyFull){
+    if(todayRealized <= 0) return 0;
+    let streak = 1;
+    for(const day of historyFull){
+      if((day.realized||0) > 0) streak++; else break;
+    }
+    return streak;
+  }
+
+  function cardFor(r, rankInfo){
+    const hasObj = r.todayObjective > 0;
+    const pct = hasObj ? Math.min(100, Math.round((r.todayRealized/r.todayObjective)*100)) : 0;
+    const hit = hasObj && r.todayRealized >= r.todayObjective;
+    const barColor = hit ? '#4f9d78' : (pct>=50 ? '#b98a42' : '#b5595c');
+    // Pas de comparaison "vs hier" ici : ce panneau est le conseil DU MATIN, la journée vient de
+    // commencer et comparer à un jour complet d'hier serait injuste (et démotivant à la prise de poste
+    // pour rien). Cette comparaison vit désormais dans "Bilan de la journée", pensé pour la fin de
+    // journée où les deux totaux sont enfin comparables.
+    const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, daysElapsed, remainingDays, rankInfo);
+    const allLines = [...(monthlyLines || [])].filter(Boolean);
+    const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull);
+    const streakBadge = zeroStreak >= 2 ? `<span style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap;">🔥 ${zeroStreak}j</span>` : '';
+    return `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:17px; border-radius:17px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
+      <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
+        ${agentAvatarHtml(r.agent, 30)}
+        <b style="font-weight:700; font-size:15px; letter-spacing:-0.1px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
+        ${streakBadge}
+        ${r.isIndep ? '<span class="tag independant" style="flex-shrink:0;">Indé</span>' : ''}
+      </div>
+      ${hasObj
+        ? `<div class="arena-prog-bar" style="height:7px; border-radius:4px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:4px;"></div></div>
+           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:9px;">
+             <span style="font-size:21px; font-weight:800; letter-spacing:-0.4px; color:${barColor};">${r.todayRealized}<span style="font-size:13px; color:var(--muted); font-weight:500;"> / ${r.todayObjective}</span></span>
+             <span style="font-size:13px; font-weight:700; color:${barColor};">${pct}%</span>
+           </div>`
+        : `<div style="font-size:12.5px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé aujourd'hui : <b style="color:var(--text); font-weight:700;">${r.todayRealized}</b></div>`}
+      ${historyStripHtml(r.historyFull)}
+      ${allLines.length ? `<div style="margin-top:12px; padding-top:11px; border-top:1px solid rgba(255,255,255,0.07);">${commentLinesToHtml(allLines)}</div>` : ''}
+    </div>`;
+  }
+
+  let html = alertBannerHtml + '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:13px;">';
+  teamRows.forEach(r=> html += cardFor(r, teamRankByAgent[r.agent]));
+  indepRows.forEach(r=> html += cardFor(r, indepRankByAgent[r.agent]));
+  html += '</div>';
+  return html;
+}
+
+async function renderDailyBriefingSection(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  container.innerHTML = await buildDailyBriefingHtml();
+}
+
+// ============================================================
+// 📋 BILAN DE LA SEMAINE — BRIEFING HEBDOMADAIRE OBLIGATOIRE
+// ============================================================
+// Semaine PRÉCÉDENTE complète (lundi → dimanche), pas la semaine en cours — ce bilan sert à préparer le
+// point d'équipe du lundi matin sur ce qui vient de se passer, pas sur une semaine encore inachevée.
+function previousWeekDateStrs(){
+  const now = nowMA();
+  const dow = now.getDay();
+  const daysSinceMonday = (dow + 6) % 7;
+  const thisMonday = new Date(now);
+  thisMonday.setDate(thisMonday.getDate() - daysSinceMonday);
+  const prevMonday = new Date(thisMonday);
+  prevMonday.setDate(prevMonday.getDate() - 7);
+  const days = [];
+  for(let i=0; i<7; i++){
+    const d = new Date(prevMonday);
+    d.setDate(d.getDate() + i);
+    days.push(todayStr(d));
+  }
+  return days;
+}
+
+// Semaine ISO (année-Wxx), pour se souvenir "le briefing de cette semaine a déjà été vu" sans dépendre
+// du jour exact — peu importe quand dans la semaine l'admin se connecte, ça ne réapparaît qu'une fois.
+function isoWeekString(date){
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+
+// Jour du briefing hebdomadaire : lundi par défaut (1 = lundi). Le rappel n'apparaît que ce jour-là, une
+// seule fois par semaine, et prévient aussi le boss par notification navigateur s'il les a activées.
+const WEEKLY_BRIEFING_DAY = 1;
+function checkWeeklyBriefingReminder(){
+  const now = nowMA();
+  if(now.getDay() !== WEEKLY_BRIEFING_DAY) return;
+  const currentWeek = isoWeekString(now);
+  let lastSeen = null;
+  try{ lastSeen = localStorage.getItem('vn_lastBriefingWeekSeen'); }catch(e){}
+  if(lastSeen === currentWeek) return; // déjà vu/traité cette semaine
+  const banner = document.getElementById('weeklyBriefingBanner');
+  if(banner) banner.style.display = 'flex';
+}
+function acknowledgeWeeklyBriefing(){
+  try{ localStorage.setItem('vn_lastBriefingWeekSeen', isoWeekString(nowMA())); }catch(e){}
+  const banner = document.getElementById('weeklyBriefingBanner');
+  if(banner) banner.style.display = 'none';
+}
+
+// Banque de conseils "métier" pour un centre d'appel sortant qui vend des contrats — piochés un par un
+// chaque semaine (varie automatiquement selon la semaine, jamais deux fois le même conseil de suite), en
+// complément des conseils calculés sur les vrais chiffres de la semaine.
+const CALL_CENTER_WEEKLY_TIPS = [
+  "Fais un point rapide en équipe sur les objections les plus fréquentes entendues cette semaine, et comment mieux y répondre.",
+  "Un mini jeu de rôle de 5 minutes le matin peut remettre tout le monde dans le bain avant les premiers appels.",
+  "Vérifie que le script est toujours bien maîtrisé, surtout par les agents les plus récents dans l'équipe.",
+  "Relance en priorité les leads tièdes de la semaine dernière avant qu'ils ne refroidissent complètement.",
+  "Rappelle à l'équipe l'importance du ton et du sourire au téléphone — ça s'entend, même sans se voir.",
+  "Fixe un petit défi collectif pour la semaine (ex : un total d'équipe à dépasser) pour souder le groupe.",
+  "Prends 5 minutes avec un agent en difficulté pour réécouter un de ses appels et l'aider à s'améliorer.",
+  "Teste des créneaux d'appels différents cette semaine pour voir ce qui convertit le mieux.",
+  "Un rappel collectif du règlement (retards, pauses) en début de semaine évite d'avoir à sanctionner en fin de semaine.",
+  "Célèbre les petites victoires individuelles à voix haute pendant la semaine, pas seulement au bilan du vendredi."
+];
+
+// Construit le Bilan de la semaine — même logique de classement que le briefing du jour (le plus de
+// contrats réalisés d'abord, alphabétique si égalité), sur la semaine EN COURS en temps réel (du lundi
+// à aujourd'hui, mise à jour au fil des jours), avec les agents répartis en 4 groupes selon leur vraie
+// situation, un point discipline, et des conseils qui s'adaptent aux chiffres réels de la semaine
+// (jamais un texte figé).
+async function buildWeeklyBriefingHtml(){
+  if(config.agents.length === 0) return '<div class="empty">Ajoute des agents dans Réglages.</div>';
+  const weekDates = currentWeekDateStrs();
+  const workingDates = weekDates.filter(isWorkingDay);
+  const weekLabel = weekDates.length
+    ? `Du ${new Date(weekDates[0]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long'})} à aujourd'hui, ${new Date(weekDates[weekDates.length-1]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})} · temps réel`
+    : '';
+
+  if(workingDates.length === 0){
+    return `<div class="empty">Aucun jour ouvré depuis le début de la semaine pour l'instant (${weekLabel}).</div>`;
+  }
+
+  const boardsByDate = {};
+  await Promise.all(workingDates.map(async d=>{
+    boardsByDate[d] = prodBoardCache[d] || await getProdBoard(d);
+    prodBoardCache[d] = boardsByDate[d];
+  }));
+
+  const teamAgents = config.agents.filter(a=>!isIndependant(a));
+  const indepAgents = config.agents.filter(a=>isIndependant(a));
+
+  const teamStats = await Promise.all(teamAgents.map(async agent=>{
+    let weekRealized = 0, zeroDays = 0, daysPresent = 0, lateCount = 0, absenceCount = 0, justifiedAbsenceCount = 0;
+    const zeroDayDates = []; // dates précises (pas juste un compteur) — pour pouvoir dire qui, et quand
+    await Promise.all(workingDates.map(async d=>{
+      const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
+      weekRealized += realized;
+      const log = await getDayLog(agent, d);
+      if(log.justifiedAbsence){
+        justifiedAbsenceCount++;
+      } else if(!log.events || log.events.length === 0){
+        absenceCount++;
+      } else {
+        daysPresent++;
+        if(realized === 0){ zeroDays++; zeroDayDates.push(d); }
+        const ev = evaluateDay(log.events, d, log.freeBreakBonusMin || 0);
+        if(ev.lateMinutes > 0) lateCount++;
+      }
+    }));
+    zeroDayDates.sort();
+    return { agent, weekRealized, zeroDays, zeroDayDates, daysPresent, lateCount, absenceCount, justifiedAbsenceCount };
+  }));
+
+  const indepStats = indepAgents.map(agent=>{
+    let weekRealized = 0;
+    const zeroDayDates = [];
+    workingDates.forEach(d=>{
+      const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
+      weekRealized += realized;
+      if(realized === 0) zeroDayDates.push(d);
+    });
+    return { agent, weekRealized, zeroDayDates, zeroDays: zeroDayDates.length };
+  });
+
+  // Même convention partout : plus de contrats réalisés d'abord, alphabétique si égalité.
+  teamStats.sort((a,b)=> b.weekRealized !== a.weekRealized ? b.weekRealized - a.weekRealized : a.agent.localeCompare(b.agent));
+  indepStats.sort((a,b)=> b.weekRealized !== a.weekRealized ? b.weekRealized - a.weekRealized : a.agent.localeCompare(b.agent));
+
+  const totalTeamRealized = teamStats.reduce((s,r)=>s+r.weekRealized, 0);
+  const totalIndepRealized = indepStats.reduce((s,r)=>s+r.weekRealized, 0);
+  const activeTeam = teamStats.filter(r=>r.daysPresent > 0);
+  const teamAvg = activeTeam.length ? totalTeamRealized / activeTeam.length : 0;
+
+  // Répartition en 4 groupes — règles simples et transparentes, basées sur des faits, jamais du ressenti :
+  // pression si au moins 1 jour à 0 (LA peur du boss) OU très en dessous de la moyenne OU 3 retards+ ;
+  // féliciter si 1er du classement ou nettement au-dessus de la moyenne sans aucun retard ; motiver si en
+  // dessous de la moyenne équipe ; encourager pour le reste (dans la moyenne ou au-dessus, sans éclat).
+  const buckets = { feliciter: [], motiver: [], encourager: [], pression: [] };
+  teamStats.forEach((r, i)=>{
+    const rank = i + 1;
+    if(r.zeroDays >= 1 || (teamAvg > 0 && r.weekRealized < teamAvg * 0.5) || r.lateCount >= 3){
+      buckets.pression.push(r);
+    } else if(rank === 1 || (teamAvg > 0 && r.weekRealized >= teamAvg * 1.3 && r.lateCount === 0)){
+      buckets.feliciter.push(r);
+    } else if(teamAvg > 0 && r.weekRealized < teamAvg){
+      buckets.motiver.push(r);
+    } else {
+      buckets.encourager.push(r);
+    }
+  });
+
+  const totalLate = teamStats.reduce((s,r)=>s+r.lateCount, 0);
+  const totalAbsences = teamStats.reduce((s,r)=>s+r.absenceCount, 0);
+  const totalJustified = teamStats.reduce((s,r)=>s+r.justifiedAbsenceCount, 0);
+  const cleanAgents = teamStats.filter(r=>r.lateCount===0 && r.absenceCount===0).length;
+  const zeroDayAgents = teamStats.filter(r=>r.zeroDays >= 1);
+
+  // ---- Conseils pour la semaine à venir — calculés sur les vrais chiffres, jamais un texte tout fait ----
+  const tips = [];
+  if(zeroDayAgents.length > 0){
+    tips.push(`${zeroDayAgents.length} agent${zeroDayAgents.length>1?'s ont eu':' a eu'} au moins une journée à 0 contrat cette semaine (${zeroDayAgents.map(r=>firstName(r.agent)).join(', ')}) : instaure un point rapide en milieu de journée pour réagir avant la fin de journée, pas après.`);
+  }
+  if(buckets.pression.length > 0){
+    tips.push(`Prévois un point individuel de 10 minutes avec ${buckets.pression.map(r=>firstName(r.agent)).join(', ')} en tout début de semaine, pour comprendre le blocage avant qu'il ne s'installe.`);
+  }
+  if(totalLate > 0 || totalAbsences > 0){
+    tips.push(`${totalLate} retard${totalLate>1?'s':''} et ${totalAbsences} absence${totalAbsences>1?'s':''} non justifiée${totalAbsences>1?'s':''} cumulés depuis le début de la semaine : un rappel collectif du règlement en ouverture du briefing peut couper court à une mauvaise habitude qui s'installe.`);
+  }
+  if(buckets.feliciter.length > 0){
+    tips.push(`Félicite publiquement ${buckets.feliciter.map(r=>firstName(r.agent)).join(', ')} devant toute l'équipe pendant le briefing — la reconnaissance publique tire tout le monde vers le haut.`);
+  }
+  if(zeroDayAgents.length === 0 && totalLate === 0 && totalAbsences === 0){
+    tips.push(`Semaine propre sur la discipline jusqu'ici (aucun retard, aucune absence, aucune journée à 0) : dis-le clairement à l'équipe en ouverture du briefing, ça se mérite.`);
+  }
+  tips.push(seedPick(CALL_CENTER_WEEKLY_TIPS, weekDates[0]));
+
+  // ---- Rendu ----
+  const fmtPct = (n)=> teamAvg>0 ? Math.round((n/teamAvg)*100) : 0;
+  const bucketMeta = {
+    feliciter: { title: '🌟 À féliciter', color: '#b8935a', bg: 'rgba(184,147,90,0.10)' },
+    encourager: { title: '🙂 À encourager', color: '#5680ab', bg: 'rgba(86,128,171,0.10)' },
+    motiver: { title: '💪 À motiver', color: '#b98a42', bg: 'rgba(185,138,66,0.10)' },
+    pression: { title: '🚨 Sous pression', color: '#b5595c', bg: 'rgba(181,89,92,0.12)' }
+  };
+  function bucketCard(key){
+    const list = buckets[key];
+    const meta = bucketMeta[key];
+    if(!list.length) return `<div style="flex:1; min-width:220px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); font-family:'Inter',sans-serif;">
+      <div style="font-weight:700; font-size:14px; color:${meta.color}; margin-bottom:4px;">${meta.title}</div>
+      <div style="font-size:12.5px; color:var(--muted);">Personne dans cette catégorie cette semaine.</div>
+    </div>`;
+    const items = list.map(r=>{
+      const reasons = [];
+      if(r.zeroDays>=1) reasons.push(`${r.zeroDays} jour${r.zeroDays>1?'s':''} à 0`);
+      if(r.lateCount>=1) reasons.push(`${r.lateCount} retard${r.lateCount>1?'s':''}`);
+      if(teamAvg>0) reasons.push(`${fmtPct(r.weekRealized)}% de la moyenne équipe`);
+      return `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span style="font-weight:600; font-size:13px;">${r.agent}</span>
+        <span style="font-size:11.5px; color:var(--muted); text-align:right;">${r.weekRealized} contrat${r.weekRealized>1?'s':''}${reasons.length?' · '+reasons.join(' · '):''}</span>
+      </div>`;
+    }).join('');
+    return `<div style="flex:1; min-width:240px; padding:16px; border-radius:14px; background:${meta.bg}; border:1px solid ${meta.color}44; font-family:'Inter',sans-serif;">
+      <div style="font-weight:700; font-size:14px; color:${meta.color}; margin-bottom:8px;">${meta.title} <span style="opacity:0.7; font-weight:500;">(${list.length})</span></div>
+      ${items}
+    </div>`;
+  }
+
+  // Détail "0 contrat" : pas juste un compteur global (qui prêtait à confusion — on aurait pu croire que
+  // c'était TOUTE l'équipe à 0 un jour donné) — on garde le total mais avec le détail équipe/indépendants,
+  // et surtout la liste précise de qui, et quand, pour que ce soit sans ambiguïté au briefing.
+  // "4 jours agent à 0" mélangeait deux idées différentes (nombre de JOURS concernés vs nombre
+  // d'OCCURRENCES agent+jour cumulées) dans un seul chiffre — ambigu, ça pouvait donner l'impression
+  // d'un nombre de jours calendaires supérieur à la semaine écoulée. Deux vues séparées et sans
+  // ambiguïté à la place : par JOUR (quels jours ont eu au moins un agent à 0, et qui), et par AGENT
+  // (qui a fini à 0 cette semaine, et quand) — même donnée, mais jamais les deux sens mélangés.
+  const zeroDayDetailParts = [];
+  teamStats.forEach(r=> r.zeroDayDates.forEach(d=> zeroDayDetailParts.push({ agent:r.agent, date:d, indep:false })));
+  indepStats.forEach(r=> r.zeroDayDates.forEach(d=> zeroDayDetailParts.push({ agent:r.agent, date:d, indep:true })));
+  zeroDayDetailParts.sort((a,b)=> a.date === b.date ? a.agent.localeCompare(b.agent) : a.date.localeCompare(b.date));
+
+  const zeroDatesSet = [...new Set(zeroDayDetailParts.map(p=>p.date))].sort();
+  const zeroAgentsSet = [...new Set(zeroDayDetailParts.map(p=>p.agent))];
+  const zeroAgentsTeamCount = zeroAgentsSet.filter(a=> zeroDayDetailParts.some(p=>p.agent===a && !p.indep)).length;
+  const zeroAgentsIndepCount = zeroAgentsSet.filter(a=> zeroDayDetailParts.some(p=>p.agent===a && p.indep)).length;
+
+  const zeroByDateHtml = zeroDatesSet.length
+    ? `<div style="margin-top:10px; padding-top:10px; border-top:1px solid rgba(181,89,92,0.25); font-size:11.5px; color:var(--text); line-height:1.65;">
+        ${zeroDatesSet.map(d=>{
+          const names = zeroDayDetailParts.filter(p=>p.date===d).map(p=>`${p.agent}${p.indep?' <span style="color:var(--independant);">(indép.)</span>':''}`).join(', ');
+          return `<div><b>${new Date(d+'T00:00:00').toLocaleDateString('fr-FR',{weekday:'short', day:'numeric', month:'short'})}</b> — ${names}</div>`;
+        }).join('')}
+      </div>`
+    : '';
+
+  const zeroByAgentHtml = zeroAgentsSet.length
+    ? `<div style="margin-top:10px; padding-top:10px; border-top:1px solid rgba(181,89,92,0.25); font-size:11.5px; color:var(--text); line-height:1.65;">
+        ${zeroAgentsSet.map(agent=>{
+          const parts = zeroDayDetailParts.filter(p=>p.agent===agent);
+          const dates = parts.map(p=>new Date(p.date+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})).join(', ');
+          return `<div><b>${agent}</b>${parts[0].indep?' <span style="color:var(--independant);">(indép.)</span>':''} — ${dates}</div>`;
+        }).join('')}
+      </div>`
+    : '';
+
+  let html = `<div style="font-family:'Inter',sans-serif;">`;
+  html += `<div style="font-size:12.5px; color:var(--muted); margin-bottom:16px;">${weekLabel}</div>`;
+
+  // Chiffres clés
+  html += `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px;">
+    <div style="flex:1; min-width:160px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Contrats équipe</div>
+      <div style="font-size:26px; font-weight:800; letter-spacing:-0.5px;">${totalTeamRealized}</div>
+      ${totalIndepRealized>0 ? `<div style="font-size:11px; color:var(--independant); margin-top:2px;">+${totalIndepRealized} indépendants</div>` : ''}
+    </div>
+    <div style="flex:1; min-width:160px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Moyenne par agent</div>
+      <div style="font-size:26px; font-weight:800; letter-spacing:-0.5px;">${teamAvg.toFixed(1)}</div>
+    </div>
+    <div style="flex:1; min-width:220px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid ${zeroDatesSet.length?'rgba(181,89,92,0.3)':'rgba(255,255,255,0.07)'};">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Jours avec au moins 1 agent à 0</div>
+      <div style="font-size:26px; font-weight:800; letter-spacing:-0.5px; color:${zeroDatesSet.length?'#b5595c':'#4f9d78'};">${zeroDatesSet.length}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${workingDates.length}</span></div>
+      ${zeroByDateHtml}
+    </div>
+    <div style="flex:1; min-width:220px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid ${zeroAgentsSet.length?'rgba(181,89,92,0.3)':'rgba(255,255,255,0.07)'};">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Agents ayant fini à 0</div>
+      <div style="font-size:26px; font-weight:800; letter-spacing:-0.5px; color:${zeroAgentsSet.length?'#b5595c':'#4f9d78'};">${zeroAgentsSet.length}</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${zeroAgentsTeamCount} équipe${zeroAgentsIndepCount>0?` <span style="color:var(--independant);">+ ${zeroAgentsIndepCount} indép.</span>`:''}</div>
+      ${zeroByAgentHtml}
+    </div>
+    <div style="flex:1; min-width:180px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Sans retard ni absence</div>
+      <div style="font-size:26px; font-weight:800; letter-spacing:-0.5px;">${cleanAgents}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${teamStats.length}</span></div>
+    </div>
+  </div>`;
+
+  // 4 groupes
+  html += `<div style="font-weight:700; font-size:13.5px; margin-bottom:10px; opacity:0.85;">Où en est chaque agent</div>`;
+  html += `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;">`;
+  html += bucketCard('feliciter') + bucketCard('encourager') + bucketCard('motiver') + bucketCard('pression');
+  html += `</div>`;
+
+  // Discipline
+  html += `<div style="padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); margin-bottom:20px;">
+    <div style="font-weight:700; font-size:13.5px; margin-bottom:8px;">📏 Discipline et respect du règlement</div>
+    <div style="font-size:13px; color:var(--text); line-height:1.7;">
+      ${totalLate} retard${totalLate>1?'s':''} · ${totalAbsences} absence${totalAbsences>1?'s':''} non justifiée${totalAbsences>1?'s':''}${totalJustified>0?` · ${totalJustified} absence${totalJustified>1?'s':''} justifiée${totalJustified>1?'s':''}`:''} · <b style="color:${cleanAgents===teamStats.length?'#4f9d78':'var(--text);'}">${cleanAgents}/${teamStats.length}</b> agent${teamStats.length>1?'s':''} sans aucun écart cette semaine.
+    </div>
+  </div>`;
+
+  // Conseils semaine à venir
+  html += `<div style="padding:16px; border-radius:14px; background:rgba(184,147,90,0.08); border:1px solid rgba(184,147,90,0.28);">
+    <div style="font-weight:700; font-size:13.5px; margin-bottom:9px; color:#c9a870;">💡 Conseils pour la suite de la semaine</div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      ${tips.map(t=>`<div style="display:flex; align-items:flex-start; gap:7px; font-size:13px; color:var(--text); line-height:1.55;"><span style="color:#c9a870; flex-shrink:0;">→</span><span>${t}</span></div>`).join('')}
+    </div>
+  </div>`;
+
+  html += `</div>`;
+  return html;
+}
+
+async function renderWeeklyBriefingSection(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  container.innerHTML = await buildWeeklyBriefingHtml();
 }
 
 function getProdConfig(){
@@ -6988,12 +8148,13 @@ async function renderArena(){
   } else {
     const d = new Date(now.getFullYear(), now.getMonth(), 1);
     dateLabelText = 'Objectif du mois — ' + d.toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
-    const rows = [];
-    for(const agent of config.agents){
-      const st = await monthlyObjectifStatus(agent, now.getFullYear(), now.getMonth()+1);
-      const desiredObjective = await getMonthlyDesiredObjective(agent, now.getFullYear(), now.getMonth()+1);
-      rows.push({ agent, objective: st.objectif, realized: st.realized, pct: st.pct, gap: st.realized - st.objectif, isIndep: st.isIndep, noObjectif: getAgentPay(agent).noObjectif, desiredObjective });
-    }
+    const rows = await Promise.all(config.agents.map(async agent=>{
+      const [st, desiredObjective] = await Promise.all([
+        monthlyObjectifStatus(agent, now.getFullYear(), now.getMonth()+1),
+        getMonthlyDesiredObjective(agent, now.getFullYear(), now.getMonth()+1)
+      ]);
+      return { agent, objective: st.objectif, realized: st.realized, pct: st.pct, gap: st.realized - st.objectif, isIndep: st.isIndep, noObjectif: getAgentPay(agent).noObjectif, desiredObjective };
+    }));
     rows.sort((a,b)=>{
       if(b.realized !== a.realized) return b.realized - a.realized;
       if(b.pct !== a.pct) return b.pct - a.pct;
@@ -7365,7 +8526,7 @@ async function supervisorBonusForDates(dateStrs){
   const rates = {};
   supervisors.forEach(s=> rates[s] = getAgentPay(s).supervisorPrimePerContract || 0);
 
-  for(const dateStr of dateStrs){
+  const perDayResults = await Promise.all(dateStrs.map(async dateStr=>{
     const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
     prodBoardCache[dateStr] = board;
     let dayPool = 0;
@@ -7373,22 +8534,26 @@ async function supervisorBonusForDates(dateStrs){
       if(isSupervisor(agent)) return;
       dayPool += getAgentProd(board, agent).realized || 0;
     });
-    if(dayPool <= 0) continue;
+    if(dayPool <= 0) return null;
 
     const eligibility = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
     const eligible = eligibility.filter(e=>e.ok).map(e=>e.sup);
     const ineligible = eligibility.filter(e=>!e.ok).map(e=>e.sup);
-    if(eligible.length === 0) continue;
+    if(eligible.length === 0) return null;
 
     const forfeitedRateTotal = ineligible.reduce((s,sup)=> s + rates[sup], 0);
     const bonusRatePerEligible = forfeitedRateTotal / eligible.length;
+    return { dayPool, eligible, bonusRatePerEligible };
+  }));
 
-    eligible.forEach(sup=>{
-      const effectiveRate = rates[sup] + bonusRatePerEligible;
-      dh[sup] += dayPool * effectiveRate;
-      contracts[sup] += dayPool;
+  perDayResults.forEach(res=>{
+    if(!res) return;
+    res.eligible.forEach(sup=>{
+      const effectiveRate = rates[sup] + res.bonusRatePerEligible;
+      dh[sup] += res.dayPool * effectiveRate;
+      contracts[sup] += res.dayPool;
     });
-  }
+  });
   supervisors.forEach(s=> dh[s] = Math.round(dh[s]));
   return { dh, contracts };
 }
@@ -7487,7 +8652,7 @@ async function renderCash(){
   // Calculé pour tout le monde, y compris les indépendants : monthlyStats renvoie des zéros pour eux
   // (pas de pointage), donc leur prime d'assiduité (si réglée par l'admin) est toujours acquise.
   const monthStats = await monthlyStats(agent, now.getFullYear(), now.getMonth()+1);
-  const assiduiteAcquise = monthStats.retardsCumules < 3;
+  const assiduiteAcquise = isAssiduiteAcquise(monthStats);
   const monthRes = await estimateSalaryMonthReal(agent, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
 
   // Salaire RÉEL, temps réel : fixe/primes fixes au prorata des jours ouvrés déjà écoulés ce mois-ci —
@@ -7536,11 +8701,7 @@ async function renderCash(){
   renderRetardsAbsencesPanel('cashRetardsAbsencesPanel', agent, now.getFullYear(), now.getMonth()+1);
 
   // Ticker — classement par CONTRATS (production), pour les annonces dynamiques 1er/2e/3e/avant-dernier/ex-aequo.
-  const allRankings = [];
-  for(const a of config.agents){
-    const s = await monthlyObjectifStatus(a, now.getFullYear(), now.getMonth()+1);
-    allRankings.push(s);
-  }
+  const allRankings = await Promise.all(config.agents.map(a=> monthlyObjectifStatus(a, now.getFullYear(), now.getMonth()+1)));
   allRankings.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
   const nAg = allRankings.length;
   const leaderAgent = allRankings[0];
@@ -7639,16 +8800,14 @@ async function renderCash(){
 async function computeSalaryLeaderboard(){
   const now = nowMA();
   const supervisionBonusLb = await supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1);
-  const rows = [];
-  for(const ag of config.agents){
+  const rows = await Promise.all(config.agents.map(async ag=>{
     const isIndep = isIndependant(ag);
     const monthStats = await monthlyStats(ag, now.getFullYear(), now.getMonth()+1);
-    const assiduiteAcquise = monthStats.retardsCumules < 3;
+    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const res = await estimateSalaryMonthReal(ag, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
-    const p = getAgentPay(ag);
     const supervisorBonus = isSupervisor(ag) ? (supervisionBonusLb.dh[ag] || 0) : 0;
-    rows.push({ agent: ag, total: res.total + supervisorBonus, contracts: res.status.realized, isIndep });
-  }
+    return { agent: ag, total: res.total + supervisorBonus, contracts: res.status.realized, isIndep };
+  }));
   rows.sort((a,b)=> b.total !== a.total ? b.total - a.total : a.agent.localeCompare(b.agent));
   rows.forEach((r,i)=> r.rank = i+1);
   return rows;
@@ -7972,7 +9131,7 @@ async function renderSupervision(){
       isIndep ? Promise.resolve(null) : getDayLog(agent, dateStr),
       getMonthlyDesiredObjective(agent, now.getFullYear(), now.getMonth()+1)
     ]);
-    const assiduiteAcquise = monthStats.retardsCumules < 3;
+    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const monthRes = await estimateSalaryMonthReal(agent, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
     const tier = isIndep ? null : tierForCount(monthStats.retardsCumules);
 
@@ -8112,26 +9271,67 @@ async function renderSupervision(){
   const totalDayObjSet = objRowsWithDayObj.reduce((s,r)=>s+r.dayObjective, 0);
   const totalDayRealizedAll = objDisplayRows.reduce((s,r)=>s+r.dayRealized, 0);
   const indepDayRealized = objDisplayRows.filter(r=>r.isIndep).reduce((s,r)=>s+r.dayRealized, 0);
-  let objBlockHtml = `<div class="section-title" style="margin-top:0;">🎯 Objectif visé et réalisé — aujourd'hui</div>
-    <div class="section-sub">L'objectif que chaque agent s'est fixé lui-même ce matin, et où il en est réellement, tout de suite.</div>`;
+  let objBlockHtml = `<div style="font-size:23px; font-weight:900; margin:0 0 4px; padding-top:34px; border-top:3px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:-0.2px; color:#e5a83d;">📊 Bilan de la journée <span style="font-size:12px; font-weight:800; border-radius:20px; padding:3px 12px; letter-spacing:0.3px; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.4); color:#e5a83d;">OBLIGATOIRE · WHATSAPP</span></div>
+    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.7; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(229,168,61,0.09); border-left:4px solid #e5a83d;"><b style="color:#e5a83d;">👉 Ce que tu dois faire :</b> en fin de journée, clique sur le bouton <b>« Envoyer sur WhatsApp »</b> juste en dessous et envoie l'image au groupe de l'équipe. C'est obligatoire, tous les jours, sans exception.</div>
+    <div style="margin:10px 0 14px;">
+      <button type="button" id="objSnapExportBtnSup" onclick="exportBriefingImage('objSnapCardsSup','objSnapExportBtnSup','Bilan de la journée','Obligatoire · WhatsApp','bilan_du_jour_supervision','#e5a83d')" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (bilan du jour)</button>
+    </div>`;
   // Même carré "Total équipe" que dans Admin → 🎯 Objectif choisi & réalisé, pour une présentation
   // identique partout où visé et réalisé sont comparés.
   objBlockHtml += renderVisReelSquareCard(totalDayRealizedAll, totalDayObjSet, objRowsWithDayObj.length, indepDayRealized, dateStr, dateStr);
-  objBlockHtml += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-bottom:8px;">`;
+
+  // Classement (rivalité saine) + commentaire perso adaptatif par agent — identique à ce qui existe dans
+  // Admin → 🎯 Objectif choisi & réalisé, pour que le superviseur ait exactement les mêmes repères que
+  // l'admin sur son équipe. Équipe et indépendants classés séparément (statuts de paie différents).
+  const supDaysElapsed = workingDaysElapsedThrough(dateStr);
+  const supRemainingDays = workingDaysRemainingFrom(dateStr);
+  function buildMonthlyRankingSup(list){
+    const sorted = list.map(r=>({ agent: r.agent, monthlyRealized: r.monthReal }))
+      .sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
+    const byAgent = {};
+    sorted.forEach((r,i)=>{
+      byAgent[r.agent] = {
+        rank: i+1,
+        total: sorted.length,
+        prevAgent: i>0 ? sorted[i-1].agent : null,
+        prevGap: i>0 ? Math.max(0, sorted[i-1].monthlyRealized - r.monthlyRealized) : 0
+      };
+    });
+    return byAgent;
+  }
+  const supTeamRankByAgent = buildMonthlyRankingSup(objDisplayRows.filter(r=>!r.isIndep));
+  const supIndepRankByAgent = buildMonthlyRankingSup(objDisplayRows.filter(r=>r.isIndep));
+
+  objBlockHtml += `<div id="objSnapCardsSup" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px; margin-bottom:8px;">`;
   objDisplayRows.forEach(r=>{
     const hasObj = r.dayObjective > 0;
     const pct = hasObj ? Math.min(100, Math.round((r.dayRealized/r.dayObjective)*100)) : 0;
     const hit = hasObj && r.dayRealized >= r.dayObjective;
-    const barColor = hit ? 'var(--green)' : (pct>=50 ? 'var(--amber)' : 'var(--red)');
-    objBlockHtml += `<div style="padding:12px 14px; border-radius:12px; background:var(--panel2); border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};">
-      <div style="display:flex; align-items:center; gap:6px; font-weight:800; font-size:14px; margin-bottom:6px;">${r.agent}${r.isIndep ? ' <span class="tag independant" style="font-weight:700;">Indé</span>' : ''}</div>
+    const barColor = hit ? '#4f9d78' : (pct>=50 ? '#b98a42' : '#b5595c');
+    const moMini = r.isIndep ? 0 : (r.monthObj || 0);
+    const moVise = r.desiredObj || 0;
+    const rankInfoSup = r.isIndep ? supIndepRankByAgent[r.agent] : supTeamRankByAgent[r.agent];
+    const commentLinesSup = personalDailyComment(r.agent, r.monthReal, moMini, moVise, supDaysElapsed, supRemainingDays, rankInfoSup);
+    const monthlyBlockSup = (moMini>0 || moVise>0 || commentLinesSup) ? `
+      <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.07); font-size:12.5px;">
+        ${moMini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:4px;"><span>Minimum du mois</span><b style="color:${r.monthReal>=moMini?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moMini}</span></b></div>` : ''}
+        ${moVise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${r.monthReal>=moVise?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moVise}</span></b></div>` : ''}
+        ${commentLinesToHtml(commentLinesSup)}
+      </div>` : '';
+    objBlockHtml += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:15px 16px; border-radius:16px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+      <div style="display:flex; align-items:center; gap:9px; margin-bottom:9px;">
+        ${agentAvatarHtml(r.agent, 28)}
+        <b style="font-weight:700; font-size:14px; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">${r.agent}</b>
+        ${r.isIndep ? '<span class="tag independant" style="font-weight:700; flex-shrink:0;">Indé</span>' : ''}
+      </div>
       ${hasObj
-        ? `<div class="arena-prog-bar" style="height:8px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor};"></div></div>
-           <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:13px;">
-             <span style="color:var(--muted);">Visé : <b style="color:var(--text);">${r.dayObjective}</b></span>
-             <span style="color:${barColor}; font-weight:800;">Réalisé : ${r.dayRealized}</span>
+        ? `<div class="arena-prog-bar" style="height:7px; border-radius:4px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:4px;"></div></div>
+           <div style="display:flex; justify-content:space-between; margin-top:7px; font-size:12.5px;">
+             <span style="color:var(--muted);">Visé : <b style="color:var(--text); font-weight:700;">${r.dayObjective}</b></span>
+             <span style="color:${barColor}; font-weight:700;">Réalisé : ${r.dayRealized}</span>
            </div>`
-        : `<div style="font-size:12.5px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé : <b style="color:var(--text);">${r.dayRealized}</b></div>`}
+        : `<div style="font-size:12px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:12.5px;">Réalisé : <b style="color:var(--text); font-weight:700;">${r.dayRealized}</b></div>`}
+      ${monthlyBlockSup}
     </div>`;
   });
   objBlockHtml += '</div>';
@@ -8193,7 +9393,32 @@ async function renderSupervision(){
   // perso) ne doivent jamais se mélanger dans l'objectif et le total de l'équipe salariée ci-dessus.
   const indepRows = rows.filter(r=>r.isIndep);
 
-  let html = pressureHtml + objBlockHtml + pressureExtraHtml + `
+  // Nouvelle section dédiée : même principe que 🎯 Objectif choisi & réalisé (Admin), avec en plus la
+  // comparaison à la veille et la tendance des derniers jours — un vrai briefing du jour par agent.
+  // On réutilise les chiffres du jour/du mois déjà calculés juste au-dessus (rows) au lieu de les relire
+  // une seconde fois — seuls l'historique des derniers jours et la veille sont vraiment nouveaux ici.
+  const briefingBaseRows = rows.map(r=>({ agent: r.agent, isIndep: r.isIndep, todayRealized: r.dayRealized, todayObjective: r.dayObjective, monthlyRealized: r.monthReal, mini: r.monthObj, vise: r.desiredObj }));
+  const dailyBriefingHtml = `<div style="font-size:23px; font-weight:900; margin:0 0 4px; padding-top:30px; border-top:3px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:-0.2px; color:var(--gold);">🎯 Objectif du jour — Conseil du matin <span style="font-size:12px; font-weight:800; border-radius:20px; padding:3px 12px; letter-spacing:0.3px; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.35); color:var(--gold);">ENVOI WHATSAPP FACULTATIF</span></div>
+    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.75; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(255,215,0,0.08); border-left:4px solid var(--gold);">
+      <b style="color:var(--gold);">👉 Ce que tu dois faire :</b> chaque matin, regarde la situation de chaque agent — mais ne lis jamais le texte du CRM mot à mot à voix haute, sers-t'en comme repère pour savoir qui fait quoi. À toi d'adapter, pas de réciter :
+      <div style="margin-top:9px; display:flex; flex-direction:column; gap:5px;">
+        <div>🌟 <b>En avance ou en progrès :</b> félicite-le devant l'équipe, ça motive tout le monde.</div>
+        <div>🙂 <b>Dans la moyenne :</b> encourage-le, pousse-le à viser un peu plus haut aujourd'hui.</div>
+        <div>🚨 <b>En retard sur son objectif :</b> va lui parler en face à face, mets la pression, fais-lui sentir qu'il risque de finir la journée à 0 s'il ne s'active pas maintenant.</div>
+      </div>
+      <div style="margin-top:9px;">Le but : que chaque agent reparte motivé avec le bon niveau d'exigence pour LUI — pas qu'il entende une phrase lue sur un écran. L'envoi sur WhatsApp est possible, mais pas obligatoire.</div>
+    </div>
+    <div style="margin:10px 0 14px;">
+      <button type="button" id="dailyBriefingExportBtnSup" onclick="exportBriefingImage('dailyBriefingSup','dailyBriefingExportBtnSup','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin_supervision','#e0c25e')" style="padding:9px 16px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.10); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (facultatif)</button>
+    </div>
+    <div id="dailyBriefingSup">` + await buildDailyBriefingHtml(briefingBaseRows) + `</div>`;
+
+  // Nouvelle section également ici : le Bilan de la semaine, identique à celui d'Admin → Vue d'ensemble,
+  // pour que le superviseur prépare le même briefing hebdomadaire obligatoire avec son équipe.
+  const weeklyBriefingHtml = `<div style="font-size:23px; font-weight:900; margin:0 0 4px; padding-top:30px; border-top:3px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:-0.2px; color:#e5a83d;">📋 Bilan de la semaine <span style="font-size:12px; font-weight:800; border-radius:20px; padding:3px 12px; letter-spacing:0.3px; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.4); color:#e5a83d;">BRIEFING OBLIGATOIRE · 1×/SEMAINE</span></div>
+    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.7; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(229,168,61,0.09); border-left:4px solid #e5a83d;"><b style="color:#e5a83d;">👉 Ce que tu dois faire :</b> une fois par semaine, réunis toute l'équipe. Lis les chiffres à voix haute. Félicite ceux qui ont bien travaillé. Parle en privé à ceux qui sont en difficulté. Rappelle les règles si besoin.</div>` + await buildWeeklyBriefingHtml();
+
+  let html = pressureHtml + dailyBriefingHtml + objBlockHtml + weeklyBriefingHtml + pressureExtraHtml + `
     <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
     <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour visé par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon.</div>
     <div style="overflow-x:auto;">
@@ -8493,10 +9718,7 @@ async function renderMonthlyObjectif(){
     tableEl.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>';
     return;
   }
-  const rows = [];
-  for(const agent of config.agents){
-    rows.push(await monthlyObjectifStatus(agent, year, month));
-  }
+  const rows = await Promise.all(config.agents.map(agent=> monthlyObjectifStatus(agent, year, month)));
   // Classé par contrats réalisés ce mois-ci (le plus productif en premier), alphabétique si égalité.
   rows.sort((a,b)=>{
     if(b.realized !== a.realized) return b.realized - a.realized;
@@ -8532,7 +9754,7 @@ async function renderMonthlyObjectif(){
       primeTxt = `<span style="color:var(--muted);">0 DH — objectif non atteint</span>`;
     }
     const monthStats = await monthlyStats(r.agent, year, month);
-    const assiduiteAcquise = monthStats.retardsCumules < 3;
+    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const full = await estimateSalaryMonthReal(r.agent, year, month, assiduiteAcquise);
     const supervisorBonusMo = isSupervisor(r.agent) ? (supervisionBonusMoMap.dh[r.agent] || 0) : 0;
     const fullTotalWithSupervisor = (full ? full.total : 0) + supervisorBonusMo;
@@ -8675,15 +9897,22 @@ async function renderProdAdmin(){
       <th>Agent</th><th>Fixe/mois</th><th>DH/contrat</th><th>Contrats jour</th><th>Brut jour (simul.)</th><th>Contrats (mois)</th><th>Brut total mois (simul.)</th>
     </tr></thead><tbody>`;
     let totalDaySal = 0, totalMonthBrut = 0, totalMonthBrutIndep = 0;
-    for(const r of rankings){
+    // Toutes les lectures agent par agent sont lancées en parallèle (au lieu d'une par une) — le tableau
+    // de simulation charge nettement plus vite dès qu'il y a une dizaine d'agents ou plus.
+    const simRows = await Promise.all(rankings.map(async r=>{
       const pay = getAgentPay(r.agent);
-      const monthContracts = await monthlyRealizedContracts(r.agent, simYear, simMonth);
+      const [monthContracts, monthStats] = await Promise.all([
+        monthlyRealizedContracts(r.agent, simYear, simMonth),
+        monthlyStats(r.agent, simYear, simMonth)
+      ]);
       const daySal = calculateDailySalary(r.agent, r.realized, monthContracts, simYear, simMonth);
-      const monthStats = await monthlyStats(r.agent, simYear, simMonth);
-      const assiduiteAcquise = monthStats.retardsCumules < 3;
+      const assiduiteAcquise = isAssiduiteAcquise(monthStats);
       const monthRes = await estimateSalaryMonthReal(r.agent, simYear, simMonth, assiduiteAcquise);
       const supervisorBonusSim = isSupervisor(r.agent) ? (supervisionBonusSimMap.dh[r.agent] || 0) : 0;
       const monthTotalSim = (monthRes ? monthRes.total : 0) + supervisorBonusSim;
+      return { r, pay, daySal, monthRes, supervisorBonusSim, monthTotalSim };
+    }));
+    simRows.forEach(({ r, pay, daySal, monthRes, supervisorBonusSim, monthTotalSim })=>{
       const statusTag = pay.isIndep ? ' 🧑‍💼' : (pay.noObjectif ? ` <span style="color:var(--amber);">(${getNoObjectifLabel(r.agent)})</span>` : '');
       totalDaySal += daySal;
       if(pay.isIndep) totalMonthBrutIndep += monthTotalSim; else totalMonthBrut += monthTotalSim;
@@ -8696,7 +9925,7 @@ async function renderProdAdmin(){
         <td>${monthRes ? monthRes.status.realized : '—'}${pay.objectifMensuel && !pay.isIndep ? ' / '+pay.objectifMensuel : ''}</td>
         <td><b style="color:${pay.isIndep ? 'var(--independant)' : 'var(--green)'};">${monthTotalSim.toLocaleString('fr-FR')} DH</b>${supervisorBonusSim>0 ? `<div style="font-size:11px;color:var(--muted);">dont +${supervisorBonusSim.toLocaleString('fr-FR')} DH supervision</div>` : ''}</td>
       </tr>`;
-    }
+    });
     sim += `<tr style="font-weight:800; border-top:2px solid var(--border);">
       <td colspan="4">TOTAL (masse salariale simulée)</td>
       <td style="color:var(--green);">${totalDaySal.toLocaleString('fr-FR')} DH</td>
@@ -8738,6 +9967,7 @@ try{
 }
 
 loadConfig();
+updateSyncIndicator();
 </script>
 
 </body>
