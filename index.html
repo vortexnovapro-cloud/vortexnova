@@ -626,6 +626,7 @@ function tryDeviceGateAdmin(){
       <div class="settings-box" id="freeBreakBox" style="margin-top:18px; text-align:center;">
         <label style="margin-bottom:4px;">☕ Pause libre</label>
         <div class="section-sub" style="margin-top:-4px;">À prendre quand tu veux dans la journée, en une ou plusieurs fois.</div>
+        <div id="freeBreakBonusBanner" style="margin:10px 0; display:none;"></div>
         <div id="freeBreakTimer" style="font-size:34px; font-weight:900; margin:12px 0 6px; font-variant-numeric:tabular-nums;">--:--</div>
         <div id="freeBreakMsg" style="font-size:13.5px; color:var(--muted); margin-bottom:14px;"></div>
         <button class="action-btn" id="btnFreeBreakStart" onclick="startFreeBreak()" style="max-width:260px; margin:0 auto;">Démarrer ma pause</button>
@@ -914,9 +915,28 @@ function tryDeviceGateAdmin(){
           <div class="section-title" style="margin-top:0;">En un coup d'œil</div>
           <div id="todaySnapshot"></div>
 
-          <div class="section-title">⏱️ Temps de pause aujourd'hui</div>
-          <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut, réglable), suivis séparément pour chaque agent.</div>
+          <div class="section-title">⏱️ Temps de pause — en direct</div>
+          <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut + bonus mérité, réglable), suivis séparément pour chaque agent. Se met à jour tout seul.</div>
           <div id="pauseTotalsToday"></div>
+
+          <div class="section-title">📜 Historique des pauses</div>
+          <div class="section-sub">Choisis un jour, ou une période (du... au...), pour voir le détail heure par heure de chaque pause.</div>
+          <div class="admin-toolbar" style="margin-top:0;">
+            <div>
+              <label style="margin-bottom:4px;">Du</label>
+              <input type="date" id="pauseHistFrom">
+            </div>
+            <div>
+              <label style="margin-bottom:4px;">Au</label>
+              <input type="date" id="pauseHistTo">
+            </div>
+            <div>
+              <label style="margin-bottom:4px;">Agent</label>
+              <select id="pauseHistAgent"><option value="">Tous les agents</option></select>
+            </div>
+            <button class="link-btn" onclick="renderPauseHistory()" style="align-self:flex-end;">Afficher</button>
+          </div>
+          <div id="pauseHistoryPanel" style="margin-top:12px;"></div>
         </div>
 
         <div class="mega-section theme-gold">
@@ -1555,7 +1575,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-06-r54';
+const APP_VERSION = '2026-08-06-r55';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2471,11 +2491,13 @@ function renderAgentChips(){
     const indep = isIndependant(name);
     const noObj = hasNoObjectif(name);
     const isSup = isSupervisor(name);
-    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}</span>
+    const startDate = getAgentStartDate(name);
+    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}</span>
       <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat »" style="color:var(--amber);margin-right:2px;">🎯</button>
       ${noObj ? `<button onclick="editStatusLabel('${name.replace(/'/g,"\\'")}')" title="Renommer le libellé affiché (ex: Backoffice, Confirmé...)" style="color:var(--muted);margin-right:2px;">✏️</button>` : ''}
+      <button onclick="setAgentStartDate('${name.replace(/'/g,"\\'")}')" title="Date de début — les retards/absences/prime d'assiduité ne comptent jamais avant cette date (utile pour un nouvel agent)" style="color:#4a9891;margin-right:2px;">📅</button>
       <button onclick="setAgentPassword('${name.replace(/'/g,"\\'")}')" title="Définir/changer le mot de passe" style="margin-right:4px;">🔑</button>
       <button onclick="removeAgent('${name.replace(/'/g,"\\'")}')">×</button>`;
     list.appendChild(chip);
@@ -2484,6 +2506,32 @@ function renderAgentChips(){
 
 function hasNoObjectif(agent){
   return !!(config.agentsNoObjectif && config.agentsNoObjectif[agent] === true);
+}
+
+// Date de début d'un agent : les jours AVANT cette date sont totalement exclus du calcul des
+// retards/absences/prime d'assiduité (monthlyStats, monthlyDeductions) — comme si l'agent n'existait
+// pas encore chez nous ces jours-là. Utile pour un agent qui rejoint en cours de mois : il ne doit
+// jamais être vu comme "absent" avant son premier jour réel.
+function getAgentStartDate(agent){
+  return (config.agentsStartDate && config.agentsStartDate[agent]) || null;
+}
+
+async function setAgentStartDate(name){
+  const current = getAgentStartDate(name) || '';
+  const val = window.prompt(`Date de début de ${name} au format AAAA-MM-JJ (ex: 2026-08-06).\nAvant cette date, aucun retard/absence ne sera compté pour cet agent, et sa prime d'assiduité ne sera jamais affectée.\nLaisse vide pour retirer.`, current);
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(!config.agentsStartDate) config.agentsStartDate = {};
+  if(trimmed === ''){
+    delete config.agentsStartDate[name];
+  } else if(!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)){
+    alert('Format invalide. Utilise AAAA-MM-JJ, par exemple 2026-08-06.');
+    return;
+  } else {
+    config.agentsStartDate[name] = trimmed;
+  }
+  await saveConfigSilent();
+  renderAgentChips();
 }
 
 function getNoObjectifLabel(agent){
@@ -3268,6 +3316,44 @@ function extractFreeBreakPairs(events){
   return pairs;
 }
 
+// 🎁 Bonus pause libre gagné à la performance (règle du boss) : 5 minutes offertes dès le 5e contrat de
+// la journée, +5 minutes pour chaque contrat au-delà. Ne s'applique jamais aux indépendants (pas de
+// notion de pause pour eux). Purement calculé, jamais écrit en dur dans le pointage — pour ne jamais se
+// mélanger avec un éventuel cadeau ponctuel réglé à la main par l'admin (🎁 Offrir du temps de pause),
+// qui reste un montant totalement séparé et s'additionne à celui-ci.
+function earnedBreakBonusMinutes(realizedToday){
+  if(!realizedToday || realizedToday < 5) return 0;
+  return (realizedToday - 4) * 5;
+}
+
+// Bonus pause libre TOTAL pour un agent à une date donnée : cadeau manuel de l'admin (log.freeBreakBonusMin)
+// + bonus automatique gagné avec les contrats du jour (earnedBreakBonusMinutes). C'est CE total qu'il faut
+// utiliser partout où on calcule le budget de pause libre d'un agent (affichage live ET calcul des
+// dépassements qui comptent pour l'assiduité) pour que le cadeau soit réel, pas juste visuel.
+async function getEffectiveFreeBreakBonus(agent, dateStr, log){
+  if(isIndependant(agent)) return log.freeBreakBonusMin || 0;
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  prodBoardCache[dateStr] = board;
+  const realizedToday = getAgentProd(board, agent).realized || 0;
+  return (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realizedToday);
+}
+
+// Détail complet (pas juste le total) pour le widget live de l'agent : combien de contrats aujourd'hui,
+// combien de minutes gagnées avec, combien de contrats manquent avant le prochain palier de +5 min — pour
+// pouvoir afficher un vrai compteur motivant ("encore 2 contrats et +10min de pause") plutôt qu'un simple
+// chiffre. Un seul aller-retour réseau (le board du jour est mis en cache), réutilisé par les 4 endroits
+// qui initialisent freeBreakCache.
+async function getFreeBreakBonusInfo(agent, dateStr, log){
+  if(isIndependant(agent)) return { totalBonus: log.freeBreakBonusMin || 0, manualBonus: log.freeBreakBonusMin || 0, earnedBonus: 0, realizedToday: 0, nextTierIn: null };
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  prodBoardCache[dateStr] = board;
+  const realizedToday = getAgentProd(board, agent).realized || 0;
+  const manualBonus = log.freeBreakBonusMin || 0;
+  const earnedBonus = earnedBreakBonusMinutes(realizedToday);
+  const nextTierIn = realizedToday < 5 ? (5 - realizedToday) : 1; // toujours 1 contrat de plus pour +5min une fois le palier des 5 franchi
+  return { totalBonus: manualBonus + earnedBonus, manualBonus, earnedBonus, realizedToday, nextTierIn };
+}
+
 // Minutes utilisées ce jour-là (pauses déjà terminées + la pause en cours si elle est encore ouverte),
 // et l'heure de début de la pause en cours (null si aucune pause n'est active). Pour un jour passé avec
 // une pause jamais refermée (oubli), on s'arrête à l'heure de fin d'horaire prévue ce jour-là plutôt que
@@ -3299,18 +3385,22 @@ async function refreshFreeBreakUI(){
   box.style.display = 'block';
   const dateStr = todayStr();
   const log = await getDayLog(currentAgent, dateStr);
-  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   updateFreeBreakDisplay();
 }
 
 function updateFreeBreakDisplay(){
   const timerEl = document.getElementById('freeBreakTimer');
   const msgEl = document.getElementById('freeBreakMsg');
+  const bannerEl = document.getElementById('freeBreakBonusBanner');
   const startBtn = document.getElementById('btnFreeBreakStart');
   const endBtn = document.getElementById('btnFreeBreakEnd');
   if(!timerEl || !currentAgent) return;
 
   const bonusMin = freeBreakCache.bonusMin || 0;
+  const earnedBonus = freeBreakCache.earnedBonus || 0;
+  const realizedToday = freeBreakCache.realizedToday || 0;
+  const nextTierIn = freeBreakCache.nextTierIn;
   const budgetSec = ((config.freeBreakMinutes!=null ? config.freeBreakMinutes : 35) + bonusMin) * 60;
   const { usedSec, activeStart } = freeBreakUsageToday(freeBreakCache.events || []);
   const remainingSec = budgetSec - usedSec;
@@ -3324,6 +3414,34 @@ function updateFreeBreakDisplay(){
 
   timerEl.textContent = fmt(remainingSec);
   timerEl.style.color = remainingSec < 0 ? 'var(--red)' : (remainingSec < 300 ? 'var(--amber)' : 'var(--text)');
+
+  // 🎁 Bannière bonus — bien visible, texte varié (stable pour un même nombre de contrats, mais change
+  // dès que le compteur bouge) pour que ça reste vivant et donne vraiment envie de signer un contrat de
+  // plus. Jamais pour un indépendant (pas de notion de pause pour eux, freeBreakCache.realizedToday=0).
+  if(bannerEl){
+    const seed = `${currentAgent}|${realizedToday}`;
+    if(earnedBonus > 0){
+      bannerEl.style.display = 'block';
+      bannerEl.innerHTML = `<div style="display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:20px; background:rgba(255,215,0,0.14); border:1px solid rgba(255,215,0,0.4); font-weight:700; font-size:13.5px; color:var(--gold);">🎁 +${earnedBonus} min de pause débloquées — ${realizedToday} contrat${realizedToday>1?'s':''} aujourd'hui !</div>
+        <div style="margin-top:6px; font-size:12px; color:var(--muted);">${seedPick([
+          `Encore 1 contrat et +5 minutes de plus. Ça se joue maintenant.`,
+          `Chaque contrat en plus, c'est 5 minutes de pause en plus. Continue !`,
+          `Tu as déjà gagné du temps rien qu'en bossant bien. La suite ne tient qu'à toi.`,
+          `+5 min à chaque contrat au-dessus de 5 — le compteur tourne dans le bon sens.`
+        ], seed)}</div>`;
+    } else if(realizedToday > 0 && nextTierIn != null && nextTierIn <= 3){
+      bannerEl.style.display = 'block';
+      bannerEl.innerHTML = `<div style="display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:20px; background:rgba(255,215,0,0.08); border:1px solid rgba(255,215,0,0.25); font-weight:700; font-size:13.5px; color:var(--gold);">🎯 Encore ${nextTierIn} contrat${nextTierIn>1?'s':''} et tu débloques 🎁 5 min de pause bonus</div>
+        <div style="margin-top:6px; font-size:12px; color:var(--muted);">${seedPick([
+          `Si proche du cadeau. Un dernier effort !`,
+          `5 minutes de pause en plus t'attendent, à ${nextTierIn} contrat${nextTierIn>1?'s':''} près.`,
+          `Le 5e contrat débloque la pause bonus — tu y es presque.`
+        ], seed)}</div>`;
+    } else {
+      bannerEl.style.display = 'none';
+      bannerEl.innerHTML = '';
+    }
+  }
 
   const bonusNote = bonusMin>0 ? ` (dont 🎁 ${bonusMin} min offertes aujourd'hui)` : '';
   if(activeStart){
@@ -3362,7 +3480,7 @@ async function startFreeBreak(){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type: 'free_break_start', time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   updateFreeBreakDisplay();
 }
 
@@ -3373,7 +3491,7 @@ async function endFreeBreak(){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type: 'free_break_end', time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   updateFreeBreakDisplay();
 }
 
@@ -3746,7 +3864,7 @@ async function logEvent(type){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type, time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  freeBreakCache = { events: log.events, dateStr, bonusMin: log.freeBreakBonusMin || 0 };
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   await refreshAgentButtons();
   await refreshAgentStatus();
 }
@@ -4157,7 +4275,7 @@ async function monthlyStats(agent, year, month){
   }
   const daysInMonth = new Date(year, month, 0).getDate();
   const todayDateStr = todayStr();
-  const dateStrs = [];
+  let dateStrs = [];
   // On ne regarde jamais un jour futur (rien ne peut encore être pointé) ni un jour non travaillé
   // (week-end, jour férié français) : personne n'est censé pointer ces jours-là, donc l'absence de
   // pointage n'y est jamais une absence — seuls les jours ouvrés jusqu'à aujourd'hui sont évalués.
@@ -4166,6 +4284,11 @@ async function monthlyStats(agent, year, month){
     if(ds > todayDateStr) break;
     dateStrs.push(ds);
   }
+  // Un agent avec une date de début réglée (nouvel arrivant en cours de mois) : les jours avant son
+  // premier jour réel sont exclus ici, pas juste "justifiés" — ils n'existent tout simplement pas pour
+  // le calcul (pas d'absence, pas de retard, aucun impact sur la prime d'assiduité).
+  const agentStartDate = getAgentStartDate(agent);
+  if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
   const dayData = await Promise.all(dateStrs.map(async dateStr=>{
     const [log, infr, board] = await Promise.all([
       getDayLog(agent, dateStr),
@@ -4188,7 +4311,12 @@ async function monthlyStats(agent, year, month){
       justifiedAbsenceCount++;
     } else if(!log.justifiedAbsence && isWorkingDay(dateStr)){
       if(log.events.length>0){
-        const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+        // Le budget de pause libre inclut ici le bonus gagné avec les contrats du jour (5 min dès le 5e,
+        // +5/contrat au-delà) — sinon un agent qui a mérité et utilisé sa pause bonus serait à tort
+        // compté en "dépassement" et pénalisé sur sa prime d'assiduité pour une pause qu'il a gagnée.
+        const dayRealizedForBonus = getAgentProd(board, agent).realized || 0;
+        const effectiveBonus = (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(dayRealizedForBonus);
+        const ev = evaluateDay(log.events, dateStr, effectiveBonus);
         if(ev.lateMinutes > 0) retards++;
         if(ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0) pauseOver++;
       } else if(isDayOverForMessage(dateStr)){
@@ -4521,7 +4649,7 @@ async function renderExploDailyDetail(agents, dateList){
         <td><b>${agent}</b></td>
         <td>${statusHtml}</td>
         <td>${lockoutHtml}</td>
-        <td>${isIndep ? '—' : (objJour || '—')}</td>
+        <td>${objJour || '—'}</td>
         <td>${realJour}</td>
         <td>${infrHtml}</td>
       </tr>`;
@@ -4802,6 +4930,18 @@ function initObjSnapDefaults(){
   const toEl = document.getElementById('objSnapDateTo');
   if(fromEl && !fromEl.value) fromEl.value = todayStr();
   if(toEl && !toEl.value) toEl.value = todayStr();
+
+  // Historique des pauses : par défaut, juste aujourd'hui.
+  const phFrom = document.getElementById('pauseHistFrom');
+  const phTo = document.getElementById('pauseHistTo');
+  if(phFrom && !phFrom.value) phFrom.value = todayStr();
+  if(phTo && !phTo.value) phTo.value = todayStr();
+  const phAgent = document.getElementById('pauseHistAgent');
+  if(phAgent){
+    const prev = phAgent.value;
+    phAgent.innerHTML = '<option value="">Tous les agents</option>' + config.agents.filter(a=>!isIndependant(a)).map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('');
+    if(prev && config.agents.includes(prev)) phAgent.value = prev;
+  }
 }
 
 function onObjSnapModeChange(){
@@ -5123,14 +5263,16 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // terminée : on compare toujours le total final, sans jamais le masquer.
   const hourForComparison = dateStr === todayStr() ? nowMA().getHours() : 23;
 
-  // Classement (rivalité saine) basé sur le TOTAL de contrats réalisés depuis le 1er du mois — équipe et
-  // indépendants sont classés séparément (statuts de paie différents, pas comparables directement). Les
-  // deux listes de cartes sont re-triées sur ce même critère, pour que l'ordre affiché corresponde
-  // exactement au rang ("2e", "4e"...) indiqué dans chaque carte — sinon le classement affiché ne veut
-  // rien dire (ex : tout le monde à 0 ce matin donnerait un tri alphabétique qui ne reflète pas le mois).
+  // Classement DYNAMIQUE (règle du boss) : pendant les horaires de travail, classement sur le TOTAL DU
+  // MOIS (équipe + indépendants ensemble). Une fois la journée de travail terminée (isDayOverForMessage),
+  // le classement bascule automatiquement sur le total réalisé AUJOURD'HUI — c'est là que le "bilan de la
+  // journée" prend tout son sens (qui a le mieux fini sa journée), alors que pendant la journée c'est la
+  // course du mois qui motive. Le bloc minimum/objectif visé (mensuel) n'est jamais affecté par ce switch.
+  const dayIsOver = isDayOverForMessage(dateStr);
   function buildMonthlyRanking(list){
+    const metric = r => dayIsOver ? r.realized : monthlyByAgent[r.agent].monthlyRealized;
     const sorted = [...list].sort((a,b)=>{
-      const ra = monthlyByAgent[a.agent].monthlyRealized, rb = monthlyByAgent[b.agent].monthlyRealized;
+      const ra = metric(a), rb = metric(b);
       return rb !== ra ? rb - ra : a.agent.localeCompare(b.agent);
     });
     const byAgent = {};
@@ -5139,7 +5281,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
         rank: i+1,
         total: sorted.length,
         prevAgent: i>0 ? sorted[i-1].agent : null,
-        prevGap: i>0 ? Math.max(0, monthlyByAgent[sorted[i-1].agent].monthlyRealized - monthlyByAgent[r.agent].monthlyRealized) : 0
+        prevGap: i>0 ? Math.max(0, metric(sorted[i-1]) - metric(r)) : 0
       };
     });
     return byAgent;
@@ -5151,52 +5293,55 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   let html = renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">';
 
-  rows.forEach(r=>{
-    const noObj = r.objective === 0;
-    const pct = noObj ? 0 : Math.min(100, Math.round((r.realized/r.objective)*100));
-    const hit = !noObj && r.realized >= r.objective;
-    const badge = dailyProgressBadge(r.realized);
-    const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
-    const mo = monthlyByAgent[r.agent];
-    const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
-    const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
-    const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent]);
-    const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
-    const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
-      <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
-        ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;"><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
-        ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
-        ${commentLinesToHtml(commentLines)}
-      </div>` : '';
-    html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
-        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-          ${agentAvatarHtml(r.agent, 34)}
-          <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
-        </div>
-        ${hit
-          ? '<span class="tag ok" style="white-space:nowrap; flex-shrink:0;">✅ Atteint</span>'
-          : `<span class="tag ${badge.cls}" style="white-space:nowrap; flex-shrink:0; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
-      </div>
-      ${noObj
-        ? '<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div>'
-        : `<div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
-           <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
-             <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
-             <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%</span>
-           </div>`}
-      ${monthlyBlock}
-    </div>`;
-  });
+  // Une seule liste, un seul ordre d'affichage : classement combiné équipe + indépendants, du plus
+  // au moins de contrats réalisés CE JOUR (alphabétique si égalité) — jamais les indépendants relégués
+  // en bloc à la fin, ils sont mélangés à leur place réelle dans le classement.
+  const combinedDayRows = rows.concat(indepRows).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
 
-  if(indepRows.length){
-    indepRows.forEach(r=>{
+  combinedDayRows.forEach(r=>{
+    if(!r.isIndep){
+      const noObj = r.objective === 0;
+      const pct = noObj ? 0 : Math.min(100, Math.round((r.realized/r.objective)*100));
+      const hit = !noObj && r.realized >= r.objective;
+      const badge = dailyProgressBadge(r.realized);
+      const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
+      const mo = monthlyByAgent[r.agent];
+      const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
+      const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui" } : null);
+      const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
+      const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
+        <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
+          ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;"><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
+          ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+          ${commentLinesToHtml(commentLines)}
+        </div>` : '';
+      html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+            ${agentAvatarHtml(r.agent, 34)}
+            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
+          </div>
+          ${hit
+            ? '<span class="tag ok" style="white-space:nowrap; flex-shrink:0;">✅ Atteint</span>'
+            : `<span class="tag ${badge.cls}" style="white-space:nowrap; flex-shrink:0; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
+        </div>
+        ${noObj
+          ? '<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div>'
+          : `<div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
+             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
+               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
+               <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%</span>
+             </div>`}
+        ${monthlyBlock}
+      </div>`;
+    } else {
       const hasObj = r.objective > 0;
       const hit = hasObj && r.realized >= r.objective;
       const mo = monthlyByAgent[r.agent];
       const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
       const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
-      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent]);
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui" } : null);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.vise>0 || commentLines.length) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
@@ -5214,8 +5359,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
         <div style="font-size:14.5px; color:var(--muted);">${hasObj ? `Défi perso : <b style="color:var(--text); font-weight:700;">${r.realized} / ${r.objective}</b>${hit?' ✅':''}` : `<b style="color:var(--text); font-size:21px; font-weight:800;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui`}</div>
         ${monthlyBlock}
       </div>`;
-    });
-  }
+    }
+  });
 
   html += '</div>';
   container.innerHTML = html;
@@ -5236,34 +5381,134 @@ async function renderPauseTotalsToday(){
     const log = await getDayLog(agent, dateStr);
     const lunchPairs = extractBreakPairs(log.events).filter(p=>p.end);
     const lunchSec = lunchPairs.reduce((s,p)=> s + Math.max(0, (toMinutes(p.end.slice(0,5)) - toMinutes(p.start.slice(0,5)))*60), 0);
-    const { usedSec: freeSec } = freeBreakUsageToday(log.events, dateStr);
-    const freeBonus = log.freeBreakBonusMin || 0;
-    return { agent, lunchMin: Math.round(lunchSec/60), freeMin: Math.round(freeSec/60), freeBudget: freeBudget + freeBonus, freeBonus };
+    const { usedSec: freeSec, activeStart: freeActiveStart } = freeBreakUsageToday(log.events, dateStr);
+    const lunchOpen = extractBreakPairs(log.events).find(p=>!p.end); // déjeuner en cours (pas encore "Retour déjeuner")
+    const bonusInfo = await getFreeBreakBonusInfo(agent, dateStr, log);
+    // Statut en direct : en pause déjeuner, en pause libre, ou au travail — avec l'heure de début pour
+    // calculer le temps écoulé en direct côté affichage (pas besoin de re-fetch, ça défile tout seul
+    // entre deux rafraîchissements auto).
+    let liveStatus = null;
+    if(lunchOpen) liveStatus = { type: 'lunch', since: lunchOpen.start };
+    else if(freeActiveStart) liveStatus = { type: 'free', since: freeActiveStart };
+    return {
+      agent,
+      lunchMin: Math.round(lunchSec/60),
+      freeMin: Math.round(freeSec/60),
+      freeBudget: freeBudget + bonusInfo.totalBonus,
+      freeBonus: bonusInfo.totalBonus,
+      earnedBonus: bonusInfo.earnedBonus,
+      liveStatus
+    };
   }));
 
-  // Ceux qui ont pris quelque chose (déjeuner et/ou pause libre) en premier, puis les autres.
+  // En pause EN CE MOMENT en premier (le plus urgent à voir pour l'admin), puis ceux qui ont pris
+  // quelque chose aujourd'hui, puis les autres.
   rows.sort((a,b)=>{
+    if(!!a.liveStatus !== !!b.liveStatus) return a.liveStatus ? -1 : 1;
     const diff = (b.lunchMin + b.freeMin) - (a.lunchMin + a.freeMin);
     return diff !== 0 ? diff : a.agent.localeCompare(b.agent);
   });
 
-  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>🍽️ Déjeuner</th><th>☕ Pause libre</th><th>Total pauses</th></tr></thead><tbody>';
+  const nowMinNow = toMinutes(nowTimeStr().slice(0,5));
+  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>🔴 En direct</th><th>🍽️ Déjeuner</th><th>☕ Pause libre</th><th>Total pauses</th></tr></thead><tbody>';
   let totalLunch = 0, totalFree = 0;
   rows.forEach(r=>{
     totalLunch += r.lunchMin; totalFree += r.freeMin;
     const freeOver = r.freeMin > r.freeBudget;
+    let liveHtml = '<span style="color:var(--muted);">Au travail</span>';
+    if(r.liveStatus){
+      const elapsedMin = Math.max(0, nowMinNow - toMinutes(r.liveStatus.since.slice(0,5)));
+      liveHtml = r.liveStatus.type === 'lunch'
+        ? `<span class="tag warn" style="animation: pulseWarn 1.6s infinite;">🍽️ En pause déjeuner — ${elapsedMin}min</span>`
+        : `<span class="tag warn" style="animation: pulseWarn 1.6s infinite;">☕ En pause libre — ${elapsedMin}min</span>`;
+    }
     html += `<tr>
       <td><b>${r.agent}</b></td>
+      <td>${liveHtml}</td>
       <td>${r.lunchMin > 0 ? `${r.lunchMin} min` : '<span style="color:var(--muted);">—</span>'}</td>
-      <td>${r.freeMin > 0 ? `<span class="${freeOver?'tag warn':''}">${r.freeMin} / ${r.freeBudget} min${r.freeBonus>0?' 🎁':''}</span>` : `<span style="color:var(--muted);">0 / ${r.freeBudget} min</span>`}</td>
-      <td><b>${r.lunchMin + r.freeMin} min</b></td>
+      <td>${r.freeMin > 0 ? `<span class="${freeOver?'tag warn':''}">${r.freeMin} / ${r.freeBudget} min${r.freeBonus>0?' 🎁':''}</span>` : `<span style="color:var(--muted);">0 / ${r.freeBudget} min${r.freeBonus>0?' 🎁':''}</span>`}</td>
+      <td><b>${r.lunchMin + r.freeMin} min</b>${freeOver ? ' <span class="tag warn">⚠️ pénalité</span>' : ''}</td>
     </tr>`;
   });
   html += `<tr style="font-weight:800; border-top:2px solid var(--border);">
-    <td>TOTAL équipe</td><td>${totalLunch} min</td><td>${totalFree} min</td><td>${totalLunch+totalFree} min</td>
+    <td>TOTAL équipe</td><td></td><td>${totalLunch} min</td><td>${totalFree} min</td><td>${totalLunch+totalFree} min</td>
   </tr>`;
   html += '</tbody></table></div>';
   container.innerHTML = html;
+}
+
+// Historique détaillé des pauses sur une période choisie (un jour, ou du...au...) : heure de début, heure
+// de fin, durée, et pénalité (dépassement du budget pause libre) pour chaque pause de chaque agent. Se
+// déclenche sur demande (bouton "Afficher"), pas en auto-refresh — une période large sur toute l'équipe
+// peut représenter beaucoup de lectures, pas la peine de le refaire toutes les 15s sans que l'admin l'ait
+// demandé.
+async function renderPauseHistory(){
+  const panel = document.getElementById('pauseHistoryPanel');
+  if(!panel) return;
+  const fromEl = document.getElementById('pauseHistFrom');
+  const toEl = document.getElementById('pauseHistTo');
+  const agentEl = document.getElementById('pauseHistAgent');
+  const from = fromEl.value || todayStr();
+  const to = toEl.value || from;
+  if(to < from){ panel.innerHTML = '<div class="empty">La date "Au" doit être après ou égale à la date "Du".</div>'; return; }
+  const agentFilter = agentEl.value || '';
+  const agentsToShow = agentFilter ? [agentFilter] : config.agents.filter(a=>!isIndependant(a));
+  if(agentsToShow.length === 0){ panel.innerHTML = '<div class="empty">Aucun agent à afficher.</div>'; return; }
+
+  panel.innerHTML = '<div class="empty">⏳ Chargement…</div>';
+
+  const dateStrs = [];
+  { let cur = new Date(from + 'T00:00:00'); const end = new Date(to + 'T00:00:00'); let guard = 0;
+    while(cur <= end && guard < 370){ dateStrs.push(todayStr(cur)); cur.setDate(cur.getDate()+1); guard++; } }
+
+  const pairs = [];
+  dateStrs.forEach(dateStr=> agentsToShow.forEach(agent=> pairs.push({ dateStr, agent })));
+  const freeBudget = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
+
+  const rowsNested = await Promise.all(pairs.map(async ({dateStr, agent})=>{
+    const log = await getDayLog(agent, dateStr);
+    if(!log.events || log.events.length === 0) return [];
+    const bonusInfo = await getFreeBreakBonusInfo(agent, dateStr, log);
+    const effectiveBudget = freeBudget + bonusInfo.totalBonus;
+    const lunchPairs = extractBreakPairs(log.events);
+    const freePairs = extractFreeBreakPairs(log.events);
+    const rows = [];
+    lunchPairs.forEach(p=>{
+      const durMin = p.end ? Math.round((toMinutes(p.end.slice(0,5)) - toMinutes(p.start.slice(0,5)))) : null;
+      rows.push({ dateStr, agent, kind: '🍽️ Déjeuner', start: p.start.slice(0,5), end: p.end ? p.end.slice(0,5) : null, durMin, over: false });
+    });
+    let freeCumMin = 0;
+    freePairs.forEach(p=>{
+      const durMin = p.end ? Math.round((toMinutes(p.end.slice(0,5)) - toMinutes(p.start.slice(0,5)))) : null;
+      if(durMin != null) freeCumMin += durMin;
+      const over = durMin != null && freeCumMin > effectiveBudget;
+      rows.push({ dateStr, agent, kind: '☕ Pause libre', start: p.start.slice(0,5), end: p.end ? p.end.slice(0,5) : null, durMin, over });
+    });
+    return rows;
+  }));
+  let allRows = rowsNested.flat();
+  if(allRows.length === 0){
+    panel.innerHTML = '<div class="empty">Aucune pause enregistrée sur cette période.</div>';
+    return;
+  }
+  // Plus récent en premier (date décroissante), puis agent, puis heure de début.
+  allRows.sort((a,b)=> b.dateStr !== a.dateStr ? b.dateStr.localeCompare(a.dateStr) : (a.agent !== b.agent ? a.agent.localeCompare(b.agent) : a.start.localeCompare(b.start)));
+
+  let html = `<div style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Agent</th><th>Type</th><th>Heure d'arrivée</th><th>Heure de départ</th><th>Durée</th><th>Pénalité</th></tr></thead><tbody>`;
+  allRows.forEach(r=>{
+    const dLabel = new Date(r.dateStr + 'T00:00:00').toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
+    html += `<tr class="${r.over?'late':''}">
+      <td>${dLabel}</td>
+      <td><b>${r.agent}</b></td>
+      <td>${r.kind}</td>
+      <td>${r.start}</td>
+      <td>${r.end || '<span class="tag warn">en cours</span>'}</td>
+      <td>${r.durMin != null ? `${r.durMin} min` : '—'}</td>
+      <td>${r.over ? '<span class="tag warn">⚠️ dépassement</span>' : '—'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  panel.innerHTML = html;
 }
 
 async function renderNotifStatusPanel(){
@@ -6504,7 +6749,7 @@ function genderPick(agentName, masc, fem){
 // teinte plus soutenue réservée aux situations vraiment critiques. L'objectif visé (bonus, jamais
 // obligatoire) passe par une famille sarcelle/bleu/violet/vieux rose — jamais rouge — pour rester
 // motivant sans jamais ressembler à une alerte.
-function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo){
+function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride){
   const n = firstName(agentName);
   const fmtNum = x => (Math.round(x*10)/10).toLocaleString('fr-FR');
   const mk = (emoji, text, color, bg, critical) => ({ text: `${emoji} ${text}`, color, bg, critical: !!critical });
@@ -6527,29 +6772,41 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
   // nomme le rival juste devant pour piquer la compétition. Le 1er est vraiment félicité (mérité, pas
   // juste poli) ; les autres sont poussés à aller chercher celui/celle juste devant.
   if(rankInfo && rankInfo.total > 1){
+    // Classement dynamique : pendant les horaires de travail, on classe sur le total du MOIS (comme
+    // toujours) ; une fois la journée terminée (cf. isDayOverForMessage côté appelant), l'appelant peut
+    // passer rankOverride pour classer sur le total du JOUR à la place — le texte s'adapte tout seul
+    // (nombre affiché + "aujourd'hui" au lieu de "ce mois-ci"), sans toucher au bloc minimum/visé qui,
+    // lui, reste toujours au mois.
+    const rankValue = rankOverride ? rankOverride.value : monthlyRealized;
+    const periodLabel = rankOverride ? (rankOverride.periodLabel || 'aujourd\'hui') : 'ce mois-ci';
+    const periodLabelCap = periodLabel === 'aujourd\'hui' ? 'Aujourd\'hui' : 'Ce mois-ci';
     const rankTxt = rankInfo.rank === 1 ? '1er' : `${rankInfo.rank}e`;
     if(rankInfo.rank === 1){
       lines.push(mk('🏆', seedPick([
-        `Tu domines le classement du mois avec ${monthlyRealized} contrats. Continue comme ça, la place se mérite chaque jour !`,
-        `1er de l'équipe, ${monthlyRealized} contrats : tu montres l'exemple à tout le monde. Beau travail !`,
+        `Tu domines le classement ${periodLabel} avec ${rankValue} contrats. Continue comme ça, la place se mérite chaque jour !`,
+        `1er de l'équipe, ${rankValue} contrats ${periodLabel} : tu montres l'exemple à tout le monde. Beau travail !`,
         genderPick(agentName,
-          `Personne devant toi ce mois-ci (${monthlyRealized} contrats) — champion du mois pour l'instant. Reste affamé, ne relâche rien !`,
-          `Personne devant toi ce mois-ci (${monthlyRealized} contrats) — championne du mois pour l'instant. Reste affamée, ne relâche rien !`
+          `Personne devant toi ${periodLabel} (${rankValue} contrats) — champion pour l'instant. Reste affamé, ne relâche rien !`,
+          `Personne devant toi ${periodLabel} (${rankValue} contrats) — championne pour l'instant. Reste affamée, ne relâche rien !`
         ),
-        `Tu écrases le classement avec ${monthlyRealized} contrats. La concurrence est loin derrière — savoure, mais reste sérieux jusqu'à la fin du mois !`
+        `Tu écrases le classement avec ${rankValue} contrats ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieux !`,
+        `1er, ${rankValue} contrats ${periodLabel}. Tout le monde te court après — à toi de rester injoignable.`,
+        `${rankValue} contrats ${periodLabel} et personne devant. C'est ça, la vie de rêve dont on parle — continue à la construire.`
       ], seed), GOLD, GOLD_BG));
     } else if(rankInfo.prevGap > 0){
       const rival = firstName(rankInfo.prevAgent);
       const rivalObj = genderPick(rankInfo.prevAgent, 'le', 'la');
       const gapTxt = `${rankInfo.prevGap} contrat${rankInfo.prevGap>1?'s':''}`;
       lines.push(mk('🥈', seedPick([
-        `Tu es ${rankTxt} avec ${monthlyRealized} contrats — encore ${gapTxt} et tu doubles ${rival} !`,
+        `Tu es ${rankTxt} avec ${rankValue} contrats ${periodLabel} — encore ${gapTxt} et tu doubles ${rival} !`,
         `${rival} est juste devant toi (${gapTxt} d'écart). Va ${rivalObj} chercher, c'est largement jouable !`,
-        `${rankTxt} de l'équipe avec ${monthlyRealized} contrats. Il te manque ${gapTxt} pour passer devant ${rival} — fais-le aujourd'hui !`,
-        `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon jour et le classement change !`
+        `${rankTxt} de l'équipe avec ${rankValue} contrats ${periodLabel}. Il te manque ${gapTxt} pour passer devant ${rival} — fais-le !`,
+        `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon coup et le classement change !`,
+        `${gapTxt} seulement entre toi et ${rival}. C'est rien, un client de plus et la place est à toi.`,
+        `${rankTxt}, à ${gapTxt} de ${rival}. Le classement n'attend qu'un déclic — que ce soit le tien aujourd'hui.`
       ], seed), SLATE, SLATE_BG));
     } else {
-      lines.push(mk('🥈', `Tu es ${rankTxt} de l'équipe avec ${monthlyRealized} contrats ce mois-ci.`, SLATE, SLATE_BG));
+      lines.push(mk('🥈', `Tu es ${rankTxt} de l'équipe avec ${rankValue} contrats ${periodLabel}.`, SLATE, SLATE_BG));
     }
   }
 
@@ -6698,7 +6955,9 @@ function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour)
     return { text: seedPick([
       `0 contrat aujourd'hui. C'est le pire scénario possible — il faut comprendre ce qui s'est passé et repartir fort dès demain, sans exception.`,
       `Journée à 0. C'est du sérieux : une journée comme ça ne doit surtout pas se répéter. Qu'est-ce qui a bloqué ?`,
-      `0 contrat aujourd'hui — inacceptable si ça devient une habitude. Il faut une vraie réaction dès demain matin.`
+      `0 contrat aujourd'hui — inacceptable si ça devient une habitude. Il faut une vraie réaction dès demain matin.`,
+      `0 contrat. Pas de contrat, pas de bonus, pas de fierté — demain, on répare ça, sans excuse.`,
+      `Une journée à 0, c'est une journée payée pour rien. Ça ne peut pas devenir une habitude, il faut réagir maintenant.`
     ], `${agentName}|zero`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
   }
 
@@ -6707,21 +6966,27 @@ function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour)
     return { text: seedPick([
       `Progression : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (+${diff}). Continue sur cette lancée !`,
       `+${diff} par rapport à hier (${todayRealized} contre ${yesterdayRealized}). Tu prends la bonne direction, garde ce rythme !`,
-      `Ça monte : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Beau sursaut, ne relâche rien !`
+      `Ça monte : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Beau sursaut, ne relâche rien !`,
+      `+${diff} vs hier — tu montes en régime comme il faut. Cette dynamique-là, on la garde !`,
+      `Hier c'était ${yesterdayRealized}, aujourd'hui ${todayRealized}. La courbe monte, ton compte en banque te dit merci.`
     ], `${agentName}|up`), color: SAGE, bg: SAGE_BG, critical:false };
   }
   if(todayRealized === yesterdayRealized){
     return { text: seedPick([
       `Rythme régulier : ${todayRealized} aujourd'hui, comme hier. Stable — maintenant, essaie de passer un cap.`,
       `${todayRealized} aujourd'hui, pareil qu'hier. C'est stable, mais stable n'a jamais gagné un classement.`,
-      `Même total qu'hier (${todayRealized}). Correct, mais tu peux clairement faire mieux.`
+      `Même total qu'hier (${todayRealized}). Correct, mais tu peux clairement faire mieux.`,
+      `${todayRealized} deux jours de suite : tu tiens la cadence. Maintenant il faut la casser, dans le bon sens.`,
+      `Copié-collé d'hier (${todayRealized}). Solide, mais la routine ne fait jamais gagner de classement.`
     ], `${agentName}|flat`), color: SLATE, bg: SLATE_BG, critical:false };
   }
   const diff = yesterdayRealized - todayRealized;
   return { text: seedPick([
     `Un peu en retrait : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (-${diff}). Repars fort demain !`,
     `-${diff} par rapport à hier (${todayRealized} contre ${yesterdayRealized}). Ce n'est pas dramatique, mais il faut vite redresser la barre.`,
-    `Baisse aujourd'hui (${todayRealized} contre ${yesterdayRealized} hier). Analyse ce qui a coincé et reviens plus fort.`
+    `Baisse aujourd'hui (${todayRealized} contre ${yesterdayRealized} hier). Analyse ce qui a coincé et reviens plus fort.`,
+    `-${diff} vs hier. Un jour plus calme, ça arrive — l'essentiel c'est de ne pas enchaîner deux comme ça.`,
+    `${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Petit trou d'air — on le rattrape demain, pas dans une semaine.`
   ], `${agentName}|down`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical:false };
 }
 
@@ -6878,8 +7143,10 @@ async function buildDailyBriefingHtml(baseRows){
   }
 
   let html = alertBannerHtml + '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:13px;">';
-  teamRows.forEach(r=> html += cardFor(r, allRankByAgent[r.agent]));
-  indepRows.forEach(r=> html += cardFor(r, allRankByAgent[r.agent]));
+  // Un seul ordre d'affichage, classement combiné (équipe + indépendants) — jamais les indépendants
+  // relégués en bloc à la fin, ils apparaissent à leur place réelle dans le classement du mois.
+  teamRows.concat(indepRows).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank)
+    .forEach(r=> html += cardFor(r, allRankByAgent[r.agent]));
   html += '</div>';
   return html;
 }
@@ -7495,6 +7762,11 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
       dateStrs.push(ds);
     }
   }
+
+  // Idem monthlyStats : avant la date de début réglée pour cet agent (nouvel arrivant en cours de
+  // mois), aucun jour n'est examiné — ni retenue, ni retard, ni absence, ni impact sur l'assiduité.
+  const agentStartDate = getAgentStartDate(agent);
+  if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
 
   // Les indépendants ne pointent pas : pas de retenue liée au pointage ou à un objectif pour eux,
   // donc on ne va même pas chercher le pointage jour par jour pour eux (plus rapide).
@@ -9445,25 +9717,31 @@ async function renderSupervision(){
   // l'admin sur son équipe. Équipe et indépendants classés séparément (statuts de paie différents).
   const supDaysElapsed = workingDaysElapsedThrough(dateStr);
   const supRemainingDays = workingDaysRemainingFrom(dateStr);
+  // Même règle dynamique que dans Admin : classement sur le mois pendant les horaires de travail, puis
+  // sur le total du JOUR une fois la journée terminée (isDayOverForMessage) — cf. commentaire détaillé
+  // dans renderObjSnapSingleDay (Admin → Bilan de la journée), logique strictement identique ici.
+  const supDayIsOver = isDayOverForMessage(dateStr);
   function buildMonthlyRankingSup(list){
-    const sorted = list.map(r=>({ agent: r.agent, monthlyRealized: r.monthReal }))
-      .sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
+    const metric = r => supDayIsOver ? r.dayRealized : r.monthReal;
+    const sorted = [...list].sort((a,b)=> metric(b) !== metric(a) ? metric(b) - metric(a) : a.agent.localeCompare(b.agent));
     const byAgent = {};
     sorted.forEach((r,i)=>{
       byAgent[r.agent] = {
         rank: i+1,
         total: sorted.length,
         prevAgent: i>0 ? sorted[i-1].agent : null,
-        prevGap: i>0 ? Math.max(0, sorted[i-1].monthlyRealized - r.monthlyRealized) : 0
+        prevGap: i>0 ? Math.max(0, metric(sorted[i-1]) - metric(r)) : 0
       };
     });
     return byAgent;
   }
-  // Équipe ET indépendants dans le même classement (un seul "1er du mois"), comme dans Admin.
+  // Équipe ET indépendants dans le même classement (un seul "1er"), comme dans Admin — plus jamais les
+  // indépendants relégués à la fin de la grille : l'ordre d'affichage suit exactement ce classement.
   const supRankByAgent = buildMonthlyRankingSup(objDisplayRows);
+  const objDisplayRowsSorted = [...objDisplayRows].sort((a,b)=> supRankByAgent[a.agent].rank - supRankByAgent[b.agent].rank);
 
   objBlockHtml += `<div id="objSnapCardsSup" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px; margin-bottom:8px;">`;
-  objDisplayRows.forEach(r=>{
+  objDisplayRowsSorted.forEach(r=>{
     const hasObj = r.dayObjective > 0;
     const pct = hasObj ? Math.min(100, Math.round((r.dayRealized/r.dayObjective)*100)) : 0;
     const hit = hasObj && r.dayRealized >= r.dayObjective;
@@ -9471,7 +9749,7 @@ async function renderSupervision(){
     const moMini = r.isIndep ? 0 : (r.monthObj || 0);
     const moVise = r.desiredObj || 0;
     const rankInfoSup = supRankByAgent[r.agent];
-    const commentLinesSup = personalDailyComment(r.agent, r.monthReal, moMini, moVise, supDaysElapsed, supRemainingDays, rankInfoSup);
+    const commentLinesSup = personalDailyComment(r.agent, r.monthReal, moMini, moVise, supDaysElapsed, supRemainingDays, rankInfoSup, supDayIsOver ? { value: r.dayRealized, periodLabel: "aujourd'hui" } : null);
     const monthlyBlockSup = (moMini>0 || moVise>0 || commentLinesSup) ? `
       <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.07); font-size:12.5px;">
         ${moMini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:4px;"><span>Objectif minimum du mois</span><b style="color:${r.monthReal>=moMini?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moMini}</span></b></div>` : ''}
