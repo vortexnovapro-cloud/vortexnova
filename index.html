@@ -1575,7 +1575,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-06-r55';
+const APP_VERSION = '2026-08-06-r56';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -5387,9 +5387,16 @@ async function renderPauseTotalsToday(){
     // Statut en direct : en pause déjeuner, en pause libre, ou au travail — avec l'heure de début pour
     // calculer le temps écoulé en direct côté affichage (pas besoin de re-fetch, ça défile tout seul
     // entre deux rafraîchissements auto).
+    // Le statut par défaut ("Au travail") ne vaut QUE si l'agent a vraiment pointé son arrivée et n'a
+    // pas encore pointé son départ — sinon "Au travail" est trompeur (ex : 21h, tout le monde est parti
+    // depuis des heures, mais la case affichait "Au travail" pour tout le monde faute de vérifier ça).
+    const lastType = lastEventType(log.events);
     let liveStatus = null;
     if(lunchOpen) liveStatus = { type: 'lunch', since: lunchOpen.start };
     else if(freeActiveStart) liveStatus = { type: 'free', since: freeActiveStart };
+    let workState = 'working'; // 'working' | 'not_started' | 'left'
+    if(lastType === null) workState = 'not_started';
+    else if(lastType === 'out') workState = 'left';
     return {
       agent,
       lunchMin: Math.round(lunchSec/60),
@@ -5397,7 +5404,8 @@ async function renderPauseTotalsToday(){
       freeBudget: freeBudget + bonusInfo.totalBonus,
       freeBonus: bonusInfo.totalBonus,
       earnedBonus: bonusInfo.earnedBonus,
-      liveStatus
+      liveStatus,
+      workState
     };
   }));
 
@@ -5415,7 +5423,10 @@ async function renderPauseTotalsToday(){
   rows.forEach(r=>{
     totalLunch += r.lunchMin; totalFree += r.freeMin;
     const freeOver = r.freeMin > r.freeBudget;
-    let liveHtml = '<span style="color:var(--muted);">Au travail</span>';
+    let liveHtml;
+    if(r.workState === 'not_started') liveHtml = '<span style="color:var(--muted);">Pas encore arrivé(e)</span>';
+    else if(r.workState === 'left') liveHtml = '<span class="tag ok">Journée terminée</span>';
+    else liveHtml = '<span style="color:var(--green,#4f9d78); font-weight:600;">🟢 Au travail</span>';
     if(r.liveStatus){
       const elapsedMin = Math.max(0, nowMinNow - toMinutes(r.liveStatus.since.slice(0,5)));
       liveHtml = r.liveStatus.type === 'lunch'
