@@ -573,7 +573,6 @@ function tryDeviceGateAdmin(){
 
 <header>
   <h1>Pointage <span>VortexNova</span></h1>
-  <div id="syncStatusIndicator" style="font-size:11.5px; font-weight:700; margin:2px 0 6px; opacity:0.85;">🟢 Synchronisé</div>
   <div class="tabs">
     <button class="tab-btn active" id="tabAgentBtn" onclick="showView('agent')">Pointage</button>
     <button class="tab-btn" id="tabArenaBtn" onclick="showView('arena')">🏆 Mes Objectifs</button>
@@ -825,6 +824,11 @@ function tryDeviceGateAdmin(){
     </div>
 
     <div id="adminPanel" style="display:none;">
+
+      <div style="margin-bottom:16px; padding:12px 16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
+        <div id="syncStatusIndicator" style="font-size:13px; font-weight:700;">🟢 Synchronisé</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.55;">Ce statut vient du navigateur, pas d'un vrai test de connexion à la base de données — il peut parfois rester bloqué sur « Hors ligne » même quand le réseau fonctionne. Si ça arrive : vérifie que l'appareil a bien internet (ouvre un autre site), puis <b>rafraîchis la page</b>. Dans tous les cas, rien n'est perdu — les écritures en attente sont gardées et s'envoient automatiquement dès que la connexion revient.</div>
+      </div>
 
       <div id="monthRolloverBanner" style="display:none; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); border-radius:12px; padding:14px 18px; margin-bottom:16px;">
         <div style="font-size:13.5px; font-weight:700; color:#d9a441;">📅 Un nouveau mois a commencé — pense à exporter le bilan complet du mois précédent avant qu'il ne soit plus sélectionné par défaut.</div>
@@ -1549,7 +1553,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-06-r48';
+const APP_VERSION = '2026-08-06-r49';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
