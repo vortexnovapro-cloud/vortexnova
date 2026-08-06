@@ -1555,7 +1555,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-06-r53';
+const APP_VERSION = '2026-08-06-r54';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -5164,7 +5164,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
     const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
       <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
-        ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;"><span>Minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
+        ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;"><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
         ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
         ${commentLinesToHtml(commentLines)}
       </div>` : '';
@@ -6562,37 +6562,37 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
     const miniGap = Math.max(0, mini - monthlyRealized);
     if(miniGap <= 0){
       lines.push(mk('📌', seedPick([
-        `Minimum du mois sécurisé, bravo ! Ton salaire de base est tranquille — maintenant, vise plus haut.`,
-        `C'est fait, ton minimum est en poche. Le plus dur est derrière toi, ne t'arrête pas en si bon chemin.`,
-        `Minimum atteint. Bon travail — chaque contrat en plus maintenant, c'est du bonus pur.`
+        `Objectif minimum du mois sécurisé, bravo ! Ton salaire de base est tranquille — maintenant, vise plus haut.`,
+        `C'est fait, ton objectif minimum est en poche. Le plus dur est derrière toi, ne t'arrête pas en si bon chemin.`,
+        `Objectif minimum atteint. Bon travail — chaque contrat en plus maintenant, c'est du bonus pur.`
       ], seed), SAGE, SAGE_BG));
     } else if(remainingDays <= 0){
-      lines.push(mk('📌', `Dernier jour pour boucler ton minimum (${monthlyRealized}/${mini}) ! C'est maintenant ou jamais.`, CRITICAL, CRITICAL_BG, true));
+      lines.push(mk('📌', `Dernier jour pour boucler ton objectif minimum (${monthlyRealized}/${mini}) ! C'est maintenant ou jamais.`, CRITICAL, CRITICAL_BG, true));
     } else {
       const neededPace = miniGap / remainingDays;
       if(currentPace >= neededPace){
         lines.push(mk('📌', seedPick([
-          `Pour ton minimum il faut ${fmtNum(neededPace)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. Large, continue comme ça.`,
-          `Tu tiens un bon rythme pour ton minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à te faire.`,
-          `Minimum en bonne voie : ${fmtNum(currentPace)} contrat/jour en moyenne, bien au-dessus de ce qu'il faut.`
+          `Pour ton objectif minimum il faut ${fmtNum(neededPace)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. Large, continue comme ça.`,
+          `Tu tiens un bon rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à te faire.`,
+          `Objectif minimum en bonne voie : ${fmtNum(currentPace)} contrat/jour en moyenne, bien au-dessus de ce qu'il faut.`
         ], seed), SAGE, SAGE_BG));
       } else if(neededPace - currentPace <= 1){
         lines.push(mk('📌', seedPick([
-          `Il faut ${fmtNum(neededPace)} contrat/jour pour ton minimum — tu es à ${fmtNum(currentPace)}/jour. Un petit effort et c'est réglé.`,
-          `Tu es tout proche du rythme pour ton minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
-          `Presque le bon rythme pour ton minimum. Un ou deux contrats de plus et c'est bouclé.`
+          `Il faut ${fmtNum(neededPace)} contrat/jour pour ton objectif minimum — tu es à ${fmtNum(currentPace)}/jour. Un petit effort et c'est réglé.`,
+          `Tu es tout proche du rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
+          `Presque le bon rythme pour ton objectif minimum. Un ou deux contrats de plus et c'est bouclé.`
         ], seed), AMBER, AMBER_BG));
       } else if(neededPace - currentPace <= 2.5){
         lines.push(mk('📌', seedPick([
-          `Le rythme est en dessous de ce qu'il faut pour ton minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). Il faut réagir aujourd'hui, pas la semaine prochaine.`,
-          `Attention : au rythme actuel, ton minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}/jour — accélère.`,
-          `Ton minimum s'éloigne un peu. Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
+          `Le rythme est en dessous de ce qu'il faut pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). Il faut réagir aujourd'hui, pas la semaine prochaine.`,
+          `Attention : au rythme actuel, ton objectif minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}/jour — accélère.`,
+          `Ton objectif minimum s'éloigne un peu. Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
         ], seed), TERRACOTTA, TERRACOTTA_BG));
       } else {
         lines.push(mk('📌', seedPick([
-          `Ton minimum est en danger réel. Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Bouge-toi maintenant.`,
-          `Alerte minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
-          `C'est du sérieux : à ce rythme, ton minimum du mois ne sera pas atteint. Il faut un vrai sursaut, maintenant, pas dans trois jours.`
+          `Ton objectif minimum est en danger réel. Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Bouge-toi maintenant.`,
+          `Alerte objectif minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
+          `C'est du sérieux : à ce rythme, ton objectif minimum du mois ne sera pas atteint. Il faut un vrai sursaut, maintenant, pas dans trois jours.`
         ], seed), CRITICAL, CRITICAL_BG, true));
       }
     }
@@ -8599,7 +8599,7 @@ async function onCashAgentChange(){
     if(minLbl) minLbl.textContent = pay.isIndep
       ? '🧑‍💼 Indépendant — pas d\'objectif minimum, payé au contrat'
       : (cashSimMinMonthly > 0
-        ? `🔒 Minimum fixé par ton responsable : ${cashSimMinMonthly} contrats/mois — tu peux viser plus haut, jamais plus bas.`
+        ? `🔒 Objectif minimum fixé par ton responsable : ${cashSimMinMonthly} contrats/mois — tu peux viser plus haut, jamais plus bas.`
         : '');
     await renderCash();
   }
@@ -9474,7 +9474,7 @@ async function renderSupervision(){
     const commentLinesSup = personalDailyComment(r.agent, r.monthReal, moMini, moVise, supDaysElapsed, supRemainingDays, rankInfoSup);
     const monthlyBlockSup = (moMini>0 || moVise>0 || commentLinesSup) ? `
       <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.07); font-size:12.5px;">
-        ${moMini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:4px;"><span>Minimum du mois</span><b style="color:${r.monthReal>=moMini?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moMini}</span></b></div>` : ''}
+        ${moMini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:4px;"><span>Objectif minimum du mois</span><b style="color:${r.monthReal>=moMini?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moMini}</span></b></div>` : ''}
         ${moVise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${r.monthReal>=moVise?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moVise}</span></b></div>` : ''}
         ${commentLinesToHtml(commentLinesSup)}
       </div>` : '';
