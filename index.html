@@ -6,6 +6,7 @@
 <title>Pointage — VortexNova</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -539,6 +540,11 @@
   </div>
 </div>
 <script>
+// Valeur unique, définie une seule fois : le mot de passe admin par défaut à la création de l'app, ET le
+// mot de passe de secours du "device gate" (avant même que config.adminPassword ait pu être chargé
+// depuis Firestore). NETTOYAGE : ces deux valeurs étaient dupliquées en dur à deux endroits différents du
+// fichier — si l'une changeait sans l'autre, elles se seraient désynchronisées.
+const DEFAULT_ADMIN_PASSWORD = "vortex2026";
 (function(){
   function isSmallDevice(){
     var ua = navigator.userAgent || '';
@@ -558,7 +564,7 @@ function showDeviceGateAdmin(){
 }
 function tryDeviceGateAdmin(){
   const val = document.getElementById('deviceGateAdminPw').value;
-  const pw = (typeof config !== 'undefined' && config.adminPassword) ? config.adminPassword : 'vortex2026';
+  const pw = (typeof config !== 'undefined' && config.adminPassword) ? config.adminPassword : DEFAULT_ADMIN_PASSWORD;
   if(val === pw){
     sessionStorage.setItem('vn_admin_bypass', '1');
     document.body.classList.remove('device-blocked');
@@ -1132,13 +1138,33 @@ function tryDeviceGateAdmin(){
             <label style="margin-bottom:6px;">🗓️ Statut spécial du jour</label>
             <select id="corrJustifiedAbsence">
               <option value="">Aucun (jour normal)</option>
-              <option value="full">Journée complète — retenue pleine, PAS compté retard</option>
-              <option value="half">Demi-journée — retenue à moitié, PAS compté retard</option>
-              <option value="full_paid">🏖️ Congé payé — journée complète, SANS retenue, PAS compté retard</option>
-              <option value="half_paid">🏖️ Congé payé — demi-journée, SANS retenue, PAS compté retard</option>
-              <option value="mise_a_pied">🚫 Mise à pied (disciplinaire) — journée NON PAYÉE, PAS compté comme un nouveau retard</option>
+              <optgroup label="Absence justifiée — hors compteur (ne touche jamais la prime d'assiduité)">
+                <option value="full">Absence justifiée — journée complète — retenue pleine, NE compte PAS</option>
+                <option value="half">Absence justifiée — demi-journée — retenue à moitié, NE compte PAS</option>
+              </optgroup>
+              <optgroup label="Absence justifiée — comptée (s'ajoute à l'escalade des 3/5/6)">
+                <option value="full_counted">Absence justifiée — journée complète — retenue pleine, COMPTE</option>
+                <option value="half_counted">Absence justifiée — demi-journée — retenue à moitié, COMPTE</option>
+              </optgroup>
+              <optgroup label="Congé payé (jamais de retenue, jamais compté)">
+                <option value="full_paid">🏖️ Congé payé — journée complète — SANS retenue, NE compte PAS</option>
+                <option value="half_paid">🏖️ Congé payé — demi-journée — SANS retenue, NE compte PAS</option>
+              </optgroup>
+              <optgroup label="Absence non justifiée (compte toujours)">
+                <option value="unjustified_full">🚫 Absence non justifiée — journée complète — retenue pleine, COMPTE</option>
+                <option value="unjustified_half">🚫 Absence non justifiée — demi-journée — retenue à moitié, COMPTE</option>
+              </optgroup>
+              <optgroup label="Mise à pied (sanction disciplinaire, journée jamais payée)">
+                <option value="mise_a_pied">🚫 Mise à pied — conséquence de l'escalade retards, NE recompte PAS</option>
+                <option value="mise_a_pied_counted">🚫 Mise à pied — sanction indépendante, COMPTE dans l'escalade</option>
+              </optgroup>
             </select>
-            <div class="section-sub" style="margin-top:6px;">Pour un congé maladie, un rendez-vous administratif justifié, etc. Choisis "SANS retenue" pour un congé payé (ex: congé payé légal, jour férié travaillé compensé). La <b>Mise à pied</b> est la sanction disciplinaire du règlement interne (5ᵉ/6ᵉ retard ou absence) : à saisir toi-même le jour où tu l'appliques — la journée n'est pas payée, mais elle ne recompte pas comme un retard supplémentaire (elle est déjà la conséquence des précédents). Dans tous les autres cas ci-dessus, ce n'est <b>jamais</b> compté comme un retard et la prime d'assiduité n'est pas affectée.</div>
+            <div class="section-sub" style="margin-top:6px;"><b>Absence justifiée</b> (avec justificatif : arrêt maladie, convocation administrative, etc.) : choisis "NE compte PAS" pour la version classique qui ne touche jamais à la prime d'assiduité, ou "COMPTE" si tu veux malgré tout qu'elle s'ajoute à l'escalade des 3ᵉ/5ᵉ/6ᵉ retards-absences du règlement. <b>Congé payé</b> : jamais de retenue, jamais compté — congé légal ou jour compensé. <b>Absence non justifiée</b> : l'agent ne s'est pas présenté sans justificatif — compte toujours. <b>Mise à pied</b> : sanction disciplinaire, journée jamais payée — "NE recompte PAS" quand c'est déjà la conséquence directe du 5ᵉ/6ᵉ retard (règlement interne), "COMPTE" si c'est une sanction indépendante que tu veux voir peser sur l'escalade du mois.</div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="margin-bottom:6px;">📝 Motif / commentaire (optionnel)</label>
+            <input type="text" id="corrAbsenceComment" placeholder="Ex: certificat médical, rendez-vous CNSS, absence non justifiée depuis 14h...">
+            <div class="section-sub" style="margin-top:6px;">Visible en survol (ℹ️) partout où ce statut apparaît (Bilan, Explorateur, Alertes) — pour te souvenir du pourquoi sans rouvrir ce formulaire.</div>
           </div>
 
           <div class="settings-grid">
@@ -1256,6 +1282,10 @@ function tryDeviceGateAdmin(){
             <div>
               <label>DH/contrat (optionnel, en plus du fixe)</label>
               <input type="number" id="prodDefaultPerContract" min="0" step="50">
+            </div>
+            <div>
+              <label>DH/contrat AVANT objectif (optionnel, avant le palier)</label>
+              <input type="number" id="prodDefaultPerContractBeforeObjectif" min="0" step="50">
             </div>
             <div>
               <label>Prime assiduité / mois (DH)</label>
@@ -1535,6 +1565,13 @@ function tryDeviceGateAdmin(){
         </div>
 
         <div class="settings-box">
+          <label>🔒 Journal d'activité (audit)</label>
+          <div class="section-sub" style="margin-top:-6px;">Trace horodatée des actions sensibles faites depuis ce panneau Admin (mots de passe, corrections de pointage/absence, agents, réglages de paie) — pour repérer une action que tu n'as pas faite toi-même. "Admin" = quelqu'un connaissait le mot de passe admin au moment de l'action (mot de passe partagé entre tous ceux qui le connaissent, ce n'est pas une identité individuelle).</div>
+          <button onclick="renderAuditLog()" style="margin:10px 0; padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:600;cursor:pointer;font-size:13px;">🔄 Rafraîchir</button>
+          <div id="auditLogPanel"><div class="empty">Chargement…</div></div>
+        </div>
+
+        <div class="settings-box">
           <label>🎭 Phrases Arena & Cash (modifiables)</label>
           <div class="section-sub">Une phrase par ligne. Dans les phrases de rattrapage, <code style="color:var(--accent);">{first}</code> et <code style="color:var(--accent);">{real}</code> sont remplacés par le nom et le score du leader, <code style="color:var(--accent);">{gap}</code>/<code style="color:var(--accent);">{ahead}</code> par l'écart et le nom du concurrent juste devant. Laisse un champ vide pour revenir aux phrases par défaut de cette catégorie.</div>
           <div class="settings-grid" style="grid-template-columns:1fr; gap:14px;">
@@ -1580,7 +1617,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-07-r60';
+const APP_VERSION = '2026-08-07-r63';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -1614,7 +1651,7 @@ let config = {
     { name: "Pause après-midi", start: "15:00", end: "15:15" },
     { name: "Pause fin d'après-midi", start: "16:50", end: "17:00" }
   ],
-  adminPassword: "vortex2026",
+  adminPassword: DEFAULT_ADMIN_PASSWORD,
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
   inactivityTimeoutMin: 5,
@@ -1893,9 +1930,11 @@ function tickInactivityWatcher(){
       triggerInactivityLockout();
       return;
     }
-    // Alertes avant la déconnexion, même si l'agent n'est plus sur cet onglet. La 1ère est purement
-    // visuelle (pas de son, pour ne pas gêner un appel en cours) ; la 2e et la 3e ajoutent un bip sonore,
-    // notification système et titre d'onglet clignotant — aux 3 seuils réglés par l'admin (30s/10s/5s par défaut).
+    // Alertes avant la déconnexion, même si l'agent n'est plus sur cet onglet. COMMENTAIRE CORRIGÉ : les
+    // 3 alertes jouent toutes un son (cf. playInactivityBeep) — la 1ère est juste plus douce (un seul bip
+    // léger, pour ne pas trop gêner un appel en cours), la 2e et la 3e montent en insistance (bips
+    // multiples + notification système + titre d'onglet clignotant) — aux 3 seuils réglés par l'admin
+    // (30s/10s/5s par défaut).
     if(remainingMs <= warnSecs[0]*1000 && !inactivityWarnState.thirty){ inactivityWarnState.thirty = true; showInactivityWarning(warnSecs[0], 1); }
     if(remainingMs <= warnSecs[1]*1000 && !inactivityWarnState.ten){ inactivityWarnState.ten = true; showInactivityWarning(warnSecs[1], 2); }
     if(remainingMs <= warnSecs[2]*1000 && !inactivityWarnState.five){ inactivityWarnState.five = true; showInactivityWarning(warnSecs[2], 3); }
@@ -1963,11 +2002,32 @@ const firebaseConfig = {
 
 let db = null;
 let firebaseReady = false;
+// Résolue tout de suite si Firebase n'est pas configuré ; sinon résolue seulement une fois la connexion
+// anonyme établie (ou tentée) — le reste de l'appli (loadConfig, etc.) attend cette promesse avant de
+// lire/écrire quoi que ce soit, pour rester compatible avec des règles Firestore qui exigent désormais
+// un utilisateur authentifié (cf. section SÉCURITÉ plus bas).
+let firebaseAuthReady = Promise.resolve();
 try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "REMPLACE_MOI"){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    firebaseReady = true;
+    // ============================================================
+    // 🔒 SÉCURITÉ — authentification anonyme obligatoire
+    // ============================================================
+    // L'app n'a pas de vrais comptes par personne (le mot de passe admin/agent n'est qu'un filtre côté
+    // interface) — mais SANS ceci, n'importe qui connaissant l'URL de l'app (ou juste scannant le web à
+    // la recherche de projets Firebase mal configurés) peut lire/écrire directement Firestore, sans
+    // jamais passer par un mot de passe. La connexion anonyme donne à chaque session un jeton Firebase
+    // valide, ce qui permet des règles Firestore du type "if request.auth != null" — invisible pour
+    // l'utilisateur (aucun écran de connexion), mais ferme la porte à tout accès depuis l'extérieur de
+    // l'appli elle-même. IMPORTANT (à faire une seule fois, dans la console Firebase) : Authentication →
+    // Sign-in method → activer le fournisseur "Anonyme". Sans ça, signInAnonymously() échoue et
+    // firebaseReady reste à false (l'appli affiche alors le bandeau "Firebase non configuré").
+    firebaseAuthReady = firebase.auth().signInAnonymously()
+      .then(()=>{ firebaseReady = true; })
+      .catch(err=>{
+        console.error('Authentification Firebase anonyme échouée (active le fournisseur "Anonyme" dans Firebase Console → Authentication → Sign-in method) :', err.code || err);
+      });
     // Persistance hors-ligne : si le réseau coupe (terrain, mauvaise connexion...), les écritures sont
     // mises en attente localement (IndexedDB) et se synchronisent automatiquement dès que la connexion
     // revient — rien n'est perdu. synchronizeTabs permet d'avoir plusieurs onglets ouverts sans erreur.
@@ -2106,6 +2166,30 @@ async function storageDelete(key){
     return null;
   } finally {
     pendingWriteCount = Math.max(0, pendingWriteCount-1); updateSyncIndicator();
+  }
+}
+
+// ============================================================
+// 🔒 JOURNAL D'ACTIVITÉ (audit log) — collection Firestore séparée, dédiée, pour pouvoir trier/limiter
+// facilement (contrairement au reste de l'appli qui stocke tout en clé/valeur dans "vortexnova"). Sert à
+// répondre à une seule question : "est-ce que quelqu'un a fait quelque chose d'anormal ?" — chaque action
+// sensible du panneau Admin (mots de passe, corrections de pointage/absence, réglages de paie, agents)
+// y laisse une trace horodatée. Best-effort : un échec d'écriture du journal ne doit JAMAIS bloquer ni
+// faire échouer l'action réelle qu'il essaie de documenter — d'où le try/catch qui avale l'erreur.
+// LIMITE CONNUE : le mot de passe Admin est partagé entre toutes les personnes qui le connaissent — donc
+// "Admin" comme acteur veut dire "quelqu'un qui avait le mot de passe admin", pas une personne précise.
+async function logAudit(actor, action, details){
+  if(!firebaseReady || !db) return;
+  try{
+    await db.collection('vortexnova_audit').add({
+      ts: Date.now(),
+      dateStr: todayStr(),
+      actor: actor || 'Inconnu',
+      action: action || '',
+      details: details || ''
+    });
+  }catch(e){
+    console.warn('logAudit error (action non journalisée, mais bien exécutée) :', e);
   }
 }
 
@@ -2273,7 +2357,6 @@ async function loadConfig(){
   if(objMonthInput) objMonthInput.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   document.getElementById('reportDate').value = todayStr();
   if(document.getElementById('corrDate')) document.getElementById('corrDate').value = todayStr();
-  loadProdConfigUI();
   document.getElementById('prodAdminDate').value = todayStr();
   loadProdConfigUI();
   checkAppVersionStatus();
@@ -2461,6 +2544,47 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin'); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
+  if(sub==='settings'){ renderAuditLog(); }
+}
+
+// ============================================================
+// 🔒 ÉCHAPPEMENT — texte libre saisi par l'admin, affiché ensuite à d'autres rôles (superviseurs) ou
+// exporté (CSV, image). Sans ça, une note d'infraction, un motif d'absence, un libellé de prime ou un
+// nom de charge contenant du HTML se serait injecté tel quel dans la page (innerHTML) — utilisées aux
+// endroits qui affichent du texte libre à quelqu'un d'autre que la personne qui l'a saisi.
+function escapeHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// Un champ CSV qui commence par =, +, - ou @ peut être interprété comme une formule par Excel/Sheets à
+// l'ouverture — on le préfixe d'une apostrophe pour le neutraliser (convention standard, Excel l'affiche
+// sans l'apostrophe, juste en texte).
+function csvSafe(s){
+  const str = String(s==null ? '' : s);
+  return /^[=+\-@]/.test(str) ? `'${str}` : str;
+}
+function escapeAuditText(s){ return escapeHtml(s); }
+
+async function renderAuditLog(){
+  const container = document.getElementById('auditLogPanel');
+  if(!container) return;
+  if(!firebaseReady || !db){ container.innerHTML = '<div class="empty">Firebase non configuré.</div>'; return; }
+  container.innerHTML = '<div class="empty">⏳ Chargement…</div>';
+  try{
+    const snap = await db.collection('vortexnova_audit').orderBy('ts', 'desc').limit(150).get();
+    if(snap.empty){ container.innerHTML = '<div class="empty">Aucune activité enregistrée pour l\'instant.</div>'; return; }
+    let html = '<table><thead><tr><th>Date/heure</th><th>Acteur</th><th>Action</th><th>Détail</th></tr></thead><tbody>';
+    snap.forEach(doc=>{
+      const d = doc.data();
+      const dt = new Date(d.ts);
+      const dLabel = dt.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      html += `<tr><td style="white-space:nowrap; color:var(--muted); font-size:12.5px;">${dLabel}</td><td><b>${escapeAuditText(d.actor)}</b></td><td>${escapeAuditText(d.action)}</td><td style="color:var(--muted); font-size:12.5px;">${escapeAuditText(d.details)}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }catch(e){
+    console.error('renderAuditLog error:', e);
+    container.innerHTML = '<div class="empty">⚠️ Erreur de chargement du journal (vérifie ta connexion).</div>';
+  }
 }
 
 function tryAdminLogin(){
@@ -2468,6 +2592,7 @@ function tryAdminLogin(){
   if(val === config.adminPassword){
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminPanel').style.display = 'block';
+    logAudit('Admin', 'Connexion au panneau Admin', '');
     checkMonthRollover();
     checkWeeklyBriefingReminder();
     initExploDefaults();
@@ -2509,6 +2634,7 @@ function renderAgentChips(){
       <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat »" style="color:var(--amber);margin-right:2px;">🎯</button>
+      <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
       ${noObj ? `<button onclick="editStatusLabel('${name.replace(/'/g,"\\'")}')" title="Renommer le libellé affiché (ex: Backoffice, Confirmé...)" style="color:var(--muted);margin-right:2px;">✏️</button>` : ''}
       <button onclick="setAgentStartDate('${name.replace(/'/g,"\\'")}')" title="Date de début — les retards/absences/prime d'assiduité ne comptent jamais avant cette date (utile pour un nouvel agent)" style="color:#4a9891;margin-right:2px;">📅</button>
       <button onclick="setAgentPassword('${name.replace(/'/g,"\\'")}')" title="Définir/changer le mot de passe" style="margin-right:4px;">🔑</button>
@@ -2598,6 +2724,7 @@ async function setAgentPassword(name){
   if(pw.trim()===''){ delete config.agentPasswords[name]; }
   else { config.agentPasswords[name] = pw.trim(); }
   await saveConfigSilent();
+  logAudit('Admin', `Mot de passe modifié pour ${name}`, pw.trim()==='' ? 'protection retirée' : 'mot de passe changé');
   renderAgentChips();
 }
 
@@ -2610,6 +2737,7 @@ async function addAgent(){
   const isIndep = document.getElementById('newAgentIndep').checked;
   if(isIndep) config.agentsIndep[name] = true;
   await saveConfigSilent();
+  logAudit('Admin', `Agent ajouté : ${name}`, isIndep ? 'indépendant' : 'équipe');
   input.value = '';
   document.getElementById('newAgentIndep').checked = false;
   renderAgentChips();
@@ -2625,6 +2753,7 @@ async function removeAgent(name){
   if(config.agentsNoObjectif) delete config.agentsNoObjectif[name];
   if(config.prodConfig && config.prodConfig.agentPay) delete config.prodConfig.agentPay[name];
   await saveConfigSilent();
+  logAudit('Admin', `Agent supprimé : ${name}`, '');
   renderAgentChips();
   populateAgentSelect();
   renderAgentPayTable();
@@ -2732,8 +2861,12 @@ async function saveConfig(){
     end: document.getElementById('cfgFridayEnd').value || "14:00"
   };
   const newPw = document.getElementById('cfgNewPassword').value.trim();
-  if(newPw){ config.adminPassword = newPw; }
+  if(newPw){
+    config.adminPassword = newPw;
+    logAudit('Admin', 'Mot de passe Admin changé', '');
+  }
   await saveConfigSilent();
+  logAudit('Admin', 'Réglages généraux enregistrés', '');
   document.getElementById('cfgNewPassword').value = '';
   const note = document.getElementById('saveNote');
   note.textContent = 'Enregistré ✓';
@@ -3154,6 +3287,7 @@ async function loadDayCorrectionForm(){
     document.getElementById('corrObjectif').value = '';
     document.getElementById('corrRealise').value = '';
     document.getElementById('corrJustifiedAbsence').value = '';
+    document.getElementById('corrAbsenceComment').value = '';
     return;
   }
 
@@ -3164,6 +3298,7 @@ async function loadDayCorrectionForm(){
   document.getElementById('corrIn').value = inEvt ? inEvt.time.slice(0,5) : '';
   document.getElementById('corrOut').value = outEvt ? outEvt.time.slice(0,5) : '';
   document.getElementById('corrJustifiedAbsence').value = log.justifiedAbsence || '';
+  document.getElementById('corrAbsenceComment').value = log.absenceComment || '';
   renderCorrBreaksEditor(extractBreakPairs(log.events));
   corrLockoutRows = extractLockouts(log.events).map(l=>({ start: l.start||'', end: l.end||'' }));
   renderCorrLockoutEditor();
@@ -3192,6 +3327,7 @@ async function clearDayLogCorrection(){
   if(!agent){ alert('Choisis un agent.'); return; }
   if(!confirm(`Effacer tout le pointage de ${agent} pour le ${dateStr} ? (les contrats/objectif ne sont pas touchés)`)) return;
   await saveDayLog(agent, dateStr, { events: [] });
+  logAudit('Admin', `Pointage effacé — ${agent} (${dateStr})`, '');
   await loadDayCorrectionForm();
 }
 
@@ -3201,6 +3337,7 @@ async function saveDayCorrection(){
   if(!agent){ alert("Choisis un agent d'abord."); return; }
 
   const justifiedAbsence = document.getElementById('corrJustifiedAbsence').value || null;
+  const absenceComment = document.getElementById('corrAbsenceComment').value.trim() || null;
 
   if(!isIndependant(agent)){
     const inTime = document.getElementById('corrIn').value;
@@ -3239,6 +3376,7 @@ async function saveDayCorrection(){
     events.sort((a,b)=> a.time.localeCompare(b.time));
     const logToSave = { events };
     if(justifiedAbsence) logToSave.justifiedAbsence = justifiedAbsence;
+    if(absenceComment) logToSave.absenceComment = absenceComment;
     await saveDayLog(agent, dateStr, logToSave);
   }
 
@@ -3249,6 +3387,13 @@ async function saveDayCorrection(){
   p.objective = isNaN(objectif) ? 0 : Math.max(0, objectif);
   p.realized = isNaN(realise) ? 0 : Math.max(0, realise);
   await saveProdBoard(dateStr, board);
+
+  const auditDetail = [
+    `objectif=${p.objective}`, `réalisé=${p.realized}`,
+    justifiedAbsence ? `statut=${justifiedAbsenceLabel(justifiedAbsence)}` : null,
+    absenceComment ? `motif="${absenceComment}"` : null
+  ].filter(Boolean).join(', ');
+  logAudit('Admin', `Correction du jour — ${agent} (${dateStr})`, auditDetail);
 
   const note = document.getElementById('corrSaveNote');
   note.textContent = 'Jour corrigé ✓';
@@ -3735,17 +3880,52 @@ function tickADFTimer(){
   }
 }
 
-// Libellé lisible pour chacun des 4 types d'absence justifiée — utilisé partout où le statut d'un agent
-// est affiché, pour rester cohérent (jour/demi-jour × payé/non payé).
+// Table centrale de TOUS les statuts spéciaux de jour — source unique de vérité pour : le libellé
+// affiché, la retenue de salaire (full = journée, half = demi-journée, none = aucune), si c'est payé,
+// et surtout si le jour COMPTE dans l'escalade retard/absence de la prime d'assiduité (règlement interne
+// — « dès le 3e retard ou absence, la prime d'assiduité est définitivement perdue »). Tout nouveau statut
+// ne doit se créer QU'ICI : toutes les autres fonctions (libellé, retenue, escalade, export CSV) lisent
+// cette table plutôt que de retester la chaîne de caractères chacune de leur côté.
+const JUSTIFIED_ABSENCE_TYPES = {
+  full:                { label: 'Absence justifiée (journée)',          shortLabel: 'Absence justifiée (jour)',          icon: '🗓️', deduction: 'full', counted: false, paid: false, justified: true },
+  half:                { label: 'Absence justifiée (demi-journée)',     shortLabel: 'Absence justifiée (demi-j)',        icon: '🗓️', deduction: 'half', counted: false, paid: false, justified: true },
+  full_counted:        { label: 'Absence justifiée (journée)',          shortLabel: 'Absence justifiée (jour)',          icon: '🗓️', deduction: 'full', counted: true,  paid: false, justified: true },
+  half_counted:        { label: 'Absence justifiée (demi-journée)',     shortLabel: 'Absence justifiée (demi-j)',        icon: '🗓️', deduction: 'half', counted: true,  paid: false, justified: true },
+  full_paid:           { label: 'Congé payé (journée)',                 shortLabel: '🏖️ Congé payé (jour)',              icon: '🏖️', deduction: 'none', counted: false, paid: true,  justified: true },
+  half_paid:           { label: 'Congé payé (demi-journée)',            shortLabel: '🏖️ Congé payé (demi-j)',            icon: '🏖️', deduction: 'none', counted: false, paid: true,  justified: true },
+  unjustified_full:    { label: 'Absence non justifiée (journée)',      shortLabel: 'Absence non justifiée (jour)',      icon: '🚫', deduction: 'full', counted: true,  paid: false, justified: false },
+  unjustified_half:    { label: 'Absence non justifiée (demi-journée)', shortLabel: 'Absence non justifiée (demi-j)',    icon: '🚫', deduction: 'half', counted: true,  paid: false, justified: false },
+  mise_a_pied:         { label: 'Mise à pied (disciplinaire)',          shortLabel: 'Mise à pied',                       icon: '🚫', deduction: 'full', counted: false, paid: false, justified: false },
+  mise_a_pied_counted: { label: 'Mise à pied (disciplinaire)',          shortLabel: 'Mise à pied',                       icon: '🚫', deduction: 'full', counted: true,  paid: false, justified: false }
+};
+
+// Libellé lisible pour chacun des statuts ci-dessus — utilisé partout où le statut d'un agent est
+// affiché, pour rester cohérent.
 function justifiedAbsenceLabel(type, short){
-  const map = {
-    full: short ? 'Absence justifiée (jour)' : 'Absence justifiée (journée)',
-    half: short ? 'Absence justifiée (demi-j)' : 'Absence justifiée (demi-journée)',
-    full_paid: short ? '🏖️ Congé payé (jour)' : '🏖️ Congé payé (journée)',
-    half_paid: short ? '🏖️ Congé payé (demi-j)' : '🏖️ Congé payé (demi-journée)',
-    mise_a_pied: short ? '🚫 Mise à pied (non payée)' : '🚫 Mise à pied (disciplinaire, non payée)'
-  };
-  return map[type] || 'Absence justifiée';
+  const t = JUSTIFIED_ABSENCE_TYPES[type];
+  if(!t) return 'Absence justifiée';
+  return short ? t.shortLabel : t.label;
+}
+
+// Petit texte de fin de badge (ex: "retenue, compte dans l'escalade assiduité") — reflète à la fois si
+// le jour est payé et s'il compte dans l'escalade retard/absence de la prime d'assiduité.
+function justifiedAbsenceStatusSuffix(type){
+  const t = JUSTIFIED_ABSENCE_TYPES[type];
+  if(!t) return '';
+  const payTxt = t.paid ? 'payée' : 'retenue';
+  const countTxt = t.counted ? "compte dans l'escalade assiduité" : 'pas un retard';
+  return `${payTxt}, ${countTxt}`;
+}
+
+// Attribut title="" (infobulle) portant le commentaire/motif éventuellement saisi par l'admin sur ce
+// jour — pour que "pourquoi cet agent était absent" reste visible d'un survol, partout, sans rouvrir la
+// correction du jour.
+function absenceCommentTitleStr(comment){
+  if(!comment) return '';
+  return ` title="${String(comment).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"`;
+}
+function absenceCommentTitle(log){
+  return absenceCommentTitleStr(log && log.absenceComment);
 }
 
 // Badge visuel selon le nombre de contrats du jour — pour repérer d'un coup d'œil qui a besoin d'aide
@@ -3949,7 +4129,8 @@ async function renderAgentHistory(){
       tagsHtml = '<span class="tag absent">Aucun pointage</span>';
     } else if(log.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
-      tagsHtml = `<span class="tag independant">🗓️ ${lbl}</span>`;
+      const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
+      tagsHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>`;
     } else {
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 0){
@@ -4147,7 +4328,7 @@ async function renderReport(){
     const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
     const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
     const lockouts = extractLockouts(log.events);
-    return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, isIndep: false };
+    return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, isIndep: false };
   }));
 
   let html = `<table><thead><tr>
@@ -4182,7 +4363,7 @@ async function renderReport(){
       ? r.infractions.map((inf,idx)=>{
           const meta = INFR_TYPES[inf.type];
           return `<div class="infr-item" style="border:none;padding:4px 0;">
-            <span>${meta.label} <span class="tag warn">${infrSanctionText(inf)}</span>${inf.note?` — ${inf.note}`:''}</span>
+            <span>${meta.label} <span class="tag warn">${infrSanctionText(inf)}</span>${inf.note?` — ${escapeHtml(inf.note)}`:''}</span>
             <button onclick="removeManualInfraction('${r.agent.replace(/'/g,"\\'")}','${dateStr}',${idx})">×</button>
           </div>`;
         }).join('')
@@ -4212,7 +4393,8 @@ async function renderReport(){
       html += `<span class="tag absent">Absent</span>`;
     } else if(r.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
-      const isPaid = r.justifiedAbsence.endsWith("_paid"); html += `<span class="tag independant">🗓️ ${lbl} · ${isPaid?"payée":"retenue"}, pas un retard</span>`;
+      const jaMeta = JUSTIFIED_ABSENCE_TYPES[r.justifiedAbsence];
+      html += `<span class="tag independant"${absenceCommentTitleStr(r.absenceComment)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(r.justifiedAbsence)}</span>`;
       if(anyBreakOver){
         html += `<span class="tag warn">Pause dépassée</span>`;
       }
@@ -4251,19 +4433,22 @@ function onReportDateChange(){
 function exportCSV(){
   const rows = window._lastReportRows || [];
   const date = window._lastReportDate || todayStr();
-  let csv = 'Agent;Arrivee;Depart;Retard (min);Sanction retard;Pauses depassees;Autres infractions;Statut;Independant\n';
+  let csv = 'Agent;Arrivee;Depart;Retard (min);Sanction retard;Pauses depassees;Autres infractions;Statut;Compte assiduite;Commentaire;Independant\n';
   rows.forEach(r=>{
     const anyBreakOver = r.breakIssues?.some(b=>b.over) || false;
+    const jaMeta = r.justifiedAbsence ? JUSTIFIED_ABSENCE_TYPES[r.justifiedAbsence] : null;
     let sanction = '';
     if(r.justifiedAbsence) sanction = justifiedAbsenceLabel(r.justifiedAbsence, true);
     else if(r.lateMinutes > 0) sanction = r.lateMinutes <= 10 ? '-30min salaire' : 'journee non payee';
     let statut = 'OK';
     if(r.isIndep) statut = 'Indépendant';
-    else if(r.justifiedAbsence) statut = 'Absence justifiee';
+    else if(r.justifiedAbsence) statut = jaMeta && jaMeta.justified ? 'Absence justifiee' : (r.justifiedAbsence.startsWith('mise_a_pied') ? 'Mise a pied' : 'Absence non justifiee');
     else if(!r.hasAnyEvent && r.infractions?.length===0) statut = 'Absent';
     else if(r.lateMinutes > 0 || anyBreakOver || r.infractions?.length>0) statut = 'Non conforme';
+    const compteAssiduite = jaMeta ? (jaMeta.counted ? 'Oui' : 'Non') : (statut==='Absent' ? 'Oui' : '');
     const infrTxt = (r.infractions||[]).map(i=>INFR_TYPES[i.type].label).join(' | ');
-    csv += `${r.agent};${r.arrivee||''};${r.depart||''};${r.justifiedAbsence?0:(r.lateMinutes||0)};${sanction};${anyBreakOver?'Oui':'Non'};${infrTxt};${statut};${r.isIndep?'Oui':'Non'}\n`;
+    const commentTxt = csvSafe((r.absenceComment||'').replace(/;/g,','));
+    csv += `${csvSafe(r.agent)};${r.arrivee||''};${r.depart||''};${r.justifiedAbsence?0:(r.lateMinutes||0)};${sanction};${anyBreakOver?'Oui':'Non'};${infrTxt};${statut};${compteAssiduite};${commentTxt};${r.isIndep?'Oui':'Non'}\n`;
   });
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -4325,10 +4510,18 @@ async function monthlyStats(agent, year, month){
     // absence, personne n'y est censé travailler. Les infractions manuelles (téléphone, objectif), elles,
     // s'appliquent quel que soit le jour : un admin peut les saisir même un jour normalement non travaillé.
     if(log.justifiedAbsence && isWorkingDay(dateStr)){
-      // Purement informatif : une absence justifiée ne compte JAMAIS dans retardsCumules/l'escalade
-      // (règlement), mais l'agent doit quand même voir qu'elle a eu lieu et ce qu'elle lui a coûté —
-      // sinon le résumé du haut ("0 retard/absence") contredit le détail jour par jour plus bas.
-      justifiedAbsenceCount++;
+      // Certains statuts spéciaux (absence justifiée "comptée", absence non justifiée, mise à pied
+      // "comptée") s'ajoutent volontairement à l'escalade retard/absence de la prime d'assiduité — cf.
+      // JUSTIFIED_ABSENCE_TYPES.counted. Les autres (absence justifiée "hors compteur", congé payé,
+      // mise à pied conséquence de l'escalade) restent purement informatifs : l'agent voit qu'ils ont eu
+      // lieu et ce qu'ils lui ont coûté, sans jamais peser sur la prime — sinon le résumé du haut
+      // ("0 retard/absence") contredirait le détail jour par jour plus bas.
+      const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
+      if(jaMeta && jaMeta.counted){
+        absences++;
+      } else {
+        justifiedAbsenceCount++;
+      }
     } else if(!log.justifiedAbsence && isWorkingDay(dateStr)){
       if(log.events.length>0){
         // Le budget de pause libre inclut ici le bonus gagné avec les contrats du jour (5 min dès le 5e,
@@ -4636,7 +4829,8 @@ async function renderExploDailyDetail(agents, dateList){
         const { log, infr } = details[`${dateStr}::${agent}`];
         if(log.justifiedAbsence){
           const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
-          statusHtml = `<span class="tag independant">🗓️ ${lbl}</span>`;
+          const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
+          statusHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>`;
         } else if(!log.events || log.events.length === 0){
           const noActivity = realJour === 0 && objJour === 0;
           // Idem que partout ailleurs : on n'affiche "Absent" que si la journée est vraiment terminée —
@@ -4783,7 +4977,7 @@ async function renderManualPrimesList(){
     }
     html += `<tr>
       <td><b>${r.agent}</b></td>
-      <td>${r.label}</td>
+      <td>${escapeHtml(r.label)}</td>
       <td>${typeLabel}</td>
       <td>${amountLabel}</td>
       <td>${statusLabel}</td>
@@ -5201,7 +5395,12 @@ async function renderObjectifSnapshot(){
 
   // Plusieurs jours : l'objectif "du jour" étant par nature quotidien, on l'agrège sur la période —
   // combien de jours un objectif a été fixé, combien de fois il a été atteint, et le total réalisé.
-  const rows = config.agents.filter(a => !isIndependant(a)).map(agent=>{
+  // BUG CORRIGÉ : cette branche (période multi-jours) excluait complètement les indépendants alors que
+  // le mode "un seul jour" (juste au-dessus) les inclut — un indépendant qui se fixe un défi perso
+  // disparaissait entièrement dès qu'on choisissait une période de plus d'un jour, y compris de la carte
+  // récap (indepRealized était figé à 0). On les inclut maintenant exactement comme en mode jour unique.
+  const rows = config.agents.map(agent=>{
+    const isIndep = isIndependant(agent);
     let daysWithObjective = 0, daysHit = 0, totalRealized = 0, totalObjective = 0;
     dateList.forEach(d=>{
       const board = boards[d];
@@ -5210,27 +5409,31 @@ async function renderObjectifSnapshot(){
       totalRealized += real;
       if(obj > 0){ daysWithObjective++; totalObjective += obj; if(real >= obj) daysHit++; }
     });
-    return { agent, daysWithObjective, daysHit, totalRealized, totalObjective, nbDays: dateList.length };
+    return { agent, isIndep, daysWithObjective, daysHit, totalRealized, totalObjective, nbDays: dateList.length };
   });
   // Même convention partout : classé du plus au moins de contrats réalisés sur la période, alphabétique
-  // si égalité.
+  // si égalité — équipe et indépendants mélangés dans le même classement, comme sur l'écran "jour unique".
   rows.sort((a,b)=> b.totalRealized !== a.totalRealized ? b.totalRealized - a.totalRealized : a.agent.localeCompare(b.agent));
 
   const rowsWithAnyObj = rows.filter(r=>r.daysWithObjective > 0);
   const totalTargetRange = rowsWithAnyObj.reduce((s,r)=>s+r.totalObjective, 0);
   const totalRealizedRange = rowsWithAnyObj.reduce((s,r)=>s+r.totalRealized, 0);
+  const indepRealizedRange = rows.filter(r=>r.isIndep).reduce((s,r)=>s+r.totalRealized, 0);
 
   let html = `<div class="section-sub" style="margin-top:-4px; margin-bottom:10px;">Du ${dateList[0]} au ${dateList[dateList.length-1]} (${dateList.length} jour${dateList.length>1?'s':''}).</div>`;
-  html += renderVisReelSquareCard(totalRealizedRange, totalTargetRange, rowsWithAnyObj.length, 0, `${dateList[0]}_${dateList[dateList.length-1]}`);
+  html += renderVisReelSquareCard(totalRealizedRange, totalTargetRange, rowsWithAnyObj.length, indepRealizedRange, `${dateList[0]}_${dateList[dateList.length-1]}`);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
   rows.forEach(r=>{
     const hasAny = r.daysWithObjective > 0;
     const rate = hasAny ? Math.round((r.daysHit/r.daysWithObjective)*100) : 0;
     const barColor = !hasAny ? 'var(--muted)' : (rate>=100 ? 'var(--green)' : (rate>=50 ? 'var(--amber)' : 'var(--red)'));
-    html += `<div style="padding:14px; border-radius:12px; background:var(--panel2); border:1px solid ${hasAny && rate>=100 ? 'rgba(52,183,116,0.45)' : 'var(--border)'};">
+    html += `<div style="padding:14px; border-radius:12px; background:var(--panel2); border:1px solid ${hasAny && rate>=100 ? 'rgba(52,183,116,0.45)' : (r.isIndep ? 'rgba(155,89,182,0.3)' : 'var(--border)')};">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
         <b style="font-size:15px;">${r.agent}</b>
-        <span class="tag ${!hasAny?'absent':(rate>=100?'ok':(rate>=50?'warn':'late'))}">${hasAny ? `${r.daysHit}/${r.daysWithObjective} jours atteints` : 'Aucun objectif fixé'}</span>
+        <span style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+          ${r.isIndep ? '<span class="tag independant">Indé</span>' : ''}
+          <span class="tag ${!hasAny?'absent':(rate>=100?'ok':(rate>=50?'warn':'late'))}">${hasAny ? `${r.daysHit}/${r.daysWithObjective} jours atteints` : 'Aucun objectif fixé'}</span>
+        </span>
       </div>
       <div class="arena-prog-bar" style="height:9px;"><div class="arena-prog-fill" style="width:${rate}%; background:${barColor};"></div></div>
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; font-size:13px; color:var(--muted);">
@@ -5379,12 +5582,12 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           <span class="tag independant" style="white-space:nowrap; flex-shrink:0;">Indé</span>
         </div>
         ${hasObj
-          ? `<div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Défi perso</div>
-             <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
+          ? `<div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
                <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
                <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%${hit?' ✅':''}</span>
-             </div>`
+             </div>
+             <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">Défi perso</div>`
           : `<div style="font-size:13.5px; color:var(--muted);">Pas de défi fixé ce matin</div><div style="margin-top:4px; font-size:13px;"><b style="color:var(--text); font-size:21px; font-weight:800;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui</div>`}
         ${monthlyBlock}
       </div>`;
@@ -5620,8 +5823,9 @@ async function renderTodaySnapshot(){
     const lockoutMin = totalLockoutMinutes(log.events);
     const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
     const justifiedAbsence = log.justifiedAbsence || null;
+    const absenceComment = log.absenceComment || null;
     const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence;
-    return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, problem, hasAnyEvent: log.events.length>0, isIndep: false };
+    return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, problem, hasAnyEvent: log.events.length>0, isIndep: false };
   }));
 
   const problems = rows.filter(r=>r.problem);
@@ -5637,7 +5841,8 @@ async function renderTodaySnapshot(){
       tags = '<span class="tag independant">Indépendant</span>';
     } else if(r.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
-      const isPaid = r.justifiedAbsence.endsWith("_paid"); tags += `<span class="tag independant">🗓️ ${lbl} · ${isPaid?"payée":"retenue"}, pas un retard</span>`;
+      const jaMeta = JUSTIFIED_ABSENCE_TYPES[r.justifiedAbsence];
+      tags += `<span class="tag independant"${absenceCommentTitleStr(r.absenceComment)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(r.justifiedAbsence)}</span>`;
       r.infr.forEach(i=>{
         const meta = INFR_TYPES[i.type];
         tags += `<span class="tag warn">${meta.label} (${infrSanctionText(i)})</span>`;
@@ -6071,7 +6276,7 @@ async function renderNetBalance(){
   if(c.loyerAppart>0) chargesDetail.push(`Loyer appart : ${c.loyerAppart.toLocaleString('fr-FR')} DH`);
   if(c.syndic>0) chargesDetail.push(`Syndic : ${c.syndic.toLocaleString('fr-FR')} DH`);
   if(c.internet>0) chargesDetail.push(`Internet : ${c.internet.toLocaleString('fr-FR')} DH`);
-  (config.customCharges||[]).forEach(x=>{ if(x.amount>0) chargesDetail.push(`${x.name} : ${x.amount.toLocaleString('fr-FR')} DH`); });
+  (config.customCharges||[]).forEach(x=>{ if(x.amount>0) chargesDetail.push(`${escapeHtml(x.name)} : ${x.amount.toLocaleString('fr-FR')} DH`); });
 
   el.innerHTML = `
     <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid ${positive?'rgba(52,183,116,0.45)':'rgba(229,90,90,0.45)'};">
@@ -6554,7 +6759,7 @@ function exportOverviewCSV(){
   _lastMonthlyStats.forEach(s=>{
     const isIndep = isIndependant(s.agent);
     const tier = tierForCount(s.retardsCumules);
-    csv += `${s.agent};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.absences};${isIndep?'':s.justifiedAbsenceCount};${isIndep?'':s.retardsCumules};${isIndep?'':(s.retardsCumules>=3?'Perdue':'Acquise')};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
+    csv += `${csvSafe(s.agent)};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.absences};${isIndep?'':s.justifiedAbsenceCount};${isIndep?'':s.retardsCumules};${isIndep?'':(s.retardsCumules>=3?'Perdue':'Acquise')};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
   });
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -6596,7 +6801,7 @@ async function exportMonthlyBilanCSV(){
   rows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
   let csv = 'Agent;Independant;Contrats realises;Mini obligatoire;Objectif vise;Retards cumules;Assiduite;Prime supervision;Salaire brut estime (mois)\n';
   rows.forEach(r=>{
-    csv += `${r.agent};${r.isIndep?'Oui':'Non'};${r.realized};${r.mini||''};${r.vise||''};${r.retardsCumules||''};${r.assiduite};${r.supervisorBonus||''};${r.salaire}\n`;
+    csv += `${csvSafe(r.agent)};${r.isIndep?'Oui':'Non'};${r.realized};${r.mini||''};${r.vise||''};${r.retardsCumules||''};${r.assiduite};${r.supervisorBonus||''};${r.salaire}\n`;
   });
   const totalSalaire = rows.reduce((s,r)=>s+r.salaire, 0);
   csv += `;;;;;;;TOTAL;${totalSalaire}\n`;
@@ -6795,15 +7000,29 @@ function seedPick(list, seedStr){
 }
 
 // Accord de genre pour s'adresser correctement à chaque agent dans les commentaires ("champion" vs
-// "championne", "fier" vs "fière"...) — liste connue de l'équipe actuelle. Un agent qui n'y figure pas
-// (nouvelle recrue non encore renseignée) retombe simplement sur la forme masculine par défaut plutôt
-// que de risquer un mauvais accord ; à compléter ici si l'équipe change.
-const AGENT_GENDER = {
+// "championne", "fier" vs "fière"...). NETTOYAGE : c'était une table figée en dur dans le code source
+// (vrais prénoms d'employés) — impossible à changer sans éditer le HTML directement, et non exposée dans
+// Réglages. Gardée ici seulement comme filet de sécurité pour l'équipe déjà connue à ce jour, mais la
+// vraie source de vérité est désormais config.agentGender (réglable depuis Réglages, bouton ♂/♀ sur
+// chaque agent) — voir getAgentGender()/toggleAgentGender() ci-dessous.
+const LEGACY_AGENT_GENDER = {
   'Modou':'m', 'Allan':'m', 'Sylla':'m', 'Traore':'m', 'Charles':'m',
   'Ghita':'f', 'Brunelle':'f', 'Charifa':'f', 'Manar':'f', 'Nawel':'f', 'Daïlore':'f'
 };
+function getAgentGender(agentName){
+  const key = firstName(agentName);
+  if(config.agentGender && config.agentGender[key]) return config.agentGender[key];
+  return LEGACY_AGENT_GENDER[key] || 'm';
+}
+async function toggleAgentGender(name){
+  if(!config.agentGender) config.agentGender = {};
+  const key = firstName(name);
+  config.agentGender[key] = getAgentGender(name) === 'f' ? 'm' : 'f';
+  await saveConfigSilent();
+  renderAgentChips();
+}
 function genderPick(agentName, masc, fem){
-  return (AGENT_GENDER[firstName(agentName)] === 'f') ? fem : masc;
+  return (getAgentGender(agentName) === 'f') ? fem : masc;
 }
 
 // Palette pro et sobre, pensée pour un rapport qu'on a envie de lire — pas de couleurs criardes : le
@@ -7223,24 +7442,10 @@ async function renderDailyBriefingSection(containerId){
 // ============================================================
 // 📋 BILAN DE LA SEMAINE — BRIEFING HEBDOMADAIRE OBLIGATOIRE
 // ============================================================
-// Semaine PRÉCÉDENTE complète (lundi → dimanche), pas la semaine en cours — ce bilan sert à préparer le
-// point d'équipe du lundi matin sur ce qui vient de se passer, pas sur une semaine encore inachevée.
-function previousWeekDateStrs(){
-  const now = nowMA();
-  const dow = now.getDay();
-  const daysSinceMonday = (dow + 6) % 7;
-  const thisMonday = new Date(now);
-  thisMonday.setDate(thisMonday.getDate() - daysSinceMonday);
-  const prevMonday = new Date(thisMonday);
-  prevMonday.setDate(prevMonday.getDate() - 7);
-  const days = [];
-  for(let i=0; i<7; i++){
-    const d = new Date(prevMonday);
-    d.setDate(d.getDate() + i);
-    days.push(todayStr(d));
-  }
-  return days;
-}
+// NOTE : le design a changé en cours de route — ce bilan tourne désormais sur la semaine EN COURS, en
+// temps réel (cf. currentWeekDateStrs(), utilisée par buildWeeklyBriefingHtml ci-dessous), et non plus
+// sur la semaine précédente complète. L'ancienne fonction previousWeekDateStrs() (semaine précédente,
+// lundi→dimanche) a été supprimée ici — code mort, plus jamais appelée depuis ce changement.
 
 // Semaine ISO (année-Wxx), pour se souvenir "le briefing de cette semaine a déjà été vu" sans dépendre
 // du jour exact — peu importe quand dans la semaine l'admin se connecte, ça ne réapparaît qu'une fois.
@@ -7331,7 +7536,14 @@ async function buildWeeklyBriefingHtml(){
       // sa journée n'a simplement pas encore commencé ou n'est pas finie.
       const dayOver = isDayOverForMessage(d);
       if(log.justifiedAbsence){
-        justifiedAbsenceCount++;
+        // Même règle que monthlyStats : seuls les statuts marqués "counted" dans JUSTIFIED_ABSENCE_TYPES
+        // s'ajoutent à l'escalade retard/absence de la semaine — les autres restent informatifs.
+        const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
+        if(jaMeta && jaMeta.counted){
+          absenceCount++;
+        } else {
+          justifiedAbsenceCount++;
+        }
       } else if(!log.events || log.events.length === 0){
         // « Absent » = aucun pointage ET aucun contrat saisi ce jour-là — même règle que monthlyStats et
         // que partout ailleurs dans l'appli (un admin peut saisir des contrats a posteriori sans pointage
@@ -7854,26 +8066,21 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
 
   for(const { dateStr, log, infr } of dayData){
     if(!isIndep && log && log.justifiedAbsence){
-      // Absence justifiée : retenue comme d'habitude (quote-part du fixe, pleine ou à moitié), mais
-      // JAMAIS comptée comme un retard — n'affecte donc jamais la prime d'assiduité. Les contrats du
-      // jour restent payés normalement s'il y en a (ex: absence l'après-midi après avoir signé le matin).
-      if(log.justifiedAbsence === 'full'){
-        const amt = dailyFixedQuote;
+      // Retenue pilotée par JUSTIFIED_ABSENCE_TYPES (source unique de vérité) : "full" = quote-part
+      // entière, "half" = moitié, "none" = congé payé, aucune retenue. Que le statut compte ou non dans
+      // l'escalade retard/absence (prime d'assiduité) n'a AUCUN effet ici — ce sont deux questions
+      // indépendantes (être payé ou non / peser sur l'escalade ou non). Les contrats du jour restent
+      // payés normalement s'il y en a (ex: absence l'après-midi après avoir signé le matin). On pousse
+      // toujours une ligne, même à 0 DH (congé payé), pour que le motif/commentaire reste traçable dans
+      // le détail du "Bilan net du mois".
+      const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
+      if(jaMeta){
+        const amt = jaMeta.deduction === 'full' ? dailyFixedQuote : (jaMeta.deduction === 'half' ? dailyFixedQuote / 2 : 0);
         total += amt;
-        items.push({ date: dateStr, label: `Absence justifiée (journée) — retenue fixe`, amount: Math.round(amt) });
-      } else if(log.justifiedAbsence === 'half'){
-        const amt = dailyFixedQuote / 2;
-        total += amt;
-        items.push({ date: dateStr, label: `Absence justifiée (demi-journée) — retenue fixe`, amount: Math.round(amt) });
-      } else if(log.justifiedAbsence === 'mise_a_pied'){
-        // Sanction disciplinaire (5e/6e retard ou absence du règlement interne) : journée non payée,
-        // comme "full", mais gardée sous un libellé distinct pour la traçabilité RH.
-        const amt = dailyFixedQuote;
-        total += amt;
-        items.push({ date: dateStr, label: `Mise à pied (disciplinaire) — journée non payée`, amount: Math.round(amt) });
+        const payTxt = jaMeta.deduction === 'none' ? 'aucune retenue (payée)' : (jaMeta.deduction === 'full' ? 'journée non payée' : 'demi-journée non payée');
+        const commentTxt = log.absenceComment ? ` — ${log.absenceComment}` : '';
+        items.push({ date: dateStr, label: `${jaMeta.label} — ${payTxt}${commentTxt}`, amount: Math.round(amt) });
       }
-      // "full_paid" / "half_paid" : absence justifiée et payée intégralement — aucune retenue, juste
-      // exclue du calcul de retard comme les deux cas ci-dessus.
       // Ni retard, ni inactivité ne sont évalués ce jour-là : on passe directement aux infractions.
       infr.forEach(i=>{
         if(i.type === 'phone_youtube'){
@@ -8883,6 +9090,14 @@ async function cashAddContract(delta){
   const dateStr = todayStr();
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   const p = getAgentProd(board, currentCashAgent);
+  // BUG CORRIGÉ : cette même règle existait déjà côté Arena (incrementRealized) mais pas ici — un agent
+  // pouvait donc ajouter des contrats depuis Cash sans jamais fixer d'objectif du jour, en contournant
+  // la règle "fixe ton objectif avant de compter". On ne bloque que l'AJOUT (delta>0), pas le retrait
+  // (delta<0) qui sert à corriger une erreur de saisie.
+  if(delta > 0 && !p.objective && !isIndependant(currentCashAgent)){
+    alert("Fixe d'abord ton objectif du jour (depuis Arena) !");
+    return;
+  }
   p.realized = Math.max(0, (p.realized || 0) + delta);
   await saveProdBoard(dateStr, board);
   await renderCash();
@@ -9002,7 +9217,11 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
   // ailleurs dans l'appli — même si un contrat a été saisi par erreur ce jour-là par un autre agent.
   if(!isWorkingDay(dateStr)) return true;
   const log = await getDayLog(agent, dateStr);
-  if(log.justifiedAbsence) return true;
+  // Seuls les statuts avec une VRAIE justification (congé, absence justifiée, quel que soit le fait
+  // qu'elle "compte" ou non dans SA prime d'assiduité) protègent la commission de supervision. Une
+  // absence non justifiée ou une mise à pied n'a, elle, aucune justification valable : le superviseur
+  // perd sa part ce jour-là, comme pour un retard non couvert.
+  if(log.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence]?.justified) return true;
   const hasEvent = log.events && log.events.length > 0;
   const realizedToday = getAgentProd(board, agent).realized || 0;
   if(!hasEvent) return realizedToday > 0; // aucun pointage : éligible seulement s'il a quand même saisi un contrat
@@ -9851,7 +10070,9 @@ async function renderSupervision(){
   const todayDateStr = todayStr();
   const complianceResults = await Promise.all(teamRows.map(async r=>{
     const log = await getDayLog(r.agent, todayDateStr);
-    if(log.justifiedAbsence) return { agent: r.agent, violation: false };
+    // Seule une VRAIE justification (congé, absence justifiée) sort l'agent de la liste de pression du
+    // jour — une absence non justifiée ou une mise à pied doit au contraire y rester visible.
+    if(log.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence]?.justified) return { agent: r.agent, violation: false };
     const infr = await getInfractions(r.agent, todayDateStr);
     const ev = evaluateDay(log.events, todayDateStr, log.freeBreakBonusMin || 0);
     const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;
@@ -10083,6 +10304,7 @@ function loadProdConfigUI(){
   const el = id=>document.getElementById(id);
   if(el('prodDefaultBase')) el('prodDefaultBase').value = d.baseSalary ?? 0;
   if(el('prodDefaultPerContract')) el('prodDefaultPerContract').value = d.perContract ?? 0;
+  if(el('prodDefaultPerContractBeforeObjectif')) el('prodDefaultPerContractBeforeObjectif').value = d.perContractBeforeObjectif ?? 0;
   if(el('prodDefaultPrimeAssid')) el('prodDefaultPrimeAssid').value = d.primeAssiduite ?? 500;
   if(el('prodDefaultObjMensuel')) el('prodDefaultObjMensuel').value = d.objectifMensuel ?? 0;
   if(el('prodDefaultPrimeObj')) el('prodDefaultPrimeObj').value = d.primeObjectifJour ?? 0;
@@ -10179,6 +10401,10 @@ async function saveProdConfig(){
   pc.defaults = {
     baseSalary: parseFloat(document.getElementById('prodDefaultBase').value) || 0,
     perContract: parseFloat(document.getElementById('prodDefaultPerContract').value) || 0,
+    // BUG CORRIGÉ : ce champ existait dans le modèle de données (getProdConfig) et par agent (tableau de
+    // rémunération), mais jamais au niveau "valeurs par défaut" — ce formulaire l'écrasait silencieusement
+    // à chaque enregistrement, faute d'un champ pour le porter.
+    perContractBeforeObjectif: parseFloat(document.getElementById('prodDefaultPerContractBeforeObjectif').value) || 0,
     primeAssiduite: parseFloat(document.getElementById('prodDefaultPrimeAssid').value) || 0,
     objectifMensuel: parseFloat(document.getElementById('prodDefaultObjMensuel').value) || 0,
     primeObjectifJour: parseFloat(document.getElementById('prodDefaultPrimeObj').value) || 0,
@@ -10202,6 +10428,7 @@ async function saveProdConfig(){
   collectChargesFromUI();
 
   await saveConfigSilent();
+  logAudit('Admin', 'Réglages rémunération / paie modifiés', '');
   const note = document.getElementById('prodSaveNote');
   note.textContent = 'Enregistré ✓';
   setTimeout(()=>note.textContent='', 2000);
@@ -10477,8 +10704,11 @@ try{
   setInterval(tickMain, 1000);
 }
 
-loadConfig();
-updateSyncIndicator();
+(async function bootApp(){
+  await firebaseAuthReady;
+  loadConfig();
+  updateSyncIndicator();
+})();
 </script>
 
 </body>
