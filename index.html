@@ -868,6 +868,12 @@ function tryDeviceGateAdmin(){
         <button class="admin-tab-btn" id="subtabSettings" onclick="showAdminSub('settings')">Réglages</button>
       </div>
 
+      <!-- Bannière d'anomalies — épinglée ici, donc visible quel que soit le sous-onglet Admin ouvert
+           (Vue d'ensemble, Journée, Production, Réglages), rafraîchie automatiquement en même temps que
+           le reste de l'auto-refresh Admin. Masquée par défaut, n'apparaît que s'il y a au moins une
+           anomalie aujourd'hui (retard, absence, pause dépassée, autre infraction). -->
+      <div id="adminAnomalyBanner" onclick="jumpToTodayAlerts()" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin:0 0 16px; padding:12px 16px; border-radius:12px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4); cursor:pointer;"></div>
+
       <!-- OVERVIEW SUBVIEW -->
       <div class="admin-subview active" id="admin-overview">
         <div class="schedule-detail" id="scheduleDetailAdmin" style="margin-bottom:20px;"></div>
@@ -1617,7 +1623,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-07-r63';
+const APP_VERSION = '2026-08-07-r65';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2078,8 +2084,12 @@ window.addEventListener('offline', updateSyncIndicator);
 // largement assez frais pour du pilotage d'équipe.
 const ADMIN_REFRESH_MS = 25000;
 const SUPERVISION_REFRESH_MS = 35000;
+// Arena/Cash (les agents eux-mêmes) : les contrats sont déjà en temps réel via l'écoute Firestore
+// (subscribeProdBoard), ce cran plus lent ne rattrape que le reste (corrections de pointage, changement
+// de tarif, prime manuelle...) qui ne passe pas par le prodBoard — pas besoin d'aller plus vite.
+const AGENT_REFRESH_MS = 40000;
 let autoRefreshTimer = null;
-let autoRefreshKind = null; // 'admin' | 'supervision' | null
+let autoRefreshKind = null; // 'admin' | 'supervision' | 'agent' | null
 
 function clearRenderCaches(){
   prodBoardCache = {};
@@ -2109,7 +2119,7 @@ function startAutoRefresh(kind){
   if(autoRefreshTimer && autoRefreshKind === kind) return; // déjà en route avec le bon intervalle
   if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
   autoRefreshKind = kind;
-  const intervalMs = kind === 'admin' ? ADMIN_REFRESH_MS : SUPERVISION_REFRESH_MS;
+  const intervalMs = kind === 'admin' ? ADMIN_REFRESH_MS : (kind === 'supervision' ? SUPERVISION_REFRESH_MS : AGENT_REFRESH_MS);
   autoRefreshTimer = setInterval(async ()=>{
     if(document.hidden) return; // onglet en arrière-plan : on ne consomme rien pour rien
     if(autoRefreshBusy) return; // un tour précédent tourne encore (ex: connexion lente) : on ne s'empile pas dessus
@@ -2118,14 +2128,25 @@ function startAutoRefresh(kind){
     clearRenderCaches();
     try{
       if(autoRefreshKind === 'admin'){
-        // Volontairement limité à "Vue d'ensemble" (tableaux de bord en lecture seule) : les sous-onglets
-        // "Pointage du jour" et "Production" contiennent des formulaires de correction et des champs de
-        // salaire éditables — les rafraîchir automatiquement effacerait une saisie en cours. Ils restent
-        // à jour manuellement (comme avant), en changeant de sous-onglet ou en rechargeant la page.
-        const el = document.getElementById('admin-overview');
-        if(el && el.classList.contains('active')) showAdminSub('overview');
+        // La bannière d'anomalies est rafraîchie à CHAQUE tour, quel que soit le sous-onglet ouvert —
+        // c'est tout son intérêt (rester visible/à jour même si l'admin est sur "Production" ou
+        // "Réglages"). Le reste de "Vue d'ensemble" (tableaux de bord en lecture seule) n'est lui
+        // rafraîchi que si ce sous-onglet est actif. "Journée" (Pointage du jour) a UNE PARTIE
+        // rafraîchie : le tableau de présence en lecture seule (renderReport) — jamais le formulaire de
+        // correction juste en dessous (des <input> séparés, jamais touchés par renderReport, donc
+        // aucun risque d'effacer une correction en cours de saisie). "Production" reste volontairement
+        // exclu : son tableau de rémunération par agent est un grand formulaire éditable, le rafraîchir
+        // effacerait une saisie de salaire en cours.
+        renderAnomalyBanner();
+        const overviewEl = document.getElementById('admin-overview');
+        if(overviewEl && overviewEl.classList.contains('active')) showAdminSub('overview');
+        const dayEl = document.getElementById('admin-day');
+        if(dayEl && dayEl.classList.contains('active')) renderReport();
       } else if(autoRefreshKind === 'supervision'){
         await renderSupervision();
+      } else if(autoRefreshKind === 'agent'){
+        if(document.getElementById('view-arena')?.classList.contains('active')) await renderArena();
+        if(document.getElementById('view-cash')?.classList.contains('active')) await renderCash();
       }
     }catch(e){ console.warn('Auto-refresh error:', e); }
     finally{ autoRefreshBusy = false; }
@@ -2525,11 +2546,16 @@ function showView(view){
     unsubscribeProdBoard();
   }
 
-  // Auto-refresh actif seulement sur Admin (une fois connecté) et Supervision — ailleurs, coupé.
+  // Auto-refresh actif sur toutes les vues qui affichent des données partagées : Admin (une fois
+  // connecté), Supervision, et maintenant aussi Arena/Cash (les agents eux-mêmes) — chacun avec son
+  // propre intervalle. Coupé uniquement sur "agent" (Pointage, l'écran de pointage lui-même, qui n'a pas
+  // besoin de se rafraîchir tout seul — l'agent y agit lui-même en direct).
   if(view==='admin' && document.getElementById('adminPanel').style.display==='block'){
     startAutoRefresh('admin');
   } else if(view==='supervision'){
     startAutoRefresh('supervision');
+  } else if(view==='arena' || view==='cash'){
+    startAutoRefresh('agent');
   } else {
     stopAutoRefresh();
   }
@@ -2609,6 +2635,7 @@ function tryAdminLogin(){
     renderManualPrimesList();
     initGiftBreakDefaults();
     renderGiftBreakAgentChips();
+    renderAnomalyBanner();
     startAutoRefresh('admin');
   } else {
     alert('Mot de passe incorrect.');
@@ -5802,6 +5829,37 @@ async function renderNotifStatusPanel(){
   el.innerHTML = html;
 }
 
+// Construit, pour un agent et une date donnés, son état "problème du jour" — UNE SEULE fois, partagée
+// entre le panneau Alertes (todaySnapshot) et la bannière d'anomalies épinglée en haut du panneau Admin,
+// pour que les deux affichent toujours EXACTEMENT la même chose (même définition de "retard", "absent"...
+// — cf. l'écart retards/absences hebdo-vs-mensuel découvert et corrigé plus tôt, causé par deux calculs
+// dupliqués qui avaient fini par diverger : on ne reproduit plus ce risque ici).
+async function buildTodayProblemRow(agent, dateStr, board){
+  if(isIndependant(agent)){
+    return { agent, isIndep: true, problem: false, hasAnyEvent: false };
+  }
+  const [log, infr] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
+  const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+  const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;
+  const lockoutMin = totalLockoutMinutes(log.events);
+  const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
+  const justifiedAbsence = log.justifiedAbsence || null;
+  const absenceComment = log.absenceComment || null;
+  const hasAnyEvent = log.events.length > 0;
+  // BUG CORRIGÉ : le panneau Alertes ne signalait jamais un agent totalement absent (zéro pointage) —
+  // seuls retard/pause/infraction/absence-JUSTIFIÉE-saisie-manuellement faisaient apparaître une alerte.
+  // Un agent qui ne s'était simplement jamais présenté pouvait passer inaperçu ici toute la journée. Même
+  // définition qu'ailleurs (monthlyStats, buildWeeklyBriefingHtml) : aucun pointage ET aucun contrat ET
+  // journée vraiment terminée.
+  let isAbsent = false;
+  if(!justifiedAbsence && !hasAnyEvent && isDayOverForMessage(dateStr)){
+    const realizedToday = getAgentProd(board, agent).realized || 0;
+    isAbsent = realizedToday === 0;
+  }
+  const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent;
+  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, isAbsent, problem, hasAnyEvent, isIndep: false };
+}
+
 async function renderTodaySnapshot(){
   const container = document.getElementById('todaySnapshot');
   if(!container) return;
@@ -5812,21 +5870,9 @@ async function renderTodaySnapshot(){
     return;
   }
 
-  const rows = await Promise.all(config.agents.map(async agent=>{
-    if(isIndependant(agent)){
-      return { agent, isIndep: true, problem: false, hasAnyEvent: false };
-    }
-    const log = await getDayLog(agent, dateStr);
-    const infr = await getInfractions(agent, dateStr);
-    const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
-    const anyBreakOver = ev.breakIssues.some(b=>b.over);
-    const lockoutMin = totalLockoutMinutes(log.events);
-    const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
-    const justifiedAbsence = log.justifiedAbsence || null;
-    const absenceComment = log.absenceComment || null;
-    const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence;
-    return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, problem, hasAnyEvent: log.events.length>0, isIndep: false };
-  }));
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  prodBoardCache[dateStr] = board;
+  const rows = await Promise.all(config.agents.map(agent=> buildTodayProblemRow(agent, dateStr, board)));
 
   const problems = rows.filter(r=>r.problem);
   if(problems.length===0){
@@ -5843,6 +5889,12 @@ async function renderTodaySnapshot(){
       const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[r.justifiedAbsence];
       tags += `<span class="tag independant"${absenceCommentTitleStr(r.absenceComment)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(r.justifiedAbsence)}</span>`;
+      r.infr.forEach(i=>{
+        const meta = INFR_TYPES[i.type];
+        tags += `<span class="tag warn">${meta.label} (${infrSanctionText(i)})</span>`;
+      });
+    } else if(r.isAbsent){
+      tags += `<span class="tag absent">🚫 Absent — aucun pointage, journée terminée</span>`;
       r.infr.forEach(i=>{
         const meta = INFR_TYPES[i.type];
         tags += `<span class="tag warn">${meta.label} (${infrSanctionText(i)})</span>`;
@@ -5864,6 +5916,58 @@ async function renderTodaySnapshot(){
   });
   html += '</div>';
   container.innerHTML = html;
+}
+
+// ============================================================
+// 🚨 BANNIÈRE D'ANOMALIES — épinglée en haut du panneau Admin, visible quel que soit le sous-onglet
+// ouvert. Réutilise buildTodayProblemRow (même définition qu'Alertes, pour ne jamais raconter une
+// histoire différente d'un panneau à l'autre). Ne notifie par notification navigateur QUE quand le
+// nombre d'anomalies AUGMENTE depuis le dernier calcul — jamais à chaque rafraîchissement (25s), pour ne
+// pas spammer l'admin toute la journée avec la même anomalie déjà vue.
+// ============================================================
+let lastAnomalyCount = null;
+async function renderAnomalyBanner(){
+  const banner = document.getElementById('adminAnomalyBanner');
+  if(!banner) return;
+  if(config.agents.length===0){ banner.style.display = 'none'; return; }
+  const dateStr = todayStr();
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  prodBoardCache[dateStr] = board;
+  const rows = await Promise.all(config.agents.map(agent=> buildTodayProblemRow(agent, dateStr, board)));
+  const problems = rows.filter(r=>r.problem);
+
+  if(problems.length === 0){
+    banner.style.display = 'none';
+    lastAnomalyCount = 0;
+    return;
+  }
+
+  const lateCount = problems.filter(r=>r.ev && r.ev.lateMinutes>0).length;
+  const absentCount = problems.filter(r=>r.isAbsent).length;
+  const justifiedCount = problems.filter(r=>r.justifiedAbsence).length;
+  const otherCount = Math.max(0, problems.length - lateCount - absentCount - justifiedCount);
+  const parts = [];
+  if(lateCount>0) parts.push(`${lateCount} retard${lateCount>1?'s':''}`);
+  if(absentCount>0) parts.push(`${absentCount} absence${absentCount>1?'s':''} non signalée${absentCount>1?'s':''}`);
+  if(justifiedCount>0) parts.push(`${justifiedCount} absence${justifiedCount>1?'s':''} justifiée${justifiedCount>1?'s':''}`);
+  if(otherCount>0) parts.push(`${otherCount} autre${otherCount>1?'s':''} anomalie${otherCount>1?'s':''}`);
+
+  banner.innerHTML = `<span style="font-weight:700; color:var(--red); font-size:13.5px;">🚨 Aujourd'hui : ${parts.join(' · ')}</span><span style="font-size:12.5px; color:var(--muted); white-space:nowrap;">Voir le détail →</span>`;
+  banner.style.display = 'flex';
+
+  if(lastAnomalyCount !== null && problems.length > lastAnomalyCount && 'Notification' in window && Notification.permission === 'granted'){
+    try{
+      const notif = new Notification("🚨 Nouvelle anomalie — VortexNova", { body: parts.join(' · '), tag: 'vortexnova-admin-anomaly', renotify: true });
+      notif.onclick = ()=>{ window.focus(); jumpToTodayAlerts(); notif.close(); };
+    }catch(e){}
+  }
+  lastAnomalyCount = problems.length;
+}
+
+// Clique sur la bannière → bascule sur Vue d'ensemble et scrolle jusqu'au panneau Alertes détaillé.
+function jumpToTodayAlerts(){
+  showAdminSub('overview');
+  document.getElementById('todaySnapshot')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // ============================================================
@@ -6147,7 +6251,16 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     ? Math.max(0, prorata - (1/totalWorkingDaysMonth))
     : prorata;
   const fixedFull = (pay.baseSalary||0) + (pay.primeFixeMensuelle||0) + (assiduiteAcquise ? (pay.primeAssiduite||0) : 0);
-  const fixedProrated = fixedFull * effectiveProrata;
+  // BUG CORRIGÉ : décomposé en 2 (base+primeFixe / primeAssiduite) avec le MÊME effectiveProrata que le
+  // total plus bas — la carte "Ton salaire du mois, en détail" (Cash) recalculait ces 2 lignes de son
+  // côté avec le prorata "brut" (jours écoulés / jours ouvrés du mois), sans l'ajustement "aujourd'hui
+  // pas encore pointé" qu'applique le total réel. Résultat : le sous-total affiché ne correspondait pas
+  // au grand total en bas de la même carte, à hauteur d'une journée de fixe — source de confusion pour
+  // l'agent qui voit deux chiffres différents sans explication. En renvoyant ces 2 montants déjà calculés
+  // avec le bon prorata, la carte n'a plus qu'à les afficher tels quels, sans recalcul local.
+  const baseFixedProrated = ((pay.baseSalary||0) + (pay.primeFixeMensuelle||0)) * effectiveProrata;
+  const assiduiteProrated = assiduiteAcquise ? (pay.primeAssiduite||0) * effectiveProrata : 0;
+  const fixedProrated = baseFixedProrated + assiduiteProrated;
   // Palier objectif (voir contractEarnings) : sur la fenêtre standard, realizedCount = déjà le total du
   // mois, donc la répartition est exacte. Sur une fenêtre plus courte, on situe cette fenêtre par rapport
   // au total du mois (monthToDateRealized) pour savoir quelle part tombe avant/après le mini obligatoire.
@@ -6177,6 +6290,7 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     agent, isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif,
     total: Math.round(total),
     fixedProrated: Math.round(fixedProrated), fixedFull: Math.round(fixedFull),
+    baseFixedProrated: Math.round(baseFixedProrated), assiduiteProrated: Math.round(assiduiteProrated),
     contractPart: Math.round(contractPart), contractsRealized: realizedCount,
     objectifPrimes: Math.round(objectifPrimes),
     deductionsTotal: ded.total || 0,
@@ -9229,6 +9343,32 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
   return ev.lateMinutes <= 10;
 }
 
+// BUG CORRIGÉ (affichage) : "Ton taux" sur le tableau de bord Supervision ne montrait le taux boosté
+// (collègue en retard/absent → sa part reversée) QUE s'il y avait déjà des contrats saisis aujourd'hui
+// (contractsDay > 0) — tant qu'aucun contrat n'était encore saisi (typiquement tôt le matin), l'écran
+// retombait sur le taux de base, sans aucun indice que la redistribution allait bien s'appliquer dès le
+// premier contrat. Un superviseur voyant "5 DH/contrat" sans aucune mention de boost pouvait légitimement
+// croire que l'absence de son collègue n'était pas prise en compte — alors qu'elle l'était déjà en
+// arrière-plan, juste invisible tant que dayPool valait 0. Cette fonction calcule le boost projeté pour
+// AUJOURD'HUI à partir de la seule éligibilité (pas des contrats déjà saisis), pour que l'info soit
+// visible dès le matin, avant même le premier contrat.
+async function supervisorRateBoostToday(supervisor){
+  const supervisors = listSupervisors();
+  if(supervisors.length <= 1) return 0; // seul superviseur : rien à redistribuer
+  const dateStr = todayStr();
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  const eligibility = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
+  const me = eligibility.find(e=>e.sup === supervisor);
+  if(!me || !me.ok) return 0; // pas éligible moi-même aujourd'hui : pas de taux boosté à afficher
+  const eligibleCount = eligibility.filter(e=>e.ok).length;
+  const ineligible = eligibility.filter(e=>!e.ok);
+  if(ineligible.length === 0) return 0;
+  const rates = {};
+  supervisors.forEach(s=> rates[s] = getAgentPay(s).supervisorPrimePerContract || 0);
+  const forfeitedRateTotal = ineligible.reduce((s,e)=> s + rates[e.sup], 0);
+  return forfeitedRateTotal / eligibleCount;
+}
+
 // Calcule, jour par jour, le montant en DH de la prime de supervision de CHAQUE superviseur sur une liste
 // de dates arbitraire — RÈGLE : le nombre de contrats de l'équipe de base (hors superviseurs) est un
 // SEUL et MÊME chiffre réel pour tout le monde ce jour-là (jamais doublé, jamais divisé — c'est le vrai
@@ -9624,11 +9764,14 @@ function renderCashRealGrid(){
   // fixe/les primes (sans les contrats) à côté de cartes qui, elles, incluaient les contrats — deux
   // chiffres pas comparables, affichés comme s'ils l'étaient. Corrigé : le total ici = EXACTEMENT le même
   // total que le grand chiffre en haut de page (#cashHero, rt.total), juste expliqué ligne par ligne.
-  const prorataRatio = totalWorkingDaysThisMonth>0 ? (elapsedWorkingDays/totalWorkingDaysThisMonth) : 0;
-  const fixedOnlyFull = Math.round(pay.baseSalary + pay.primeFixeMensuelle);
-  const fixedOnlyToDate = Math.round(fixedOnlyFull * prorataRatio);
-  const assiduiteFullAmt = Math.round(pay.primeAssiduite||0);
-  const assiduiteToDate = assiduiteAcquise ? Math.round(assiduiteFullAmt * prorataRatio) : 0;
+  // BUG CORRIGÉ (2e) : "Fixe + prime fixe" et "Prime assiduité" étaient recalculés ICI avec un prorata
+  // "brut" (jours écoulés / jours ouvrés), différent de celui réellement utilisé dans rt.total (qui retire
+  // la journée en cours tant que l'agent n'a pas encore pointé aujourd'hui) — le sous-total affiché ne
+  // correspondait alors plus au total tout en bas de la même carte, à hauteur d'une journée de fixe,
+  // sans aucune explication visible. On utilise maintenant directement rt.baseFixedProrated/
+  // rt.assiduiteProrated, déjà calculés avec le bon prorata — les deux chiffres de la carte s'accordent.
+  const fixedOnlyToDate = rt ? rt.baseFixedProrated : 0;
+  const assiduiteToDate = rt ? rt.assiduiteProrated : 0;
   const subtotalFixedPrimes = fixedOnlyToDate + assiduiteToDate + (rt ? rt.objectifPrimes : 0);
 
   grid.innerHTML = `
@@ -9914,11 +10057,12 @@ async function renderSupervision(){
   const myOwnRow = rows.find(r=>r.agent===supervisor);
   const todayDateStrForBonus = todayStr();
   const weekDatesForBonus = currentWeekDateStrs();
-  const [bonusDayMap, bonusWeekMap, bonusMonthMap, totalBasePool] = await Promise.all([
+  const [bonusDayMap, bonusWeekMap, bonusMonthMap, totalBasePool, rateBoostToday] = await Promise.all([
     supervisorBonusForDates([todayDateStrForBonus]),
     supervisorBonusForDates(weekDatesForBonus),
     supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1),
-    contractsUnderAllSupervisors(now.getFullYear(), now.getMonth()+1)
+    contractsUnderAllSupervisors(now.getFullYear(), now.getMonth()+1),
+    supervisorRateBoostToday(supervisor)
   ]);
   const rate = supervisorPay.supervisorPrimePerContract || 0;
   const contractsDay = bonusDayMap.contracts[supervisor] || 0;
@@ -9928,8 +10072,11 @@ async function renderSupervision(){
   const bonusWeek = bonusWeekMap.dh[supervisor] || 0;
   const supervisorBonus = bonusMonthMap.dh[supervisor] || 0;
   // Taux effectif réellement appliqué aujourd'hui (peut dépasser le taux perso si un collègue
-  // superviseur est en retard >10min ou absent ce jour-là — sa part est reversée sur ce taux).
-  const effectiveRateToday = contractsDay > 0 ? (bonusDay / contractsDay) : rate;
+  // superviseur est en retard >10min ou absent ce jour-là — sa part est reversée sur ce taux). BUG
+  // CORRIGÉ : tant qu'aucun contrat n'était encore saisi aujourd'hui (contractsDay=0), on retombait sur
+  // le taux de base sans indice de boost — on utilise maintenant rateBoostToday (basé sur l'éligibilité
+  // réelle du jour, pas sur les contrats déjà saisis) dans ce cas.
+  const effectiveRateToday = contractsDay > 0 ? (bonusDay / contractsDay) : (rate + rateBoostToday);
   const teamPct = totalMonthObj > 0 ? Math.round((totalMonthReal/totalMonthObj)*100) : 0;
   // Pourquoi "76" (équipe, y compris superviseurs) ne correspond pas directement à "46" (pool de
   // commission, hors superviseurs) : la différence = les contrats PERSO de tous les superviseurs (le
