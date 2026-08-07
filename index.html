@@ -1580,7 +1580,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-07-r59';
+const APP_VERSION = '2026-08-07-r60';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -7317,7 +7317,12 @@ async function buildWeeklyBriefingHtml(){
   const teamStats = await Promise.all(teamAgents.map(async agent=>{
     let weekRealized = 0, zeroDays = 0, daysPresent = 0, lateCount = 0, absenceCount = 0, justifiedAbsenceCount = 0;
     const zeroDayDates = []; // dates précises (pas juste un compteur) — pour pouvoir dire qui, et quand
-    await Promise.all(workingDates.map(async d=>{
+    // Même exemption que monthlyStats : les jours avant la date de début d'un agent ne comptent jamais
+    // (pas d'absence, pas de retard) — sinon un nouvel arrivant apparaît à tort "absent" ici pour des
+    // jours où il n'était même pas encore censé travailler, alors que Conformité du mois l'exclut déjà.
+    const agentStartDate = getAgentStartDate(agent);
+    const agentWorkingDates = agentStartDate ? workingDates.filter(ds => ds >= agentStartDate) : workingDates;
+    await Promise.all(agentWorkingDates.map(async d=>{
       const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
       weekRealized += realized;
       const log = await getDayLog(agent, d);
