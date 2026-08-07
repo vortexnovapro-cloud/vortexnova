@@ -796,7 +796,7 @@ function tryDeviceGateAdmin(){
       </select>
 
       <div id="supervisionContent" style="display:none; margin-top:18px;">
-        <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">🔄 Actualisation automatique toutes les 15s — les chiffres restent à jour sans avoir à recharger la page.</div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">🔄 Actualisation automatique toutes les 35s — les chiffres restent à jour sans avoir à recharger la page.</div>
         <div class="supervision-dashboard" id="supervisionDashboard"></div>
 
         <div id="supervisionDetail"></div>
@@ -830,7 +830,7 @@ function tryDeviceGateAdmin(){
       <div style="margin-bottom:16px; padding:12px 16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07);">
         <div id="syncStatusIndicator" style="font-size:13px; font-weight:700;">🟢 Synchronisé</div>
         <div style="font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.55;">Ce statut vient du navigateur, pas d'un vrai test de connexion à la base de données — il peut parfois rester bloqué sur « Hors ligne » même quand le réseau fonctionne. Si ça arrive : vérifie que l'appareil a bien internet (ouvre un autre site), puis <b>rafraîchis la page</b>. Dans tous les cas, rien n'est perdu — les écritures en attente sont gardées et s'envoient automatiquement dès que la connexion revient.</div>
-        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">🔄 Actualisation automatique toutes les 15s dans « Vue d'ensemble » — les chiffres restent à jour sans avoir à recharger la page. Volontairement désactivée dans « Pointage du jour » et « Production » (formulaires de correction et de salaire) pour ne jamais effacer une saisie en cours.</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">🔄 Actualisation automatique toutes les 25s dans « Vue d'ensemble » — les chiffres restent à jour sans avoir à recharger la page. Volontairement désactivée dans « Pointage du jour » et « Production » (formulaires de correction et de salaire) pour ne jamais effacer une saisie en cours.</div>
       </div>
 
       <div id="monthRolloverBanner" style="display:none; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); border-radius:12px; padding:14px 18px; margin-bottom:16px;">
@@ -1058,6 +1058,10 @@ function tryDeviceGateAdmin(){
           <div class="section-title">🎯 Proches du palier de prime</div>
           <div class="section-sub">À 1 ou 2 contrats de débloquer leur prime d'objectif — un petit coup de pouce peut suffire.</div>
           <div id="nearBonusPanel"></div>
+
+          <div class="section-title">⚠️ À 1 écart de perdre la prime d'assiduité</div>
+          <div class="section-sub">2 retards/absences cumulés ce mois — un 3e leur fait perdre la prime. À prévenir avant que ça arrive.</div>
+          <div id="assiduiteRiskPanel"></div>
         </div>
 
         <div class="mega-section theme-orange">
@@ -1575,7 +1579,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-06-r56';
+const APP_VERSION = '2026-08-07-r58';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2008,7 +2012,11 @@ window.addEventListener('offline', updateSyncIndicator);
 // comme si on cliquait à nouveau dessus. Coupé automatiquement dès qu'on quitte Admin/Supervision ou
 // que l'onglet du navigateur passe en arrière-plan, pour ne pas gaspiller de lectures pour rien.
 // ============================================================
-const AUTO_REFRESH_INTERVAL_MS = 15000;
+// Admin (le boss) a besoin du maximum de fraîcheur raisonnable ; Supervision peut se permettre un cran
+// moins fréquent (les superviseurs consultent, ils ne pilotent pas la paie en direct) tout en restant
+// largement assez frais pour du pilotage d'équipe.
+const ADMIN_REFRESH_MS = 25000;
+const SUPERVISION_REFRESH_MS = 35000;
 let autoRefreshTimer = null;
 let autoRefreshKind = null; // 'admin' | 'supervision' | null
 
@@ -2035,8 +2043,12 @@ function userIsTypingInForm(){
 }
 
 function startAutoRefresh(kind){
+  // Si on change de type (rare, mais possible si on bascule Admin/Supervision dans le même onglet) on
+  // relance avec le bon intervalle plutôt que de garder l'ancien.
+  if(autoRefreshTimer && autoRefreshKind === kind) return; // déjà en route avec le bon intervalle
+  if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
   autoRefreshKind = kind;
-  if(autoRefreshTimer) return; // déjà en route, rien à faire de plus
+  const intervalMs = kind === 'admin' ? ADMIN_REFRESH_MS : SUPERVISION_REFRESH_MS;
   autoRefreshTimer = setInterval(async ()=>{
     if(document.hidden) return; // onglet en arrière-plan : on ne consomme rien pour rien
     if(autoRefreshBusy) return; // un tour précédent tourne encore (ex: connexion lente) : on ne s'empile pas dessus
@@ -2056,7 +2068,7 @@ function startAutoRefresh(kind){
       }
     }catch(e){ console.warn('Auto-refresh error:', e); }
     finally{ autoRefreshBusy = false; }
-  }, AUTO_REFRESH_INTERVAL_MS);
+  }, intervalMs);
 }
 
 function stopAutoRefresh(){
@@ -5337,7 +5349,9 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       </div>`;
     } else {
       const hasObj = r.objective > 0;
+      const pct = hasObj ? Math.min(100, Math.round((r.realized/r.objective)*100)) : 0;
       const hit = hasObj && r.realized >= r.objective;
+      const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
       const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
       const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
@@ -5356,7 +5370,14 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           </div>
           <span class="tag independant" style="white-space:nowrap; flex-shrink:0;">Indé</span>
         </div>
-        <div style="font-size:14.5px; color:var(--muted);">${hasObj ? `Défi perso : <b style="color:var(--text); font-weight:700;">${r.realized} / ${r.objective}</b>${hit?' ✅':''}` : `<b style="color:var(--text); font-size:21px; font-weight:800;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui`}</div>
+        ${hasObj
+          ? `<div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Défi perso</div>
+             <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
+             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
+               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
+               <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%${hit?' ✅':''}</span>
+             </div>`
+          : `<div style="font-size:13.5px; color:var(--muted);">Pas de défi fixé ce matin</div><div style="margin-top:4px; font-size:13px;"><b style="color:var(--text); font-size:21px; font-weight:800;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui</div>`}
         ${monthlyBlock}
       </div>`;
     }
@@ -6311,6 +6332,28 @@ async function renderBestWorstDayPanel(targetId){
 }
 
 // ============================================================
+// ⚠️ À 1 ÉCART DE PERDRE LA PRIME D'ASSIDUITÉ — retardsCumules === 2 (le 3e fait perdre la prime)
+// ============================================================
+async function renderAssiduiteRiskPanel(){
+  const el = document.getElementById('assiduiteRiskPanel');
+  if(!el) return;
+  const nonIndep = config.agents.filter(a=>!isIndependant(a));
+  if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent.</div>'; return; }
+  const now = nowMA();
+  const monthVal = document.getElementById('monthSelect')?.value;
+  const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+
+  const results = await Promise.all(nonIndep.map(agent=> monthlyStats(agent, year, month)));
+  const atRisk = results.filter(r=>r.retardsCumules === 2).sort((a,b)=> a.agent.localeCompare(b.agent));
+  if(atRisk.length===0){ el.innerHTML = '<div class="empty">✅ Personne à risque immédiat pour l\'instant.</div>'; return; }
+  el.innerHTML = atRisk.map(r=>`
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:rgba(185,138,66,0.1); border:1px solid rgba(185,138,66,0.4); margin-bottom:8px;">
+      <b>${r.agent}</b>
+      <span class="tag warn">⚠️ 2/3 — ${r.retards} retard${r.retards>1?'s':''}, ${r.pauseOver} pause${r.pauseOver>1?'s':''} dépassée${r.pauseOver>1?'s':''}, ${r.absences} absence${r.absences>1?'s':''}</span>
+    </div>`).join('');
+}
+
+// ============================================================
 // 🎯 PROCHES DU PALIER DE PRIME — à 1-2 contrats de leur mini
 // ============================================================
 async function renderNearBonusPanel(){
@@ -6410,7 +6453,8 @@ async function renderAllMonthly(){
     renderAdfStuckPanel(),
     renderRepeatOffendersPanel(),
     renderBestWorstDayPanel(),
-    renderNearBonusPanel()
+    renderNearBonusPanel(),
+    renderAssiduiteRiskPanel()
   ]);
 
   if(!monthVal || config.agents.length===0){
@@ -7276,7 +7320,12 @@ async function buildWeeklyBriefingHtml(){
       if(log.justifiedAbsence){
         justifiedAbsenceCount++;
       } else if(!log.events || log.events.length === 0){
-        if(dayOver) absenceCount++;
+        // « Absent » = aucun pointage ET aucun contrat saisi ce jour-là — même règle que monthlyStats et
+        // que partout ailleurs dans l'appli (un admin peut saisir des contrats a posteriori sans pointage
+        // classique). Sans ce "realized === 0" ici, un agent avec des contrats saisis mais sans clic
+        // Arrivée/Départ ce jour-là était compté à tort comme absent — c'est ce qui causait l'écart entre
+        // ce panneau et le tableau Retards/Absences (qui, lui, applique déjà la bonne règle).
+        if(dayOver && realized === 0) absenceCount++;
       } else {
         daysPresent++;
         if(realized === 0 && dayOver){ zeroDays++; zeroDayDates.push(d); }
