@@ -7863,6 +7863,12 @@ async function buildDailyBriefingHtml(baseRows){
   const nowHourMA = nowMA().getHours();
   const missingObjectiveAgents = rows.filter(r=>!r.isIndep && r.todayObjective===0).map(r=>r.agent);
   let alertBannerHtml = '';
+  if(isWorkingDay(dateStr) && nowHourMA >= 10 && missingObjectiveAgents.length > 0){
+    alertBannerHtml = `<div style="margin-bottom:14px; padding:13px 16px; border-radius:12px; background:rgba(181,89,92,0.12); border:1px solid rgba(181,89,92,0.35); font-family:'Inter',sans-serif;">
+      <b style="color:#b5595c; font-size:13.5px;">⏰ ${missingObjectiveAgents.length} agent${missingObjectiveAgents.length>1?'s':''} n'${missingObjectiveAgents.length>1?'ont':'a'} toujours pas fixé son objectif du matin</b>
+      <div style="margin-top:5px; font-size:12.5px; color:var(--muted);">${missingObjectiveAgents.join(', ')}</div>
+    </div>`;
+  }
   if(nowHourMA >= 10 && missingObjectiveAgents.length > 0){
     alertBannerHtml = `<div style="margin-bottom:14px; padding:13px 16px; border-radius:12px; background:rgba(181,89,92,0.12); border:1px solid rgba(181,89,92,0.35); font-family:'Inter',sans-serif;">
       <b style="color:#b5595c; font-size:13.5px;">⏰ ${missingObjectiveAgents.length} agent${missingObjectiveAgents.length>1?'s':''} n'${missingObjectiveAgents.length>1?'ont':'a'} toujours pas fixé son objectif du matin</b>
@@ -9290,10 +9296,16 @@ async function incrementRealized(){
   const dateStr = todayStr();
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   const p = getAgentProd(board, currentArenaAgent);
-  if(!p.objective && !isIndependant(currentArenaAgent) && arenaScope !== 'month'){
-    alert("Fixe d'abord ton objectif du jour !");
-    return;
+  
+  // Seulement si jour ouvré, on exige un objectif
+  if(isWorkingDay(dateStr)) {
+    if(!p.objective && !isIndependant(currentArenaAgent) && arenaScope !== 'month'){
+      alert("Fixe d'abord ton objectif du jour !");
+      return;
+    }
   }
+  // Si jour non ouvré, on ne bloque pas
+
   p.realized = (p.realized || 0) + 1;
   await saveProdBoard(dateStr, board);
   await renderArena();
@@ -9595,23 +9607,22 @@ async function cashAddContract(delta){
   const dateStr = todayStr();
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   const p = getAgentProd(board, currentCashAgent);
-  // BUG CORRIGÉ : cette même règle existait déjà côté Arena (incrementRealized) mais pas ici — un agent
-  // pouvait donc ajouter des contrats depuis Cash sans jamais fixer d'objectif du jour, en contournant
-  // la règle "fixe ton objectif avant de compter". On ne bloque que l'AJOUT (delta>0), pas le retrait
-  // (delta<0) qui sert à corriger une erreur de saisie.
-  if(delta > 0 && !p.objective && !isIndependant(currentCashAgent)){
-    alert("Fixe d'abord ton objectif du jour (depuis Arena) !");
-    return;
+  
+  // On ne bloque que l'AJOUT (delta>0) et que si jour ouvré
+  if(delta > 0 && isWorkingDay(dateStr)) {
+    if(!p.objective && !isIndependant(currentCashAgent)){
+      alert("Fixe d'abord ton objectif du jour (depuis Arena) !");
+      return;
+    }
   }
+  // Si delta négatif (correction) ou jour non ouvré, on laisse passer
+
   p.realized = Math.max(0, (p.realized || 0) + delta);
   await saveProdBoard(dateStr, board);
   await renderCash();
   if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
   if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
 }
-
-// Déclaration en libre-service d'une rétractation (contrat résilié) ce mois-ci, depuis Cash — pas une
-// punition, juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
 async function cashAddRetraction(delta){
   if(!currentCashAgent){ alert("Sélectionne ton nom d'abord."); return; }
   const now = nowMA();
