@@ -81,6 +81,16 @@
   .sd-chip b{ font-size: 13.5px; }
   .sd-chip .sd-lbl{ color: var(--muted); font-size: 11px; text-transform:uppercase; letter-spacing:0.3px; }
   .agent-status{ margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--border); }
+  /* Message d'accueil Pointage — minimaliste, léger, juste un coup d'œil avant de commencer la journée */
+  .pgreet{ text-align:center; padding: 14px 6px 20px; margin-bottom: 4px; }
+  .pgreet-hello{ font-size:16px; font-weight:800; margin-bottom:8px; }
+  .pgreet-hello span{ color: var(--accent); }
+  .pgreet-badges{ display:flex; gap:8px; justify-content:center; margin-bottom:12px; flex-wrap:wrap; }
+  .pgreet-badge{ background: var(--panel2); border:1px solid var(--border); border-radius:20px; padding:5px 12px; font-size:11.5px; font-weight:700; color:var(--muted); display:flex; align-items:center; gap:5px; }
+  .pgreet-badge b{ color:var(--text); font-size:12.5px; }
+  .pgreet-badge.gold{ border-color:rgba(255,215,0,0.4); color:var(--gold); }
+  .pgreet-line{ font-size:13.5px; color:var(--text); line-height:1.5; max-width:420px; margin:0 auto; }
+  .pgreet-line.warm{ color:var(--green); font-weight:600; }
   .agent-status h3{ font-size: 13px; color: var(--muted); margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.5px;}
   .agent-status-row{ display:flex; justify-content:space-between; align-items:center; padding: 8px 0; font-size: 14px; border-bottom: 1px solid var(--border); }
   .agent-status-row:last-child{ border-bottom:none; }
@@ -619,6 +629,7 @@ function tryDeviceGateAdmin(){
       <div id="agentCardContent">
       <div class="clock" id="liveClock">--:--:--</div>
       <div class="schedule-detail" id="scheduleDetail"></div>
+      <div id="pointageGreeting" style="display:none;"></div>
       <div id="inactivityReturnMsg" style="display:none; text-align:center; background: var(--amber-bg); color: var(--amber); border-radius:10px; padding:10px 14px; font-size:13.5px; font-weight:600; margin-bottom:18px;"></div>
       <div class="status-line" id="statusLine"></div>
 
@@ -701,8 +712,6 @@ function tryDeviceGateAdmin(){
         </div>
 
         <div class="arena-actions" id="arenaRetractBox" style="display:none; margin-top:-14px; flex-wrap:wrap; align-items:center;">
-          <button class="arena-btn arena-btn-set" onclick="arenaAddRetraction(1)" title="Un client s'est rétracté ce mois — ce n'est pas une faute, juste une correction">🔻 Contrat rétracté ce mois</button>
-          <button class="arena-btn arena-btn-set" onclick="arenaAddRetraction(-1)" title="Annuler la dernière déclaration">↩️ Annuler</button>
           <span id="arenaRetractCount" style="font-size:13px; color:var(--muted);"></span>
         </div>
 
@@ -749,8 +758,6 @@ function tryDeviceGateAdmin(){
         <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin:-8px 0 6px;">
           <button class="arena-btn arena-btn-plus" onclick="cashAddContract(1)">+1 contrat ✍️</button>
           <button class="arena-btn arena-btn-set" onclick="cashAddContract(-1)" title="Corriger une erreur de clic">-1 correction</button>
-          <button class="arena-btn arena-btn-set" onclick="cashAddRetraction(1)" title="Un client s'est rétracté ce mois — ce n'est pas une faute, juste une correction">🔻 Contrat rétracté ce mois</button>
-          <button class="arena-btn arena-btn-set" onclick="cashAddRetraction(-1)" title="Annuler la dernière déclaration">↩️ Annuler rétraction</button>
         </div>
         <div id="cashRetractCount" style="text-align:center; font-size:13px; color:var(--muted); margin:0 0 20px;"></div>
 
@@ -1236,9 +1243,29 @@ function tryDeviceGateAdmin(){
           </div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(155,89,182,0.35);">
+          <label style="margin-bottom:6px;">🔻 Rétractations clients (réservé à l'admin)</label>
+          <div class="section-sub" style="margin-top:-6px;">Les agents ne peuvent plus déclarer eux-mêmes une rétraction — c'est désormais uniquement toi qui l'enregistres ici, une fois le retour client confirmé. Ça retire 1 contrat du compteur du mois choisi, sans que ce soit une faute de l'agent.</div>
+          <div class="settings-grid" style="grid-template-columns: 1fr 1fr; margin-top:12px;">
+            <div>
+              <label>Agent</label>
+              <select id="retractAdminAgent"></select>
+            </div>
+            <div>
+              <label>Mois</label>
+              <input type="month" id="retractAdminMonth">
+            </div>
+          </div>
+          <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button onclick="adminAdjustRetraction(1)" style="padding:9px 16px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:700;cursor:pointer;font-size:13px;">🔻 +1 contrat rétracté</button>
+            <button onclick="adminAdjustRetraction(-1)" style="padding:9px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-weight:700;cursor:pointer;font-size:13px;">↩️ -1 (annuler)</button>
+            <span id="retractAdminCount" style="font-size:12.5px;color:var(--muted);"></span>
+          </div>
+        </div>
+
         <div class="settings-box">
           <label style="margin-bottom:14px;">Enregistrer une infraction (téléphone/YouTube, objectif non atteint)</label>
-          <div class="section-sub" style="margin-top:-10px;">Une rétraction client n'est pas une faute de l'agent : elle n'est plus listée ici, elle est déjà prise en compte via les contrats (déclaration de rétraction côté agent).</div>
+          <div class="section-sub" style="margin-top:-10px;">Les rétractations se gèrent maintenant dans le bloc dédié ci-dessus (admin uniquement).</div>
           <div class="infr-form" id="infrForm">
             <div>
               <label style="margin-bottom:4px;">Agent</label>
@@ -1475,6 +1502,7 @@ function tryDeviceGateAdmin(){
           </div>
           <div class="section-sub" style="margin-top:10px;">💡 <b>Indépendant</b> = pas de pointage, pas d'objectif, payé directement au contrat (dès le 1er).</div>
           <div class="section-sub" style="margin-top:4px;">📊 <b>Superviseur</b> = seul(e)s les agents marqués ainsi peuvent ouvrir l'onglet <b>Supervision</b> (vue d'équipe complète + prime par contrat d'équipe). Bascule ce statut avec le bouton 📊 sur la fiche de l'agent ci-dessus. Pense à leur définir un mot de passe (🔑) pour protéger l'accès.</div>
+          <div class="section-sub" style="margin-top:4px;">🎓 <b>Formateur ADF</b> = peut recevoir n'importe quel agent à son poste pour un Acte De Formation (même principe que les superviseurs, qui le sont déjà automatiquement). Coche ce statut au fur et à mesure que des agents gagnent en expérience — n'importe quel agent peut ensuite quitter son poste pour aller se faire former par un formateur ADF.</div>
 
           <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
             <label>Import / Export agents</label>
@@ -1623,7 +1651,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-07-r65';
+const APP_VERSION = '2026-08-08-r66';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2318,6 +2346,7 @@ async function loadConfig(){
       if(!config.agentsSupervisor) config.agentsSupervisor = {};
       if(!config.agentsNoObjectif) config.agentsNoObjectif = {};
       if(!config.agentsStatusLabel) config.agentsStatusLabel = {};
+      if(!config.agentsADFTrainer) config.agentsADFTrainer = {};
       // Migration ponctuelle : les anciennes pauses nommées (hors déjeuner, ex. "Pause matin", "Pause
       // après-midi"...) deviennent une seule pause libre de X minutes à prendre quand on veut. Le déjeuner,
       // lui, reste un horaire fixe inchangé. Ne s'exécute qu'une fois — après, config.freeBreakMinutes existe.
@@ -2424,8 +2453,56 @@ function populateAgentSelect(){
   populateSupervisionAgentSelect();
   populatePrimeAgentSelect();
   populateRaaAgentSelect();
+  populateRetractAdminAgentSelect();
   renderGiftBreakAgentChips();
 }
+
+// ---- 🔻 Rétractations clients — désormais réservé à l'admin (plus de bouton côté agent) ----
+function populateRetractAdminAgentSelect(){
+  const sel = document.getElementById('retractAdminAgent');
+  if(!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = config.agents.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('');
+  if(prev && config.agents.includes(prev)) sel.value = prev;
+  const monthEl = document.getElementById('retractAdminMonth');
+  if(monthEl && !monthEl.value) monthEl.value = todayStr().slice(0,7);
+  renderRetractAdminCount();
+}
+async function renderRetractAdminCount(){
+  const agent = document.getElementById('retractAdminAgent')?.value;
+  const monthVal = document.getElementById('retractAdminMonth')?.value || todayStr().slice(0,7);
+  const countEl = document.getElementById('retractAdminCount');
+  if(!agent || !countEl) return;
+  const [year, month] = monthVal.split('-').map(Number);
+  const [count, net] = await Promise.all([
+    getMonthlyRetractCount(agent, year, month),
+    monthlyRealizedContracts(agent, year, month)
+  ]);
+  countEl.textContent = count>0
+    ? `${count} rétracté${count>1?'s':''} ce mois — ${net + count} signés → ${net} nets`
+    : `Aucune rétraction ce mois — ${net} contrat${net>1?'s':''}`;
+}
+async function adminAdjustRetraction(delta){
+  const agent = document.getElementById('retractAdminAgent')?.value;
+  const monthVal = document.getElementById('retractAdminMonth')?.value || todayStr().slice(0,7);
+  if(!agent){ alert('Ajoute au moins un agent dans Réglages.'); return; }
+  const [year, month] = monthVal.split('-').map(Number);
+  const beforeNet = await monthlyRealizedContracts(agent, year, month);
+  const current = await getMonthlyRetractCount(agent, year, month);
+  const nextCount = Math.max(0, current + delta);
+  if(delta > 0 && beforeNet <= 0){ alert('Aucun contrat à retirer ce mois-ci.'); return; }
+  await saveMonthlyRetractCount(agent, year, month, nextCount);
+  logAudit('Admin', `Rétraction ${delta>0?'ajoutée':'retirée'} — ${agent} (${monthVal})`, `compteur: ${nextCount}`);
+  await renderRetractAdminCount();
+  renderAllMonthly();
+  renderMonthlyObjectif();
+  if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
+  if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
+  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
+}
+document.addEventListener('change', function(e){
+  if(e.target && (e.target.id === 'retractAdminAgent' || e.target.id === 'retractAdminMonth')) renderRetractAdminCount();
+});
 
 function populateRaaAgentSelect(){
   const sel = document.getElementById('raaAgentSelect');
@@ -2656,9 +2733,11 @@ function renderAgentChips(){
     const indep = isIndependant(name);
     const noObj = hasNoObjectif(name);
     const isSup = isSupervisor(name);
+    const isTrainer = !isSup && !!(config.agentsADFTrainer && config.agentsADFTrainer[name] === true);
     const startDate = getAgentStartDate(name);
-    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}</span>
+    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}</span>
       <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
+      ${!isSup ? `<button onclick="toggleADFTrainer('${name.replace(/'/g,"\\'")}')" title="Basculer « formateur ADF »" style="color:#4a9891;margin-right:2px;">🎓</button>` : ''}
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat »" style="color:var(--amber);margin-right:2px;">🎯</button>
       <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
@@ -2778,6 +2857,7 @@ async function removeAgent(name){
   if(config.agentsIndep) delete config.agentsIndep[name];
   if(config.agentsSupervisor) delete config.agentsSupervisor[name];
   if(config.agentsNoObjectif) delete config.agentsNoObjectif[name];
+  if(config.agentsADFTrainer) delete config.agentsADFTrainer[name];
   if(config.prodConfig && config.prodConfig.agentPay) delete config.prodConfig.agentPay[name];
   await saveConfigSilent();
   logAudit('Admin', `Agent supprimé : ${name}`, '');
@@ -3032,6 +3112,79 @@ async function onAgentChange(){
   refreshAgentStatus();
   refreshFreeBreakUI();
   refreshADFStatus();
+  renderPointageGreeting();
+}
+
+// ============================================================
+// 👋 MESSAGE D'ACCUEIL POINTAGE — minimaliste, chaleureux, jamais culpabilisant. Le but de cette page
+// reste le pointage ; tout le reste (détail des primes, conseils poussés...) vit dans Arena/Cash/
+// Supervision. Ici on veut juste : donner le sourire en 3 secondes, montrer sa place (semaine/mois) sous
+// forme d'un simple badge x/y, le mettre en rivalité motivante avec son PROPRE objectif visé (jamais
+// juste le mini), féliciter/faire l'éloge si mérité — sans jamais dire "tu es à 0, ça va pas".
+// ============================================================
+async function renderPointageGreeting(){
+  const box = document.getElementById('pointageGreeting');
+  if(!box) return;
+  if(!currentAgent || isIndependant(currentAgent)){ box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  const now = nowMA();
+  const year = now.getFullYear(), month = now.getMonth()+1;
+  const allAgents = config.agents;
+
+  const [monthReal, desiredObj, weekData, monthStats, monthTotals, weekTotalsData] = await Promise.all([
+    monthlyRealizedContracts(currentAgent, year, month),
+    getMonthlyDesiredObjective(currentAgent, year, month),
+    weekRealizedContracts(currentAgent),
+    monthlyStats(currentAgent, year, month),
+    Promise.all(allAgents.map(a=> monthlyRealizedContracts(a, year, month))),
+    Promise.all(allAgents.map(a=> weekRealizedContracts(a)))
+  ]);
+
+  const monthRanked = allAgents.map((a,i)=>({ agent:a, val: monthTotals[i] })).sort((x,y)=> y.val - x.val || x.agent.localeCompare(y.agent));
+  const weekRanked = allAgents.map((a,i)=>({ agent:a, val: weekTotalsData[i].total })).sort((x,y)=> y.val - x.val || x.agent.localeCompare(y.agent));
+  const monthRank = monthRanked.findIndex(r=>r.agent===currentAgent) + 1;
+  const weekRank = weekRanked.findIndex(r=>r.agent===currentAgent) + 1;
+  const monthAhead = monthRank > 1 ? monthRanked[monthRank-2] : null;
+
+  const cleanDiscipline = monthStats.retardsCumules === 0 && monthStats.phoneYoutube === 0;
+  const first = firstName(currentAgent);
+
+  let objLine;
+  if(desiredObj > 0){
+    if(monthReal >= desiredObj){
+      objLine = seedPick([
+        `🎯 Objectif visé (${desiredObj}) déjà atteint ce mois-ci — vise encore plus haut !`,
+        `🎯 ${desiredObj} atteints et dépassés, ${first} ! La suite est du bonus pur.`
+      ], `${currentAgent}|pg-hit|${monthReal}`);
+    } else {
+      const gap = desiredObj - monthReal;
+      const rivalTxt = monthAhead ? ` — devance ${firstName(monthAhead.agent)} (${monthAhead.val})` : '';
+      objLine = seedPick([
+        `🎯 Ton objectif visé : ${monthReal}/${desiredObj} — encore ${gap} pour l'atteindre${rivalTxt}.`,
+        `🎯 ${monthReal} sur ton objectif de ${desiredObj} — ${gap} de plus et c'est gagné${rivalTxt}.`
+      ], `${currentAgent}|pg-gap|${monthReal}`);
+    }
+  } else {
+    objLine = `🎯 Pas encore d'objectif fixé ce mois — vise-en un dans « Mes Objectifs » pour te motiver.`;
+  }
+
+  const cleanLine = cleanDiscipline
+    ? `<div class="pgreet-line warm">${seedPick([
+        `✨ Aucun souci de discipline ce mois-ci — nickel, continue comme ça !`,
+        `✨ Zéro retard, zéro accroc ce mois-ci — bravo ${first} !`
+      ], `${currentAgent}|pg-clean|${todayStr()}`)}</div>`
+    : '';
+
+  box.style.display = 'block';
+  box.innerHTML = `<div class="pgreet">
+    <div class="pgreet-hello">👋 Salut <span>${first}</span> !</div>
+    <div class="pgreet-badges">
+      <div class="pgreet-badge ${weekRank<=1?'gold':''}">📅 Classement Semaine <b>${weekRank}/${weekRanked.length}</b></div>
+      <div class="pgreet-badge ${monthRank<=1?'gold':''}">🏆 Classement Mois <b>${monthRank}/${monthRanked.length}</b></div>
+    </div>
+    <div class="pgreet-line">${objLine}</div>
+    ${cleanLine}
+  </div>`;
 }
 
 async function getDayLog(agent, dateStr){
@@ -3725,17 +3878,63 @@ function listSupervisors(){
   return config.agents.filter(a => isSupervisor(a));
 }
 
+// 🎓 Formateurs ADF — DEMANDE ADMIN : tous les agents doivent pouvoir quitter leur poste pour aller
+// former quelqu'un (comme le faisaient les superviseurs), mais pour l'instant seuls certains agents
+// désignés ("formateurs") peuvent RECEVOIR un collègue à leur poste pour le former. Un superviseur est
+// automatiquement formateur (comportement inchangé) ; en plus, l'admin peut cocher n'importe quel autre
+// agent comme formateur au fur et à mesure qu'il gagne en expérience (bouton 🎓 sur sa fiche, Réglages).
+function isADFTrainer(agent){
+  return isSupervisor(agent) || !!(config.agentsADFTrainer && config.agentsADFTrainer[agent] === true);
+}
+function listADFTrainers(){
+  return config.agents.filter(a => isADFTrainer(a));
+}
+async function toggleADFTrainer(name){
+  if(!config.agentsADFTrainer) config.agentsADFTrainer = {};
+  config.agentsADFTrainer[name] = !(config.agentsADFTrainer[name] === true);
+  await saveConfigSilent();
+  logAudit('Admin', `Statut formateur ADF ${config.agentsADFTrainer[name]?'activé':'retiré'} — ${name}`, '');
+  renderAgentChips();
+}
+
+// Explique, en clair, pourquoi un superviseur touche 0 DH/contrat des agents de base aujourd'hui
+// (absence ou retard >10min) — pendant du message "part reversée" vu côté superviseur présent.
+// Retourne null si le superviseur est éligible aujourd'hui (rien à afficher).
+async function supervisorIneligibilityReasonToday(agent){
+  if(!isSupervisor(agent)) return null;
+  const dateStr = todayStr();
+  if(!isWorkingDay(dateStr)) return null;
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  prodBoardCache[dateStr] = board;
+  const log = await getDayLog(agent, dateStr);
+  if(log.justifiedAbsence){
+    return `à cause de ton absence aujourd'hui (${justifiedAbsenceLabel(log.justifiedAbsence, true)})`;
+  }
+  const hasEvent = log.events && log.events.length > 0;
+  const realizedToday = getAgentProd(board, agent).realized || 0;
+  if(!hasEvent){
+    if(realizedToday > 0) return null;
+    return "car tu n'as pas encore pointé aujourd'hui";
+  }
+  const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+  if(ev.lateMinutes > 10) return `à cause de ton retard supérieur à 10 min (${ev.lateMinutes} min)`;
+  return null;
+}
+
 async function refreshADFStatus(){
   if(!currentAgent){ myADFStatus = null; renderADFBox(); return; }
 
-  if(isSupervisor(currentAgent)){
+  if(isADFTrainer(currentAgent)){
     const record = await getADFRecord(currentAgent);
     myADFStatus = (record && record.status !== 'done' && record.status !== 'cancelled')
       ? { role: 'supervisor', supervisor: currentAgent, agent: record.agent, record }
       : null;
   } else {
     myADFStatus = null;
-    for(const sup of listSupervisors()){
+  }
+  if(!myADFStatus){
+    for(const sup of listADFTrainers()){
+      if(sup === currentAgent) continue;
       const record = await getADFRecord(sup);
       if(record && record.agent === currentAgent && (record.status === 'pending' || record.status === 'confirmed')){
         myADFStatus = { role: 'agent', supervisor: sup, agent: currentAgent, record };
@@ -3750,8 +3949,9 @@ function renderADFBox(){
   const box = document.getElementById('adfBox');
   if(!box || !currentAgent) { if(box) box.style.display='none'; return; }
 
-  // Cas 1 : je suis superviseur, aucune session en cours → bouton pour en démarrer une.
-  if(isSupervisor(currentAgent) && !myADFStatus){
+  // Cas 1 : je suis un formateur ADF désigné (superviseur ou agent expérimenté marqué 🎓), aucune
+  // session en cours → bouton pour en démarrer une.
+  if(isADFTrainer(currentAgent) && !myADFStatus){
     box.style.display = 'block';
     const options = config.agents.filter(a => a !== currentAgent && !isIndependant(a));
     box.innerHTML = `
@@ -4109,8 +4309,8 @@ async function refreshAgentStatus(){
   let html = '';
   html += `<div class="agent-status-row"><span>Retards + absences ce mois-ci</span><span><b>${stats.retardsCumules}</b></span></div>`;
   html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont retards à l'arrivée</span><span>${stats.retards}</span></div>`;
-  html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont retours de pause en retard</span><span>${stats.pauseOver}</span></div>`;
   html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont absences</span><span>${stats.absences}</span></div>`;
+  html += `<div class="agent-status-row"><span>Retours de pause en retard <span style="opacity:0.7;">(info, sans impact sur la prime)</span></span><span>${stats.pauseOver}</span></div>`;
   html += `<div class="agent-status-row"><span>Statut prime d'assiduité</span><span class="tag ${stats.retardsCumules>=3?'late':(stats.retardsCumules>=1?'warn':'ok')}">${stats.retardsCumules>=3?'Perdue (-500 DH)':(stats.retardsCumules>=1?'Décompte activé':'Acquise')}</span></div>`;
   if(tier.level>=5){
     html += `<div class="agent-status-row"><span>Niveau retours</span><span class="tag late">${tier.label}</span></div>`;
@@ -4574,7 +4774,10 @@ async function monthlyStats(agent, year, month){
       if(i.type==='objectif') objectif++;
     });
   });
-  const retardsCumules = retards + pauseOver + absences;
+  // DEMANDE ADMIN : un dépassement de pause ne doit plus faire perdre la prime d'assiduité — seuls les
+  // retards à l'arrivée et les absences comptent désormais dans l'escalade 3e/5e/6e du règlement.
+  // pauseOver reste calculé et affiché partout (informatif), simplement exclu de retardsCumules.
+  const retardsCumules = retards + absences;
   const total = retards + pauseOver + absences + phoneYoutube + objectif;
   return { agent, retards, pauseOver, absences, justifiedAbsenceCount, retardsCumules, phoneYoutube, objectif, total };
 }
@@ -5256,7 +5459,7 @@ async function exportObjectifSnapshotImage(){
       try{ await document.fonts.ready; }catch(e){}
     }
 
-    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 2, useCORS: true });
+    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 3, useCORS: true });
     document.body.removeChild(wrap);
 
     const dateForFile = mode === 'single'
@@ -5333,7 +5536,7 @@ async function exportBriefingImage(sourceId, btnId, titleText, badgeText, filena
       try{ await document.fonts.ready; }catch(e){}
     }
 
-    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 2, useCORS: true });
+    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 3, useCORS: true });
     document.body.removeChild(wrap);
 
     canvas.toBlob(blob=>{
@@ -5548,6 +5751,14 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // en bloc à la fin, ils sont mélangés à leur place réelle dans le classement.
   const combinedDayRows = rows.concat(indepRows).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
 
+  // dayOverDayComment est désormais asynchrone (elle regarde l'historique du mois pour graduer le ton
+  // des "0 contrat") — on précalcule tous les commentaires en parallèle avant la boucle d'affichage.
+  const dayOverDayMap = {};
+  await Promise.all(combinedDayRows.map(async r=>{
+    const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
+    dayOverDayMap[r.agent] = await dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison, dateStr);
+  }));
+
   combinedDayRows.forEach(r=>{
     if(!r.isIndep){
       const noObj = r.objective === 0;
@@ -5556,8 +5767,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const badge = dailyProgressBadge(r.realized);
       const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
-      const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
-      const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
+      const dayOverDay = dayOverDayMap[r.agent];
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui" } : null);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
@@ -5591,8 +5801,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const hit = hasObj && r.realized >= r.objective;
       const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
-      const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
-      const dayOverDay = dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison);
+      const dayOverDay = dayOverDayMap[r.agent];
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui" } : null);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.vise>0 || commentLines.length) ? `
@@ -5856,8 +6065,56 @@ async function buildTodayProblemRow(agent, dateStr, board){
     const realizedToday = getAgentProd(board, agent).realized || 0;
     isAbsent = realizedToday === 0;
   }
-  const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent;
-  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, isAbsent, problem, hasAnyEvent, isIndep: false };
+  // 🚨 Pas de retour de pause déjeuner pointé (parti mais jamais revenu) — ne s'alerte qu'une fois la
+  // journée bien avancée (jour terminé ou plus de 30 min après la fin prévue de la pause), pour ne
+  // jamais alerter à tort quelqu'un simplement encore en pause dans les temps.
+  let missingBreakReturn = false;
+  if(!justifiedAbsence){
+    const openLunch = extractBreakPairs(log.events).find(p=>!p.end);
+    if(openLunch){
+      if(isDayOverForMessage(dateStr)) missingBreakReturn = true;
+      else{
+        const sched = scheduleForDate(dateStr);
+        const lunchSched = sched.breaks.find(b=>isLunchBreakName(b.name));
+        if(lunchSched && dateStr === todayStr()){
+          const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
+          if(nowMin - toMinutes(lunchSched.end) > 30) missingBreakReturn = true;
+        }
+      }
+    }
+  }
+  // 🚨 Jamais pointé "Départ (fin de journée)" alors que la journée est terminée — a pointé une arrivée,
+  // mais pas de départ.
+  const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr);
+  const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut;
+  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, isAbsent, missingBreakReturn, missingClockOut, problem, hasAnyEvent, isIndep: false };
+}
+
+// Clic sur une ligne d'alerte (ou sur la notification correspondante) → ouvre directement Admin →
+// Journée avec l'agent et la date déjà sélectionnés, et pour un agent absent, place le focus
+// directement sur le sélecteur "Statut spécial du jour" pour choisir le type d'absence en un geste.
+async function jumpToAgentCorrection(agent, dateStr, focusAbsence){
+  showView('admin');
+  if(document.getElementById('adminPanel').style.display !== 'block'){
+    alert('Connecte-toi d\'abord au panneau Admin.');
+    return;
+  }
+  showAdminSub('day');
+  const agentSel = document.getElementById('corrAgent');
+  const dateInput = document.getElementById('corrDate');
+  if(agentSel) agentSel.value = agent;
+  if(dateInput) dateInput.value = dateStr;
+  await loadDayCorrectionForm();
+  const target = focusAbsence ? document.getElementById('corrJustifiedAbsence') : document.getElementById('corrAgent');
+  if(target){
+    setTimeout(()=>{
+      target.scrollIntoView({ behavior:'smooth', block:'center' });
+      target.style.outline = '3px solid var(--red)';
+      target.style.borderRadius = '8px';
+      setTimeout(()=>{ target.style.outline=''; }, 3000);
+      if(focusAbsence) target.focus();
+    }, 60);
+  }
 }
 
 async function renderTodaySnapshot(){
@@ -5905,6 +6162,8 @@ async function renderTodaySnapshot(){
         tags += `<span class="tag late">Retard ${r.ev.lateMinutes}min · ${sanction}</span>`;
       }
       if(r.anyBreakOver) tags += `<span class="tag warn">Pause dépassée</span>`;
+      if(r.missingBreakReturn) tags += `<span class="tag late">🍽️ Pas de retour de pause pointé</span>`;
+      if(r.missingClockOut) tags += `<span class="tag late">🚪 Pas de départ (fin de journée) pointé</span>`;
       if(r.lockoutMin>0) tags += `<span class="tag warn">🔒 Inactivité ${r.lockoutMin}min (info)</span>`;
       if(r.stillLockedOut) tags += `<span class="tag late">🔒 Toujours délogué — pas reconnecté</span>`;
       r.infr.forEach(i=>{
@@ -5912,7 +6171,9 @@ async function renderTodaySnapshot(){
         tags += `<span class="tag warn">${meta.label} (${infrSanctionText(i)})</span>`;
       });
     }
-    html += `<div class="agent-status-row" style="border-bottom:1px solid var(--border);"><span><b>${r.agent}</b></span><span>${tags}</span></div>`;
+    const needsAbsenceType = r.isAbsent && !r.justifiedAbsence;
+    const safeAgent = r.agent.replace(/'/g,"\\'");
+    html += `<div class="agent-status-row clickable" style="border-bottom:1px solid var(--border); cursor:pointer;" title="Clique pour ouvrir la correction de ${r.agent} et régler ça" onclick="jumpToAgentCorrection('${safeAgent}','${dateStr}',${needsAbsenceType})"><span><b>${r.agent}</b></span><span>${tags}</span></div>`;
   });
   html += '</div>';
   container.innerHTML = html;
@@ -5954,11 +6215,29 @@ async function renderAnomalyBanner(){
 
   banner.innerHTML = `<span style="font-weight:700; color:var(--red); font-size:13.5px;">🚨 Aujourd'hui : ${parts.join(' · ')}</span><span style="font-size:12.5px; color:var(--muted); white-space:nowrap;">Voir le détail →</span>`;
   banner.style.display = 'flex';
+  // Si un seul agent est concerné, le clic sur la bannière emmène DIRECTEMENT sur sa fiche de
+  // correction (et sur le choix du type d'absence s'il n'a pas pointé) plutôt que sur la liste générale.
+  if(problems.length === 1){
+    const only = problems[0];
+    const needsType = only.isAbsent && !only.justifiedAbsence;
+    banner.onclick = ()=> jumpToAgentCorrection(only.agent, dateStr, needsType);
+  } else {
+    banner.onclick = jumpToTodayAlerts;
+  }
 
   if(lastAnomalyCount !== null && problems.length > lastAnomalyCount && 'Notification' in window && Notification.permission === 'granted'){
     try{
       const notif = new Notification("🚨 Nouvelle anomalie — VortexNova", { body: parts.join(' · '), tag: 'vortexnova-admin-anomaly', renotify: true });
-      notif.onclick = ()=>{ window.focus(); jumpToTodayAlerts(); notif.close(); };
+      notif.onclick = ()=>{
+        window.focus();
+        if(problems.length === 1){
+          const only = problems[0];
+          jumpToAgentCorrection(only.agent, dateStr, only.isAbsent && !only.justifiedAbsence);
+        } else {
+          jumpToTodayAlerts();
+        }
+        notif.close();
+      };
     }catch(e){}
   }
   lastAnomalyCount = problems.length;
@@ -6626,7 +6905,13 @@ async function renderBestWorstDayPanel(targetId){
   const daysToCheck = isCurrentMonth ? now.getDate() : new Date(year, month, 0).getDate();
 
   const dateStrs = [];
-  for(let d=1; d<=daysToCheck; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  for(let d=1; d<=daysToCheck; d++){
+    const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    // Samedi, dimanche et jours fériés français : jamais un jour travaillé, donc jamais éligible au
+    // "record" du meilleur/pire jour — même si un contrat y a été saisi par exception, ce n'est pas un
+    // jour de référence pour comparer les performances.
+    if(isWorkingDay(ds)) dateStrs.push(ds);
+  }
 
   const totals = await Promise.all(dateStrs.map(async dateStr=>{
     const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
@@ -7333,28 +7618,87 @@ function lastNWorkingDaysBefore(dateStr, n){
   return result;
 }
 
+// Ancienneté : un agent est considéré "nouveau" pendant son premier mois (30 jours depuis sa date de
+// début réglée dans Réglages → 📅). Sans date de début réglée, on ne peut pas savoir depuis quand il/elle
+// est là — on ne le traite alors PAS comme nouveau par défaut (comportement inchangé), l'admin doit
+// régler la date de début pour activer l'indulgence "nouveau".
+function isNewAgent(agentName, refDateStr){
+  const start = getAgentStartDate(agentName);
+  if(!start) return false;
+  const ref = refDateStr || todayStr();
+  const diffDays = (new Date(ref+'T00:00:00') - new Date(start+'T00:00:00')) / 86400000;
+  return diffDays >= 0 && diffDays <= 30;
+}
+
+// Combien de fois cet agent a déjà fini une journée à 0 contrat CE MOIS-CI, jusqu'à et y compris
+// refDateStr (jours ouvrés terminés uniquement) — sert à graduer le ton : 1er 0 = indulgent avec
+// conseil, 2e = plus ferme, 3e et au-delà = sérieux, mais toujours avec un conseil constructif.
+async function countZeroDaysThisMonthSoFar(agentName, refDateStr){
+  const [y, m] = refDateStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  let count = 0;
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if(ds > refDateStr) break;
+    if(!isWorkingDay(ds)) continue;
+    if(!isDayOverForMessage(ds)) continue;
+    const board = prodBoardCache[ds] || await getProdBoard(ds);
+    prodBoardCache[ds] = board;
+    if((getAgentProd(board, agentName).realized || 0) === 0) count++;
+  }
+  return count;
+}
+
 // Comparaison "aujourd'hui vs hier" — félicite une progression, note la régularité, ou encourage
 // gentiment en cas de baisse (jamais un ton sec). Retourne null s'il n'y a pas de veille comparable
 // (ex : lundi matin, ou tout début du mois), ET s'il est encore tôt le matin avec 0 contrat aujourd'hui —
 // comparer "0 aujourd'hui vs hier" à la prise de poste n'a aucun sens, la journée vient de commencer.
-function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour){
+// zeroCount = combientième 0 du mois c'est pour cet agent (1er/2e/3e+) — module la sévérité du ton.
+// newAgent = agent en poste depuis moins d'un mois — toujours plus indulgent, quel que soit zeroCount.
+async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr){
   if(yesterdayRealized == null) return null;
   if(todayRealized === 0 && (nowHour == null || nowHour < 11)) return null;
   const SAGE = '#4f9d78', SAGE_BG = 'rgba(79,157,120,0.12)';
   const SLATE = '#7885ad', SLATE_BG = 'rgba(120,133,173,0.14)';
   const TERRACOTTA = '#b5595c', TERRACOTTA_BG = 'rgba(181,89,92,0.12)';
   const CRITICAL = '#a83a3f', CRITICAL_BG = 'rgba(168,58,63,0.16)';
+  const AMBER2 = '#b98a42', AMBER2_BG = 'rgba(185,138,66,0.12)';
 
-  // LE scénario à éviter à tout prix : une journée complète à 0 contrat. Ton sérieux, pression réelle,
-  // jamais d'humour ici — c'est très exactement la peur n°1 du boss, elle doit se sentir dans le texte.
+  // LE scénario à éviter à tout prix : une journée complète à 0 contrat. Le ton se gradue désormais
+  // selon deux choses : l'ancienneté (un agent nouveau — moins d'1 mois — reste toujours accompagné avec
+  // bienveillance) et le nombre de fois où ça arrive ce mois-ci (1er 0 = indulgent + conseil, 2e = plus
+  // ferme + conseil, 3e et plus = sérieux, mais un conseil concret reste toujours présent).
   if(todayRealized === 0){
+    const dateForCount = refDateStr || todayStr();
+    const newAgent = isNewAgent(agentName, dateForCount);
+    const zeroCount = await countZeroDaysThisMonthSoFar(agentName, dateForCount);
+
+    if(newAgent){
+      return { text: seedPick([
+        `0 contrat aujourd'hui, et c'est normal en tout début de parcours — personne ne signe dès le premier jour. Reviens demain avec un objectif clair, et n'hésite pas à demander de l'aide sur un appel qui bloque.`,
+        `Journée à 0, mais tu es encore en phase d'apprentissage — pas de panique. Repère ce qui t'a bloqué aujourd'hui (script, objection, timing) et travaille ce point précis demain.`,
+        `0 contrat, normal quand on démarre. Le plus important maintenant : identifier UNE chose à améliorer pour demain, et la travailler avec un collègue plus expérimenté si besoin.`
+      ], `${agentName}|zero|new`), color: SAGE, bg: SAGE_BG, critical: false };
+    }
+    if(zeroCount <= 1){
+      return { text: seedPick([
+        `Premier 0 du mois — ça arrive, l'essentiel est de ne pas s'installer là-dedans. Repère ce qui a manqué aujourd'hui et repars fort demain.`,
+        `0 contrat aujourd'hui, ton premier ce mois-ci. Pas de drame, mais prends 5 minutes ce soir pour identifier ce qui a bloqué, et attaque demain avec un plan clair.`,
+        `Un premier 0 ce mois — ça peut arriver à tout le monde une fois. Le conseil : rappelle 2-3 prospects tièdes dès demain matin pour relancer la machine.`
+      ], `${agentName}|zero|1`), color: AMBER2, bg: AMBER2_BG, critical: false };
+    }
+    if(zeroCount === 2){
+      return { text: seedPick([
+        `2e journée à 0 ce mois-ci — il faut réagir maintenant, avant que ça devienne une habitude. Parle à ton superviseur aujourd'hui même pour identifier le blocage.`,
+        `0 contrat, et c'est ta 2e fois ce mois. C'est le moment de changer quelque chose concrètement : horaires d'appel, script, ou un point avec un collègue qui performe bien.`,
+        `2e 0 du mois — ça commence à peser sur ton objectif. Conseil concret : priorise tes meilleurs prospects en tout début de journée demain, pas en fin.`
+      ], `${agentName}|zero|2`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical: false };
+    }
     return { text: seedPick([
-      `0 contrat aujourd'hui. C'est le pire scénario possible — il faut comprendre ce qui s'est passé et repartir fort dès demain, sans exception.`,
-      `Journée à 0. C'est du sérieux : une journée comme ça ne doit surtout pas se répéter. Qu'est-ce qui a bloqué ?`,
-      `0 contrat aujourd'hui — inacceptable si ça devient une habitude. Il faut une vraie réaction dès demain matin.`,
-      `0 contrat. Pas de contrat, pas de bonus, pas de fierté — demain, on répare ça, sans excuse.`,
-      `Une journée à 0, c'est une journée payée pour rien. Ça ne peut pas devenir une habitude, il faut réagir maintenant.`
-    ], `${agentName}|zero`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
+      `${zeroCount}e journée à 0 ce mois-ci. C'est sérieux — ça ne peut plus continuer comme ça. Un point s'impose avec ton superviseur dès demain, avec un plan d'action concret à suivre.`,
+      `${zeroCount} journées à 0 ce mois — inacceptable si ça continue. Conseil : reprends les bases avec un collègue expérimenté et fixe-toi un objectif minimum réaliste pour chaque heure de la journée.`,
+      `0 contrat, la ${zeroCount}e fois ce mois. Il faut un vrai sursaut dès demain — identifie avec ton superviseur ce qui bloque vraiment, et corrige-le, pas dans une semaine.`
+    ], `${agentName}|zero|3plus`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
   }
 
   if(todayRealized > yesterdayRealized){
@@ -9331,11 +9675,13 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
   // ailleurs dans l'appli — même si un contrat a été saisi par erreur ce jour-là par un autre agent.
   if(!isWorkingDay(dateStr)) return true;
   const log = await getDayLog(agent, dateStr);
-  // Seuls les statuts avec une VRAIE justification (congé, absence justifiée, quel que soit le fait
-  // qu'elle "compte" ou non dans SA prime d'assiduité) protègent la commission de supervision. Une
-  // absence non justifiée ou une mise à pied n'a, elle, aucune justification valable : le superviseur
-  // perd sa part ce jour-là, comme pour un retard non couvert.
-  if(log.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence]?.justified) return true;
+  // BUG CORRIGÉ : un superviseur marqué absent (même "absence justifiée") restait éligible ici, donc sa
+  // part n'était JAMAIS reversée au(x) superviseur(s) présent(s) ce jour-là — c'est exactement le
+  // problème remonté ("je mets un superviseur absent, l'autre superviseur présent ne reçoit rien").
+  // Un superviseur absent — quelle que soit la raison — ne supervise pas l'équipe ce jour-là : il n'est
+  // donc jamais éligible à la prime de supervision, et sa part est systématiquement reversée aux
+  // superviseurs présents. Seule une VRAIE présence (pointé, à l'heure) donne droit à la part.
+  if(log.justifiedAbsence) return false;
   const hasEvent = log.events && log.events.length > 0;
   const realizedToday = getAgentProd(board, agent).realized || 0;
   if(!hasEvent) return realizedToday > 0; // aucun pointage : éligible seulement s'il a quand même saisi un contrat
@@ -9458,18 +9804,17 @@ async function supervisorMonthlyBonus(year, month){
     dateStrs.push(ds);
   }
 
-  const [{ dh: grossDh, contracts: grossContracts }, netPool] = await Promise.all([
-    supervisorBonusForDates(dateStrs),
-    contractsUnderAllSupervisors(year, month)
-  ]);
-  if(netPool <= 0) return { dh, contracts };
-
+  // BUG CORRIGÉ (2e passage) : la 1ère correction avait bien réglé le "taux moyen appliqué à tort", mais
+  // une correction de rétractation restait appliquée UNIQUEMENT au total du mois (pas au jour ni à la
+  // semaine) — ça pouvait faire retomber le mois SOUS la semaine dès qu'il y avait ne serait-ce qu'une
+  // rétraction ce mois-ci (ex: semaine 950 DH / mois 943 DH, remonté par capture d'écran). Pour que
+  // jour ≤ semaine ≤ mois soit TOUJOURS vrai, les 3 utilisent maintenant exactement le même calcul : une
+  // simple somme des montants journaliers (supervisorBonusForDates), sans aucun ajustement séparé pour
+  // le mois — un jour de plus ne peut jamais faire baisser le total.
+  const { dh: monthDh, contracts: monthContracts } = await supervisorBonusForDates(dateStrs);
   supervisors.forEach(sup=>{
-    const gC = grossContracts[sup] || 0;
-    if(gC <= 0) return; // aucun jour éligible ce mois-ci : rien touché
-    const effectiveRate = (grossDh[sup] || 0) / gC;
-    contracts[sup] = Math.round(netPool);
-    dh[sup] = Math.round(netPool * effectiveRate);
+    dh[sup] = monthDh[sup] || 0;
+    contracts[sup] = monthContracts[sup] || 0;
   });
   return { dh, contracts };
 }
@@ -9512,6 +9857,7 @@ async function renderCash(){
     contractsUnderSupervisionWeek = bonusWeekMap.contracts[agent] || 0;
     supervisorBonusWeek = bonusWeekMap.dh[agent] || 0;
   }
+  const supIneligReason = isSupervisorAgent ? await supervisorIneligibilityReasonToday(agent) : null;
 
   // Calculé pour tout le monde, y compris les indépendants : monthlyStats renvoie des zéros pour eux
   // (pas de pointage), donc leur prime d'assiduité (si réglée par l'admin) est toujours acquise.
@@ -9553,7 +9899,7 @@ async function renderCash(){
   const daySalNet = Math.max(0, Math.round(daySal - todayDeduction));
   const weekSalNet = Math.max(0, Math.round(weekSal - weekDeduction));
 
-  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, weekSalNet, daySalNet, todayDeduction, weekDeduction, ceDay, ceWeek, monthStats, monthRes, realTimeSalary, totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus, contractsUnderSupervisionDay, supervisorBonusDay, contractsUnderSupervisionWeek, supervisorBonusWeek };
+  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, weekSalNet, daySalNet, todayDeduction, weekDeduction, ceDay, ceWeek, monthStats, monthRes, realTimeSalary, totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus, contractsUnderSupervisionDay, supervisorBonusDay, contractsUnderSupervisionWeek, supervisorBonusWeek, supIneligReason };
   const cashRetractEl = document.getElementById('cashRetractCount');
   if(cashRetractEl){
     const grossForIndicator = monthContracts + monthRetractions;
@@ -9624,9 +9970,9 @@ async function renderCash(){
   const rt = realTimeSalary;
   if(pay.isIndep && monthRes){
     hero.innerHTML = `
-      <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ton salaire réel, maintenant</div>
+      <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ton salaire brut réel, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} × ${pay.perContract} DH${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''}</div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} × ${pay.perContract} DH${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''} · <b>brut, avant retour client éventuel</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
@@ -9635,12 +9981,13 @@ async function renderCash(){
         ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
-      </div>`;
+      </div>
+      ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
   } else if(monthRes){
     hero.innerHTML = `
-      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 Ton salaire réel, maintenant</div>
+      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 Ton salaire brut réel, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''}</div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''} · <b>brut, avant retour client éventuel</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div><span>Fixe + prime fixe (prorata ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>
@@ -9651,7 +9998,8 @@ async function renderCash(){
         ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
-      </div>`;
+      </div>
+      ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
   }
 
   renderCashRealGrid();
@@ -10077,6 +10425,7 @@ async function renderSupervision(){
   // le taux de base sans indice de boost — on utilise maintenant rateBoostToday (basé sur l'éligibilité
   // réelle du jour, pas sur les contrats déjà saisis) dans ce cas.
   const effectiveRateToday = contractsDay > 0 ? (bonusDay / contractsDay) : (rate + rateBoostToday);
+  const myIneligibilityReason = await supervisorIneligibilityReasonToday(supervisor);
   const teamPct = totalMonthObj > 0 ? Math.round((totalMonthReal/totalMonthObj)*100) : 0;
   // Pourquoi "76" (équipe, y compris superviseurs) ne correspond pas directement à "46" (pool de
   // commission, hors superviseurs) : la différence = les contrats PERSO de tous les superviseurs (le
@@ -10110,6 +10459,7 @@ async function renderSupervision(){
       </div>
       <div class="sub" style="margin-top:4px;">Ton taux : ${(rate).toLocaleString('fr-FR')} DH/contrat des agents de base${!rate ? " — montant à régler par l'admin dans Production" : ''}${effectiveRateToday > rate ? ` <b style="color:var(--gold);">→ ${effectiveRateToday.toLocaleString('fr-FR')} DH aujourd'hui</b> (part d'un collègue superviseur en retard/absent reversée sur ton taux)` : ''}</div>
       <div class="sub" style="margin-top:4px;font-size:11px;">Ne compte ni tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''}, ni ceux des autres superviseurs — le nombre de contrats affiché est toujours le vrai total de l'équipe, jamais doublé. Semaine = lundi à aujourd'hui.</div>
+      ${myIneligibilityReason ? `<div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚫 Aujourd'hui, à cause du non-respect du règlement — ${myIneligibilityReason} — tu es à <b>0 DH/contrat</b> des agents de base. Ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}
     </div>
   `;
 
@@ -10302,7 +10652,7 @@ async function renderSupervision(){
     <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour visé par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon.</div>
     <div style="overflow-x:auto;">
     <table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>💬 Conseil</th><th>Jour (visé/réalisé)</th><th>Semaine</th><th>Mois</th><th>%</th><th>📅 Projection</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
+      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>💬 Conseil</th><th>Jour (réalisé/visé)</th><th>Semaine</th><th>Mois</th><th>%</th><th>📅 Projection</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
     </tr></thead><tbody>`;
 
   if(teamRows.length === 0){
@@ -10323,7 +10673,7 @@ async function renderSupervision(){
         <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
         <td><span class="tag ${badge.cls}" style="${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></td>
         <td style="font-size:12.5px; max-width:220px; ${r.dayRealized<=0?'color:var(--red); font-weight:700;':'color:var(--muted);'}">${isMe ? '' : comment}</td>
-        <td>${r.dayObjective || '—'} / ${r.dayRealized}</td>
+        <td>${r.dayRealized} / ${r.dayObjective || '—'}</td>
         <td>${r.weekReal}/${r.weekObjective||'—'}</td>
         <td><b>${r.monthReal}</b>/${r.monthObj||'—'}</td>
         <td class="lb-pct ${pctCls}">${r.monthObj>0 ? r.pctMonth+'%' : '—'}</td>
@@ -10615,7 +10965,7 @@ async function renderMonthlyObjectif(){
   const supervisionBonusMoMap = await supervisorMonthlyBonus(year, month);
 
   let html = `<table class="salary-table"><thead><tr>
-    <th>Rang</th><th>Agent</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>Réalisé</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
+    <th>Rang</th><th>Agent</th><th>Réalisé</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
   </tr></thead><tbody>`;
   let totalBrutTeam = 0, totalBrutIndep = 0, totalBrutBackoffice = 0;
   let totalDesiredObjSum = 0, totalRealizedForDesiredSum = 0;
@@ -10656,6 +11006,7 @@ async function renderMonthlyObjectif(){
     html += `<tr class="${rowClass}">
       <td style="font-weight:800;">${rankEmoji(r.rank, rows.length)}</td>
       <td><b>${r.agent}${indepTag}</b></td>
+      <td><b>${r.realized}</b></td>
       <td>${isFreeRow ? '∞' : (r.objectif > 0 ? r.objectif : '—')}</td>
       <td>
         <input type="number" min="0" step="1" value="${desiredObjAdmin || ''}" placeholder="—"
@@ -10663,7 +11014,6 @@ async function renderMonthlyObjectif(){
           title="Objectif visé par l'agent — tu peux aussi le régler toi-même ici si besoin"
           onchange="adminSetDesiredObjective('${agentKeySafe}', ${year}, ${month}, this.value)">
       </td>
-      <td><b>${r.realized}</b></td>
       <td class="lb-pct ${pctCls}">${isFreeRow ? '🎯' : (r.objectif>0 ? r.pct+'%' : '—')}</td>
       <td>${isFreeRow ? '—' : (r.objectif>0 ? (r.remaining>0 ? r.remaining+' à faire' : '✅ atteint') : '—')}</td>
       <td>${primeTxt}</td>
@@ -10675,9 +11025,10 @@ async function renderMonthlyObjectif(){
   if(totalDesiredObjSum > 0){
     const totalDesiredPct = Math.round((totalRealizedForDesiredSum/totalDesiredObjSum)*100);
     html += `<tr style="font-weight:700; color:var(--gold); border-top:2px solid var(--border);">
-      <td colspan="3">TOTAL objectifs perso visés (agents en ayant fixé un)</td>
-      <td>${totalDesiredObjSum}</td>
+      <td colspan="2">TOTAL objectifs perso visés (agents en ayant fixé un)</td>
       <td><b>${totalRealizedForDesiredSum}</b></td>
+      <td></td>
+      <td>${totalDesiredObjSum}</td>
       <td>${totalDesiredPct}%</td>
       <td colspan="4"></td>
     </tr>`;
@@ -10745,15 +11096,15 @@ async function renderProdAdmin(){
     tableEl.innerHTML = '<div class="empty">Aucun agent. Ajoute-les dans Réglages ou importe un tableau.</div>';
   } else {
     let html = `<table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Objectif</th><th>Réalisé</th><th>%</th><th>Écart</th><th>Rang</th><th>Statut</th>
+      <th>Agent</th><th>Réalisé</th><th>Objectif</th><th>%</th><th>Écart</th><th>Rang</th><th>Statut</th>
     </tr></thead><tbody>`;
     rankings.forEach(r=>{
       const hasObj = r.objective > 0;
       const pctCls = (r.isIndep && !hasObj) ? 'good' : (r.pct >= 100 ? 'good' : (r.pct >= 50 ? 'mid' : 'bad'));
       html += `<tr>
         <td><b>${r.agent}</b>${r.isIndep ? ' <span class="tag independant">Indé</span>' : ''}${(!r.isIndep && r.noObjectif) ? ` <span class="tag warn">${getNoObjectifLabel(r.agent)}</span>` : ''}</td>
-        <td>${hasObj ? r.objective : (r.isIndep ? '∞' : r.objective)}</td>
         <td><b>${r.realized}</b></td>
+        <td>${hasObj ? r.objective : (r.isIndep ? '∞' : r.objective)}</td>
         <td class="lb-pct ${pctCls}">${(r.isIndep && !hasObj) ? '🧑‍💼' : (r.pct+'%')}</td>
         <td>${hasObj ? (r.gap >= 0 ? '+'+r.gap : r.gap) : '—'}</td>
         <td>${rankEmoji(r.rank, rankings.length)}</td>
@@ -10761,7 +11112,7 @@ async function renderProdAdmin(){
       </tr>`;
     });
     html += `<tr style="font-weight:800; border-top:2px solid var(--border);">
-      <td>TOTAL ÉQUIPE (hors indépendants)</td><td>${totalObj}</td><td>${totalReal}</td><td>${totalObj>0?Math.round(totalReal/totalObj*100):0}%</td><td colspan="3">${totalReal}/${totalObj}</td>
+      <td>TOTAL ÉQUIPE (hors indépendants)</td><td>${totalReal}</td><td>${totalObj}</td><td>${totalObj>0?Math.round(totalReal/totalObj*100):0}%</td><td colspan="3">${totalReal}/${totalObj}</td>
     </tr>`;
     if(indepRankings.length){
       html += `<tr style="color:var(--independant); font-weight:700;">
