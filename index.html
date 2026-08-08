@@ -711,8 +711,8 @@ function tryDeviceGateAdmin(){
           <button class="arena-btn arena-btn-set" onclick="decrementRealized()" title="Corriger une erreur de clic">-1 correction</button>
         </div>
 
-        <div class="arena-actions" id="arenaRetractBox" style="display:none; margin-top:-14px; flex-wrap:wrap; align-items:center;">
-          <span id="arenaRetractCount" style="font-size:13px; color:var(--muted);"></span>
+        <div class="arena-actions" id="arenaRetractBox" style="display:none; margin-top:10px; flex-wrap:wrap; justify-content:center; align-items:center;">
+          <span id="arenaRetractCount" style="font-size:13.5px; font-weight:700; padding:8px 14px; border-radius:20px; display:inline-block;"></span>
         </div>
 
         <div id="arenaDesiredObjBox" class="settings-box" style="margin-top:14px; margin-bottom:22px; display:none; border-color:rgba(61,139,253,0.45); background:linear-gradient(135deg, rgba(61,139,253,0.06), var(--panel));">
@@ -759,7 +759,7 @@ function tryDeviceGateAdmin(){
           <button class="arena-btn arena-btn-plus" onclick="cashAddContract(1)">+1 contrat ✍️</button>
           <button class="arena-btn arena-btn-set" onclick="cashAddContract(-1)" title="Corriger une erreur de clic">-1 correction</button>
         </div>
-        <div id="cashRetractCount" style="text-align:center; font-size:13px; color:var(--muted); margin:0 0 20px;"></div>
+        <div id="cashRetractCount" style="text-align:center; font-size:13.5px; font-weight:700; padding:8px 14px; border-radius:20px; margin:10px auto 20px; width:fit-content;"></div>
 
         <div id="cashObjectifsRecap" style="margin:0 0 24px;"></div>
 
@@ -1651,7 +1651,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-08-r74';
+const APP_VERSION = '2026-08-08-r75';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9454,9 +9454,13 @@ async function renderArena(){
     const netContracts = await monthlyRealizedContracts(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     const rc = await getMonthlyRetractCount(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     const grossContracts = netContracts + rc;
-    document.getElementById('arenaRetractCount').textContent = rc>0
-      ? `${rc} rétracté${rc>1?'s':''} — ${grossContracts} signés → ${netContracts} ce mois`
-      : `Aucune rétraction ce mois — ${netContracts} contrat${netContracts>1?'s':''}`;
+    const arenaRetractEl = document.getElementById('arenaRetractCount');
+    arenaRetractEl.textContent = rc>0
+      ? `🔻 ${rc} rétracté${rc>1?'s':''} — ${grossContracts} signés → ${netContracts} ce mois`
+      : `✅ Aucune rétraction ce mois — ${netContracts} contrat${netContracts>1?'s':''}`;
+    arenaRetractEl.style.background = rc>0 ? 'rgba(229,72,77,0.18)' : 'rgba(52,183,116,0.15)';
+    arenaRetractEl.style.color = rc>0 ? 'var(--red)' : 'var(--green)';
+    arenaRetractEl.style.border = rc>0 ? '1px solid rgba(229,72,77,0.3)' : '1px solid rgba(52,183,116,0.3)';
   }
   document.getElementById('arenaDesiredObjBox').style.display = (currentArenaAgent && isMonthScope) ? 'block' : 'none';
   if(currentArenaAgent && isMonthScope){
@@ -10012,8 +10016,11 @@ async function renderCash(){
   if(cashRetractEl){
     const grossForIndicator = monthContracts + monthRetractions;
     cashRetractEl.textContent = monthRetractions>0
-      ? `${monthRetractions} rétracté${monthRetractions>1?'s':''} — ${grossForIndicator} signés → ${monthContracts} ce mois`
-      : `Aucune rétraction ce mois — ${monthContracts} contrat${monthContracts>1?'s':''}`;
+      ? `🔻 ${monthRetractions} rétracté${monthRetractions>1?'s':''} — ${grossForIndicator} signés → ${monthContracts} ce mois`
+      : `✅ Aucune rétraction ce mois — ${monthContracts} contrat${monthContracts>1?'s':''}`;
+    cashRetractEl.style.background = monthRetractions>0 ? 'rgba(229,72,77,0.18)' : 'rgba(52,183,116,0.15)';
+    cashRetractEl.style.color = monthRetractions>0 ? 'var(--red)' : 'var(--green)';
+    cashRetractEl.style.border = monthRetractions>0 ? '1px solid rgba(229,72,77,0.3)' : '1px solid rgba(52,183,116,0.3)';
   }
   renderCashObjectifsRecap();
   renderRetardsAbsencesPanel('cashRetardsAbsencesPanel', agent, now.getFullYear(), now.getMonth()+1);
