@@ -2347,6 +2347,7 @@ async function loadConfig(){
       if(!config.agentsNoObjectif) config.agentsNoObjectif = {};
       if(!config.agentsStatusLabel) config.agentsStatusLabel = {};
       if(!config.agentsADFTrainer) config.agentsADFTrainer = {};
+      if(!config.agentsEcoutesAutorisees) config.agentsEcoutesAutorisees = {};
       // Migration ponctuelle : les anciennes pauses nommées (hors déjeuner, ex. "Pause matin", "Pause
       // après-midi"...) deviennent une seule pause libre de X minutes à prendre quand on veut. Le déjeuner,
       // lui, reste un horaire fixe inchangé. Ne s'exécute qu'une fois — après, config.freeBreakMinutes existe.
@@ -2722,7 +2723,7 @@ function tryAdminLogin(){
 function renderAgentChips(){
   const list = document.getElementById('agentList');
   list.innerHTML = '';
-  if(config.agents.length===0){
+  if(config.agents.length === 0){
     list.innerHTML = '<span style="color:var(--muted);font-size:13px;">Aucun agent pour le moment.</span>';
     return;
   }
@@ -2735,9 +2736,13 @@ function renderAgentChips(){
     const isSup = isSupervisor(name);
     const isTrainer = !isSup && !!(config.agentsADFTrainer && config.agentsADFTrainer[name] === true);
     const startDate = getAgentStartDate(name);
+    const isEcoutable = isEcouteAutorisee(name);
+    const ecouteBtnStyle = isEcoutable ? 'background:rgba(61,139,253,0.25);border-radius:4px;' : '';
+
     chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}</span>
-      <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
+      <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>      
       ${!isSup ? `<button onclick="toggleADFTrainer('${name.replace(/'/g,"\\'")}')" title="Basculer « formateur ADF »" style="color:#4a9891;margin-right:2px;">🎓</button>` : ''}
+      <button onclick="toggleEcouteAutorisee('${name.replace(/'/g,"\\'")}')" title="Basculer l'autorisation d'être écouté (écoute)" style="color:var(--accent);margin-right:2px;${ecouteBtnStyle}">🎧</button>
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat »" style="color:var(--amber);margin-right:2px;">🎯</button>
       <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
@@ -2858,6 +2863,7 @@ async function removeAgent(name){
   if(config.agentsSupervisor) delete config.agentsSupervisor[name];
   if(config.agentsNoObjectif) delete config.agentsNoObjectif[name];
   if(config.agentsADFTrainer) delete config.agentsADFTrainer[name];
+  if(config.agentsEcoutesAutorisees) delete config.agentsEcoutesAutorisees[name];
   if(config.prodConfig && config.prodConfig.agentPay) delete config.prodConfig.agentPay[name];
   await saveConfigSilent();
   logAudit('Admin', `Agent supprimé : ${name}`, '');
@@ -3896,7 +3902,16 @@ async function toggleADFTrainer(name){
   logAudit('Admin', `Statut formateur ADF ${config.agentsADFTrainer[name]?'activé':'retiré'} — ${name}`, '');
   renderAgentChips();
 }
-
+function isEcouteAutorisee(agent){
+  return !!(config.agentsEcoutesAutorisees && config.agentsEcoutesAutorisees[agent] === true);
+}
+async function toggleEcouteAutorisee(name){
+  if(!config.agentsEcoutesAutorisees) config.agentsEcoutesAutorisees = {};
+  config.agentsEcoutesAutorisees[name] = !(config.agentsEcoutesAutorisees[name] === true);
+  await saveConfigSilent();
+  logAudit('Admin', `Statut écoute autorisée ${config.agentsEcoutesAutorisees[name]?'activé':'retiré'} — ${name}`, '');
+  renderAgentChips();
+}
 // Explique, en clair, pourquoi un superviseur touche 0 DH/contrat des agents de base aujourd'hui
 // (absence ou retard >10min) — pendant du message "part reversée" vu côté superviseur présent.
 // Retourne null si le superviseur est éligible aujourd'hui (rien à afficher).
@@ -3949,83 +3964,98 @@ function renderADFBox(){
   const box = document.getElementById('adfBox');
   if(!box || !currentAgent) { if(box) box.style.display='none'; return; }
 
-  // Cas 1 : je suis un formateur ADF désigné (superviseur ou agent expérimenté marqué 🎓), aucune
-  // session en cours → bouton pour en démarrer une.
-  if(isADFTrainer(currentAgent) && !myADFStatus){
+  const isTrainer = isADFTrainer(currentAgent);
+  const ecouteTargets = config.agents.filter(a => isEcouteAutorisee(a) && a !== currentAgent);
+
+  if(myADFStatus){
+    const isEcoute = myADFStatus.record.type === 'ecoute';
+    const agentLabel = myADFStatus.agent;
     box.style.display = 'block';
+    if(myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'pending'){
+      box.innerHTML = `
+        <label style="margin-bottom:4px;">${isEcoute ? '🎧 Écoute' : '🎓 ADF'} en préparation</label>
+        <div style="font-size:15px; margin:10px 0;">En route vers le poste de <b>${agentLabel}</b>...</div>
+        <div class="section-sub">Va sur son poste et fais-lui confirmer pour ${isEcoute ? 'démarrer l\'écoute' : 'démarrer l\'ADF'}.</div>
+        <button class="action-btn arena-btn-set" style="max-width:200px; margin-top:14px;" onclick="cancelADF()">Annuler</button>`;
+      return;
+    }
+    if(myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'confirmed'){
+      box.innerHTML = `
+        <label style="margin-bottom:4px;">${isEcoute ? '🎧 Écoute' : '🎓 ADF'} en cours</label>
+        <div style="font-size:15px; margin:10px 0;">${isEcoute ? 'Tu écoutes' : 'Formation de'} <b>${agentLabel}</b> en cours sur son poste.</div>
+        <div class="section-sub">${isEcoute ? 'Clique "Terminer" sur SON poste (pas ici) une fois l\'écoute terminée.' : 'Clique "Terminer" sur SON poste (pas ici) une fois l\'ADF fini.'}</div>`;
+      return;
+    }
+    if(myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'finishing'){
+      box.innerHTML = `
+        <label style="margin-bottom:4px;">${isEcoute ? '🎧 Écoute' : '🎓 ADF'} terminé avec ${agentLabel}</label>
+        <div id="adfReturnTimer" style="font-size:30px; font-weight:900; margin:10px 0; color:var(--amber);">--:--</div>
+        <div class="section-sub">Confirme que tu es de retour à ton poste avant la fin du décompte.</div>
+        <button class="action-btn" style="max-width:220px; margin-top:12px;" onclick="confirmReturnADF()">✅ Je suis de retour</button>`;
+      return;
+    }
+    if(myADFStatus.role === 'agent' && myADFStatus.record.status === 'pending'){
+      box.innerHTML = `
+        <label style="margin-bottom:4px;">${isEcoute ? '🎧' : '🎓'} ${myADFStatus.supervisor} ${isEcoute ? 'souhaite t\'écouter' : 'arrive pour te former'}</label>
+        <div class="section-sub" style="margin-top:-4px;">Clique quand il/elle est bien à ton poste.</div>
+        <button class="action-btn" style="max-width:220px; margin-top:12px;" onclick="beginADFOnAgentSide()">✅ ${isEcoute ? 'Début écoute' : 'Début ADF'}</button>`;
+      return;
+    }
+    if(myADFStatus.role === 'agent' && myADFStatus.record.status === 'confirmed'){
+      box.innerHTML = `
+        <label style="margin-bottom:4px;">${isEcoute ? '🎧 Écoute' : '🎓 ADF'} en cours avec ${myADFStatus.supervisor}</label>
+        <div class="section-sub" style="margin-top:-4px;">Tu es protégé de l'inactivité pendant ${isEcoute ? 'l\'écoute' : 'la formation'}.</div>
+        <button class="action-btn arena-btn-set" style="max-width:220px; margin-top:12px;" onclick="endADFOnAgentSide()">🏁 ${isEcoute ? 'Terminer l\'écoute' : 'Terminer l\'ADF'}</button>`;
+      return;
+    }
+    box.innerHTML = `<div class="section-sub">Session ${isEcoute ? 'd\'écoute' : 'de formation'} en cours.</div>`;
+    return;
+  }
+
+  let html = '<label style="margin-bottom:4px;">🎓 Acte De Formation (ADF) & 🎧 Écoute</label>';
+  html += '<div class="section-sub" style="margin-top:-4px;">Démarre une formation ou une écoute pour être protégé de l\'inactivité.</div>';
+  html += '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">';
+
+  if(isTrainer){
     const options = config.agents.filter(a => a !== currentAgent && !isIndependant(a));
-    box.innerHTML = `
-      <label style="margin-bottom:4px;">🎓 Acte De Formation (ADF)</label>
-      <div class="section-sub" style="margin-top:-4px;">Tu vas former un agent sur son poste ? Démarre un ADF pour que ni toi ni lui ne soyez pénalisés pour inactivité pendant ce temps.</div>
-      <div style="margin-top:14px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-        <select id="adfAgentPicker" style="min-width:180px;">
-          <option value="">— Choisir l'agent à former —</option>
-          ${options.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('')}
-        </select>
-        <button class="action-btn" style="max-width:220px;" onclick="startADF()">🎓 Démarrer l'ADF</button>
-      </div>`;
-    return;
+    html += `<div style="flex:1; min-width:200px;">
+      <label style="margin-bottom:4px;">🎓 Former</label>
+      <select id="adfAgentPicker" style="width:100%;">
+        <option value="">— Choisir l'agent à former —</option>
+        ${options.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('')}
+      </select>
+      <button class="action-btn" style="width:100%; margin-top:6px;" onclick="startADF()">Démarrer l'ADF</button>
+    </div>`;
   }
 
-  // Cas 2 : je suis le superviseur, session en attente que l'agent confirme sur son poste.
-  if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'pending'){
-    box.style.display = 'block';
-    box.innerHTML = `
-      <label style="margin-bottom:4px;">🎓 ADF en préparation</label>
-      <div style="font-size:15px; margin:10px 0;">En route vers le poste de <b>${myADFStatus.agent}</b>...</div>
-      <div class="section-sub">Va sur son poste et fais-lui cliquer "Début ADF" pour confirmer — tu es protégé de l'inactivité en attendant.</div>
-      <button class="action-btn arena-btn-set" style="max-width:200px; margin-top:14px;" onclick="cancelADF()">Annuler</button>`;
-    return;
+  if(ecouteTargets.length > 0){
+    html += `<div style="flex:1; min-width:200px;">
+      <label style="margin-bottom:4px;">🎧 Écouter</label>
+      <select id="ecouteAgentPicker" style="width:100%;">
+        <option value="">— Choisir l'agent à écouter —</option>
+        ${ecouteTargets.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('')}
+      </select>
+      <button class="action-btn" style="width:100%; margin-top:6px;" onclick="startEcoute()">Démarrer l'écoute</button>
+    </div>`;
   }
 
-  // Cas 3 : je suis le superviseur, ADF confirmé et en cours sur le poste de l'agent.
-  if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'confirmed'){
-    box.style.display = 'block';
-    box.innerHTML = `
-      <label style="margin-bottom:4px;">🎓 ADF en cours</label>
-      <div style="font-size:15px; margin:10px 0;">Formation de <b>${myADFStatus.agent}</b> en cours sur son poste.</div>
-      <div class="section-sub">Clique "Terminer" sur SON poste (pas ici) une fois l'ADF fini.</div>`;
-    return;
-  }
-
-  // Cas 4 : je suis le superviseur, l'agent a terminé — je dois confirmer mon retour dans le délai imparti.
-  if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'finishing'){
-    box.style.display = 'block';
-    box.innerHTML = `
-      <label style="margin-bottom:4px;">🎓 ADF terminé avec ${myADFStatus.agent}</label>
-      <div id="adfReturnTimer" style="font-size:30px; font-weight:900; margin:10px 0; color:var(--amber);">--:--</div>
-      <div class="section-sub">Confirme que tu es de retour à ton poste avant la fin du décompte.</div>
-      <button class="action-btn" style="max-width:220px; margin-top:12px;" onclick="confirmReturnADF()">✅ Je suis de retour</button>`;
-    return;
-  }
-
-  // Cas 5 : je suis l'agent formé, le superviseur arrive — je dois confirmer sa présence.
-  if(myADFStatus && myADFStatus.role === 'agent' && myADFStatus.record.status === 'pending'){
-    box.style.display = 'block';
-    box.innerHTML = `
-      <label style="margin-bottom:4px;">🎓 ${myADFStatus.supervisor} arrive pour te former</label>
-      <div class="section-sub" style="margin-top:-4px;">Clique quand il/elle est bien à ton poste.</div>
-      <button class="action-btn" style="max-width:220px; margin-top:12px;" onclick="beginADFOnAgentSide()">✅ Début ADF</button>`;
-    return;
-  }
-
-  // Cas 6 : je suis l'agent formé, ADF confirmé — je peux le terminer quand c'est fini.
-  if(myADFStatus && myADFStatus.role === 'agent' && myADFStatus.record.status === 'confirmed'){
-    box.style.display = 'block';
-    box.innerHTML = `
-      <label style="margin-bottom:4px;">🎓 ADF en cours avec ${myADFStatus.supervisor}</label>
-      <div class="section-sub" style="margin-top:-4px;">Tu es protégé de l'inactivité pendant la formation.</div>
-      <button class="action-btn arena-btn-set" style="max-width:220px; margin-top:12px;" onclick="endADFOnAgentSide()">🏁 Terminer l'ADF</button>`;
-    return;
-  }
-
-  box.style.display = 'none';
+  html += '</div>';
+  box.innerHTML = html;
+  box.style.display = 'block';
 }
 
 async function startADF(){
   const agent = document.getElementById('adfAgentPicker')?.value;
   if(!agent){ alert('Choisis l\'agent que tu vas former.'); return; }
   await saveADFRecord(currentAgent, { agent, status: 'pending', startedAt: new Date().toISOString() });
+  await refreshADFStatus();
+  resetInactivityTimer();
+}
+
+async function startEcoute(){
+  const agent = document.getElementById('ecouteAgentPicker')?.value;
+  if(!agent){ alert('Choisis l\'agent que tu veux écouter.'); return; }
+  await saveADFRecord(currentAgent, { agent, status: 'pending', type: 'ecoute', startedAt: new Date().toISOString() });
   await refreshADFStatus();
   resetInactivityTimer();
 }
@@ -4082,7 +4112,7 @@ function isProtectedByADF(){
     if(status === 'finishing'){
       const graceMs = (config.adfGraceMinutes != null ? config.adfGraceMinutes : 2) * 60 * 1000;
       const endedAt = new Date(myADFStatus.record.endedOnAgentAt).getTime();
-      return (Date.now() - endedAt) < graceMs; // passé ce délai, protection levée, suivi normal reprend
+      return (Date.now() - endedAt) < graceMs;
     }
     return false;
   }
@@ -5690,7 +5720,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // restants. Un seul calcul par agent, partagé entre sa carte "équipe" et sa carte "indépendant".
   const [y, m] = dateStr.split('-').map(Number);
   const remainingDays = workingDaysRemainingFrom(dateStr);
-  const daysElapsed = workingDaysElapsedThrough(dateStr);
+  const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
   const monthlyByAgent = {};
   await Promise.all(allDayRows.map(async r=>{
     const pay = getAgentPay(r.agent);
@@ -5768,6 +5798,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
       const dayOverDay = dayOverDayMap[r.agent];
+      const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui" } : null);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
@@ -6061,31 +6092,31 @@ async function buildTodayProblemRow(agent, dateStr, board){
   // définition qu'ailleurs (monthlyStats, buildWeeklyBriefingHtml) : aucun pointage ET aucun contrat ET
   // journée vraiment terminée.
   let isAbsent = false;
-  if(!justifiedAbsence && !hasAnyEvent && isDayOverForMessage(dateStr)){
-    const realizedToday = getAgentProd(board, agent).realized || 0;
-    isAbsent = realizedToday === 0;
-  }
+if(!justifiedAbsence && !hasAnyEvent && isDayOverForMessage(dateStr) && isWorkingDay(dateStr)){
+  const realizedToday = getAgentProd(board, agent).realized || 0;
+  isAbsent = realizedToday === 0;
+}
   // 🚨 Pas de retour de pause déjeuner pointé (parti mais jamais revenu) — ne s'alerte qu'une fois la
   // journée bien avancée (jour terminé ou plus de 30 min après la fin prévue de la pause), pour ne
   // jamais alerter à tort quelqu'un simplement encore en pause dans les temps.
   let missingBreakReturn = false;
-  if(!justifiedAbsence){
-    const openLunch = extractBreakPairs(log.events).find(p=>!p.end);
-    if(openLunch){
-      if(isDayOverForMessage(dateStr)) missingBreakReturn = true;
-      else{
-        const sched = scheduleForDate(dateStr);
-        const lunchSched = sched.breaks.find(b=>isLunchBreakName(b.name));
-        if(lunchSched && dateStr === todayStr()){
-          const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
-          if(nowMin - toMinutes(lunchSched.end) > 30) missingBreakReturn = true;
-        }
+if(!justifiedAbsence && isWorkingDay(dateStr)){
+  const openLunch = extractBreakPairs(log.events).find(p=>!p.end);
+  if(openLunch){
+    if(isDayOverForMessage(dateStr)) missingBreakReturn = true;
+    else{
+      const sched = scheduleForDate(dateStr);
+      const lunchSched = sched.breaks.find(b=>isLunchBreakName(b.name));
+      if(lunchSched && dateStr === todayStr()){
+        const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
+        if(nowMin - toMinutes(lunchSched.end) > 30) missingBreakReturn = true;
       }
     }
   }
+}
   // 🚨 Jamais pointé "Départ (fin de journée)" alors que la journée est terminée — a pointé une arrivée,
   // mais pas de départ.
-  const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr);
+  const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr) && isWorkingDay(dateStr);
   const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut;
   return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, isAbsent, missingBreakReturn, missingClockOut, problem, hasAnyEvent, isIndep: false };
 }
@@ -6798,7 +6829,7 @@ async function computeMonthProjection(agent, year, month){
   const now = nowMA();
   const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
   const totalWorkingDays = workingDaysInMonth(year, month);
-  const elapsedWorkingDays = isCurrentMonth ? workingDaysElapsedInMonth() : totalWorkingDays;
+  const elapsedWorkingDays = isCurrentMonth ? workingDaysElapsedForAgent(agent, todayStr()) : totalWorkingDays;
   const remainingWorkingDays = Math.max(0, totalWorkingDays - elapsedWorkingDays);
 
   const pace = elapsedWorkingDays > 0 ? realized / elapsedWorkingDays : 0;
@@ -6850,15 +6881,16 @@ async function renderAdfStuckPanel(){
     const startedAt = new Date(record.startedAt).getTime();
     if(isNaN(startedAt)) return;
     if(now - startedAt > THRESHOLD_MS){
-      stuck.push({ sup, agent: record.agent, status: record.status, elapsedMin: Math.round((now-startedAt)/60000) });
+      const typeLabel = record.type === 'ecoute' ? '🎧 Écoute' : '🎓 ADF';
+      stuck.push({ sup, agent: record.agent, status: record.status, elapsedMin: Math.round((now-startedAt)/60000), typeLabel });
     }
   });
-  if(stuck.length===0){ el.innerHTML = '<div class="empty">✅ Aucun ADF bloqué en ce moment.</div>'; return; }
-  const statusLabel = { pending: 'en attente de confirmation', confirmed: 'en cours', finishing: 'terminé côté agent, superviseur pas revenu' };
+  if(stuck.length===0){ el.innerHTML = '<div class="empty">✅ Aucun ADF ni écoute bloqué en ce moment.</div>'; return; }
+  const statusLabel = { pending: 'en attente de confirmation', confirmed: 'en cours', finishing: 'terminé côté agent, responsable pas revenu' };
   el.innerHTML = stuck.map(s=>`
     <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:var(--red-bg); border:1px solid rgba(229,90,90,0.4); margin-bottom:8px; flex-wrap:wrap; gap:6px;">
       <div><b>${s.sup}</b> ↔ ${s.agent} <span style="color:var(--muted); font-size:12.5px;">(${statusLabel[s.status]||s.status})</span></div>
-      <span class="tag late">🎓 Ouvert depuis ${Math.floor(s.elapsedMin/60)}h${String(s.elapsedMin%60).padStart(2,'0')}</span>
+      <span class="tag late">${s.typeLabel} ouvert depuis ${Math.floor(s.elapsedMin/60)}h${String(s.elapsedMin%60).padStart(2,'0')}</span>
     </div>`).join('');
 }
 
@@ -7354,6 +7386,21 @@ function workingDaysElapsedThrough(dateStr){
   }
   return count;
 }
+function workingDaysElapsedForAgent(agent, refDateStr){
+  const start = getAgentStartDate(agent);
+  if(!start) return workingDaysElapsedThrough(refDateStr);
+  let count = 0;
+  let cur = new Date(start + 'T00:00:00');
+  const end = new Date(refDateStr + 'T00:00:00');
+  let guard = 0;
+  while(cur <= end && guard < 370){
+    const ds = todayStr(cur);
+    if(isWorkingDay(ds)) count++;
+    cur.setDate(cur.getDate()+1);
+    guard++;
+  }
+  return count;
+}
 // Prénom seul, pour un commentaire plus personnel et plus chaleureux.
 function firstName(fullName){
   return (fullName||'').trim().split(/\s+/)[0] || fullName;
@@ -7774,7 +7821,6 @@ async function buildDailyBriefingHtml(baseRows){
   const dateStr = todayStr();
   const [y, m] = dateStr.split('-').map(Number);
   const remainingDays = workingDaysRemainingFrom(dateStr);
-  const daysElapsed = workingDaysElapsedThrough(dateStr);
   const recentDates = lastNWorkingDaysBefore(dateStr, 5);
   const boardsByDate = {};
   await Promise.all(recentDates.map(async d=>{
@@ -7859,7 +7905,8 @@ async function buildDailyBriefingHtml(baseRows){
     // commencer et comparer à un jour complet d'hier serait injuste (et démotivant à la prise de poste
     // pour rien). Cette comparaison vit désormais dans "Bilan de la journée", pensé pour la fin de
     // journée où les deux totaux sont enfin comparables.
-    const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, daysElapsed, remainingDays, rankInfo);
+    const agentDaysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
+    const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, agentDaysElapsed, remainingDays, rankInfo);
     const allLines = [...(monthlyLines || [])].filter(Boolean);
     const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull);
     const streakBadge = zeroStreak >= 2 ? `<span style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap;">🔥 ${zeroStreak}j</span>` : '';
