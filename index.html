@@ -1651,7 +1651,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-08-r67';
+const APP_VERSION = '2026-08-08-r74';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2348,6 +2348,9 @@ async function loadConfig(){
       if(!config.agentsStatusLabel) config.agentsStatusLabel = {};
       if(!config.agentsADFTrainer) config.agentsADFTrainer = {};
       if(!config.agentsEcoutesAutorisees) config.agentsEcoutesAutorisees = {};
+      if(!config.agentsADFTrainer) config.agentsADFTrainer = {};
+      if(!config.agentsEcoutesAutorisees) config.agentsEcoutesAutorisees = {};
+
       // Migration ponctuelle : les anciennes pauses nommées (hors déjeuner, ex. "Pause matin", "Pause
       // après-midi"...) deviennent une seule pause libre de X minutes à prendre quand on veut. Le déjeuner,
       // lui, reste un horaire fixe inchangé. Ne s'exécute qu'une fois — après, config.freeBreakMinutes existe.
@@ -2826,6 +2829,31 @@ async function toggleSupervisor(name){
   renderAgentChips();
   populateSupervisionAgentSelect();
 }
+
+function isADFTrainer(agent){
+  return isSupervisor(agent) || !!(config.agentsADFTrainer && config.agentsADFTrainer[agent] === true);
+}
+function listADFTrainers(){
+  return config.agents.filter(a => isADFTrainer(a));
+}
+async function toggleADFTrainer(name){
+  if(!config.agentsADFTrainer) config.agentsADFTrainer = {};
+  config.agentsADFTrainer[name] = !(config.agentsADFTrainer[name] === true);
+  await saveConfigSilent();
+  logAudit('Admin', `Statut formateur ADF ${config.agentsADFTrainer[name]?'activé':'retiré'} — ${name}`, '');
+  renderAgentChips();
+}
+function isEcouteAutorisee(agent){
+  return !!(config.agentsEcoutesAutorisees && config.agentsEcoutesAutorisees[agent] === true);
+}
+async function toggleEcouteAutorisee(name){
+  if(!config.agentsEcoutesAutorisees) config.agentsEcoutesAutorisees = {};
+  config.agentsEcoutesAutorisees[name] = !(config.agentsEcoutesAutorisees[name] === true);
+  await saveConfigSilent();
+  logAudit('Admin', `Statut écoute autorisée ${config.agentsEcoutesAutorisees[name]?'activé':'retiré'} — ${name}`, '');
+  renderAgentChips();
+}
+
 
 async function setAgentPassword(name){
   const current = (config.agentPasswords && config.agentPasswords[name]) || '';
@@ -3960,6 +3988,7 @@ async function refreshADFStatus(){
   renderADFBox();
 }
 
+
 function renderADFBox(){
   const box = document.getElementById('adfBox');
   if(!box || !currentAgent) { if(box) box.style.display='none'; return; }
@@ -4382,7 +4411,9 @@ async function renderAgentHistory(){
     const dayLabel = dObj.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 
     let tagsHtml = '';
-    if(log.events.length===0 && infr.length===0 && !log.justifiedAbsence){
+    if(!isWorkingDay(dateStr)){
+      tagsHtml = '<span class="tag ok">Repos</span>';
+    } else if(log.events.length===0 && infr.length===0 && !log.justifiedAbsence){
       tagsHtml = '<span class="tag absent">Aucun pointage</span>';
     } else if(log.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
@@ -4578,25 +4609,33 @@ async function renderReport(){
   }
   container.innerHTML = '<div class="empty">⏳ Chargement…</div>';
 
-  const rows = await Promise.all(config.agents.map(async agent=>{
-    if(isIndependant(agent)){
-      return { agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, isIndep: true };
-    }
-    const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
-    const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
-    const lockouts = extractLockouts(log.events);
-    return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, isIndep: false };
-  }));
+    const rows = await Promise.all(config.agents.map(async agent=>{
+      if(isIndependant(agent)){
+        return { agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, isIndep: true, isWorkingDay: isWorkingDay(dateStr) };
+      }
+      const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
+      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+      const lockouts = extractLockouts(log.events);
+      return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
+    }));
 
   let html = `<table><thead><tr>
     <th>Agent</th><th>Arrivée</th><th>Pauses</th><th>Départ</th><th>Inactivité</th><th>Autres infractions</th><th>Statut</th>
   </tr></thead><tbody>`;
 
-  rows.forEach(r=>{
+   rows.forEach(r=>{
     if(r.isIndep){
       html += `<tr style="opacity:0.7;">
         <td><b>${r.agent}</b> <span class="tag independant">Indépendant</span></td>
         <td colspan="6" style="color:var(--muted);">— Pas de pointage (indépendant) —</td>
+      </tr>`;
+      return;
+    }
+    // === AJOUT POUR LES JOURS NON OUVRÉS ===
+    if(!r.isWorkingDay){
+      html += `<tr>
+        <td><b>${r.agent}</b></td>
+        <td colspan="6" style="color:var(--muted);">— Repos (jour non ouvré) —</td>
       </tr>`;
       return;
     }
@@ -5083,7 +5122,11 @@ async function renderExploDailyDetail(agents, dateList){
       const realJour = p.realized || 0;
       let statusHtml = '', rowCls = '', lockoutHtml = '—';
 
-      if(isIndep){
+            if(!isWorkingDay(dateStr)){
+              statusHtml = '<span class="tag ok">Repos</span>';
+              rowCls = '';
+              lockoutHtml = '—';
+            } else if(isIndep){
         statusHtml = '<span class="tag independant">Indépendant</span>';
       } else {
         const { log, infr } = details[`${dateStr}::${agent}`];
@@ -5707,6 +5750,14 @@ async function renderObjectifSnapshot(){
 }
 
 async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
+  // Un jour non ouvré (week-end, jour férié) n'a pas de bilan à établir : personne n'est censé avoir
+  // pointé ni signé de contrat, donc afficher les cartes "0 contrat / pas d'objectif fixé" serait faux et
+  // inutilement alarmant. On affiche un message neutre à la place, sans aller plus loin dans le calcul.
+  if(!isWorkingDay(dateStr)){
+    const dLabel = new Date(dateStr+'T00:00:00').toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+    container.innerHTML = `<div class="empty">🌴 ${dLabel} est un jour non ouvré (week-end ou férié) — pas de bilan à établir ce jour-là.</div>`;
+    return;
+  }
   // Visé = tous ceux qui ont fixé un objectif (agents comme indépendants). Réalisé = TOUT LE MONDE,
   // objectif fixé ou non — le total doit refléter l'activité réelle de toute l'équipe ce jour-là.
   const allDayRows = rows.concat(indepRows);
@@ -5720,7 +5771,6 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // restants. Un seul calcul par agent, partagé entre sa carte "équipe" et sa carte "indépendant".
   const [y, m] = dateStr.split('-').map(Number);
   const remainingDays = workingDaysRemainingFrom(dateStr);
-  const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
   const monthlyByAgent = {};
   await Promise.all(allDayRows.map(async r=>{
     const pay = getAgentPay(r.agent);
@@ -5833,6 +5883,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
       const dayOverDay = dayOverDayMap[r.agent];
+      const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui" } : null);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.vise>0 || commentLines.length) ? `
@@ -6078,9 +6129,13 @@ async function buildTodayProblemRow(agent, dateStr, board){
   if(isIndependant(agent)){
     return { agent, isIndep: true, problem: false, hasAnyEvent: false };
   }
+  // Si la date n'est pas ouvrable, on ne signale aucun problème
+  if(!isWorkingDay(dateStr)){
+    return { agent, isIndep: false, problem: false, hasAnyEvent: false };
+  }
   const [log, infr] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
   const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
-  const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;
+  const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;   // ← remets cette ligne
   const lockoutMin = totalLockoutMinutes(log.events);
   const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
   const justifiedAbsence = log.justifiedAbsence || null;
@@ -7869,12 +7924,7 @@ async function buildDailyBriefingHtml(baseRows){
       <div style="margin-top:5px; font-size:12.5px; color:var(--muted);">${missingObjectiveAgents.join(', ')}</div>
     </div>`;
   }
-  if(nowHourMA >= 10 && missingObjectiveAgents.length > 0){
-    alertBannerHtml = `<div style="margin-bottom:14px; padding:13px 16px; border-radius:12px; background:rgba(181,89,92,0.12); border:1px solid rgba(181,89,92,0.35); font-family:'Inter',sans-serif;">
-      <b style="color:#b5595c; font-size:13.5px;">⏰ ${missingObjectiveAgents.length} agent${missingObjectiveAgents.length>1?'s':''} n'${missingObjectiveAgents.length>1?'ont':'a'} toujours pas fixé son objectif du matin</b>
-      <div style="margin-top:5px; font-size:12.5px; color:var(--muted);">${missingObjectiveAgents.join(', ')}</div>
-    </div>`;
-  }
+ 
 
   // Même convention partout : classé du plus au moins de contrats réalisés CE MOIS-CI, alphabétique si
   // égalité. Équipe ET indépendants dans le MÊME classement (un seul "1er du mois", pas deux vérités
@@ -10358,6 +10408,7 @@ async function renderSupervision(){
   const myToken = ++supervisionRenderToken;
   // N'affiche le "Chargement…" que si la page est vide (premier chargement / changement d'agent) —
   // pas à chaque mise à jour temps réel, pour éviter que l'écran clignote à chaque contrat ajouté.
+  if(myToken !== supervisionRenderToken) return; // une saisie plus récente a déjà démarré, on abandonne celle-ci
   if(!dashboard.innerHTML.trim()){
     dashboard.innerHTML = '<div class="empty">⏳ Chargement du tableau de bord équipe…</div>';
     detail.innerHTML = '';
@@ -10410,7 +10461,10 @@ async function renderSupervision(){
 
     // Statut de pointage du jour
     let statusLabel = 'Indépendant', statusCls = 'independant';
-    if(!isIndep && log){
+    if(!isWorkingDay(dateStr)){
+      statusLabel = 'Repos';
+      statusCls = 'ok';
+    } else if(!isIndep && log){
       const last = lastEventType(log.events);
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(log.justifiedAbsence){
@@ -10455,7 +10509,6 @@ async function renderSupervision(){
     return a.agent.localeCompare(b.agent);
   });
 
-  if(myToken !== supervisionRenderToken) return; // une saisie plus récente a déjà démarré, on abandonne celle-ci
 
   // La prime de supervision ne porte QUE sur les contrats des agents "de base" — jamais sur les contrats
   // d'un superviseur, ni le sien (s'il vend aussi), ni ceux des AUTRES superviseurs (utile quand il y en a
@@ -10555,71 +10608,7 @@ async function renderSupervision(){
     <div style="margin:10px 0 14px;">
       <button type="button" id="objSnapExportBtnSup" onclick="exportBriefingImage('objSnapCardsSup','objSnapExportBtnSup','Bilan de la journée','Obligatoire · WhatsApp','bilan_du_jour_supervision','#e5a83d')" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (bilan du jour)</button>
     </div>`;
-  // Même carré "Total équipe" que dans Admin → 🎯 Objectif choisi & réalisé, pour une présentation
-  // identique partout où visé et réalisé sont comparés.
-  objBlockHtml += renderVisReelSquareCard(totalDayRealizedAll, totalDayObjSet, objRowsWithDayObj.length, indepDayRealized, dateStr, dateStr);
-
-  // Classement (rivalité saine) + commentaire perso adaptatif par agent — identique à ce qui existe dans
-  // Admin → 🎯 Objectif choisi & réalisé, pour que le superviseur ait exactement les mêmes repères que
-  // l'admin sur son équipe. Équipe et indépendants classés séparément (statuts de paie différents).
-  const supDaysElapsed = workingDaysElapsedThrough(dateStr);
-  const supRemainingDays = workingDaysRemainingFrom(dateStr);
-  // Même règle dynamique que dans Admin : classement sur le mois pendant les horaires de travail, puis
-  // sur le total du JOUR une fois la journée terminée (isDayOverForMessage) — cf. commentaire détaillé
-  // dans renderObjSnapSingleDay (Admin → Bilan de la journée), logique strictement identique ici.
-  const supDayIsOver = isDayOverForMessage(dateStr);
-  function buildMonthlyRankingSup(list){
-    const metric = r => supDayIsOver ? r.dayRealized : r.monthReal;
-    const sorted = [...list].sort((a,b)=> metric(b) !== metric(a) ? metric(b) - metric(a) : a.agent.localeCompare(b.agent));
-    const byAgent = {};
-    sorted.forEach((r,i)=>{
-      byAgent[r.agent] = {
-        rank: i+1,
-        total: sorted.length,
-        prevAgent: i>0 ? sorted[i-1].agent : null,
-        prevGap: i>0 ? Math.max(0, metric(sorted[i-1]) - metric(r)) : 0
-      };
-    });
-    return byAgent;
-  }
-  // Équipe ET indépendants dans le même classement (un seul "1er"), comme dans Admin — plus jamais les
-  // indépendants relégués à la fin de la grille : l'ordre d'affichage suit exactement ce classement.
-  const supRankByAgent = buildMonthlyRankingSup(objDisplayRows);
-  const objDisplayRowsSorted = [...objDisplayRows].sort((a,b)=> supRankByAgent[a.agent].rank - supRankByAgent[b.agent].rank);
-
-  objBlockHtml += `<div id="objSnapCardsSup" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px; margin-bottom:8px;">`;
-  objDisplayRowsSorted.forEach(r=>{
-    const hasObj = r.dayObjective > 0;
-    const pct = hasObj ? Math.min(100, Math.round((r.dayRealized/r.dayObjective)*100)) : 0;
-    const hit = hasObj && r.dayRealized >= r.dayObjective;
-    const barColor = hit ? '#4f9d78' : (pct>=50 ? '#b98a42' : '#b5595c');
-    const moMini = r.isIndep ? 0 : (r.monthObj || 0);
-    const moVise = r.desiredObj || 0;
-    const rankInfoSup = supRankByAgent[r.agent];
-    const commentLinesSup = personalDailyComment(r.agent, r.monthReal, moMini, moVise, supDaysElapsed, supRemainingDays, rankInfoSup, supDayIsOver ? { value: r.dayRealized, periodLabel: "aujourd'hui" } : null);
-    const monthlyBlockSup = (moMini>0 || moVise>0 || commentLinesSup) ? `
-      <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.07); font-size:12.5px;">
-        ${moMini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:4px;"><span>Objectif minimum du mois</span><b style="color:${r.monthReal>=moMini?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moMini}</span></b></div>` : ''}
-        ${moVise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${r.monthReal>=moVise?'#4f9d78':'var(--text)'}; font-size:13.5px; font-weight:700;">${r.monthReal}<span style="opacity:0.55;"> / ${moVise}</span></b></div>` : ''}
-        ${commentLinesToHtml(commentLinesSup)}
-      </div>` : '';
-    objBlockHtml += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:15px 16px; border-radius:16px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
-      <div style="display:flex; align-items:center; gap:9px; margin-bottom:9px;">
-        ${agentAvatarHtml(r.agent, 28)}
-        <b style="font-weight:700; font-size:14px; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">${r.agent}</b>
-        ${r.isIndep ? '<span class="tag independant" style="font-weight:700; flex-shrink:0;">Indé</span>' : ''}
-      </div>
-      ${hasObj
-        ? `<div class="arena-prog-bar" style="height:7px; border-radius:4px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:4px;"></div></div>
-           <div style="display:flex; justify-content:space-between; margin-top:7px; font-size:12.5px;">
-             <span style="color:var(--muted);">Visé : <b style="color:var(--text); font-weight:700;">${r.dayObjective}</b></span>
-             <span style="color:${barColor}; font-weight:700;">Réalisé : ${r.dayRealized}</span>
-           </div>`
-        : `<div style="font-size:12px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:12.5px;">Réalisé : <b style="color:var(--text); font-weight:700;">${r.dayRealized}</b></div>`}
-      ${monthlyBlockSup}
-    </div>`;
-  });
-  objBlockHtml += '</div>';
+ objBlockHtml += `<div id="objSnapCardsSup"></div>`;
 
   // ---- 🚨 Pression : conformité aujourd'hui + meilleur/pire agent du mois + tendances ----
   const todayDateStr = todayStr();
@@ -10829,6 +10818,13 @@ async function renderSupervision(){
   }
 
   detail.innerHTML = html;
+
+  // Même rendu que l'Admin pour le Bilan de la journée (carte Total équipe + cartes détaillées) :
+  // on réutilise renderObjSnapSingleDay au lieu de dupliquer le code, pour que les deux vues
+  // restent toujours identiques.
+  const dayRowsForCard = objDisplayRows.filter(r=>!r.isIndep).map(r=>({ agent: r.agent, objective: r.dayObjective, realized: r.dayRealized }));
+  const dayIndepRowsForCard = objDisplayRows.filter(r=>r.isIndep).map(r=>({ agent: r.agent, objective: r.dayObjective, realized: r.dayRealized, isIndep: true }));
+  await renderObjSnapSingleDay(document.getElementById('objSnapCardsSup'), dayRowsForCard, dayIndepRowsForCard, dateStr);
   renderTrendChart('supTrendChartPanel');
   renderMonthComparison('supMonthComparisonPanel');
   renderBestWorstDayPanel('supBestWorstDayPanel');
