@@ -1671,7 +1671,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r80';
+const APP_VERSION = '2026-08-09-r81';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -8666,12 +8666,32 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
         // Règlement interne : au-delà de 10 minutes de retard, « la paye du jour n'est pas due » — mais
         // « les contrats effectués durant la journée sont pris en compte ». Seule la quote-part fixe du
         // jour est donc retenue ici ; la commission sur les contrats signés ce jour-là n'est PAS reprise.
+        // Journée déjà entièrement perdue : pas de retenue pause en plus ce même jour (rien de plus à
+        // retenir sur une quote-part déjà tombée à 0).
         const amt = dailyFixedQuote;
         total += amt;
         items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min (>10) — journée non payée (contrats du jour restent payés)`, amount: Math.round(amt) });
-      } else if(ev.lateMinutes > 0){
-        total += halfHourDeduction;
-        items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min`, amount: Math.round(halfHourDeduction) });
+      } else {
+        if(ev.lateMinutes > 0){
+          total += halfHourDeduction;
+          items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min`, amount: Math.round(halfHourDeduction) });
+        }
+        // DEMANDE ADMIN : le dépassement de pause (pauses fixes du planning — dont le déjeuner — ET pause
+        // libre) ne compte plus dans l'escalade de la prime d'assiduité (cf. monthlyStats), mais reste
+        // retenu sur le salaire, au prorata exact de la minute — même taux que la retenue de retard
+        // (quote-part fixe du jour ÷ minutes de travail). Les pauses du planning utilisent leur durée
+        // prévue à elles (ex: déjeuner 12h-13h = 60 min) ; la pause libre utilise son propre budget
+        // (35 min + bonus contrats gagnés ce jour-là) — les deux se cumulent dans une seule ligne.
+        const scheduledOverMin = ev.breakIssues.reduce((s,b)=> s + (b.over ? Math.max(0, (b.duration||0) - (b.expectedDuration||0)) : 0), 0);
+        const totalBreakOverMin = scheduledOverMin + (ev.freeBreakOverMin || 0);
+        if(totalBreakOverMin > 0){
+          const amt = totalBreakOverMin * minuteRate;
+          total += amt;
+          const detailParts = [];
+          if(scheduledOverMin > 0) detailParts.push(`${scheduledOverMin}min pause(s) planning`);
+          if(ev.freeBreakOverMin > 0) detailParts.push(`${ev.freeBreakOverMin}min pause libre`);
+          items.push({ date: dateStr, label: `Dépassement pause ${totalBreakOverMin}min (${detailParts.join(' + ')}) — retenue au prorata`, amount: Math.round(amt) });
+        }
       }
 
       // Inactivité (déconnexion auto) : purement informatif, AUCUNE déduction de salaire — l'admin voit
