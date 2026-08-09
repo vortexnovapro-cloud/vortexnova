@@ -1704,7 +1704,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r83';
+const APP_VERSION = '2026-08-09-r84';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4114,6 +4114,13 @@ function renderADFBox(){
     return;
   }
 
+  // BUG CORRIGÉ : refreshADFStatus() relit le statut toutes les ~4s (tickMain), et tant qu'aucune session
+  // n'est en cours, on retombe systématiquement ici — ce qui régénérait tout le HTML des menus déroulants
+  // et effaçait le choix de l'agent à peine sélectionné (l'admin devait cliquer "Démarrer" en moins de
+  // 4 secondes). On mémorise maintenant le choix en cours dans les 2 pickers et on le restaure juste après.
+  const prevAdfPick = document.getElementById('adfAgentPicker')?.value || '';
+  const prevEcoutePick = document.getElementById('ecouteAgentPicker')?.value || '';
+
   let html = '<label style="margin-bottom:4px;">🎓 Acte De Formation (ADF) & 🎧 Écoute</label>';
   html += '<div class="section-sub" style="margin-top:-4px;">Démarre une formation ou une écoute pour être protégé de l\'inactivité.</div>';
   html += '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">';
@@ -4144,6 +4151,13 @@ function renderADFBox(){
   html += '</div>';
   box.innerHTML = html;
   box.style.display = 'block';
+
+  // Restaure le choix en cours (voir commentaire "BUG CORRIGÉ" plus haut) — seulement si l'option existe
+  // toujours dans la nouvelle liste (ex: agent retiré de Réglages entre-temps, cas rare).
+  const adfSel = document.getElementById('adfAgentPicker');
+  if(adfSel && prevAdfPick && [...adfSel.options].some(o=>o.value===prevAdfPick)) adfSel.value = prevAdfPick;
+  const ecouteSel = document.getElementById('ecouteAgentPicker');
+  if(ecouteSel && prevEcoutePick && [...ecouteSel.options].some(o=>o.value===prevEcoutePick)) ecouteSel.value = prevEcoutePick;
 }
 
 async function startADF(){
@@ -8944,11 +8958,11 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
 
   // 5 paliers du règlement, espacés régulièrement sur la frise (0/1/3/5/6 → positions 0/25/50/75/100%).
   const dots = [
-    { n: 0, pct: 0,   lbl: '0' },
-    { n: 1, pct: 25,  lbl: '1er retard' },
-    { n: 3, pct: 50,  lbl: '3e retard' },
-    { n: 5, pct: 75,  lbl: '5e retard' },
-    { n: 6, pct: 100, lbl: '6e retard' }
+    { n: 0, pct: 0,   lbl: 'Aucun' },
+    { n: 1, pct: 25,  lbl: '1er retard/absence' },
+    { n: 3, pct: 50,  lbl: '3e retard/absence' },
+    { n: 5, pct: 75,  lbl: '5e retard/absence' },
+    { n: 6, pct: 100, lbl: '6e retard/absence' }
   ];
   const currentIdx = dots.findIndex(d=> d.n === tier.level);
   // BUG CORRIGÉ : la barre sautait directement au palier atteint (ex: 25% dès le 1er retard) sans jamais
