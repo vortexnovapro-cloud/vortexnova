@@ -1092,8 +1092,8 @@ function tryDeviceGateAdmin(){
           <div class="section-sub">Au rythme actuel de chacun, qui va atteindre son mini obligatoire et qui non — vert = en bonne voie, rouge = à risque.</div>
           <div id="projectionPanel"></div>
 
-          <div class="section-title">🎓 ADF oubliés en cours</div>
-          <div class="section-sub">Une session ADF démarrée depuis plus de 2h sans être refermée.</div>
+          <div class="section-title">🎓 ADF/écoutes oubliés en cours</div>
+          <div class="section-sub">Une session ADF ou écoute démarrée depuis plus longtemps que le délai réglé (Réglages → délai d'alerte "oublié", 2h par défaut) sans être refermée.</div>
           <div id="adfStuckPanel"></div>
 
           <div class="section-title">🔁 Récidivistes infractions</div>
@@ -1127,7 +1127,7 @@ function tryDeviceGateAdmin(){
 
           <div class="kpi-row" id="kpiRow"></div>
 
-          <div class="section-title">Agents classés du plus au moins conforme</div>
+          <div class="section-title">Agents classés du moins au plus conforme</div>
           <div class="section-sub">Cumul du mois : retards (règlement : dès 1 minute), pauses dépassées, usage téléphone/YouTube, objectifs non atteints. Clique une ligne pour ouvrir le détail du dernier jour signalé.</div>
           <div id="overviewContainer"></div>
 
@@ -1288,6 +1288,11 @@ function tryDeviceGateAdmin(){
             <button onclick="adminAdjustRetraction(1)" style="padding:9px 16px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:700;cursor:pointer;font-size:13px;">🔻 +1 contrat rétracté</button>
             <button onclick="adminAdjustRetraction(-1)" style="padding:9px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-weight:700;cursor:pointer;font-size:13px;">↩️ -1 (annuler)</button>
             <span id="retractAdminCount" style="font-size:12.5px;color:var(--muted);"></span>
+          </div>
+          <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-top:10px; border-top:1px solid var(--border);">
+            <label style="margin:0; font-size:12.5px; color:var(--muted);" for="retractAdminExact">Ou fixer directement le nombre exact :</label>
+            <input type="number" id="retractAdminExact" min="0" step="1" placeholder="0" style="max-width:90px;">
+            <button onclick="setExactRetraction()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:white;font-weight:700;cursor:pointer;font-size:13px;">✅ Valider</button>
           </div>
         </div>
 
@@ -1598,11 +1603,31 @@ function tryDeviceGateAdmin(){
             <div class="section-sub" style="margin-top:6px;">En dehors du déjeuner, chaque agent a ce total de minutes à prendre quand il veut dans sa journée, en une ou plusieurs fois (avec un décompte en direct). Aucun horaire fixe pour cette pause-là.</div>
           </div>
 
-          <div style="margin-top:22px;">
-            <label style="margin-bottom:6px;">🎓 ADF — délai de retour au poste (minutes)</label>
-            <input type="number" id="cfgAdfGraceMinutes" min="1" step="1" style="max-width:140px;">
-            <div class="section-sub" style="margin-top:6px;">Une fois l'ADF terminé côté agent formé, le superviseur a ce délai pour revenir sur son propre poste et confirmer — sans quoi le suivi d'inactivité normal reprend automatiquement.</div>
+          <label style="margin:22px 0 10px;">🎓 ADF — réglages de durée</label>
+          <div class="settings-grid" style="margin-bottom:6px;">
+            <div>
+              <label style="margin-bottom:6px;">Délai de retour au poste (minutes)</label>
+              <input type="number" id="cfgAdfGraceMinutes" min="1" step="1" style="max-width:140px;">
+            </div>
+            <div>
+              <label style="margin-bottom:6px;">Alerte "oublié" après (heures)</label>
+              <input type="number" id="cfgAdfStuckHours" min="0.5" step="0.5" style="max-width:140px;">
+            </div>
           </div>
+          <div class="section-sub" style="margin-top:2px; margin-bottom:18px;">Délai de retour : une fois l'ADF terminé côté agent formé, le formateur a ce temps pour revenir sur son propre poste et confirmer, sans quoi le suivi d'inactivité normal reprend automatiquement. Alerte "oublié" : au-delà de ce temps sans être refermée, la session apparaît dans Vue d'ensemble → 🎓 ADF/écoutes oubliés.</div>
+
+          <label style="margin:10px 0 10px;">🎧 Écoute — réglages de durée</label>
+          <div class="settings-grid" style="margin-bottom:6px;">
+            <div>
+              <label style="margin-bottom:6px;">Délai de retour au poste (minutes)</label>
+              <input type="number" id="cfgEcouteGraceMinutes" min="1" step="1" style="max-width:140px;">
+            </div>
+            <div>
+              <label style="margin-bottom:6px;">Alerte "oubliée" après (heures)</label>
+              <input type="number" id="cfgEcouteStuckHours" min="0.5" step="0.5" style="max-width:140px;">
+            </div>
+          </div>
+          <div class="section-sub" style="margin-top:2px;">Mêmes réglages que l'ADF ci-dessus, mais réglables séparément pour l'écoute — les deux durées n'ont pas forcément besoin d'être identiques.</div>
 
           <label style="margin:22px 0 10px;">Vendredi — pause déjeuner spéciale</label>
           <div class="settings-grid" style="margin-bottom:6px;">
@@ -1679,7 +1704,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r82';
+const APP_VERSION = '2026-08-09-r83';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -1955,6 +1980,10 @@ async function triggerInactivityLockout(){
 }
 
 function isWithinScheduledHours(){
+  // BUG CORRIGÉ : ne vérifiait que l'heure, jamais si le jour lui-même est ouvré — un agent connecté un
+  // week-end ou un jour férié français (ex: pour consulter ses stats) pouvait donc se faire compter
+  // inactif/déloger comme si c'était un jour normal de travail.
+  if(!isWorkingDay(todayStr())) return false;
   const sched = scheduleForDate(todayStr());
   const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
   return nowMin >= toMinutes(sched.start) && nowMin <= toMinutes(sched.end);
@@ -2415,6 +2444,9 @@ async function loadConfig(){
   renderBreaksEditor();
   document.getElementById('cfgFreeBreakMinutes').value = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
   document.getElementById('cfgAdfGraceMinutes').value = config.adfGraceMinutes != null ? config.adfGraceMinutes : 2;
+  document.getElementById('cfgAdfStuckHours').value = config.adfStuckHours != null ? config.adfStuckHours : 2;
+  document.getElementById('cfgEcouteGraceMinutes').value = config.ecouteGraceMinutes != null ? config.ecouteGraceMinutes : 2;
+  document.getElementById('cfgEcouteStuckHours').value = config.ecouteStuckHours != null ? config.ecouteStuckHours : 2;
   document.getElementById('cfgBossCommission').value = config.bossCommissionPerContract != null ? config.bossCommissionPerContract : 0;
   document.getElementById('cfgBossReturnRate').value = config.bossReturnRatePct != null ? config.bossReturnRatePct : 0;
   document.getElementById('cfgBossBonusPct').value = config.bossBonusPct != null ? config.bossBonusPct : 0;
@@ -2511,6 +2543,34 @@ async function renderRetractAdminCount(){
   countEl.textContent = count>0
     ? `${count} rétracté${count>1?'s':''} ce mois — ${net + count} signés → ${net} nets`
     : `Aucune rétraction ce mois — ${net} contrat${net>1?'s':''}`;
+  // Pré-remplit le champ "nombre exact" avec la valeur actuelle, pour que l'admin voie d'où il part
+  // avant d'écraser — jamais si le champ est déjà en cours de saisie (focus), pour ne pas lui couper
+  // la main pendant qu'il tape.
+  const exactEl = document.getElementById('retractAdminExact');
+  if(exactEl && document.activeElement !== exactEl) exactEl.value = count;
+}
+async function setExactRetraction(){
+  const agent = document.getElementById('retractAdminAgent')?.value;
+  const monthVal = document.getElementById('retractAdminMonth')?.value || todayStr().slice(0,7);
+  if(!agent){ alert('Ajoute au moins un agent dans Réglages.'); return; }
+  const exactEl = document.getElementById('retractAdminExact');
+  const nextCount = Math.max(0, parseInt(exactEl?.value) || 0);
+  const [year, month] = monthVal.split('-').map(Number);
+  const beforeNet = await monthlyRealizedContracts(agent, year, month);
+  const current = await getMonthlyRetractCount(agent, year, month);
+  const grossSigned = beforeNet + current; // contrats bruts signés, indépendant du compteur de rétractions actuel
+  if(nextCount > grossSigned){
+    alert(`Impossible : ${agent} n'a signé que ${grossSigned} contrat(s) bruts ce mois-ci, on ne peut pas en rétracter ${nextCount}.`);
+    return;
+  }
+  await saveMonthlyRetractCount(agent, year, month, nextCount);
+  logAudit('Admin', `Rétraction fixée à ${nextCount} — ${agent} (${monthVal})`, `avant: ${current}`);
+  await renderRetractAdminCount();
+  renderAllMonthly();
+  renderMonthlyObjectif();
+  if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
+  if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
+  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
 }
 async function adminAdjustRetraction(delta){
   const agent = document.getElementById('retractAdminAgent')?.value;
@@ -2990,6 +3050,12 @@ async function saveConfig(){
   if(isNaN(config.freeBreakMinutes) || config.freeBreakMinutes < 0) config.freeBreakMinutes = 35;
   config.adfGraceMinutes = parseInt(document.getElementById('cfgAdfGraceMinutes').value);
   if(isNaN(config.adfGraceMinutes) || config.adfGraceMinutes < 1) config.adfGraceMinutes = 2;
+  config.adfStuckHours = parseFloat(document.getElementById('cfgAdfStuckHours').value);
+  if(isNaN(config.adfStuckHours) || config.adfStuckHours < 0.5) config.adfStuckHours = 2;
+  config.ecouteGraceMinutes = parseInt(document.getElementById('cfgEcouteGraceMinutes').value);
+  if(isNaN(config.ecouteGraceMinutes) || config.ecouteGraceMinutes < 1) config.ecouteGraceMinutes = 2;
+  config.ecouteStuckHours = parseFloat(document.getElementById('cfgEcouteStuckHours').value);
+  if(isNaN(config.ecouteStuckHours) || config.ecouteStuckHours < 0.5) config.ecouteStuckHours = 2;
   config.bossCommissionPerContract = parseFloat(document.getElementById('cfgBossCommission').value);
   if(isNaN(config.bossCommissionPerContract) || config.bossCommissionPerContract < 0) config.bossCommissionPerContract = 0;
   config.bossReturnRatePct = parseFloat(document.getElementById('cfgBossReturnRate').value);
@@ -3968,20 +4034,26 @@ async function supervisorIneligibilityReasonToday(agent){
 async function refreshADFStatus(){
   if(!currentAgent){ myADFStatus = null; renderADFBox(); return; }
 
-  if(isADFTrainer(currentAgent)){
-    const record = await getADFRecord(currentAgent);
-    myADFStatus = (record && record.status !== 'done' && record.status !== 'cancelled')
-      ? { role: 'supervisor', supervisor: currentAgent, agent: record.agent, record }
-      : null;
-  } else {
-    myADFStatus = null;
-  }
+  // BUG CORRIGÉ : cette lecture était bloquée derrière isADFTrainer(currentAgent), ce qui marchait pour
+  // l'ADF (seuls les formateurs initient) mais cassait complètement l'écoute — n'importe qui peut
+  // démarrer une écoute (voir renderADFBox/startEcoute), donc un agent non-formateur qui venait de
+  // cliquer "Démarrer l'écoute" ne revoyait JAMAIS son propre statut juste après (myADFStatus retombait
+  // à null ici). Un enregistrement adf:X n'existe que si X l'a lui-même créé via startADF/startEcoute,
+  // donc le lire sans condition ne pose aucun risque.
+  const myRecord = await getADFRecord(currentAgent);
+  myADFStatus = (myRecord && myRecord.status !== 'done' && myRecord.status !== 'cancelled')
+    ? { role: 'supervisor', supervisor: currentAgent, agent: myRecord.agent, record: myRecord }
+    : null;
+
   if(!myADFStatus){
-    for(const sup of listADFTrainers()){
-      if(sup === currentAgent) continue;
-      const record = await getADFRecord(sup);
+    // Même correction côté cible : on cherchait uniquement parmi les formateurs ADF (listADFTrainers()),
+    // ce qui ratait toute écoute initiée par un agent non-formateur — l'agent visé ne voyait jamais la
+    // demande arriver. On scanne maintenant tout le monde.
+    for(const initiator of config.agents){
+      if(initiator === currentAgent) continue;
+      const record = await getADFRecord(initiator);
       if(record && record.agent === currentAgent && (record.status === 'pending' || record.status === 'confirmed')){
-        myADFStatus = { role: 'agent', supervisor: sup, agent: currentAgent, record };
+        myADFStatus = { role: 'agent', supervisor: initiator, agent: currentAgent, record };
         break;
       }
     }
@@ -4134,13 +4206,23 @@ async function confirmReturnADF(){
 
 // Vrai si l'inactivité doit être mise en pause pour l'agent actuellement connecté, à cause d'un ADF
 // en cours (superviseur pending/confirmed, ou dans son délai de grâce finishing ; agent formé confirmed).
+// Délai de retour au poste — réglable séparément pour ADF et écoute (config.adfGraceMinutes /
+// config.ecouteGraceMinutes), pour ne pas forcer la même durée aux deux.
+function adfGraceMsFor(record){
+  const isEcoute = record && record.type === 'ecoute';
+  const minutes = isEcoute
+    ? (config.ecouteGraceMinutes != null ? config.ecouteGraceMinutes : 2)
+    : (config.adfGraceMinutes != null ? config.adfGraceMinutes : 2);
+  return minutes * 60 * 1000;
+}
+
 function isProtectedByADF(){
   if(!myADFStatus) return false;
   if(myADFStatus.role === 'supervisor'){
     const status = myADFStatus.record.status;
     if(status === 'pending' || status === 'confirmed') return true;
     if(status === 'finishing'){
-      const graceMs = (config.adfGraceMinutes != null ? config.adfGraceMinutes : 2) * 60 * 1000;
+      const graceMs = adfGraceMsFor(myADFStatus.record);
       const endedAt = new Date(myADFStatus.record.endedOnAgentAt).getTime();
       return (Date.now() - endedAt) < graceMs;
     }
@@ -4154,7 +4236,7 @@ function tickADFTimer(){
   if(myADFStatus && myADFStatus.role === 'supervisor' && myADFStatus.record.status === 'finishing'){
     const el = document.getElementById('adfReturnTimer');
     if(!el) return;
-    const graceMs = (config.adfGraceMinutes != null ? config.adfGraceMinutes : 2) * 60 * 1000;
+    const graceMs = adfGraceMsFor(myADFStatus.record);
     const endedAt = new Date(myADFStatus.record.endedOnAgentAt).getTime();
     const remaining = graceMs - (Date.now() - endedAt);
     if(remaining <= 0){
@@ -5927,6 +6009,10 @@ async function renderPauseTotalsToday(){
   }
   const dateStr = todayStr();
   const freeBudget = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
+  // Jour non ouvré (week-end ou jour férié français) : personne n'est censé pointer, donc le statut "en
+  // direct" ne doit jamais laisser penser à une absence/un retard — cf. isWorkingDay().
+  const workingToday = isWorkingDay(dateStr);
+  const isWeekendToday = [0,6].includes(new Date(dateStr + 'T00:00:00').getDay());
 
   const rows = await Promise.all(nonIndep.map(async agent=>{
     const log = await getDayLog(agent, dateStr);
@@ -5948,6 +6034,9 @@ async function renderPauseTotalsToday(){
     let workState = 'working'; // 'working' | 'not_started' | 'left'
     if(lastType === null) workState = 'not_started';
     else if(lastType === 'out') workState = 'left';
+    // Retard/absence — seulement pertinents un jour ouvré, sinon jamais évalués (même règle que
+    // monthlyStats/buildTodayProblemRow : ni retard ni absence un jour non travaillé).
+    const ev = (workingToday && log.events.length > 0) ? evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0) : null;
     return {
       agent,
       lunchMin: Math.round(lunchSec/60),
@@ -5956,7 +6045,9 @@ async function renderPauseTotalsToday(){
       freeBonus: bonusInfo.totalBonus,
       earnedBonus: bonusInfo.earnedBonus,
       liveStatus,
-      workState
+      workState,
+      justifiedAbsence: log.justifiedAbsence || null,
+      lateMinutes: ev ? ev.lateMinutes : 0
     };
   }));
 
@@ -5975,10 +6066,20 @@ async function renderPauseTotalsToday(){
     totalLunch += r.lunchMin; totalFree += r.freeMin;
     const freeOver = r.freeMin > r.freeBudget;
     let liveHtml;
-    if(r.workState === 'not_started') liveHtml = '<span style="color:var(--muted);">Pas encore arrivé(e)</span>';
-    else if(r.workState === 'left') liveHtml = '<span class="tag ok">Journée terminée</span>';
-    else liveHtml = '<span style="color:var(--green,#4f9d78); font-weight:600;">🟢 Au travail</span>';
-    if(r.liveStatus){
+    if(!workingToday){
+      liveHtml = isWeekendToday ? '<span style="color:var(--muted);">🌴 Week-end</span>' : '<span style="color:var(--muted);">🎌 Jour férié</span>';
+    } else if(r.justifiedAbsence){
+      liveHtml = `<span class="tag late">${justifiedAbsenceLabel(r.justifiedAbsence, true)}</span>`;
+    } else if(r.workState === 'not_started'){
+      liveHtml = isDayOverForMessage(dateStr) ? '<span class="tag late">🚫 Absent</span>' : '<span style="color:var(--muted);">Pas encore arrivé(e)</span>';
+    } else if(r.workState === 'left'){
+      liveHtml = '<span class="tag ok">Journée terminée</span>';
+    } else if(r.lateMinutes > 0){
+      liveHtml = `<span class="tag warn">⏰ En retard ${r.lateMinutes}min</span>`;
+    } else {
+      liveHtml = '<span style="color:var(--green,#4f9d78); font-weight:600;">🟢 Au travail</span>';
+    }
+    if(workingToday && r.liveStatus){
       const elapsedMin = Math.max(0, nowMinNow - toMinutes(r.liveStatus.since.slice(0,5)));
       liveHtml = r.liveStatus.type === 'lunch'
         ? `<span class="tag warn" style="animation: pulseWarn 1.6s infinite;">🍽️ En pause déjeuner — ${elapsedMin}min</span>`
@@ -6957,18 +7058,25 @@ async function renderProjectionPanel(){
 async function renderAdfStuckPanel(){
   const el = document.getElementById('adfStuckPanel');
   if(!el) return;
-  const supervisors = listSupervisors();
-  if(supervisors.length===0){ el.innerHTML = '<div class="empty">Aucun superviseur configuré.</div>'; return; }
-  const records = await Promise.all(supervisors.map(async sup=> ({ sup, record: await getADFRecord(sup) })));
+  // Un enregistrement ADF/écoute peut être initié par N'IMPORTE QUEL agent (l'écoute n'est pas réservée
+  // aux formateurs ADF, cf. refreshADFStatus) — on doit donc scanner TOUS les agents ici, pas seulement
+  // les superviseurs, sinon une écoute oubliée par un non-formateur/non-superviseur passerait inaperçue.
+  const initiators = config.agents.filter(a=>!isIndependant(a));
+  if(initiators.length===0){ el.innerHTML = '<div class="empty">Aucun agent configuré.</div>'; return; }
+  const records = await Promise.all(initiators.map(async sup=> ({ sup, record: await getADFRecord(sup) })));
   const stuck = [];
   const now = Date.now();
-  const THRESHOLD_MS = 2*60*60*1000;
   records.forEach(({sup, record})=>{
     if(!record || !['pending','confirmed','finishing'].includes(record.status)) return;
     const startedAt = new Date(record.startedAt).getTime();
     if(isNaN(startedAt)) return;
-    if(now - startedAt > THRESHOLD_MS){
-      const typeLabel = record.type === 'ecoute' ? '🎧 Écoute' : '🎓 ADF';
+    const isEcoute = record.type === 'ecoute';
+    // Seuil réglable séparément pour ADF et écoute (config.adfStuckHours / config.ecouteStuckHours).
+    const thresholdMs = (isEcoute
+      ? (config.ecouteStuckHours != null ? config.ecouteStuckHours : 2)
+      : (config.adfStuckHours != null ? config.adfStuckHours : 2)) * 60 * 60 * 1000;
+    if(now - startedAt > thresholdMs){
+      const typeLabel = isEcoute ? '🎧 Écoute' : '🎓 ADF';
       stuck.push({ sup, agent: record.agent, status: record.status, elapsedMin: Math.round((now-startedAt)/60000), typeLabel });
     }
   });
@@ -8843,7 +8951,21 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
     { n: 6, pct: 100, lbl: '6e retard' }
   ];
   const currentIdx = dots.findIndex(d=> d.n === tier.level);
-  const fillPct = currentIdx >= 0 ? dots[currentIdx].pct : 0;
+  // BUG CORRIGÉ : la barre sautait directement au palier atteint (ex: 25% dès le 1er retard) sans jamais
+  // avancer entre deux paliers, donc un agent à 2 retards/absences (à mi-chemin du 3e) semblait au même
+  // point qu'un agent à 1 seul retard — on dirait "1/3" alors que c'est "2/3". On interpole maintenant
+  // linéairement entre les 2 paliers qui encadrent le compte réel, les paliers restant les mêmes repères
+  // fixes (0/25/50/75/100%) sur la frise.
+  let fillPct = 0;
+  for(let i=0; i<dots.length-1; i++){
+    const a = dots[i], b = dots[i+1];
+    if(count >= a.n && count <= b.n){
+      const frac = (b.n - a.n) > 0 ? (count - a.n) / (b.n - a.n) : 0;
+      fillPct = a.pct + frac * (b.pct - a.pct);
+      break;
+    }
+    if(count > dots[dots.length-1].n) fillPct = 100;
+  }
   const dotsHtml = dots.map(d=>{
     let cls;
     if(d.n < tier.level) cls = 'raa-dot done' + (d.n>=5 ? ' danger' : '');
@@ -10080,7 +10202,7 @@ async function refreshTickerPool(now){
 // Ré-échantillonne le pool déjà calculé (aucune lecture Firestore, quasi gratuit) et met à jour tous les
 // bandeaux présents dans le DOM (Cash + Arena) en une fois.
 function renderTickerText(){
-  const { dynamicLines, staticPool } = tickerPoolCache;
+  const { dynamicLines, staticPool } = tickerPoolCache
   const dynamicPicks = pickRandomSample(dynamicLines, Math.min(2, dynamicLines.length));
   const staticPicks = pickRandomSample(staticPool, 3);
   const text = [...dynamicPicks, ...staticPicks].join('     •     ');
