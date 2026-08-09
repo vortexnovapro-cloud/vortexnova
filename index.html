@@ -402,14 +402,27 @@
     opacity:0.08; letter-spacing:30px; white-space:nowrap; pointer-events:none;
   }
   .cash-ticker{
-    overflow:hidden; white-space:nowrap; background:#0a0f14; border:1px solid rgba(255,215,0,0.25);
-    border-radius:8px; padding:8px 0; margin-bottom:18px;
+    overflow:hidden; white-space:nowrap; background:#0a0f14; border:1px solid rgba(255,215,0,0.35);
+    border-radius:12px; padding:13px 0; margin-bottom:18px; box-shadow:0 2px 14px rgba(255,215,0,0.08);
   }
   .cash-ticker span{
-    display:inline-block; padding-left:100%; animation: tickerScroll 22s linear infinite;
-    font-size:12.5px; font-weight:700; color:#ffd700; letter-spacing:0.3px;
+    display:inline-block; padding-left:100%; animation: tickerScroll 34s linear infinite;
+    font-size:14.5px; font-weight:800; color:#ffd700; letter-spacing:0.3px;
   }
   @keyframes tickerScroll{ 0%{ transform:translateX(0);} 100%{ transform:translateX(-100%);} }
+  .arena-scope-btn{
+    background: var(--panel2); border: 1.5px solid var(--border); color: var(--muted);
+    padding: 12px 24px; border-radius: 26px; cursor:pointer; font-size: 15px; font-weight: 800;
+    letter-spacing:0.2px; transition: all 0.15s ease;
+  }
+  .arena-scope-btn.arena-scope-day.active{
+    background: linear-gradient(135deg, #f0a84e, var(--amber)); color:#241704; border-color: transparent;
+    box-shadow: 0 3px 14px rgba(229,168,61,0.4);
+  }
+  .arena-scope-btn.arena-scope-month.active{
+    background: linear-gradient(135deg, #ffe066, var(--gold)); color:#241c00; border-color: transparent;
+    box-shadow: 0 3px 14px rgba(255,215,0,0.35);
+  }
   .cash-period-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:16px; margin-bottom: 24px; }
   .cash-period-card{
     background: var(--panel2); border: 1px solid var(--border); border-radius: 14px; padding: 20px;
@@ -640,9 +653,12 @@ function tryDeviceGateAdmin(){
         <button class="action-btn" id="btnOut" onclick="logEvent('out')">Départ (fin de journée)</button>
       </div>
 
-      <div class="settings-box" id="freeBreakBox" style="margin-top:18px; text-align:center;">
-        <label style="margin-bottom:4px;">☕ Pause libre</label>
-        <div class="section-sub" style="margin-top:-4px;">À prendre quand tu veux dans la journée, en une ou plusieurs fois.</div>
+      <div class="settings-box" id="freeBreakBox" style="margin-top:18px; text-align:center; border-color:rgba(255,215,0,0.3);">
+        <div style="display:inline-flex; align-items:center; gap:8px; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.4); border-radius:22px; padding:8px 18px; margin-bottom:8px;">
+          <span style="font-size:19px; line-height:1;">☕</span>
+          <span style="font-size:14.5px; font-weight:800; color:var(--gold); letter-spacing:0.2px;">Pause libre</span>
+        </div>
+        <div class="section-sub" style="margin-top:0;">À prendre quand tu veux dans la journée, en une ou plusieurs fois.</div>
         <div style="font-size:12px; color:var(--gold); margin-top:6px; font-weight:600;">🎁 5 contrats aujourd'hui = +5 min de pause offertes. Chaque contrat en plus au-delà, c'est encore +5 min. À toi de jouer !</div>
         <div id="freeBreakBonusBanner" style="margin:10px 0; display:none;"></div>
         <div id="freeBreakTimer" style="font-size:34px; font-weight:900; margin:12px 0 6px; font-variant-numeric:tabular-nums;">--:--</div>
@@ -680,13 +696,15 @@ function tryDeviceGateAdmin(){
       </select>
 
       <div id="arenaContent" style="display:none; margin-top:22px;">
+        <div class="cash-ticker"><span id="arenaTickerText">🔥 Chargement...</span></div>
+
         <div style="text-align:center; margin-bottom:18px;">
           <span class="arena-live-dot"></span>
           <span style="font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Classement en direct</span>
           <span id="arenaDateLabel" style="display:block; font-size:13px; color:var(--muted); margin-top:4px;"></span>
           <div style="display:flex; gap:8px; justify-content:center; margin-top:14px;">
-            <button class="admin-tab-btn active" id="arenaScopeDayBtn" onclick="setArenaScope('day')">🔥 Aujourd'hui</button>
-            <button class="admin-tab-btn" id="arenaScopeMonthBtn" onclick="setArenaScope('month')">🎯 Ce mois (primes)</button>
+            <button class="arena-scope-btn arena-scope-day active" id="arenaScopeDayBtn" onclick="setArenaScope('day')">🔥 Objectif du jour</button>
+            <button class="arena-scope-btn arena-scope-month" id="arenaScopeMonthBtn" onclick="setArenaScope('month')">🎯 Objectif du mois</button>
           </div>
         </div>
 
@@ -1651,7 +1669,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r76';
+const APP_VERSION = '2026-08-09-r78';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9394,16 +9412,21 @@ async function renderArena(){
   prodBoardCache[dateStr] = board;
   const now = nowMA();
 
+  // Ticker — même bandeau partagé que Cash (voir refreshTickerPool()/renderTickerText()), toujours basé
+  // sur le classement du MOIS quel que soit le scope jour/mois affiché juste en dessous.
+  refreshTickerPool(now).then(renderTickerText);
+  ensureTickerResampleLoop();
+
   let rankings, dateLabelText, unitLabel, isMonthScope = (arenaScope === 'month');
 
   if(!isMonthScope){
     const dObj = new Date(dateStr + 'T00:00:00');
-    dateLabelText = dObj.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    dateLabelText = "Ton objectif du jour et le classement d'aujourd'hui — " + dObj.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
     rankings = buildRankings(board);
     unitLabel = "contrats signés aujourd'hui";
   } else {
     const d = new Date(now.getFullYear(), now.getMonth(), 1);
-    dateLabelText = 'Objectif du mois — ' + d.toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
+    dateLabelText = 'Ton objectif du mois et le classement mensuel — ' + d.toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
     const rows = await Promise.all(config.agents.map(async agent=>{
       const [st, desiredObjective] = await Promise.all([
         monthlyObjectifStatus(agent, now.getFullYear(), now.getMonth()+1),
@@ -9908,6 +9931,80 @@ async function supervisorMonthlyBonus(year, month){
   return { dh, contracts };
 }
 
+// Bandeau défilant "ticker" — partagé entre Cash et Objectifs (Arena), pour ne calculer/afficher
+// qu'une seule fois les mêmes annonces (podium, dernier, ex-aequo + pool de phrases éditable) aux deux
+// endroits. Le calcul complet (lectures Firestore : classement du mois) est coûteux, donc fait une seule
+// fois par cycle de rafraîchissement des données ; le RÉ-ÉCHANTILLONNAGE (quelles phrases apparaissent
+// cette fois-ci) est gratuit et tourne sur son propre intervalle, plus rapide, pour que le texte affiché
+// varie plus souvent que le rythme de rafraîchissement des données — avant, il restait figé jusqu'au
+// prochain rendu complet de la page.
+let tickerPoolCache = { dynamicLines: [], staticPool: [] };
+
+async function refreshTickerPool(now){
+  const allRankings = await Promise.all(config.agents.map(a=> monthlyObjectifStatus(a, now.getFullYear(), now.getMonth()+1)));
+  allRankings.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
+  const nAg = allRankings.length;
+  const leaderAgent = allRankings[0];
+  const secondAgent = allRankings[1];
+  const thirdAgent = allRankings[2];
+  const lastAgent = allRankings[nAg-1];
+  const penultAgent = allRankings[nAg-2];
+
+  // Détection des ex-aequo (même nombre de contrats, hors zéro).
+  const tieGroups = {};
+  allRankings.forEach(r=>{
+    if(r.realized <= 0) return;
+    if(!tieGroups[r.realized]) tieGroups[r.realized] = [];
+    tieGroups[r.realized].push(r.agent);
+  });
+
+  const dynamicLines = [];
+  if(leaderAgent && leaderAgent.realized > 0){
+    dynamicLines.push(`🔥 ${leaderAgent.agent} mène le mois avec ${leaderAgent.realized} contrat${leaderAgent.realized>1?'s':''} !`);
+  }
+  if(secondAgent && secondAgent.realized > 0 && nAg > 1){
+    dynamicLines.push(`🥈 ${secondAgent.agent} tient la 2e place avec ${secondAgent.realized} contrat${secondAgent.realized>1?'s':''} — pas loin du sommet.`);
+  }
+  if(thirdAgent && thirdAgent.realized > 0 && nAg > 2){
+    dynamicLines.push(`🥉 ${thirdAgent.agent} complète le podium avec ${thirdAgent.realized} contrat${thirdAgent.realized>1?'s':''}.`);
+  }
+  if(nAg > 3 && penultAgent){
+    dynamicLines.push(`😅 ${penultAgent.agent} évite la dernière place de justesse avec ${penultAgent.realized} contrat${penultAgent.realized>1?'s':''}.`);
+  }
+  if(lastAgent && nAg > 2){
+    dynamicLines.push(`🐢 ${lastAgent.agent} ferme la marche avec ${lastAgent.realized} contrat${lastAgent.realized>1?'s':''} — il est temps de réagir !`);
+  }
+  Object.values(tieGroups).forEach(names=>{
+    if(names.length > 1) dynamicLines.push(`⚖️ Ex-aequo : ${names.join(' & ')} — le prochain contrat départage tout !`);
+  });
+
+  // On mélange 1-2 annonces dynamiques (basées sur les vrais chiffres du jour) avec des phrases piochées
+  // dans le pool éditable ; {first} et {last} y sont remplacés par le nom du leader / du dernier du mois.
+  const staticPool = getArenaMsgs('ticker').map(l =>
+    l.replace(/\{first\}/g, leaderAgent ? leaderAgent.agent : '—').replace(/\{last\}/g, lastAgent ? lastAgent.agent : '—')
+  );
+  tickerPoolCache = { dynamicLines, staticPool };
+}
+
+// Ré-échantillonne le pool déjà calculé (aucune lecture Firestore, quasi gratuit) et met à jour tous les
+// bandeaux présents dans le DOM (Cash + Arena) en une fois.
+function renderTickerText(){
+  const { dynamicLines, staticPool } = tickerPoolCache;
+  const dynamicPicks = pickRandomSample(dynamicLines, Math.min(2, dynamicLines.length));
+  const staticPicks = pickRandomSample(staticPool, 3);
+  const text = [...dynamicPicks, ...staticPicks].join('     •     ');
+  const cashEl = document.getElementById('cashTickerText');
+  const arenaEl = document.getElementById('arenaTickerText');
+  if(cashEl) cashEl.textContent = text;
+  if(arenaEl) arenaEl.textContent = text;
+}
+
+let tickerResampleInterval = null;
+function ensureTickerResampleLoop(){
+  if(tickerResampleInterval) return;
+  tickerResampleInterval = setInterval(renderTickerText, 15000);
+}
+
 async function renderCash(){
   if(!currentCashAgent) return;
   const agent = currentCashAgent;
@@ -10002,53 +10099,10 @@ async function renderCash(){
   renderCashObjectifsRecap();
   renderRetardsAbsencesPanel('cashRetardsAbsencesPanel', agent, now.getFullYear(), now.getMonth()+1);
 
-  // Ticker — classement par CONTRATS (production), pour les annonces dynamiques 1er/2e/3e/avant-dernier/ex-aequo.
-  const allRankings = await Promise.all(config.agents.map(a=> monthlyObjectifStatus(a, now.getFullYear(), now.getMonth()+1)));
-  allRankings.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
-  const nAg = allRankings.length;
-  const leaderAgent = allRankings[0];
-  const secondAgent = allRankings[1];
-  const thirdAgent = allRankings[2];
-  const lastAgent = allRankings[nAg-1];
-  const penultAgent = allRankings[nAg-2];
-
-  // Détection des ex-aequo (même nombre de contrats, hors zéro).
-  const tieGroups = {};
-  allRankings.forEach(r=>{
-    if(r.realized <= 0) return;
-    if(!tieGroups[r.realized]) tieGroups[r.realized] = [];
-    tieGroups[r.realized].push(r.agent);
-  });
-
-  const dynamicLines = [];
-  if(leaderAgent && leaderAgent.realized > 0){
-    dynamicLines.push(`🔥 ${leaderAgent.agent} mène le mois avec ${leaderAgent.realized} contrat${leaderAgent.realized>1?'s':''} !`);
-  }
-  if(secondAgent && secondAgent.realized > 0 && nAg > 1){
-    dynamicLines.push(`🥈 ${secondAgent.agent} tient la 2e place avec ${secondAgent.realized} contrat${secondAgent.realized>1?'s':''} — pas loin du sommet.`);
-  }
-  if(thirdAgent && thirdAgent.realized > 0 && nAg > 2){
-    dynamicLines.push(`🥉 ${thirdAgent.agent} complète le podium avec ${thirdAgent.realized} contrat${thirdAgent.realized>1?'s':''}.`);
-  }
-  if(nAg > 3 && penultAgent){
-    dynamicLines.push(`😅 ${penultAgent.agent} évite la dernière place de justesse avec ${penultAgent.realized} contrat${penultAgent.realized>1?'s':''}.`);
-  }
-  if(lastAgent && nAg > 2){
-    dynamicLines.push(`🐢 ${lastAgent.agent} ferme la marche avec ${lastAgent.realized} contrat${lastAgent.realized>1?'s':''} — il est temps de réagir !`);
-  }
-  Object.values(tieGroups).forEach(names=>{
-    if(names.length > 1) dynamicLines.push(`⚖️ Ex-aequo : ${names.join(' & ')} — le prochain contrat départage tout !`);
-  });
-
-  // On mélange 1-2 annonces dynamiques (basées sur les vrais chiffres du jour) avec des phrases piochées
-  // dans le pool éditable ; {first} et {last} y sont remplacés par le nom du leader / du dernier du mois.
-  const staticPool = getArenaMsgs('ticker').map(l =>
-    l.replace(/\{first\}/g, leaderAgent ? leaderAgent.agent : '—').replace(/\{last\}/g, lastAgent ? lastAgent.agent : '—')
-  );
-  const dynamicPicks = pickRandomSample(dynamicLines, Math.min(2, dynamicLines.length));
-  const staticPicks = pickRandomSample(staticPool, 3);
-  let tickerParts = [...dynamicPicks, ...staticPicks];
-  document.getElementById('cashTickerText').textContent = tickerParts.join('     •     ');
+  // Ticker — bandeau partagé Cash + Arena, voir refreshTickerPool()/renderTickerText() plus bas.
+  await refreshTickerPool(now);
+  renderTickerText();
+  ensureTickerResampleLoop();
 
   // Classement par ARGENT (le vrai classement des salaires, prime de supervision incluse) — même
   // calcul que celui utilisé pour afficher la liste plus bas, pour que le rang affiché soit cohérent.
