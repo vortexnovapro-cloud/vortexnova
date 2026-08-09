@@ -416,9 +416,10 @@
     letter-spacing:0.2px; transition: all 0.15s ease;
   }
   .arena-scope-btn.arena-scope-day.active{
-    background: linear-gradient(135deg, #e8edf2, #c7d0da);
+    background: linear-gradient(135deg, #e8edf2, #a8b8c8);
     color: #0f1720;
-    box-shadow: 0 3px 18px rgba(200, 210, 220, 0.3);
+    box-shadow: 0 3px 18px rgba(180, 190, 200, 0.35);
+
   }
   .arena-scope-btn.arena-scope-month.active{
     background: linear-gradient(135deg, #ffe066, var(--gold)); color:#241c00; border-color: transparent;
@@ -702,7 +703,7 @@ function tryDeviceGateAdmin(){
         <div style="text-align:center; margin-bottom:18px;">
           <span class="arena-live-dot"></span>
           <span style="font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Classement en direct</span>
-          <span id="arenaDateLabel" style="display:block; font-size:15px; color:#ffffff; margin-top:4px;"></span>
+          <span id="arenaDateLabel" style="display:block; font-size:14px; color:#ffffff; margin-top:4px;"></span>
           <div style="display:flex; gap:8px; justify-content:center; margin-top:14px;">
             <button class="arena-scope-btn arena-scope-day active" id="arenaScopeDayBtn" onclick="setArenaScope('day')">🔥 Objectif du jour</button>
             <button class="arena-scope-btn arena-scope-month" id="arenaScopeMonthBtn" onclick="setArenaScope('month')">🎯 Objectif du mois</button>
@@ -1670,7 +1671,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r79';
+const APP_VERSION = '2026-08-09-r80';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
