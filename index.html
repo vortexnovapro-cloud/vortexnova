@@ -204,7 +204,8 @@
     padding: 8px 14px; border-radius: 8px; border: 1px dashed var(--border); background:transparent; color: var(--muted); cursor:pointer; font-size:13px; font-weight:600;
   }
   .escalade-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 14px; }
-  .escalade-card{ background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .escalade-card{ background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; cursor:pointer; transition: all 0.15s ease; }
+  .escalade-card:hover{ border-color: var(--accent); filter: brightness(1.1); transform: translateY(-1px); }
   .escalade-card .name{ font-weight: 700; font-size: 15px; margin-bottom: 6px; }
   .escalade-card .count{ font-size: 13px; color: var(--muted); margin-bottom: 8px; }
   .escalade-card .tier{ font-size: 12.5px; font-weight: 700; padding: 4px 9px; border-radius: 6px; display:inline-block; }
@@ -286,6 +287,12 @@
   @keyframes arenaPulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.85; } }
   @keyframes pulseWarn{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:0.75; transform:scale(1.02); } }
   @keyframes pulseUpdateBtn{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,255,255,0.55); } 50%{ box-shadow:0 0 0 11px rgba(255,255,255,0); } }
+  /* Cadres "Objectif du jour / du mois" — pulsation du CADRE ENTIER (pas juste le bouton) tant que
+     l'agent n'a pas encore fixé son objectif, pour vraiment attirer l'œil. S'arrête net dès qu'il valide. */
+  @keyframes pulseObjGold{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,215,0,0.45); border-color:rgba(255,215,0,0.5); } 50%{ box-shadow:0 0 0 13px rgba(255,215,0,0); border-color:rgba(255,215,0,0.95); } }
+  @keyframes pulseObjBlue{ 0%,100%{ box-shadow:0 0 0 0 rgba(61,139,253,0.45); border-color:rgba(61,139,253,0.5); } 50%{ box-shadow:0 0 0 13px rgba(61,139,253,0); border-color:rgba(61,139,253,0.95); } }
+  .pulse-obj-gold{ animation: pulseObjGold 1.8s ease-in-out infinite; }
+  .pulse-obj-blue{ animation: pulseObjBlue 1.8s ease-in-out infinite; }
   .arena-msg.gold{ color: #ffd700; }
   .arena-msg.encourage{ color: var(--accent); }
   .arena-msg.roast{ color: var(--amber); }
@@ -1671,7 +1678,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r81';
+const APP_VERSION = '2026-08-09-r82';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -6451,6 +6458,21 @@ async function renderBossRevenue(){
       " style="margin-top:12px; padding:7px 14px; border-radius:8px; border:1px solid var(--red); background:transparent; color:var(--red); font-weight:700; font-size:11.5px; cursor:pointer;">🔍 Voir le détail</button>
     </div>`;
 
+  // Gains net = chiffre d'affaires de la période choisie moins les dépenses réelles (mêmes chiffres que
+  // les 2 cartes juste à côté, aucun recalcul séparé) — "Prévisionnel" car basé sur le rythme actuel,
+  // tant que le mois n'est pas terminé, exactement comme 🧾 Bilan net du mois plus bas mais sur la
+  // période choisie ici (jour ou plage de dates) plutôt que sur le mois entier.
+  const netPeriod = periodCalc.total - expense.grandTotal;
+  const netPositive = netPeriod >= 0;
+  const netCard = `
+    <div style="padding:18px; border-radius:14px; background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid ${netPositive?'rgba(52,183,116,0.35)':'rgba(229,72,77,0.35)'}; box-shadow:0 8px 22px rgba(0,0,0,0.3); flex:1; min-width:230px;">
+      <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-bottom:6px;">💰 Gains Net (Prévisionnel)</div>
+      <div style="font-size:28px; font-weight:900; color:${netPositive?'var(--green)':'var(--red)'};">${netPositive?'':'-'}${Math.round(Math.abs(netPeriod)).toLocaleString('fr-FR')} DH</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
+        ${periodLabel} : ${Math.round(periodCalc.total).toLocaleString('fr-FR')} DH de chiffre d'affaires moins ${Math.round(expense.grandTotal).toLocaleString('fr-FR')} DH de dépenses réelles sur la même période.
+      </div>
+    </div>`;
+
   // Détail par personne, trié du plus coûteux au moins coûteux (alphabétique si égalité, même convention
   // que partout ailleurs dans l'appli) — replié par défaut, pour garder la vue d'ensemble propre.
   const sortedDetails = [...(expense.details||[])].sort((a,b)=> b.total - a.total || a.agent.localeCompare(b.agent));
@@ -6482,7 +6504,7 @@ async function renderBossRevenue(){
       <td><b style="color:var(--red);">${expense.chargesProrated.toLocaleString('fr-FR')} DH</b></td>
     </tr>` : '';
 
-  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${expenseCard}</div>
+  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${expenseCard}${netCard}</div>
     <div id="expenseDetailPanel" style="display:none; margin-top:14px; padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.25);">
       <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.6;">Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.<br><span style="opacity:0.85;">💡 La prime d'assiduité (si acquise) suit la même règle : elle grandit chaque jour avec le fixe, sans jamais atteindre son plein montant avant la fin du mois — survole <b>ⓘ</b> dans l'en-tête pour le détail agent par agent.</span></div>
       <div style="overflow-x:auto;">
@@ -6688,16 +6710,28 @@ async function computeRealTimeExpenseForRange(fromDateStr, toDateStr){
   };
 }
 
+// Calcul lourd (relit TOUS les agents sur TOUT le mois) — inutile de le refaire à chaque cycle de 25s
+// comme le reste de Vue d'ensemble, ça ne fait que clignoter "⏳ Calcul…" sans rien de neuf entre deux
+// cycles. Limité à une fois toutes les 90s, sauf changement de mois (là le contenu affiché serait faux
+// pour l'ancien mois, donc on force le recalcul immédiatement).
+let payrollSummaryLastComputed = 0;
+let payrollSummaryLastMonthKey = null;
+const PAYROLL_SUMMARY_MIN_INTERVAL_MS = 90000;
 async function renderPayrollSummary(){
   const el = document.getElementById('payrollSummaryPanel');
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
-  el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
 
   const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+  const monthKey = `${year}-${month}`;
+  const sameMonth = monthKey === payrollSummaryLastMonthKey;
+  if(sameMonth && (Date.now() - payrollSummaryLastComputed) < PAYROLL_SUMMARY_MIN_INTERVAL_MS) return;
+  payrollSummaryLastComputed = Date.now();
+  payrollSummaryLastMonthKey = monthKey;
 
+  el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
   const { totalTeam, totalIndep, totalBackoffice, grandTotal } = await computeTotalPayrollMonth(year, month);
   el.innerHTML = `
     <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid var(--border);">
@@ -7213,18 +7247,41 @@ async function renderAllMonthly(){
   html += '</tbody></table>';
   overviewContainer.innerHTML = html;
 
+  // Détail des dépassements de pause (minutes + DH retenus) — pour chaque agent, en parallèle, à partir
+  // des mêmes lignes que "Bilan net du mois" (monthlyDeductions), seule source de vérité pour l'argent
+  // retenu. Affiché directement sur la carte : avant, un dépassement de pause n'apparaissait nulle part
+  // en dehors du compteur "X pause(s)" (sans minutes ni DH).
+  const dedByAgent = {};
+  await Promise.all(nonIndepStats.map(async s=>{
+    dedByAgent[s.agent] = await monthlyDeductions(s.agent, year, month);
+  }));
+
   let esc = '<div class="escalade-grid">';
   nonIndepStats.forEach(s=>{
     const tier = tierForCount(s.retardsCumules);
-    esc += `<div class="escalade-card">
+    const pauseItems = (dedByAgent[s.agent]?.items || []).filter(it => it.label.startsWith('Dépassement pause'));
+    const pauseLostDH = pauseItems.reduce((sum,it)=> sum + (it.amount||0), 0);
+    const pauseDetail = pauseItems.length
+      ? `<div style="font-size:12px; color:var(--amber); margin-top:4px;" title="${pauseItems.map(it=>`${it.date.split('-').reverse().join('/')} : ${it.label}`).join(' • ').replace(/"/g,'&quot;')}">☕ Pause dépassée ${pauseItems.length} jour${pauseItems.length>1?'s':''} — -${Math.round(pauseLostDH)} DH retenus</div>`
+      : '';
+    esc += `<div class="escalade-card" onclick="jumpToAgentRetardDetail('${s.agent.replace(/'/g,"\\'")}')" title="Cliquer pour voir le détail jour par jour de ${s.agent}">
       <div class="name">${s.agent}</div>
       <div class="count">${s.retardsCumules} retard${s.retardsCumules>1?'s':''}/absence${s.retardsCumules>1?'s':''} cumulés ce mois-ci <span style="color:var(--muted); font-weight:500;">(${s.retards} arrivée + ${s.pauseOver} pause + ${s.absences} absence${s.absences>1?'s':''})</span></div>
+      ${pauseDetail}
       <span class="tier ${tier.cls}">${tier.label}</span>
     </div>`;
   });
   esc += '</div>';
   escaladeContainer.innerHTML = esc;
   await renderRetardsAbsencesAdmin();
+}
+
+// Clic sur une carte "Suivi des retards" (escalade-card) → ouvre directement le détail jour par jour de
+// cet agent juste en dessous (même section, pas de changement d'onglet), sans repasser par le menu déroulant.
+function jumpToAgentRetardDetail(agent){
+  const sel = document.getElementById('raaAgentSelect');
+  if(sel){ sel.value = agent; renderRetardsAbsencesAdmin(); }
+  document.getElementById('adminRetardsAbsencesPanel')?.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 function jumpToAgentDay(agent, yearMonth){
@@ -8767,9 +8824,13 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
   const workMinutes = Math.max(60, toMinutes(config.end) - toMinutes(config.start));
   const minuteRate = workMinutes > 0 ? dailyFixedQuote / workMinutes : 0;
   const halfHourDeduction = minuteRate * 30;
+  // Le dépassement de pause ne compte plus dans l'escalade retard/absence (prime d'assiduité), mais reste
+  // une retenue en argent bien réelle (monthlyDeductions) — donc inclus ici dans "perdu ce mois", avec sa
+  // propre ligne distincte pour rester clair (ne pèse pas sur le compteur 0/1/3/5/6 ci-dessous).
   const retardAbsenceLost = ded.items.filter(i=> /^(Retard|Absence|Mise à pied)/.test(i.label)).reduce((s,i)=> s + i.amount, 0);
+  const pauseLost = ded.items.filter(i=> i.label.startsWith('Dépassement pause')).reduce((s,i)=> s + i.amount, 0);
   const primeAssiduitePerdue = count >= 3;
-  const totalLostThisMonth = retardAbsenceLost + (primeAssiduitePerdue ? (pay.primeAssiduite||0) : 0);
+  const totalLostThisMonth = retardAbsenceLost + pauseLost + (primeAssiduitePerdue ? (pay.primeAssiduite||0) : 0);
   const fmt = n => Math.round(n).toLocaleString('fr-FR');
 
   // 5 paliers du règlement, espacés régulièrement sur la frise (0/1/3/5/6 → positions 0/25/50/75/100%).
@@ -8804,7 +8865,8 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
     ['Retard +10 min ou absence', `journée non payée (-${fmt(dailyFixedQuote)} DH), contrats du jour toujours payés`],
     ["3e retard ou absence", `-${fmt(pay.primeAssiduite||0)} DH de prime d'assiduité (perdue pour tout le mois)`],
     ["5e retard ou absence", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours ÷2 au lieu de ÷3 (hors CRM)`],
-    ["6e retard ou absence", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours 1:1 au lieu de ÷3 (hors CRM)`]
+    ["6e retard ou absence", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours 1:1 au lieu de ÷3 (hors CRM)`],
+    ["☕ Dépassement de pause (planning + pause libre)", `retenue au prorata de la minute — ne compte plus dans le compteur ci-dessus, mais reste retenu sur le salaire`]
   ];
   if(stats.absences > 0){
     detailRows.push([`Dont absences pures ce mois`, `${stats.absences} (aucun pointage, aucun contrat saisi)`]);
@@ -8814,7 +8876,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
   // Journal des jours concernés — dates précises de chaque retard/absence/mise à pied du mois, pour
   // vérifier en un clic sans avoir à rouvrir l'Explorateur (Admin → Vue d'ensemble).
   const eventItems = ded.items
-    .filter(i=> /^(Retard|Absence|Mise à pied)/.test(i.label))
+    .filter(i=> /^(Retard|Absence|Mise à pied|Dépassement pause)/.test(i.label))
     .sort((a,b)=> a.date.localeCompare(b.date));
   const eventsHtml = eventItems.length
     ? eventItems.map(i=>{
@@ -8833,7 +8895,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
         <div class="raa-hero-item">
           <div class="raa-hero-num" style="color:${captionColor};">${count}</div>
           <div class="raa-hero-lbl">retard${count>1?'s':''}/absence${count>1?'s':''}</div>
-          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''} · ${stats.absences} absence${stats.absences>1?'s':''}${stats.justifiedAbsenceCount>0 ? ` · ${stats.justifiedAbsenceCount} absence${stats.justifiedAbsenceCount>1?'s':''} justifiée${stats.justifiedAbsenceCount>1?'s':''} (hors compteur)` : ''}</div>
+          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''}${pauseLost>0 ? ` (-${fmt(pauseLost)} DH)` : ''} · ${stats.absences} absence${stats.absences>1?'s':''}${stats.justifiedAbsenceCount>0 ? ` · ${stats.justifiedAbsenceCount} absence${stats.justifiedAbsenceCount>1?'s':''} justifiée${stats.justifiedAbsenceCount>1?'s':''} (hors compteur)` : ''}</div>
         </div>
         <div class="raa-hero-sep"></div>
         <div class="raa-hero-item">
@@ -9484,10 +9546,14 @@ async function renderArena(){
     arenaRetractEl.style.color = rc>0 ? 'var(--red)' : 'var(--green)';
     arenaRetractEl.style.border = rc>0 ? '1px solid rgba(229,72,77,0.3)' : '1px solid rgba(52,183,116,0.3)';
   }
-  document.getElementById('arenaDesiredObjBox').style.display = (currentArenaAgent && isMonthScope) ? 'block' : 'none';
+  const desiredObjBoxEl = document.getElementById('arenaDesiredObjBox');
+  desiredObjBoxEl.style.display = (currentArenaAgent && isMonthScope) ? 'block' : 'none';
   if(currentArenaAgent && isMonthScope){
     const desiredVal = await getMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     document.getElementById('arenaDesiredObjInput').value = desiredVal || '';
+    desiredObjBoxEl.classList.toggle('pulse-obj-blue', !desiredVal);
+  } else {
+    desiredObjBoxEl.classList.remove('pulse-obj-blue');
   }
   if(currentArenaAgent && !isMonthScope){
     // Un indépendant peut lui aussi fixer un objectif du jour (défi facultatif) : on affiche toujours le
@@ -9495,7 +9561,9 @@ async function renderArena(){
     const p = getAgentProd(board, currentArenaAgent);
     const isIndepAgent = isIndependant(currentArenaAgent);
     document.getElementById('arenaObjectifInput').value = p.objective || '';
-    document.getElementById('arenaObjectifBox').style.display = p.objective ? 'none' : 'block';
+    const objBoxEl = document.getElementById('arenaObjectifBox');
+    objBoxEl.style.display = p.objective ? 'none' : 'block';
+    objBoxEl.classList.toggle('pulse-obj-gold', !p.objective);
     document.getElementById('arenaActions').style.display = (p.objective || isIndepAgent) ? 'flex' : 'none';
   } else if(currentArenaAgent && isMonthScope){
     document.getElementById('arenaActions').style.display = 'flex';
