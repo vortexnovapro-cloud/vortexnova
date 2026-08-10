@@ -1583,11 +1583,11 @@ function tryDeviceGateAdmin(){
           <div class="settings-grid" style="margin-top:14px;">
             <div>
               <label>Coût d'un retour — valeur par défaut (DH)</label>
-              <input type="number" id="cfgReturnCostDefault" min="0" step="10" placeholder="0">
+              <input type="number" id="cfgReturnCostDefault" min="0" step="10" placeholder="0" title="Montant retenu à un agent pour UN retour, AVANT division. Le diviseur (1:1, ÷2 ou ÷3) est appliqué ensuite selon son statut et sa situation du mois.">
             </div>
           </div>
           <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-            <button onclick="saveReturnCostConfig()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer la valeur par défaut</button>
+            <button onclick="saveReturnCostConfig()" title="Montant appliqué aux agents pour lesquels tu n'as rien réglé individuellement." style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer la valeur par défaut</button>
             <div class="save-note" id="returnCostSaveNote"></div>
           </div>
 
@@ -1596,11 +1596,23 @@ function tryDeviceGateAdmin(){
           <div id="returnCostPerAgentPanel" style="margin-top:12px;"></div>
         </div>
 
+        <div class="settings-box">
+          <label>🔎 Trouver un contrat</label>
+          <div class="section-sub">Quand tu ne sais ni de quel agent ni de quel mois il vient : un client rappelle avec son numéro, le backoffice conteste une ligne, tu vérifies un retour. Cherche par <b>numéro de contrat, référence, nom du client, téléphone ou email</b> — sur les 24 derniers mois, contrats et retours confondus.</div>
+          <div class="admin-toolbar" style="margin-top:12px;">
+            <input type="text" id="globalSearchInput" placeholder="Ex : 4944, MILLARD, 0661558634…" style="min-width:320px; flex:1;"
+              onkeydown="if(event.key==='Enter')searchContractGlobal()"
+              title="Tape au moins 3 caractères puis Entrée. La recherche ignore les accents et les majuscules.">
+            <button onclick="searchContractGlobal()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Chercher</button>
+          </div>
+          <div id="globalSearchResults" style="margin-top:12px;"></div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(52,183,116,0.45);">
           <label>📡 Réception automatique des contrats validés</label>
           <div class="section-sub">Le backoffice valide un contrat → Telegram → Pabbly → il apparaît ici tout seul, rangé <b>à la date du contrat</b> (un contrat signé le 10 et envoyé le 11 compte pour le 10). Aucun import à faire. Le relevé tourne automatiquement toutes les 40 secondes tant que tu es sur l'onglet Admin.</div>
           <div class="admin-toolbar" style="margin-top:12px;">
-            <button onclick="manualSyncBackoffice()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--green);background:rgba(52,183,116,0.14);color:var(--green);font-weight:700;cursor:pointer;">📡 Relever maintenant</button>
+            <button onclick="manualSyncBackoffice()" title="Va chercher tout de suite les contrats validés déposés par Pabbly, sans attendre le relevé automatique des 40 secondes." style="padding:10px 18px;border-radius:8px;border:1px solid var(--green);background:rgba(52,183,116,0.14);color:var(--green);font-weight:700;cursor:pointer;">📡 Relever maintenant</button>
             <button class="link-btn" onclick="toggleRawInbox()" title="Affiche les champs reçus tels quels — sert à vérifier le réglage Pabbly">🔍 Voir ce qui arrive</button>
           </div>
           <div id="backofficeInboxPanel" style="margin-top:12px;"></div>
@@ -1619,7 +1631,7 @@ function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div>
               <label style="margin-bottom:4px;">Mois de production</label>
-              <input type="month" id="billingProdMonth" onchange="renderBillingImportSummary()">
+              <input type="month" id="billingProdMonth" onchange="renderBillingImportSummary()" title="Le mois auquel rattacher les contrats du fichier. Un nouvel import sur le même mois complète l'existant sans créer de doublons.">
             </div>
             <div>
               <label style="margin-bottom:4px;">Fichier CSV</label>
@@ -1628,7 +1640,7 @@ function tryDeviceGateAdmin(){
           </div>
           <div class="section-sub" style="margin-top:10px;">…ou colle directement le contenu (Ctrl+A / Ctrl+C depuis Google Sheets) :</div>
           <textarea id="billingProdPaste" rows="4" placeholder="Date&#9;Date Propre&#9;Produit&#9;Référence&#9;Nom&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
-          <button onclick="importBillingProdFromPaste()" style="margin-top:10px; padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Importer la production</button>
+          <button onclick="importBillingProdFromPaste()" title="Importe la production collée ci-dessus. Un contrat déjà présent n'est pas compté deux fois : la déduplication se fait sur le numéro de contrat." style="margin-top:10px; padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Importer la production</button>
           <div id="billingProdReport" style="margin-top:14px;"></div>
         </div>
 
@@ -1638,15 +1650,15 @@ function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div>
               <label style="margin-bottom:4px;">Imputer sur le mois de paie</label>
-              <input type="month" id="billingRetMonth" onchange="renderBillingImportSummary()">
+              <input type="month" id="billingRetMonth" onchange="renderBillingImportSummary()" title="Le mois de PAIE sur lequel retenir ces retours — celui où tu les reçois, pas celui où les contrats ont été signés. Exemple : retours reçus fin mars pour la période 21/12 → 20/01, tu choisis mars.">
             </div>
             <div>
               <label style="margin-bottom:4px;">Période couverte — du</label>
-              <input type="date" id="billingRetFrom">
+              <input type="date" id="billingRetFrom" title="Début de la période de facturation couverte par ce fichier (ta convention : le 21 du mois). Sert uniquement à l'affichage et à la traçabilité sur les tableaux des agents.">
             </div>
             <div>
               <label style="margin-bottom:4px;">au</label>
-              <input type="date" id="billingRetTo">
+              <input type="date" id="billingRetTo" title="Fin de la période couverte (le 20 du mois suivant).">
             </div>
             <div>
               <label style="margin-bottom:4px;">Fichier CSV</label>
@@ -1655,7 +1667,7 @@ function tryDeviceGateAdmin(){
           </div>
           <div class="section-sub" style="margin-top:10px;">…ou colle directement le contenu :</div>
           <textarea id="billingRetPaste" rows="4" placeholder="Agent&#9;Numéro de contrat&#9;Nom&#9;Produit&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
-          <button onclick="importBillingRetFromPaste()" style="margin-top:10px; padding:10px 18px;border-radius:8px;border:1px solid var(--red);background:rgba(229,90,90,0.18);color:var(--red);font-weight:700;cursor:pointer;">Importer les retours</button>
+          <button onclick="importBillingRetFromPaste()" title="Importe les retours collés ci-dessus et les impute au mois de paie choisi. Chaque retour est rattaché à son agent via le numéro ou la référence du contrat d'origine." style="margin-top:10px; padding:10px 18px;border-radius:8px;border:1px solid var(--red);background:rgba(229,90,90,0.18);color:var(--red);font-weight:700;cursor:pointer;">Importer les retours</button>
           <div id="billingRetReport" style="margin-top:14px;"></div>
         </div>
 
@@ -1699,15 +1711,15 @@ function tryDeviceGateAdmin(){
         <div class="admin-toolbar">
           <div>
             <label style="margin-bottom:4px;">Agent</label>
-            <select id="billingAgentSelect" onchange="renderBillingAgentSheet()"></select>
+            <select id="billingAgentSelect" onchange="renderBillingAgentSheet()" title="L'agent dont tu veux voir le tableau nominatif et le salaire net réel."></select>
           </div>
           <div>
             <label style="margin-bottom:4px;">Mois de paie</label>
-            <input type="month" id="billingSheetMonth" onchange="renderBillingAgentSheet(); renderPaySourcePanel(); renderAdminIndepReturnTable(); renderUnmatchedReturnsPanel();">
+            <input type="month" id="billingSheetMonth" onchange="renderBillingAgentSheet(); renderPaySourcePanel(); renderAdminIndepReturnTable(); renderUnmatchedReturnsPanel();" title="Le mois de PAIE affiché. C'est aussi lui qui pilote les blocs plus haut : source de paie, barème des indépendants, retours à trancher, et le pack patron.">
           </div>
           <div>
             <label style="margin-bottom:4px;">Diviseur des retours</label>
-            <select id="billingRatioOverride" onchange="saveBillingRatioOverride()">
+            <select id="billingRatioOverride" onchange="saveBillingRatioOverride()" title="Par combien le coût d'un retour est divisé pour cet agent, ce mois-ci. « Auto » suit le règlement : pour un salarié, ÷3 puis ÷2 au 5e retard et 1:1 au 6e ; pour un indépendant, selon son volume de contrats (1:1 jusqu'à 20, ÷2 de 21 à 40, ÷3 au-delà). Force une valeur si une situation particulière le justifie.">
               <option value="">Auto (règlement)</option>
               <option value="3">Forcer ÷3</option>
               <option value="2">Forcer ÷2</option>
@@ -1717,23 +1729,23 @@ function tryDeviceGateAdmin(){
         </div>
         <div id="billingAgentSheet" style="margin-top:16px;"></div>
         <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="link-btn" onclick="downloadBillingAgentCSV()">📥 Télécharger ce tableau (CSV)</button>
-          <button class="link-btn" onclick="exportBillingAgentImage()">📸 Image WhatsApp de ce tableau</button>
-          <button class="link-btn" onclick="downloadAllBillingAgentsCSV()">📦 Télécharger TOUS les agents (CSV)</button>
+          <button class="link-btn" onclick="downloadBillingAgentCSV()" title="Le tableau de cet agent pour ce mois : tous ses contrats nominatifs, ses retours, et le détail ligne par ligne de son salaire. Ouvrable dans Excel ou Google Sheets.">📥 Télécharger ce tableau (CSV)</button>
+          <button class="link-btn" onclick="exportBillingAgentImage()" title="Image du tableau, calibrée pour rester lisible une fois envoyée sur WhatsApp.">📸 Image WhatsApp de ce tableau</button>
+          <button class="link-btn" onclick="downloadAllBillingAgentsCSV()" title="Un seul fichier contenant le tableau complet de chaque agent, les uns après les autres.">📦 Télécharger TOUS les agents (CSV)</button>
         </div>
 
         <div class="section-title" style="margin-top:34px;">🕐 4. Historique des salaires nets</div>
         <div class="section-sub">Chaque fin de mois, clique sur « Figer le mois » pour archiver les salaires nets réels tels qu'ils ont été payés. L'historique ne bouge plus ensuite, même si un réglage change plus tard.</div>
         <div class="admin-toolbar">
-          <button onclick="freezeBillingMonth()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">🔒 Figer le mois affiché</button>
-          <button class="link-btn" onclick="downloadSalaryHistoryCSV()">📥 Télécharger l'historique (CSV)</button>
+          <button onclick="freezeBillingMonth()" title="Archive les salaires nets du mois affiché tels qu'ils sont calculés maintenant. Ils n'évolueront plus, même si un réglage change ensuite. Tu peux refiger le mois plus tard pour écraser l'archive." style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">🔒 Figer le mois affiché</button>
+          <button class="link-btn" onclick="downloadSalaryHistoryCSV()" title="Tous les mois que tu as figés, dans un seul fichier : évolution des nets, des retours et des retenues mois après mois.">📥 Télécharger l'historique (CSV)</button>
         </div>
         <div id="billingHistoryPanel" style="margin-top:14px;"></div>
 
         <div class="section-title" style="margin-top:34px;">📦 5. Export patron — tout le mois en un fichier</div>
         <div class="section-sub">Un seul CSV avec tout ce qui compte pour piloter : par agent, contrats, rétractés, retours, diviseur appliqué, brut, chaque retenue, net réel, et le total masse salariale + charges.</div>
         <div class="admin-toolbar">
-          <button onclick="downloadBossPackCSV()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--gold);background:rgba(255,215,0,0.14);color:var(--gold);font-weight:700;cursor:pointer;">📥 Télécharger le pack patron du mois</button>
+          <button onclick="downloadBossPackCSV()" title="Un seul fichier avec tout le mois : par agent contrats, rétractés, retours, diviseur, brut, retenues, net réel — puis les charges, le chiffre d'affaires estimé et le résultat." style="padding:10px 18px;border-radius:8px;border:1px solid var(--gold);background:rgba(255,215,0,0.14);color:var(--gold);font-weight:700;cursor:pointer;">📥 Télécharger le pack patron du mois</button>
         </div>
         <div id="bossPackPreview" style="margin-top:14px;"></div>
       </div>
@@ -12843,9 +12855,21 @@ function billingFixSwappedFields(out){
 
   // Une date de contrat encore invraisemblable après correction : on ne devine pas, mais on alerte
   // fort — c'est un contrat qui partira dans un mois que tu ne consulteras jamais.
-  const yFinal = yearOf(out.date);
+  const isoFinal = parseContractDate(out.date);
+  const yFinal = isoFinal ? Number(isoFinal.slice(0, 4)) : null;
   if(yFinal != null && !plausibleContractYear(yFinal)){
     warnings.push(`date du contrat invraisemblable : « ${String(out.date).slice(0,40)} » — il sera rangé en ${yFinal}, vérifie avant de payer`);
+  } else if(isoFinal){
+    // UN CONTRAT NE SE SIGNE PAS DANS LE FUTUR. La faute de frappe classique est l'année : « 2027 »
+    // tapé à la place de « 2026 » dans le message Telegram. Le contrat reste alors invisible dans les
+    // tableaux du mois en cours pendant un an — donc jamais payé, et personne ne s'en aperçoit.
+    // On laisse une semaine de marge (décalage de fuseau, saisie anticipée en fin de journée).
+    const today = todayStr();
+    const limit = new Date(nowMA());
+    limit.setDate(limit.getDate() + 7);
+    if(isoFinal > todayStr(limit)){
+      warnings.push(`date dans le futur : « ${String(out.date).slice(0,40)} » — faute de frappe sur l'année ? Ce contrat ne serait payé que le mois venu`);
+    }
   }
 
   // 4) Un nom de client atterri dans la date de naissance (décalage d'une ligne).
@@ -13545,8 +13569,14 @@ function billingAgentSheetHTML(d, forImage){
   let html = '';
 
   if(!forImage){
-    html += `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
-      <button class="link-btn" onclick="syncBillingRetractCount()">🔄 Recaler le compteur de rétractations sur ce tableau</button>
+    html += `<div style="margin-bottom:14px; padding:11px 14px; border-radius:9px; background:var(--panel2); border:1px solid var(--border);">
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <button class="link-btn" onclick="syncBillingRetractCount()"
+          title="Fixe le compteur mensuel de rétractations de cet agent au nombre exact de contrats que tu as marqués « Rétracté » dans le tableau ci-dessous.">🔄 Aligner le compteur sur les contrats marqués rétractés</button>
+        <span style="font-size:12px; color:var(--muted); flex:1; min-width:260px; line-height:1.5;">
+          Deux chiffres suivent les rétractations : celui que <b>l'agent</b> déclare depuis son Arena, et le nombre de contrats que <b>tu</b> as marqués « Rétracté » dans ce tableau. C'est le compteur de l'agent qui paie. Ce bouton force le compteur à valoir exactement ce que dit ce tableau — à utiliser quand les deux ont divergé.
+        </span>
+      </div>
     </div>`;
   }
 
@@ -13583,6 +13613,14 @@ function billingAgentSheetHTML(d, forImage){
   // --- Tableau des contrats
   if(d.rows.length){
     html += `<div class="section-title" style="margin-top:10px; font-size:15px;">Production du mois — ${d.rows.length} contrat${d.rows.length>1?'s':''}</div>`;
+    if(!forImage){
+      html += `<div class="admin-toolbar" style="margin:0 0 10px;">
+        <input type="text" id="billingSheetSearch" placeholder="🔎 Filtrer : n° de contrat, nom du client, téléphone…" oninput="filterBillingSheetRows()"
+          title="Filtre les lignes affichées ci-dessous. Cherche dans le numéro de contrat, la référence, le nom du client, le téléphone, l'email et le produit. Les totaux du salaire plus bas restent calculés sur le mois entier, ils ne bougent pas avec le filtre."
+          style="min-width:320px; flex:1;">
+        <span id="billingSheetSearchCount" style="font-size:12.5px; color:var(--muted); white-space:nowrap;"></span>
+      </div>`;
+    }
     html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th><th>Téléphone</th><th>N° contrat</th>' + (forImage ? '' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
     const flagged = d.rows.filter(r => r._warnings && r._warnings.length);
     if(flagged.length && !forImage){
@@ -13594,14 +13632,17 @@ function billingAgentSheetHTML(d, forImage){
       const key = r.numContrat || r.reference || '';
       const red = r.retracted ? ' style="color:var(--red); text-decoration:line-through; opacity:0.85;"' : '';
       const flag = (r._warnings && r._warnings.length) ? ` <span title="${escapeHtml(r._warnings.join(' · '))}" style="cursor:help;">🔎</span>` : '';
-      html += `<tr${red}>
+      // data-search : tout ce sur quoi on peut filtrer, déjà normalisé (sans accents ni casse), pour
+      // que le filtre soit instantané sans retoucher au DOM ni relire la base.
+      const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.telephone, r.email, r.produit, r.datePropre || r.date].join(' '));
+      html += `<tr${red} data-search="${hay}">
         <td>${i + 1}</td>
         <td>${escapeHtml(r.datePropre || r.date)}</td>
         <td>${escapeHtml(r.produit)}</td>
         <td>${escapeHtml(r.nom)}${flag}</td>
         <td>${escapeHtml(r.telephone)}</td>
         <td>${escapeHtml(key)}</td>
-        ${forImage ? '' : `<td><button onclick="toggleBillingRetracted('${String(key).replace(/'/g, "\\'")}')" style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>`}
+        ${forImage ? '' : `<td><button onclick="toggleBillingRetracted('${String(key).replace(/'/g, "\\'")}')" title="${r.retracted ? 'Ce contrat est marqué rétracté : le client s\'est rétracté dans son délai légal de 14 jours, l\'agent n\'est pas payé dessus. Clique pour annuler.' : 'Marquer ce contrat comme rétracté (le client s\'est rétracté dans les 14 jours). L\'agent ne sera pas payé dessus et son compteur de rétractations du mois augmente de 1.'}" style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>`}
       </tr>`;
     });
     html += '</tbody></table></div>';
@@ -14431,7 +14472,7 @@ async function renderPaySourcePanel(){
           ? 'Les salaires de ce mois sont calculés sur les contrats validés par le backoffice. Le chiffre ne peut plus être modifié depuis le CRM.'
           : 'Normal en cours de mois : les agents comptent eux-mêmes en temps réel. Bascule en fin de mois, une fois tous les contrats validés reçus.'}</div>
       </div>
-      <button onclick="toggleMonthPaySource()" style="padding:11px 18px; border-radius:9px; border:1px solid ${isBo ? 'var(--border)' : 'var(--accent)'}; background:${isBo ? 'transparent' : 'var(--accent)'}; color:${isBo ? 'var(--muted)' : 'white'}; font-weight:800; font-size:13px; cursor:pointer; white-space:nowrap;">
+      <button onclick="toggleMonthPaySource()" title="Change ce qui compte pour la paie de ce mois précis : les +1 saisis par les agents, ou les contrats validés par le backoffice. Les autres mois ne bougent pas." style="padding:11px 18px; border-radius:9px; border:1px solid ${isBo ? 'var(--border)' : 'var(--accent)'}; background:${isBo ? 'transparent' : 'var(--accent)'}; color:${isBo ? 'var(--muted)' : 'white'}; font-weight:800; font-size:13px; cursor:pointer; white-space:nowrap;">
         ${isBo ? '↩️ Revenir aux compteurs des agents' : '🔒 Basculer sur le backoffice'}
       </button>
     </div>
@@ -14499,6 +14540,94 @@ async function renderAdminIndepReturnTable(){
     </tr>`;
   }
   html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// ------------------------------------------------------------
+// 🔎 RECHERCHE — retrouver un contrat sans savoir où il est
+// ------------------------------------------------------------
+// Deux besoins différents, deux outils :
+//   • Filtrer le tableau affiché (l'agent et le mois sont déjà choisis) → filterBillingSheetRows,
+//     instantané, sans aller relire la base.
+//   • Retrouver un contrat quand on ne sait NI de quel agent NI de quel mois il vient — le cas
+//     typique : un client rappelle avec son numéro de contrat, ou le backoffice conteste une ligne.
+//     → searchContractGlobal, qui balaie les 24 derniers mois, production ET retours.
+
+// Filtre le tableau de l'agent affiché. Purement visuel : on masque les lignes qui ne correspondent
+// pas, aucun calcul n'est refait, les totaux du bas restent ceux du mois entier.
+function filterBillingSheetRows(){
+  const q = billingNormKey(document.getElementById('billingSheetSearch')?.value || '');
+  const countEl = document.getElementById('billingSheetSearchCount');
+  const rows = document.querySelectorAll('#billingAgentSheet tr[data-search]');
+  let shown = 0;
+  rows.forEach(tr=>{
+    const match = !q || tr.getAttribute('data-search').includes(q);
+    tr.style.display = match ? '' : 'none';
+    if(match) shown++;
+  });
+  if(countEl){
+    countEl.textContent = q ? `${shown} ligne${shown>1?'s':''} sur ${rows.length}` : '';
+    countEl.style.color = (q && shown === 0) ? 'var(--red)' : 'var(--muted)';
+  }
+}
+
+// Recherche globale : numéro de contrat, référence, nom du client, téléphone ou email.
+async function searchContractGlobal(){
+  const el = document.getElementById('globalSearchResults');
+  const raw = document.getElementById('globalSearchInput')?.value || '';
+  if(!el) return;
+  const q = billingNormKey(raw);
+  if(q.length < 3){
+    el.innerHTML = '<div class="empty" style="padding:12px;">Tape au moins 3 caractères : un numéro de contrat, un nom de client, un téléphone ou un email.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Recherche dans les 24 derniers mois…</div>';
+
+  const now = nowMA();
+  const found = [];
+  for(let i = 0; i < 24; i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+
+    const prod = await getBillingProd(mv);
+    (prod.rows || []).forEach(r=>{
+      const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.telephone, r.email, r.agent].join(' '));
+      if(hay.includes(q)) found.push({ type: 'contrat', mv, r });
+    });
+
+    const ret = await getBillingReturns(mv);
+    (ret.rows || []).forEach(r=>{
+      const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.agent, r.agentRaw].join(' '));
+      if(hay.includes(q)) found.push({ type: 'retour', mv, r });
+    });
+  }
+
+  if(!found.length){
+    el.innerHTML = `<div class="empty" style="padding:12px;">Aucun résultat pour « ${escapeHtml(raw)} » sur les 24 derniers mois.<br><span style="font-size:12px;">Si le contrat est ancien, pense à importer le CSV du mois concerné.</span></div>`;
+    return;
+  }
+
+  let html = `<div style="font-size:13px; color:var(--muted); margin-bottom:8px;">${found.length} résultat${found.length>1?'s':''} pour « <b style="color:var(--text);">${escapeHtml(raw)}</b> »</div>`;
+  html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Type</th><th>Mois</th><th>Agent</th><th>Client</th><th>N° contrat</th><th>Référence</th><th>Date</th><th>État</th></tr></thead><tbody>';
+  found.slice(0, 80).forEach(({ type, mv, r })=>{
+    const isRet = type === 'retour';
+    let etat = '—';
+    if(isRet) etat = r.dismissed ? '<span style="color:var(--muted);">écarté</span>' : (r.agent ? '<span style="color:var(--red);">retour imputé</span>' : '<span style="color:var(--amber);">à trancher</span>');
+    else if(r.retracted) etat = '<span style="color:var(--red);">rétracté</span>';
+    else etat = '<span style="color:var(--green);">actif</span>';
+    html += `<tr>
+      <td>${isRet ? '📉 Retour' : '📄 Contrat'}</td>
+      <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(mv))}</td>
+      <td><b>${escapeHtml(r.agent || r.agentRaw || '—')}</b></td>
+      <td>${escapeHtml(r.nom || '—')}</td>
+      <td>${escapeHtml(r.numContrat || '—')}</td>
+      <td style="font-size:12px; color:var(--muted);">${escapeHtml(r.reference || '—')}</td>
+      <td style="white-space:nowrap;">${escapeHtml(r.datePropre || r.date || '—')}</td>
+      <td>${etat}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  if(found.length > 80) html += `<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">… et ${found.length - 80} autres. Affine ta recherche.</div>`;
   el.innerHTML = html;
 }
 
