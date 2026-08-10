@@ -7,6 +7,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -743,6 +744,10 @@ function tryDeviceGateAdmin(){
           <span id="arenaRetractCount" style="font-size:13.5px; font-weight:700; padding:8px 14px; border-radius:20px; display:inline-block;"></span>
         </div>
 
+        <!-- Ce que le backoffice a réellement validé, en face de ce que l'agent a compté lui-même.
+             Aucun bouton : ce chiffre-là ne s'édite pas depuis l'application. -->
+        <div id="arenaBackofficePanel" style="margin-top:14px;"></div>
+
         <div id="arenaDesiredObjBox" class="settings-box" style="margin-top:14px; margin-bottom:22px; display:none; border-color:rgba(61,139,253,0.45); background:linear-gradient(135deg, rgba(61,139,253,0.06), var(--panel));">
           <div style="display:flex; align-items:center; gap:10px;">
             <div style="font-size:30px; line-height:1;">🚀</div>
@@ -788,6 +793,8 @@ function tryDeviceGateAdmin(){
           <button class="arena-btn arena-btn-set" onclick="cashAddContract(-1)" title="Corriger une erreur de clic">-1 correction</button>
         </div>
         <div id="cashRetractCount" style="text-align:center; font-size:13.5px; font-weight:700; padding:8px 14px; border-radius:20px; margin:10px auto 20px; width:fit-content;"></div>
+
+        <div id="cashBackofficePanel" style="margin:0 0 22px;"></div>
 
         <div id="cashObjectifsRecap" style="margin:0 0 24px;"></div>
 
@@ -903,10 +910,10 @@ function tryDeviceGateAdmin(){
           <div>
             <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;"><span style="font-size:20px; font-weight:900; color:#c9a870; letter-spacing:0.1px;">Briefing hebdomadaire à faire</span><span style="font-size:11.5px; font-weight:800; background:#c9a870; color:#151d27; border-radius:20px; padding:3px 11px; letter-spacing:0.4px;">AUJOURD'HUI</span></div>
             <div style="font-size:13.5px; font-weight:600; color:var(--text); opacity:0.9; margin-top:3px;">Rituel obligatoire, 1 fois par semaine, avec tous les agents présents — le Bilan de la semaine est prêt plus bas dans Vue d'ensemble.</div>
+            <!-- Rien à cocher côté patron : ce bandeau suit ce que font les superviseurs. Il passe au vert
+                 tout seul dès qu'ils ont confirmé, et une notification arrive au moment où chacun confirme. -->
+            <div id="weeklyBriefingAdminStatus" style="font-size:13px; font-weight:700; margin-top:9px;"></div>
           </div>
-        </div>
-        <div style="display:flex; gap:8px; flex-shrink:0;">
-          <button type="button" onclick="acknowledgeWeeklyBriefing()" style="padding:12px 22px; border-radius:10px; border:1px solid #c9a870; background:rgba(184,147,90,0.24); color:#c9a870; font-weight:800; font-size:13.5px; cursor:pointer;">✅ Noté, briefing fait</button>
         </div>
       </div>
 
@@ -914,6 +921,7 @@ function tryDeviceGateAdmin(){
         <button class="admin-tab-btn active" id="subtabOverview" onclick="showAdminSub('overview')">Vue d'ensemble</button>
         <button class="admin-tab-btn" id="subtabDay" onclick="showAdminSub('day')">Journée</button>
         <button class="admin-tab-btn" id="subtabProd" onclick="showAdminSub('prod')">Production 🏆</button>
+        <button class="admin-tab-btn" id="subtabBilling" onclick="showAdminSub('billing')">Facturation &amp; Paie 📒</button>
         <button class="admin-tab-btn" id="subtabSettings" onclick="showAdminSub('settings')">Réglages</button>
       </div>
 
@@ -1006,6 +1014,7 @@ function tryDeviceGateAdmin(){
           <div class="mega-section-sub">Coaching du matin pour chaque agent : sa tendance des derniers jours et où il en est sur son mois, avec un conseil qui s'adapte à sa vraie situation — à consulter chaque matin. Seul l'envoi sur WhatsApp est optionnel (contrairement au Bilan de la journée, obligatoire en fin de journée).</div>
           <div style="margin-bottom:14px;">
             <button type="button" id="dailyBriefingExportBtnAdmin" onclick="exportBriefingImage('dailyBriefingAdmin','dailyBriefingExportBtnAdmin','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin','#e0c25e')" style="padding:9px 16px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.10); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (facultatif)</button>
+            <button type="button" id="dailyBriefingExportBtnAdminHQ" onclick="exportBriefingImage('dailyBriefingAdmin','dailyBriefingExportBtnAdminHQ','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin','#e0c25e',true)" title="PNG haute définition (2400 px). À envoyer dans WhatsApp via 📎 → Document : aucune compression, lisible au zoom." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max (à envoyer en Document)</button>
           </div>
           <div id="dailyBriefingAdmin"></div>
         </div>
@@ -1041,6 +1050,7 @@ function tryDeviceGateAdmin(){
           </div>
           <div style="margin-bottom:14px;">
             <button type="button" id="objSnapExportBtn" onclick="exportObjectifSnapshotImage()" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (bilan du jour)</button>
+            <button type="button" id="objSnapExportBtnHQ" onclick="exportObjectifSnapshotImage(true)" title="PNG haute définition (2400 px). À envoyer dans WhatsApp via 📎 → Document : aucune compression, lisible au zoom." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max (à envoyer en Document)</button>
           </div>
           <div id="objectifSnapshot"></div>
         </div>
@@ -1543,6 +1553,162 @@ function tryDeviceGateAdmin(){
         <div id="prodSalarySim"></div>
       </div>
 
+      <!-- ============================================================
+           FACTURATION & PAIE SUBVIEW
+           Chaîne complète : import du tableau de prod du mois (CSV exporté de ton Sheet) →
+           import des retours de facturation (période 21→20, reçus ~2 mois après) →
+           tableau nominatif par agent → salaire net réel → téléchargement.
+           ============================================================ -->
+      <div class="admin-subview" id="admin-billing">
+
+        <div class="settings-box" style="border-color:rgba(184,147,90,0.45);">
+          <label>📅 Comment ça marche (ton circuit réel)</label>
+          <div class="section-sub" style="line-height:1.7;">
+            1. Le backoffice valide les contrats → Telegram → Pabbly → ton Sheet de suivi du mois.<br>
+            2. Fin de mois : tu exportes ce Sheet en CSV et tu l'importes ici (<b>Production du mois</b>). Chaque contrat est rattaché à son agent.<br>
+            3. Tu reçois ton tableau de facturation avec les <b>retours</b> (impayés) d'une période <b>21 → 20</b> décalée d'environ 2 mois. Tu l'importes ici (<b>Retours</b>) en choisissant le <b>mois de paie sur lequel tu veux les imputer</b>.<br>
+            4. Chaque agent a son tableau : sa prod du mois, ses <span style="color:var(--red); font-weight:700;">contrats rétractés en rouge</span>, ses retours en dessous, et son <b>salaire net réel</b> = fixe + primes + contrats − retards/absences − rétractés − retours (÷3, ÷2 ou 1:1).<br>
+            <span style="opacity:0.8;">Exemple : fin mars tu reçois les retours du 21/12 → 20/01. Tu les imputes sur <b>mars</b>. L'agent est payé vers le 7 avril sur sa prod de mars, moins ces retours et moins ses rétractations de mars.</span>
+          </div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
+          <label>💸 Coût d'un retour</label>
+          <div class="section-sub">Montant retenu à l'agent pour <b>un</b> retour, <b>avant</b> division. Le diviseur (÷3, ÷2 ou 1:1) est ensuite appliqué automatiquement selon son compteur retards/absences du mois — comme le règlement interne : <b>÷3</b> par défaut, <b>÷2</b> à partir du 5<sup>e</sup> retard/absence, <b>1:1</b> à partir du 6<sup>e</sup>. Tu peux forcer le diviseur agent par agent plus bas si une situation le justifie.</div>
+          <div class="settings-grid" style="margin-top:14px;">
+            <div>
+              <label>Coût d'un retour — valeur par défaut (DH)</label>
+              <input type="number" id="cfgReturnCostDefault" min="0" step="10" placeholder="0">
+            </div>
+          </div>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button onclick="saveReturnCostConfig()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer la valeur par défaut</button>
+            <div class="save-note" id="returnCostSaveNote"></div>
+          </div>
+
+          <label style="margin:22px 0 8px;">Prix d'un retour, agent par agent</label>
+          <div class="section-sub">Chaque agent peut avoir son propre montant — ils ne vendent pas tous le même produit ni au même tarif. Laisse la case vide pour qu'il reprenne la valeur par défaut ci-dessus. (C'est la même donnée que la colonne « Coût d'un retour » du tableau de rémunération : la modifier ici ou là revient au même.)</div>
+          <div id="returnCostPerAgentPanel" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(52,183,116,0.45);">
+          <label>📡 Réception automatique des contrats validés</label>
+          <div class="section-sub">Le backoffice valide un contrat → Telegram → Pabbly → il apparaît ici tout seul, rangé <b>à la date du contrat</b> (un contrat signé le 10 et envoyé le 11 compte pour le 10). Aucun import à faire. Le relevé tourne automatiquement toutes les 40 secondes tant que tu es sur l'onglet Admin.</div>
+          <div class="admin-toolbar" style="margin-top:12px;">
+            <button onclick="manualSyncBackoffice()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--green);background:rgba(52,183,116,0.14);color:var(--green);font-weight:700;cursor:pointer;">📡 Relever maintenant</button>
+            <button class="link-btn" onclick="toggleRawInbox()" title="Affiche les champs reçus tels quels — sert à vérifier le réglage Pabbly">🔍 Voir ce qui arrive</button>
+          </div>
+          <div id="backofficeInboxPanel" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(184,147,90,0.45);">
+          <label>🔀 Qui paie ce mois-ci : les agents ou le backoffice ?</label>
+          <div class="section-sub">Pendant le mois, les compteurs <b>+1</b> des agents pilotent tout (Arena, pauses bonus, classements en temps réel). En fin de mois, une fois tous les contrats validés reçus, tu bascules d'un clic sur le chiffre du backoffice — celui que personne ne peut modifier. Le réglage est mémorisé mois par mois.</div>
+          <div id="paySourcePanel" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="settings-box">
+          <label>📥 1. Production du mois — import du CSV de ton Sheet</label>
+          <div class="section-sub" style="color:var(--muted);">Filet de sécurité : si la réception automatique n'est pas encore branchée, ou pour rattraper un mois passé, tu peux toujours importer le CSV à la main ici. Les deux méthodes remplissent le même tableau et se dédoublonnent sur le numéro de contrat.</div>
+          <div class="section-sub">Colonnes attendues (l'ordre n'a pas d'importance, les accents et majuscules non plus) : <b>Date, Date Propre, Produit, Référence, Nom, Date Naissance, Adresse, Email, Téléphone, Agent, Numéro de contrat</b>. Séparateur virgule, point-virgule ou tabulation — détecté automatiquement. Un import remplace celui du même mois.</div>
+          <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
+            <div>
+              <label style="margin-bottom:4px;">Mois de production</label>
+              <input type="month" id="billingProdMonth" onchange="renderBillingImportSummary()">
+            </div>
+            <div>
+              <label style="margin-bottom:4px;">Fichier CSV</label>
+              <input type="file" id="billingProdFile" accept=".csv,.tsv,.txt" onchange="handleBillingProdFile(this)">
+            </div>
+          </div>
+          <div class="section-sub" style="margin-top:10px;">…ou colle directement le contenu (Ctrl+A / Ctrl+C depuis Google Sheets) :</div>
+          <textarea id="billingProdPaste" rows="4" placeholder="Date&#9;Date Propre&#9;Produit&#9;Référence&#9;Nom&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
+          <button onclick="importBillingProdFromPaste()" style="margin-top:10px; padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Importer la production</button>
+          <div id="billingProdReport" style="margin-top:14px;"></div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
+          <label>📥 2. Retours de facturation — import du CSV</label>
+          <div class="section-sub">Le fichier de retours peut avoir les mêmes colonnes que la production (on se sert de <b>Agent</b>, <b>Numéro de contrat</b>, <b>Nom</b>, <b>Produit</b>). Si la colonne Agent est absente, l'agent est retrouvé automatiquement grâce au numéro de contrat, en cherchant dans toutes les productions déjà importées. Un import remplace celui du même mois de paie.</div>
+          <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
+            <div>
+              <label style="margin-bottom:4px;">Imputer sur le mois de paie</label>
+              <input type="month" id="billingRetMonth" onchange="renderBillingImportSummary()">
+            </div>
+            <div>
+              <label style="margin-bottom:4px;">Période couverte — du</label>
+              <input type="date" id="billingRetFrom">
+            </div>
+            <div>
+              <label style="margin-bottom:4px;">au</label>
+              <input type="date" id="billingRetTo">
+            </div>
+            <div>
+              <label style="margin-bottom:4px;">Fichier CSV</label>
+              <input type="file" id="billingRetFile" accept=".csv,.tsv,.txt" onchange="handleBillingRetFile(this)">
+            </div>
+          </div>
+          <div class="section-sub" style="margin-top:10px;">…ou colle directement le contenu :</div>
+          <textarea id="billingRetPaste" rows="4" placeholder="Agent&#9;Numéro de contrat&#9;Nom&#9;Produit&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
+          <button onclick="importBillingRetFromPaste()" style="margin-top:10px; padding:10px 18px;border-radius:8px;border:1px solid var(--red);background:rgba(229,90,90,0.18);color:var(--red);font-weight:700;cursor:pointer;">Importer les retours</button>
+          <div id="billingRetReport" style="margin-top:14px;"></div>
+        </div>
+
+        <div class="settings-box">
+          <label>🔗 Noms d'agent alternatifs</label>
+          <div class="section-sub">Quand le terrain écrit un nom différemment du CRM (« Nawal » pour Nawel, un nom de famille complet, une faute de frappe récurrente), tu l'enregistres une fois ici et c'est réglé pour toujours — imports comme contrats reçus de Pabbly. <b>C'est bien plus sûr que de renommer l'agent</b> dans Réglages : son nom est la clé de tout son historique de pointages et de salaires.</div>
+          <div id="agentAliasPanel" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="settings-box">
+          <label>📊 Ce qui est enregistré</label>
+          <div id="billingImportSummary" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="section-title" style="margin-top:34px;">👤 3. Tableau de l'agent & salaire net réel</div>
+        <div class="section-sub">Le tableau que tu faisais à la main (« Allan Juillet 2026 prime »), généré automatiquement. Clique sur une ligne de contrat pour la marquer <b>rétractée</b> (elle passe en rouge et l'agent n'est plus payé dessus).</div>
+        <div class="admin-toolbar">
+          <div>
+            <label style="margin-bottom:4px;">Agent</label>
+            <select id="billingAgentSelect" onchange="renderBillingAgentSheet()"></select>
+          </div>
+          <div>
+            <label style="margin-bottom:4px;">Mois de paie</label>
+            <input type="month" id="billingSheetMonth" onchange="renderBillingAgentSheet(); renderPaySourcePanel();">
+          </div>
+          <div>
+            <label style="margin-bottom:4px;">Diviseur des retours</label>
+            <select id="billingRatioOverride" onchange="saveBillingRatioOverride()">
+              <option value="">Auto (règlement)</option>
+              <option value="3">Forcer ÷3</option>
+              <option value="2">Forcer ÷2</option>
+              <option value="1">Forcer 1:1</option>
+            </select>
+          </div>
+        </div>
+        <div id="billingAgentSheet" style="margin-top:16px;"></div>
+        <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="link-btn" onclick="downloadBillingAgentCSV()">📥 Télécharger ce tableau (CSV)</button>
+          <button class="link-btn" onclick="exportBillingAgentImage()">📸 Image WhatsApp de ce tableau</button>
+          <button class="link-btn" onclick="downloadAllBillingAgentsCSV()">📦 Télécharger TOUS les agents (CSV)</button>
+        </div>
+
+        <div class="section-title" style="margin-top:34px;">🕐 4. Historique des salaires nets</div>
+        <div class="section-sub">Chaque fin de mois, clique sur « Figer le mois » pour archiver les salaires nets réels tels qu'ils ont été payés. L'historique ne bouge plus ensuite, même si un réglage change plus tard.</div>
+        <div class="admin-toolbar">
+          <button onclick="freezeBillingMonth()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">🔒 Figer le mois affiché</button>
+          <button class="link-btn" onclick="downloadSalaryHistoryCSV()">📥 Télécharger l'historique (CSV)</button>
+        </div>
+        <div id="billingHistoryPanel" style="margin-top:14px;"></div>
+
+        <div class="section-title" style="margin-top:34px;">📦 5. Export patron — tout le mois en un fichier</div>
+        <div class="section-sub">Un seul CSV avec tout ce qui compte pour piloter : par agent, contrats, rétractés, retours, diviseur appliqué, brut, chaque retenue, net réel, et le total masse salariale + charges.</div>
+        <div class="admin-toolbar">
+          <button onclick="downloadBossPackCSV()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--gold);background:rgba(255,215,0,0.14);color:var(--gold);font-weight:700;cursor:pointer;">📥 Télécharger le pack patron du mois</button>
+        </div>
+        <div id="bossPackPreview" style="margin-top:14px;"></div>
+      </div>
+
       <!-- SETTINGS SUBVIEW -->
       <div class="admin-subview" id="admin-settings">
         <div class="settings-box">
@@ -1727,7 +1893,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-10-r94';
+const APP_VERSION = '2026-08-10-r96';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2111,10 +2277,23 @@ const firebaseConfig = {
   projectId: "pointage-vortex-nova",
   storageBucket: "pointage-vortex-nova.firebasestorage.app",
   messagingSenderId: "262211656622",
-  appId: "1:262211656622:web:be2fbc0ec3914062db863f"
+  appId: "1:262211656622:web:be2fbc0ec3914062db863f",
+  // Realtime Database — sert UNIQUEMENT de boîte aux lettres pour les contrats validés envoyés par
+  // Pabbly. Pourquoi pas Firestore comme le reste de l'app ? Parce que l'API REST de Firestore n'accepte
+  // que du JSON imbriqué ({"fields":{"date":{"stringValue":"..."}}}), impossible à produire avec le
+  // module API de Pabbly qui ne sait envoyer que des paires clé/valeur à plat. La Realtime Database,
+  // elle, accepte exactement ce format plat. Toutes les données du CRM restent dans Firestore.
+  //
+  // ⚠️ À VÉRIFIER UNE FOIS : cette adresse est celle affichée en haut de Firebase Console → Realtime
+  // Database, juste après la création. Si la base a été créée en Europe, elle ressemblera plutôt à
+  // https://pointage-vortex-nova-default-rtdb.europe-west1.firebasedatabase.app — dans ce cas il faut
+  // recopier l'adresse exacte ici. Le panneau "Réception automatique" de l'onglet Facturation affiche
+  // l'adresse réellement utilisée et prévient si elle ne répond pas.
+  databaseURL: "https://pointage-vortex-nova-default-rtdb.firebaseio.com"
 };
 
 let db = null;
+let rtdb = null;
 let firebaseReady = false;
 // Résolue tout de suite si Firebase n'est pas configuré ; sinon résolue seulement une fois la connexion
 // anonyme établie (ou tentée) — le reste de l'appli (loadConfig, etc.) attend cette promesse avant de
@@ -2125,6 +2304,10 @@ try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "REMPLACE_MOI"){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    // Boîte aux lettres backoffice (voir databaseURL ci-dessus). Si la Realtime Database n'a pas encore
+    // été créée dans la console Firebase, cet appel n'échoue pas : c'est seulement la première lecture
+    // qui renverra une erreur, attrapée et expliquée dans le panneau Facturation.
+    try{ rtdb = firebase.database(); }catch(e){ console.warn('Realtime Database indisponible:', e); }
     // ============================================================
     // 🔒 SÉCURITÉ — authentification anonyme obligatoire
     // ============================================================
@@ -2206,6 +2389,10 @@ function clearRenderCaches(){
   retractCache = {};
   desiredObjCache = {};
   manualPrimesCache = {};
+  // Productions et retours importés (onglet Facturation & Paie) : relus depuis la base au prochain
+  // besoin, pour qu'un import fait depuis un autre poste apparaisse ici sans recharger la page.
+  if(typeof billingInvalidate === 'function') billingInvalidate();
+  billingContractIndexCache = null;
 }
 
 let autoRefreshBusy = false;
@@ -2247,6 +2434,11 @@ function startAutoRefresh(kind){
         // effacerait une saisie de salaire en cours.
         renderAnomalyBanner();
         checkSupervisionBriefingAcksForAdmin();
+        // Le bandeau du briefing hebdo se met à jour tout seul à chaque tour, quel que soit le
+        // sous-onglet ouvert : le patron n'a rien à cocher, il voit juste qui a confirmé et quand.
+        checkWeeklyBriefingReminder();
+        // Contrats validés arrivés du backoffice depuis le dernier tour (Telegram → Pabbly → CRM).
+        syncBackofficeInbox();
         const overviewEl = document.getElementById('admin-overview');
         if(overviewEl && overviewEl.classList.contains('active')) showAdminSub('overview');
         const dayEl = document.getElementById('admin-day');
@@ -2753,11 +2945,23 @@ function showView(view){
 }
 
 function showAdminSub(sub){
-  ['overview','day','prod','settings'].forEach(s=>{
-    document.getElementById('admin-'+s).classList.toggle('active', s===sub);
-    const btnId = s==='prod' ? 'subtabProd' : 'subtab'+s.charAt(0).toUpperCase()+s.slice(1);
-    document.getElementById(btnId).classList.toggle('active', s===sub);
+  ['overview','day','prod','billing','settings'].forEach(s=>{
+    const view = document.getElementById('admin-'+s);
+    if(view) view.classList.toggle('active', s===sub);
+    const btnId = 'subtab'+s.charAt(0).toUpperCase()+s.slice(1);
+    const btn = document.getElementById(btnId);
+    if(btn) btn.classList.toggle('active', s===sub);
   });
+  if(sub==='billing'){
+    initBillingDefaults();
+    renderBackofficeInboxPanel();
+    renderPaySourcePanel();
+    renderReturnCostPerAgent();
+    renderAgentAliasPanel();
+    renderBillingImportSummary();
+    renderBillingAgentSheet();
+    renderBillingHistory();
+  }
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
@@ -4158,7 +4362,7 @@ async function supervisorIneligibilityReasonToday(agent){
     if(realizedToday > 0) return null;
     return "car tu n'as pas encore pointé aujourd'hui";
   }
-  const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+  const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realizedToday));
   if(ev.lateMinutes > 10) return `à cause de ton retard supérieur à 10 min (${ev.lateMinutes} min)`;
   return null;
 }
@@ -4688,7 +4892,7 @@ async function renderAgentHistory(){
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
       tagsHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>${absenceAttachmentLinkHtml(log)}`;
     } else {
-      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(currentAgent, dateStr, log));
       if(ev.lateMinutes > 0){
         const sanction = ev.lateMinutes <= 10 ? '-30min salaire' : 'journée non payée';
         tagsHtml += `<span class="tag late">Retard ${ev.lateMinutes}min · ${sanction}</span>`;
@@ -4882,7 +5086,7 @@ async function renderReport(){
         return { agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, isIndep: true, isWorkingDay: isWorkingDay(dateStr) };
       }
       const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
-      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log));
       const lockouts = extractLockouts(log.events);
       return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, attachmentData: log.attachmentData || null, attachmentType: log.attachmentType || null, attachmentName: log.attachmentName || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
     }));
@@ -5414,7 +5618,7 @@ async function renderExploDailyDetail(agents, dateList){
             rowCls = noActivity ? 'late' : 'warn';
           }
         } else {
-          const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+          const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realJour));
           if(ev.lateMinutes > 10){ statusHtml = `<span class="tag late">Retard ${ev.lateMinutes}min (non payé)</span>`; rowCls = 'late'; }
           else if(ev.lateMinutes > 0){ statusHtml = `<span class="tag warn">Retard ${ev.lateMinutes}min</span>`; rowCls = 'warn'; }
           else statusHtml = '<span class="tag ok">Présent à l\'heure</span>';
@@ -5736,7 +5940,7 @@ function onObjSnapModeChange(){
   renderObjectifSnapshot();
 }
 
-async function exportObjectifSnapshotImage(){
+async function exportObjectifSnapshotImage(hq){
   const btn = document.getElementById('objSnapExportBtn');
   const source = document.getElementById('objectifSnapshot');
   if(!source || !source.innerHTML.trim()){
@@ -5762,16 +5966,6 @@ async function exportObjectifSnapshotImage(){
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Génération...'; }
 
   try{
-    if(typeof html2canvas === 'undefined'){
-      await new Promise((resolve, reject)=>{
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
-
     // Largeur dynamique selon le nombre d'agents : plus il y en a, plus l'image s'étale en largeur
     // (plusieurs colonnes) plutôt qu'en hauteur — pour éviter la longue photo verticale illisible sans
     // zoomer une fois partagée sur WhatsApp. On vise un rendu proche du carré.
@@ -5779,44 +5973,23 @@ async function exportObjectifSnapshotImage(){
     const cols = Math.max(2, Math.min(6, Math.round(Math.sqrt(cardCount * 1.7))));
     const wrapWidth = cols * 296 + 48;
 
-    const wrap = document.createElement('div');
-    wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${wrapWidth}px; background:#151d27; padding:28px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2;`;
-    wrap.innerHTML = `
-      <div style="text-align:center; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08);">
-        <div style="display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:20px; background:rgba(184,147,90,0.12); border:1px solid rgba(184,147,90,0.32); margin-bottom:13px;">
-          <span style="font-size:10.5px; font-weight:700; color:#c9a870; letter-spacing:0.5px; text-transform:uppercase;">Bilan du jour</span>
-        </div>
-        <div style="font-size:23px; font-weight:800; color:#f0f3f6; letter-spacing:-0.3px;">Bilan de la journée</div>
-        <div style="font-size:14.5px; font-weight:500; color:#8b98a6; margin-top:6px; text-transform:capitalize;">${caption}</div>
-        <div style="font-size:10.5px; color:#5a6672; margin-top:11px; letter-spacing:0.6px; font-weight:600;">VORTEXNOVA · SUIVI D'ÉQUIPE</div>
-      </div>
-      <div>${source.innerHTML}</div>
-    `;
-    document.body.appendChild(wrap);
-
-    // On attend que la police Inter soit bien chargée avant de capturer l'image — sinon le premier
-    // export après ouverture de l'app peut retomber sur une police système le temps du chargement.
-    if(document.fonts && document.fonts.ready){
-      try{ await document.fonts.ready; }catch(e){}
-    }
-
-    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 3, useCORS: true });
-    document.body.removeChild(wrap);
-
     const dateForFile = mode === 'single'
       ? (document.getElementById('objSnapDate')?.value || todayStr())
       : `${document.getElementById('objSnapDateFrom')?.value||''}_au_${document.getElementById('objSnapDateTo')?.value||''}`;
 
-    canvas.toBlob(blob=>{
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `bilan_du_jour_${dateForFile}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(()=> URL.revokeObjectURL(url), 5000);
-    }, 'image/png');
+    // Capture et téléchargement délégués au moteur d'export commun (captureBlockToImage) : rendu à
+    // facteur entier puis réduction progressive jusqu'à la largeur que WhatsApp respecte, pour que le
+    // texte reste net une fois l'image partagée.
+    await captureBlockToImage({
+      innerHTML: source.innerHTML,
+      width: wrapWidth,
+      title: 'Bilan de la journée',
+      badge: 'Bilan du jour',
+      badgeColor: '#c9a870',
+      caption,
+      hq: !!hq,
+      filename: `bilan_du_jour_${dateForFile}${hq ? '_HD' : ''}.png`
+    });
 
   } catch(err){
     console.error('Export image error:', err);
@@ -5830,7 +6003,7 @@ async function exportObjectifSnapshotImage(){
 // (actuellement : le Conseil du matin, côté Admin et côté Supervision). Même mécanique que
 // exportObjectifSnapshotImage (Bilan de la journée) : capture le conteneur de cartes tel quel, avec un
 // bandeau titre/date/pied de page ajouté pour l'export, dans une largeur qui reste lisible sur WhatsApp.
-async function exportBriefingImage(sourceId, btnId, titleText, badgeText, filenamePrefix, badgeColor){
+async function exportBriefingImage(sourceId, btnId, titleText, badgeText, filenamePrefix, badgeColor, hq){
   const btn = document.getElementById(btnId);
   const source = document.getElementById(sourceId);
   if(!source || !source.innerHTML.trim()){
@@ -5844,52 +6017,20 @@ async function exportBriefingImage(sourceId, btnId, titleText, badgeText, filena
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Génération...'; }
 
   try{
-    if(typeof html2canvas === 'undefined'){
-      await new Promise((resolve, reject)=>{
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
-
     const cardCount = source.querySelectorAll('.objsnap-card').length || 1;
     const cols = Math.max(2, Math.min(6, Math.round(Math.sqrt(cardCount * 1.7))));
     const wrapWidth = cols * 296 + 48;
 
-    const wrap = document.createElement('div');
-    wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${wrapWidth}px; background:#151d27; padding:28px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2;`;
-    wrap.innerHTML = `
-      <div style="text-align:center; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08);">
-        <div style="display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:20px; background:${color}22; border:1px solid ${color}55; margin-bottom:13px;">
-          <span style="font-size:10.5px; font-weight:700; color:${color}; letter-spacing:0.5px; text-transform:uppercase;">${badgeText}</span>
-        </div>
-        <div style="font-size:23px; font-weight:800; color:#f0f3f6; letter-spacing:-0.3px;">${titleText}</div>
-        <div style="font-size:14.5px; font-weight:500; color:#8b98a6; margin-top:6px; text-transform:capitalize;">${caption}</div>
-        <div style="font-size:10.5px; color:#5a6672; margin-top:11px; letter-spacing:0.6px; font-weight:600;">VORTEXNOVA · SUIVI D'ÉQUIPE</div>
-      </div>
-      <div>${source.innerHTML}</div>
-    `;
-    document.body.appendChild(wrap);
-
-    if(document.fonts && document.fonts.ready){
-      try{ await document.fonts.ready; }catch(e){}
-    }
-
-    const canvas = await html2canvas(wrap, { backgroundColor: '#151d27', scale: 3, useCORS: true });
-    document.body.removeChild(wrap);
-
-    canvas.toBlob(blob=>{
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${filenamePrefix}_${todayStr()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(()=> URL.revokeObjectURL(url), 5000);
-    }, 'image/png');
+    await captureBlockToImage({
+      innerHTML: source.innerHTML,
+      width: wrapWidth,
+      title: titleText,
+      badge: badgeText,
+      badgeColor: color,
+      caption,
+      hq: !!hq,
+      filename: `${filenamePrefix}_${todayStr()}${hq ? '_HD' : ''}.png`
+    });
 
   } catch(err){
     console.error('Export image error:', err);
@@ -6254,7 +6395,7 @@ async function renderPauseTotalsToday(){
     else if(lastType === 'out') workState = 'left';
     // Retard/absence — seulement pertinents un jour ouvré, sinon jamais évalués (même règle que
     // monthlyStats/buildTodayProblemRow : ni retard ni absence un jour non travaillé).
-    const ev = (workingToday && log.events.length > 0) ? evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0) : null;
+    const ev = (workingToday && log.events.length > 0) ? evaluateDay(log.events, dateStr, bonusInfo.totalBonus) : null;
     return {
       agent,
       lunchMin: Math.round(lunchSec/60),
@@ -6456,7 +6597,7 @@ async function buildTodayProblemRow(agent, dateStr, board){
     return { agent, isIndep: false, problem: false, hasAnyEvent: false };
   }
   const [log, infr] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
-  const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+  const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log));
   const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;   // ← remets cette ligne
   const lockoutMin = totalLockoutMinutes(log.events);
   const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
@@ -7912,17 +8053,35 @@ function genderPick(agentName, masc, fem){
   return (getAgentGender(agentName) === 'f') ? fem : masc;
 }
 
+// À qui renvoyer un agent en difficulté ? DEMANDE PATRON : un superviseur n'a pas de superviseur
+// au-dessus de lui — lui écrire « parle à ton superviseur » n'a aucun sens et le décrédibilise
+// auprès de sa propre équipe. Ces deux helpers choisissent le bon interlocuteur selon le rôle, et
+// sont utilisés partout où un commentaire propose d'aller voir quelqu'un.
+function escalationTarget(agentName){
+  return isSupervisor(agentName) ? 'le patron' : 'ton superviseur';
+}
+function escalationWith(agentName){
+  return isSupervisor(agentName) ? 'avec le patron' : 'avec ton superviseur';
+}
+// Rappel de posture pour un superviseur : son compteur est lu par toute son équipe, l'exemplarité
+// fait partie du poste. Chaîne vide pour un agent normal (rien à ajouter).
+function supervisorNudge(agentName){
+  return isSupervisor(agentName) ? " Et tu es superviseur : ton équipe regarde ton compteur autant que le sien." : '';
+}
+
 // Palette pro et sobre, pensée pour un rapport qu'on a envie de lire — pas de couleurs criardes : le
 // classement est en camel/ardoise (ce n'est pas une alerte), le minimum obligatoire reste le seul bloc à
 // utiliser un vrai rouge (c'est le seul avec un enjeu de paie), en version mate — jamais fluo — avec une
 // teinte plus soutenue réservée aux situations vraiment critiques. L'objectif visé (bonus, jamais
 // obligatoire) passe par une famille sarcelle/bleu/violet/vieux rose — jamais rouge — pour rester
 // motivant sans jamais ressembler à une alerte.
-function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride){
+function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed){
   const n = firstName(agentName);
   const fmtNum = x => (Math.round(x*10)/10).toLocaleString('fr-FR');
   const mk = (emoji, text, color, bg, critical) => ({ text: `${emoji} ${text}`, color, bg, critical: !!critical });
-  const seed = `${agentName}|${monthlyRealized}`;
+  // La graine inclut le JOUR : à nombre de contrats égal, l'agent ne relit pas mot pour mot le même
+  // commentaire demain. Elle reste stable dans la journée (pas de texte qui saute à chaque rafraîchissement).
+  const seed = `${agentName}|${monthlyRealized}|${refDayForSeed || todayStr()}`;
   const lines = [];
   const currentPace = daysElapsed > 0 ? monthlyRealized / daysElapsed : 0;
 
@@ -7958,10 +8117,13 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
           `Personne devant toi ${periodLabel} (${rankValue} contrats) — champion pour l'instant. Reste affamé, ne relâche rien !`,
           `Personne devant toi ${periodLabel} (${rankValue} contrats) — championne pour l'instant. Reste affamée, ne relâche rien !`
         ),
-        `Tu écrases le classement avec ${rankValue} contrats ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieux !`,
+        genderPick(agentName,
+          `Tu écrases le classement avec ${rankValue} contrats ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieux !`,
+          `Tu écrases le classement avec ${rankValue} contrats ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieuse !`
+        ),
         `1er, ${rankValue} contrats ${periodLabel}. Tout le monde te court après — à toi de rester injoignable.`,
         `${rankValue} contrats ${periodLabel} et personne devant. C'est ça, la vie de rêve dont on parle — continue à la construire.`
-      ], seed), GOLD, GOLD_BG));
+      ], seed+'|rang'), GOLD, GOLD_BG));
     } else if(rankInfo.prevGap > 0){
       const rival = firstName(rankInfo.prevAgent);
       const rivalObj = genderPick(rankInfo.prevAgent, 'le', 'la');
@@ -7973,7 +8135,7 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
         `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon coup et le classement change !`,
         `${gapTxt} seulement entre toi et ${rival}. C'est rien, un client de plus et la place est à toi.`,
         `${rankTxt}, à ${gapTxt} de ${rival}. Le classement n'attend qu'un déclic — que ce soit le tien aujourd'hui.`
-      ], seed), SLATE, SLATE_BG));
+      ], seed+'|rang'), SLATE, SLATE_BG));
     } else {
       lines.push(mk('🥈', `Tu es ${rankTxt} de l'équipe avec ${rankValue} contrats ${periodLabel}.`, SLATE, SLATE_BG));
     }
@@ -7991,7 +8153,7 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
         `Objectif minimum du mois sécurisé, bravo ! Ton salaire de base est tranquille — maintenant, vise plus haut.`,
         `C'est fait, ton objectif minimum est en poche. Le plus dur est derrière toi, ne t'arrête pas en si bon chemin.`,
         `Objectif minimum atteint. Bon travail — chaque contrat en plus maintenant, c'est du bonus pur.`
-      ], seed), SAGE, SAGE_BG));
+      ], seed+'|mini'), SAGE, SAGE_BG));
     } else if(remainingDays <= 0){
       lines.push(mk('📌', `Dernier jour pour boucler ton objectif minimum (${monthlyRealized}/${mini}) ! C'est maintenant ou jamais.`, CRITICAL, CRITICAL_BG, true));
     } else {
@@ -8001,25 +8163,25 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
           `Pour ton objectif minimum il faut ${fmtNum(neededPace)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. Large, continue comme ça.`,
           `Tu tiens un bon rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à te faire.`,
           `Objectif minimum en bonne voie : ${fmtNum(currentPace)} contrat/jour en moyenne, bien au-dessus de ce qu'il faut.`
-        ], seed), SAGE, SAGE_BG));
+        ], seed+'|mini'), SAGE, SAGE_BG));
       } else if(neededPace - currentPace <= 1){
         lines.push(mk('📌', seedPick([
           `Il faut ${fmtNum(neededPace)} contrat/jour pour ton objectif minimum — tu es à ${fmtNum(currentPace)}/jour. Un petit effort et c'est réglé.`,
           `Tu es tout proche du rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
           `Presque le bon rythme pour ton objectif minimum. Un ou deux contrats de plus et c'est bouclé.`
-        ], seed), AMBER, AMBER_BG));
+        ], seed+'|mini'), AMBER, AMBER_BG));
       } else if(neededPace - currentPace <= 2.5){
         lines.push(mk('📌', seedPick([
           `Le rythme est en dessous de ce qu'il faut pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). Il faut réagir aujourd'hui, pas la semaine prochaine.`,
           `Attention : au rythme actuel, ton objectif minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}/jour — accélère.`,
           `Ton objectif minimum s'éloigne un peu. Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
-        ], seed), TERRACOTTA, TERRACOTTA_BG));
+        ], seed+'|mini'), TERRACOTTA, TERRACOTTA_BG));
       } else {
         lines.push(mk('📌', seedPick([
           `Ton objectif minimum est en danger réel. Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Bouge-toi maintenant.`,
           `Alerte objectif minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
           `C'est du sérieux : à ce rythme, ton objectif minimum du mois ne sera pas atteint. Il faut un vrai sursaut, maintenant, pas dans trois jours.`
-        ], seed), CRITICAL, CRITICAL_BG, true));
+        ], seed+'|mini'), CRITICAL, CRITICAL_BG, true));
       }
     }
   }
@@ -8037,7 +8199,7 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
           `Objectif visé en poche. Tu peux être fier de ton mois — et il reste encore des jours pour aller chercher encore plus !`,
           `Objectif visé en poche. Tu peux être fière de ton mois — et il reste encore des jours pour aller chercher encore plus !`
         )
-      ], seed), TEAL, TEAL_BG));
+      ], seed+'|vise'), TEAL, TEAL_BG));
     } else if(remainingDays <= 0){
       lines.push(mk('🚀', `Dernier jour pour attraper ton objectif visé (${monthlyRealized}/${vise}) ! Un dernier coup et c'est fait.`, ROSE, ROSE_BG));
     } else {
@@ -8047,19 +8209,19 @@ function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapse
           `Pour l'objectif visé il faut ${fmtNum(neededPaceVise)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. En très bonne voie !`,
           `Tu es sur le bon rythme pour ton objectif visé (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPaceVise)}). Continue, ça se voit !`,
           `Objectif visé bien parti : à ce rythme, tu y arrives tranquillement.`
-        ], seed), BLUE, BLUE_BG));
+        ], seed+'|vise'), BLUE, BLUE_BG));
       } else if(neededPaceVise - currentPace <= 1.5){
         lines.push(mk('🚀', seedPick([
           `Il faudrait ${fmtNum(neededPaceVise)} contrat/jour pour l'objectif visé — tu es à ${fmtNum(currentPace)}/jour. Ça reste jouable, encore un effort !`,
           `Tu es proche du rythme pour ton objectif visé (${fmtNum(neededPaceVise)}/jour nécessaires). Un petit coup de plus et c'est fait !`,
           `Objectif visé encore atteignable. Allez, on y croit !`
-        ], seed), VIOLET, VIOLET_BG));
+        ], seed+'|vise'), VIOLET, VIOLET_BG));
       } else {
         lines.push(mk('🚀', seedPick([
           `Il faudrait ${fmtNum(neededPaceVise)} contrats/jour pour l'objectif visé — tu es à ${fmtNum(currentPace)}/jour. Il va falloir forcer l'allure !`,
           `L'objectif visé est ambitieux au rythme actuel (${fmtNum(currentPace)}/jour, il en faudrait ${fmtNum(neededPaceVise)}). Chaque contrat en plus te rapproche du but !`,
           `Objectif visé costaud pour l'instant (${fmtNum(neededPaceVise)}/jour nécessaires), mais rien n'est impossible. Accélère, on y croit !`
-        ], seed), ROSE, ROSE_BG));
+        ], seed+'|vise'), ROSE, ROSE_BG));
       }
     }
   }
@@ -8166,27 +8328,36 @@ async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, no
         `0 contrat aujourd'hui, et c'est normal en tout début de parcours — personne ne signe dès le premier jour. Reviens demain avec un objectif clair, et n'hésite pas à demander de l'aide sur un appel qui bloque.`,
         `Journée à 0, mais tu es encore en phase d'apprentissage — pas de panique. Repère ce qui t'a bloqué aujourd'hui (script, objection, timing) et travaille ce point précis demain.`,
         `0 contrat, normal quand on démarre. Le plus important maintenant : identifier UNE chose à améliorer pour demain, et la travailler avec un collègue plus expérimenté si besoin.`
-      ], `${agentName}|zero|new`), color: SAGE, bg: SAGE_BG, critical: false };
+      ], `${agentName}|zero|new|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
     }
     if(zeroCount <= 1){
       return { text: seedPick([
         `Premier 0 du mois — ça arrive, l'essentiel est de ne pas s'installer là-dedans. Repère ce qui a manqué aujourd'hui et repars fort demain.`,
         `0 contrat aujourd'hui, ton premier ce mois-ci. Pas de drame, mais prends 5 minutes ce soir pour identifier ce qui a bloqué, et attaque demain avec un plan clair.`,
         `Un premier 0 ce mois — ça peut arriver à tout le monde une fois. Le conseil : rappelle 2-3 prospects tièdes dès demain matin pour relancer la machine.`
-      ], `${agentName}|zero|1`), color: AMBER2, bg: AMBER2_BG, critical: false };
+      ], `${agentName}|zero|1|${refDateStr || todayStr()}`), color: AMBER2, bg: AMBER2_BG, critical: false };
     }
     if(zeroCount === 2){
       return { text: seedPick([
-        `2e journée à 0 ce mois-ci — il faut réagir maintenant, avant que ça devienne une habitude. Parle à ton superviseur aujourd'hui même pour identifier le blocage.`,
+        `2e journée à 0 ce mois-ci — il faut réagir maintenant, avant que ça devienne une habitude. Fais le point ${escalationWith(agentName)} aujourd'hui même pour identifier le blocage.`,
         `0 contrat, et c'est ta 2e fois ce mois. C'est le moment de changer quelque chose concrètement : horaires d'appel, script, ou un point avec un collègue qui performe bien.`,
-        `2e 0 du mois — ça commence à peser sur ton objectif. Conseil concret : priorise tes meilleurs prospects en tout début de journée demain, pas en fin.`
-      ], `${agentName}|zero|2`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical: false };
+        `2e 0 du mois — ça commence à peser sur ton objectif. Conseil concret : priorise tes meilleurs prospects en tout début de journée demain, pas en fin.`,
+        `Deuxième journée blanche du mois. Une fois, c'est un accident ; deux fois, c'est un signal. Reprends demain par les dossiers que tu sens les plus chauds.${supervisorNudge(agentName)}`,
+        `2e 0 ce mois-ci. Ne cherche pas à tout changer d'un coup — choisis UN point (l'accroche, la relance, le volume d'appels) et travaille-le demain, rien que celui-là.`,
+        `Ça fait deux journées à 0. Regarde à quelle heure tu passes tes appels : souvent, le problème est là avant d'être dans le discours.`
+      ], `${agentName}|zero|2|${refDateStr || todayStr()}`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical: false };
     }
     return { text: seedPick([
-      `${zeroCount}e journée à 0 ce mois-ci. C'est sérieux — ça ne peut plus continuer comme ça. Un point s'impose avec ton superviseur dès demain, avec un plan d'action concret à suivre.`,
+      `${zeroCount}e journée à 0 ce mois-ci. C'est sérieux — ça ne peut plus continuer comme ça. Un point s'impose ${escalationWith(agentName)} dès demain, avec un plan d'action concret à suivre.`,
       `${zeroCount} journées à 0 ce mois — inacceptable si ça continue. Conseil : reprends les bases avec un collègue expérimenté et fixe-toi un objectif minimum réaliste pour chaque heure de la journée.`,
-      `0 contrat, la ${zeroCount}e fois ce mois. Il faut un vrai sursaut dès demain — identifie avec ton superviseur ce qui bloque vraiment, et corrige-le, pas dans une semaine.`
-    ], `${agentName}|zero|3plus`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
+      `0 contrat, la ${zeroCount}e fois ce mois. Il faut un vrai sursaut dès demain — identifie ${escalationWith(agentName)} ce qui bloque vraiment, et corrige-le, pas dans une semaine.`,
+      `${zeroCount}e journée blanche. À ce stade ce n'est plus un mauvais jour, c'est une tendance — et elle se voit directement sur ta fiche de paie. Demain, objectif : un contrat avant midi, rien d'autre en tête.${supervisorNudge(agentName)}`,
+      `${zeroCount} fois 0 ce mois-ci. On arrête les constats : demain tu te fixes un nombre d'appels précis à passer avant la pause déjeuner, et tu t'y tiens.`,
+      genderPick(agentName,
+        `${zeroCount}e journée à 0. Tu vaux mieux que ça et tu le sais — mais il va falloir le prouver dès demain, pas la semaine prochaine. Un point ${escalationWith(agentName)} s'impose.`,
+        `${zeroCount}e journée à 0. Tu vaux mieux que ça et tu le sais — mais il va falloir le prouver dès demain, pas la semaine prochaine. Un point ${escalationWith(agentName)} s'impose.`
+      )
+    ], `${agentName}|zero|3plus|${refDateStr || todayStr()}`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
   }
 
   if(todayRealized > yesterdayRealized){
@@ -8196,8 +8367,14 @@ async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, no
       `+${diff} par rapport à hier (${todayRealized} contre ${yesterdayRealized}). Tu prends la bonne direction, garde ce rythme !`,
       `Ça monte : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Beau sursaut, ne relâche rien !`,
       `+${diff} vs hier — tu montes en régime comme il faut. Cette dynamique-là, on la garde !`,
-      `Hier c'était ${yesterdayRealized}, aujourd'hui ${todayRealized}. La courbe monte, ton compte en banque te dit merci.`
-    ], `${agentName}|up`), color: SAGE, bg: SAGE_BG, critical:false };
+      `Hier c'était ${yesterdayRealized}, aujourd'hui ${todayRealized}. La courbe monte, ton compte en banque te dit merci.`,
+      `${yesterdayRealized} hier, ${todayRealized} aujourd'hui : tu as trouvé quelque chose qui marche. Note-le pendant que c'est frais, et refais-le demain.`,
+      `+${diff} par rapport à hier. Ce n'est pas de la chance quand ça monte deux jours de suite — c'est du métier.`,
+      genderPick(agentName,
+        `${todayRealized} contre ${yesterdayRealized} hier. Tu es clairement lancé, ne casse pas ce rythme maintenant.`,
+        `${todayRealized} contre ${yesterdayRealized} hier. Tu es clairement lancée, ne casse pas ce rythme maintenant.`
+      )
+    ], `${agentName}|up|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical:false };
   }
   if(todayRealized === yesterdayRealized){
     return { text: seedPick([
@@ -8205,8 +8382,11 @@ async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, no
       `${todayRealized} aujourd'hui, pareil qu'hier. C'est stable, mais stable n'a jamais gagné un classement.`,
       `Même total qu'hier (${todayRealized}). Correct, mais tu peux clairement faire mieux.`,
       `${todayRealized} deux jours de suite : tu tiens la cadence. Maintenant il faut la casser, dans le bon sens.`,
-      `Copié-collé d'hier (${todayRealized}). Solide, mais la routine ne fait jamais gagner de classement.`
-    ], `${agentName}|flat`), color: SLATE, bg: SLATE_BG, critical:false };
+      `Copié-collé d'hier (${todayRealized}). Solide, mais la routine ne fait jamais gagner de classement.`,
+      `${todayRealized} hier, ${todayRealized} aujourd'hui. La régularité est une qualité rare — sers-t'en comme d'un socle, pas comme d'un plafond.`,
+      `Tu ne baisses pas, c'est déjà ça. Maintenant trouve le petit truc qui te fait passer au-dessus : un créneau d'appel, une relance de plus.`,
+      `Deux fois ${todayRealized}. Tu es dans ta zone de confort — c'est exactement là que se joue la différence avec le mois prochain.`
+    ], `${agentName}|flat|${refDateStr || todayStr()}`), color: SLATE, bg: SLATE_BG, critical:false };
   }
   const diff = yesterdayRealized - todayRealized;
   return { text: seedPick([
@@ -8502,20 +8682,51 @@ function isoWeekString(date){
 // Jour du briefing hebdomadaire : lundi par défaut (1 = lundi). Le rappel n'apparaît que ce jour-là, une
 // seule fois par semaine, et prévient aussi le boss par notification navigateur s'il les a activées.
 const WEEKLY_BRIEFING_DAY = 1;
-function checkWeeklyBriefingReminder(){
+
+// DEMANDE PATRON : le patron n'a plus rien à cocher. Ce n'est pas lui qui fait le briefing, ce sont ses
+// superviseurs — donc ce bandeau ne lui demande plus de confirmer quoi que ce soit : il AFFICHE où en
+// sont les superviseurs, et se met à jour tout seul (auto-refresh Admin) à mesure qu'ils confirment.
+// La notification "briefing fait" reste envoyée au moment exact où un superviseur confirme, par
+// checkSupervisionBriefingAcksForAdmin() ci-dessous.
+async function checkWeeklyBriefingReminder(){
+  const banner = document.getElementById('weeklyBriefingBanner');
+  const statusEl = document.getElementById('weeklyBriefingAdminStatus');
+  if(!banner) return;
   const now = nowMA();
-  if(now.getDay() !== WEEKLY_BRIEFING_DAY) return;
+  if(now.getDay() !== WEEKLY_BRIEFING_DAY){ banner.style.display = 'none'; return; }
+  banner.style.display = 'flex';
+
+  if(!statusEl) return;
   const currentWeek = isoWeekString(now);
-  let lastSeen = null;
-  try{ lastSeen = localStorage.getItem('vn_lastBriefingWeekSeen'); }catch(e){}
-  if(lastSeen === currentWeek) return; // déjà vu/traité cette semaine
-  const banner = document.getElementById('weeklyBriefingBanner');
-  if(banner) banner.style.display = 'flex';
-}
-function acknowledgeWeeklyBriefing(){
-  try{ localStorage.setItem('vn_lastBriefingWeekSeen', isoWeekString(nowMA())); }catch(e){}
-  const banner = document.getElementById('weeklyBriefingBanner');
-  if(banner) banner.style.display = 'none';
+  const supervisors = listSupervisors();
+  if(supervisors.length === 0){
+    statusEl.innerHTML = '<span style="color:var(--muted);">Aucun superviseur désigné pour l\'instant (Réglages → Agents → 📊 Superviseur).</span>';
+    return;
+  }
+  const acks = await Promise.all(supervisors.map(async sup=>{
+    const res = await storageGet(`weeklyBriefingAck:${currentWeek}:${sup}`);
+    let at = null;
+    if(res && res.value){ try{ at = JSON.parse(res.value).at; }catch(e){ at = true; } }
+    return { sup, at };
+  }));
+  const done = acks.filter(a=> a.at);
+  const pending = acks.filter(a=> !a.at).map(a=> a.sup);
+  const hhmm = iso => { try{ return new Date(iso).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }); }catch(e){ return ''; } };
+
+  let html = '';
+  if(done.length){
+    html += `<span style="color:#5cb896;">✅ Fait par ${done.map(a=> `${escapeHtml(a.sup)}${typeof a.at === 'string' ? ' à ' + hhmm(a.at) : ''}`).join(', ')}</span>`;
+  }
+  if(pending.length){
+    html += `${done.length ? ' · ' : ''}<span style="color:#d9a441;">⏳ En attente de ${pending.map(escapeHtml).join(', ')}</span>`;
+  }
+  statusEl.innerHTML = html;
+
+  // Bandeau apaisé une fois que tout le monde a confirmé : plus d'animation ni de bordure d'alerte,
+  // il devient un simple accusé de réception vert.
+  const allDone = pending.length === 0;
+  banner.style.animation = allDone ? 'none' : 'pulseWarn 2.4s infinite';
+  banner.style.borderColor = allDone ? '#5cb896' : '#c9a870';
 }
 
 // ---- Variante Supervision : même rituel, mais déclenché par un superviseur plutôt que l'admin — on
@@ -8709,7 +8920,7 @@ async function buildWeeklyBriefingHtml(mondayOverride){
       } else {
         daysPresent++;
         if(realized === 0 && dayOver){ zeroDays++; zeroDayDates.push(d); }
-        const ev = evaluateDay(log.events, d, log.freeBreakBonusMin || 0);
+        const ev = evaluateDay(log.events, d, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realized));
         if(ev.lateMinutes > 0) lateCount++;
       }
     }));
@@ -9082,6 +9293,9 @@ function getAgentPay(agent){
       primeExtraContrat: 0,
       primeFixeMensuelle: num(c.primeFixeMensuelle, 0),
       supervisorPrimePerContract: num(c.supervisorPrimePerContract, d.supervisorPrimePerContract ?? 0),
+      // 💸 Coût d'UN retour (impayé client) pour cet agent, AVANT division ÷3 / ÷2 / 1:1.
+      // Réglable par agent ; retombe sur la valeur par défaut (Admin → Facturation & Paie).
+      returnCost: num(c.returnCost, d.returnCost ?? 0),
       isIndep: true,
       isSupervisor: isSupervisor(agent)
     };
@@ -9104,6 +9318,8 @@ function getAgentPay(agent){
     primeExtraContrat: num(c.primeExtraContrat, d.primeExtraContrat ?? 0),
     primeFixeMensuelle: num(c.primeFixeMensuelle, d.primeFixeMensuelle ?? 0),
     supervisorPrimePerContract: num(c.supervisorPrimePerContract, d.supervisorPrimePerContract ?? 0),
+    // 💸 Coût d'UN retour (impayé client) pour cet agent, AVANT division ÷3 / ÷2 / 1:1.
+    returnCost: num(c.returnCost, d.returnCost ?? 0),
     isIndep: false,
     noObjectif: hasNoObjectif(agent),
     isSupervisor: isSupervisor(agent)
@@ -9241,6 +9457,22 @@ async function monthlyRetractions(agent, year, month){
 // enregistrées ce mois-là. C'est cette valeur qui alimente ensuite tout le reste de l'appli :
 // objectifs, classements, salaires, supervision.
 async function monthlyRealizedContracts(agent, year, month){
+  // 🔀 SOURCE DE PAIE DU MOIS. Par défaut ('agent'), on compte comme avant : les +1 saisis par l'agent
+  // dans l'Arena. Une fois que le patron a basculé le mois sur 'backoffice' (Admin → Facturation & Paie),
+  // c'est le nombre de contrats VALIDÉS par le backoffice qui compte — un chiffre que personne ne peut
+  // modifier depuis le CRM. Dans les deux cas, les rétractations du mois sont retirées ensuite, une
+  // seule fois, exactement de la même façon : la règle de calcul ne change pas, seule la source du
+  // nombre de contrats change.
+  try{
+    if(await getPaySource(year, month) === 'backoffice'){
+      const [bo, retractations] = await Promise.all([
+        backofficeMonthlyCount(agent, year, month),
+        monthlyRetractions(agent, year, month)
+      ]);
+      return Math.max(0, bo - retractations);
+    }
+  }catch(e){ console.error('getPaySource:', e); /* en cas de souci, on retombe sur les compteurs agents */ }
+
   const daysInMonth = new Date(year, month, 0).getDate();
   const dateStrs = [];
   for(let d=1; d<=daysInMonth; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
@@ -9393,7 +9625,7 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
     // personne n'y est censé travailler. Les infractions manuelles ci-dessous, elles, s'appliquent
     // quel que soit le jour (un retour client peut arriver n'importe quand).
     if(!isIndep && log && isWorkingDay(dateStr) && log.events.length > 0){
-      const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log));
       if(ev.lateMinutes > 10){
         // Règlement interne : au-delà de 10 minutes de retard, « la paye du jour n'est pas due » — mais
         // « les contrats effectués durant la journée sont pris en compte ». Seule la quote-part fixe du
@@ -9468,6 +9700,28 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
       }
     });
   }
+
+  // 💸 RETOURS DE FACTURATION (impayés) importés pour ce mois de paie — Admin → Facturation & Paie.
+  // Ce sont les contrats d'une période 21→20 décalée d'environ 2 mois, sur lesquels le patron n'a pas
+  // été payé, et qu'il répercute sur l'agent : coût unitaire réglé par agent, divisé par 3, 2 ou 1
+  // selon le compteur retards/absences du mois (règlement interne, paliers 5 et 6). Une seule ligne
+  // récapitulative, avec le détail contrat par contrat dans le tableau de l'agent.
+  // Uniquement sur un calcul de MOIS ENTIER : sur une fenêtre de dates choisie (carte "Dépenses temps
+  // réel"), on n'impute pas un forfait mensuel à un intervalle de quelques jours.
+  if(!dateRangeOverride){
+    try{
+      const ret = await billingReturnsDeduction(agent, year, month);
+      if(ret.count > 0 && ret.amount > 0){
+        items.push({
+          date: `${year}-${String(month).padStart(2,'0')}-28`,
+          label: `Retours facturation${ret.periodLabel ? ' ('+ret.periodLabel+')' : ''} — ${ret.count} retour${ret.count>1?'s':''} × ${Math.round(ret.unitCost).toLocaleString('fr-FR')} DH ${ret.divisor===1 ? '(1:1)' : '÷'+ret.divisor}`,
+          amount: ret.amount
+        });
+        total += ret.amount;
+      }
+    }catch(e){ console.error('billingReturnsDeduction:', e); }
+  }
+
   return { total: Math.round(total), items };
 }
 
@@ -10243,6 +10497,10 @@ async function renderArena(){
     arenaRetractEl.style.background = rc>0 ? 'rgba(229,72,77,0.18)' : 'rgba(52,183,116,0.15)';
     arenaRetractEl.style.color = rc>0 ? 'var(--red)' : 'var(--green)';
     arenaRetractEl.style.border = rc>0 ? '1px solid rgba(229,72,77,0.3)' : '1px solid rgba(52,183,116,0.3)';
+    renderBackofficeAgentPanel('arenaBackofficePanel', currentArenaAgent, now.getFullYear(), now.getMonth()+1);
+  } else {
+    const bp = document.getElementById('arenaBackofficePanel');
+    if(bp) bp.innerHTML = '';
   }
   const desiredObjBoxEl = document.getElementById('arenaDesiredObjBox');
   desiredObjBoxEl.style.display = (currentArenaAgent && isMonthScope) ? 'block' : 'none';
@@ -10585,7 +10843,7 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
   const hasEvent = log.events && log.events.length > 0;
   const realizedToday = getAgentProd(board, agent).realized || 0;
   if(!hasEvent) return realizedToday > 0; // aucun pointage : éligible seulement s'il a quand même saisi un contrat
-  const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+  const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realizedToday));
   return ev.lateMinutes <= 10;
 }
 
@@ -10884,6 +11142,7 @@ async function renderCash(){
     cashRetractEl.style.color = monthRetractions>0 ? 'var(--red)' : 'var(--green)';
     cashRetractEl.style.border = monthRetractions>0 ? '1px solid rgba(229,72,77,0.3)' : '1px solid rgba(52,183,116,0.3)';
   }
+  renderBackofficeAgentPanel('cashBackofficePanel', agent, now.getFullYear(), now.getMonth()+1);
   renderCashObjectifsRecap();
   renderRetardsAbsencesPanel('cashRetardsAbsencesPanel', agent, now.getFullYear(), now.getMonth()+1);
 
@@ -11295,7 +11554,7 @@ async function renderSupervision(){
       const hasActivity = log.events.length > 0;
       if(hasActivity){
         const last = lastEventType(log.events);
-        const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
+        const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(dayRealized));
         if(log.justifiedAbsence){
           statusLabel = '🗓️ ' + justifiedAbsenceLabel(log.justifiedAbsence, true);
           statusCls = 'independant';
@@ -11416,12 +11675,17 @@ async function renderSupervision(){
     pressureHtml = `<div class="section-title" style="margin-top:0;">🚨 Agents en difficulté — objectif menacé</div>
       <div class="section-sub">${daysRemaining} jour${daysRemaining>1?'s':''} ouvré${daysRemaining>1?'s':''} restant${daysRemaining>1?'s':''} ce mois-ci (lundi-vendredi, hors jours fériés) pour redresser la barre.</div>
       <div class="escalade-grid">` + strugglingRows.map(r=>{
-        const manque = Math.max(0, r.monthObj - r.monthReal);
-        const perDayNeeded = daysRemaining>0 ? Math.ceil(manque/daysRemaining) : manque;
+        const manqueMini = Math.max(0, r.monthObj - r.monthReal);
+        const perDayMini = daysRemaining>0 ? Math.ceil(manqueMini/daysRemaining) : manqueMini;
+        // Objectif visé = fixé par l'agent lui-même, facultatif — pas tous les agents en ont réglé un.
+        const hasVise = r.desiredObj > 0;
+        const manqueVise = hasVise ? Math.max(0, r.desiredObj - r.monthReal) : 0;
+        const perDayVise = hasVise ? (daysRemaining>0 ? Math.ceil(manqueVise/daysRemaining) : manqueVise) : null;
         return `<div class="escalade-card" style="border-color:rgba(229,72,77,0.35);">
           <div class="name">${r.agent}</div>
-          <div class="count">${r.monthReal} / ${r.monthObj} contrats (${r.pctMonth}%) — il manque <b style="color:var(--red);">${manque}</b></div>
-          <span class="tier tier-3">${perDayNeeded} contrat${perDayNeeded>1?'s':''}/jour requis pour rattraper</span>
+          <div class="count">${r.monthReal} / ${r.monthObj} contrats (${r.pctMonth}%) — il manque <b style="color:var(--red);">${manqueMini}</b></div>
+          <div style="margin-top:4px;"><span class="tier tier-3">${perDayMini} contrat${perDayMini>1?'s':''}/jour requis pour l'objectif mini</span></div>
+          ${hasVise ? `<div style="margin-top:4px;"><span class="tier tier-3">${perDayVise} contrat${perDayVise>1?'s':''}/jour requis pour l'objectif visé</span></div>` : ''}
         </div>`;
       }).join('') + `</div>`;
   } else {
@@ -11442,6 +11706,7 @@ async function renderSupervision(){
     <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.7; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(229,168,61,0.09); border-left:4px solid #e5a83d;"><b style="color:#e5a83d;">👉 Ce que tu dois faire :</b> en fin de journée, clique sur le bouton <b>« Envoyer sur WhatsApp »</b> juste en dessous et envoie l'image au groupe de l'équipe. C'est obligatoire, tous les jours, sans exception.</div>
     <div style="margin:10px 0 14px;">
       <button type="button" id="objSnapExportBtnSup" onclick="exportBriefingImage('objSnapCardsSup','objSnapExportBtnSup','Bilan de la journée','Obligatoire · WhatsApp','bilan_du_jour_supervision','#e5a83d')" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (bilan du jour)</button>
+            <button type="button" id="objSnapExportBtnSupHQ" onclick="exportBriefingImage('objSnapCardsSup','objSnapExportBtnSupHQ','Bilan de la journée','Obligatoire · WhatsApp','bilan_du_jour_supervision','#e5a83d',true)" title="PNG haute définition (2400 px). À envoyer dans WhatsApp via 📎 → Document : aucune compression, lisible au zoom." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max (à envoyer en Document)</button>
     </div>`;
  objBlockHtml += `<div id="objSnapCardsSup"></div>`;
 
@@ -11453,7 +11718,7 @@ async function renderSupervision(){
     // jour — une absence non justifiée ou une mise à pied doit au contraire y rester visible.
     if(log.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence]?.justified) return { agent: r.agent, violation: false };
     const infr = await getInfractions(r.agent, todayDateStr);
-    const ev = evaluateDay(log.events, todayDateStr, log.freeBreakBonusMin || 0);
+    const ev = evaluateDay(log.events, todayDateStr, await getEffectiveFreeBreakBonus(r.agent, todayDateStr, log));
     const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;
     const violation = ev.lateMinutes > 0 || anyBreakOver || infr.length > 0;
     return { agent: r.agent, violation };
@@ -11521,6 +11786,7 @@ async function renderSupervision(){
     </div>
     <div style="margin:10px 0 14px;">
       <button type="button" id="dailyBriefingExportBtnSup" onclick="exportBriefingImage('dailyBriefingSup','dailyBriefingExportBtnSup','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin_supervision','#e0c25e')" style="padding:9px 16px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.10); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (facultatif)</button>
+            <button type="button" id="dailyBriefingExportBtnSupHQ" onclick="exportBriefingImage('dailyBriefingSup','dailyBriefingExportBtnSupHQ','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin_supervision','#e0c25e',true)" title="PNG haute définition (2400 px). À envoyer dans WhatsApp via 📎 → Document : aucune compression, lisible au zoom." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max (à envoyer en Document)</button>
     </div>
     <div id="dailyBriefingSup">` + await buildDailyBriefingHtml(briefingBaseRows) + `</div>`;
 
@@ -11720,7 +11986,7 @@ async function renderAgentPayTable(){
   const totalWorkingDays = workingDaysInMonth(year, month);
   const elapsedWorkingDays = workingDaysElapsedInMonth();
   let html = `<table class="salary-table"><thead><tr>
-    <th>Agent</th><th>Fixe/mois</th><th>DH/contrat <span title="Pour un agent AVEC objectif mensuel réglé : s'applique aux contrats APRÈS le mini obligatoire. Pour un agent sans objectif (indépendant ou statut « sans objectif »), s'applique dès le 1er contrat, comme avant." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>DH/contrat avant objectif <span title="Optionnel, 0 par défaut. Ce que rapporte chaque contrat AVANT d'atteindre le mini obligatoire, pour un agent avec objectif. Laisse à 0 si ces contrats ne doivent rien rapporter en DH/contrat (couverts par le fixe seul) — dans ce cas, la ligne n'apparaît pas dans le détail de l'agent." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Prime assid.</th><th>Objectif mensuel (mini)</th><th>🎯 Objectif visé (agent, ce mois)</th><th>Prime objectif</th><th>Bonus extra/contrat</th><th>Prime fixe/mois</th><th>📊 Prime superviseur/contrat équipe</th><th>Statut</th>
+    <th>Agent</th><th>Fixe/mois</th><th>DH/contrat <span title="Pour un agent AVEC objectif mensuel réglé : s'applique aux contrats APRÈS le mini obligatoire. Pour un agent sans objectif (indépendant ou statut « sans objectif »), s'applique dès le 1er contrat, comme avant." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>DH/contrat avant objectif <span title="Optionnel, 0 par défaut. Ce que rapporte chaque contrat AVANT d'atteindre le mini obligatoire, pour un agent avec objectif. Laisse à 0 si ces contrats ne doivent rien rapporter en DH/contrat (couverts par le fixe seul) — dans ce cas, la ligne n'apparaît pas dans le détail de l'agent." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Prime assid.</th><th>Objectif mensuel (mini)</th><th>🎯 Objectif visé (agent, ce mois)</th><th>Prime objectif</th><th>Bonus extra/contrat</th><th>Prime fixe/mois</th><th>📊 Prime superviseur/contrat équipe</th><th>💸 Coût d'un retour <span title="Montant retenu pour UN retour (impayé client), avant division. Le diviseur ÷3 / ÷2 / 1:1 est appliqué automatiquement selon le compteur retards/absences du mois. Vide = valeur par défaut réglée dans Facturation & Paie." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Statut</th>
   </tr></thead><tbody>`;
   config.agents.forEach((agent,i)=>{
     const p = getAgentPay(agent);
@@ -11765,6 +12031,7 @@ async function renderAgentPayTable(){
       <td>${inp('primeExtraContrat', p.primeExtraContrat)}</td>
       <td>${inp('primeFixeMensuelle', p.primeFixeMensuelle)}</td>
       <td>${inp('supervisorPrimePerContract', p.supervisorPrimePerContract)}</td>
+      <td>${inp('returnCost', p.returnCost)}</td>
       <td>${statusLabel}</td>
     </tr>`;
   });
@@ -11801,7 +12068,10 @@ async function saveProdConfig(){
     primeObjectifJour: parseFloat(document.getElementById('prodDefaultPrimeObj').value) || 0,
     primeExtraContrat: parseFloat(document.getElementById('prodDefaultPrimeExtra').value) || 0,
     primeFixeMensuelle: parseFloat(document.getElementById('prodDefaultPrimeFixe').value) || 0,
-    supervisorPrimePerContract: parseFloat(document.getElementById('prodDefaultPrimeSupervisor').value) || 0
+    supervisorPrimePerContract: parseFloat(document.getElementById('prodDefaultPrimeSupervisor').value) || 0,
+    // Réglé dans l'onglet Facturation & Paie, pas dans ce formulaire-ci : on le reporte tel quel,
+    // sinon cet enregistrement l'écraserait silencieusement à 0 (même piège que perContractBeforeObjectif).
+    returnCost: (pc.defaults && pc.defaults.returnCost) || 0
   };
   pc.daysPerWeek = parseInt(document.getElementById('prodDaysWeek').value) || 5;
   // pc.daysPerMonth n'est plus réglable manuellement : recalculé automatiquement à chaque appel de getProdConfig()
@@ -12095,6 +12365,1929 @@ try{
   // méthode — moins fiable en arrière-plan prolongé, mais mieux que rien.
   setInterval(tickMain, 1000);
 }
+
+
+// ============================================================
+// 📸 EXPORT IMAGE — qualité calibrée pour WhatsApp
+// ============================================================
+// POURQUOI CE CODE EXISTE : avant, on capturait à `scale: 3` quelle que soit la largeur du bloc.
+// Un tableau large partait donc en PNG de 4 000 à 5 400 px. Or WhatsApp ne transmet jamais une image
+// telle quelle : il la redimensionne (long côté ~1 600 px) et la ré-encode en JPEG. Plus l'image de
+// départ est grande, plus sa réduction est brutale — et c'est ce ré-échantillonnage sauvage, pas le
+// manque de pixels, qui rendait le texte baveux à l'arrivée.
+//
+// La méthode ici : rendre à un facteur entier (2× ou 3×, les plus nets pour du texte), puis réduire
+// nous-mêmes jusqu'à la largeur cible avec un ré-échantillonnage progressif de qualité (par paliers
+// de moitié, `imageSmoothingQuality: 'high'`). WhatsApp reçoit alors une image déjà à sa taille : il
+// n'a quasiment plus rien à redimensionner, le texte reste net.
+//
+// Deux qualités :
+//   • Standard (1 600 px) → à envoyer comme photo, c'est le format que WhatsApp respecte le mieux.
+//   • Maximale (2 400 px) → à envoyer en « Document » (📎 → Document) : aucune compression du tout,
+//     lisible au zoom. Utile pour un tableau de paie dense.
+// ============================================================
+
+const WA_TARGET_WIDTH = 1600;
+const WA_TARGET_WIDTH_HQ = 2400;
+
+async function ensureHtml2Canvas(){
+  if(typeof html2canvas !== 'undefined') return;
+  await new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// Réduction progressive : diviser par 2 tant qu'on est à plus du double de la cible, puis finir en un
+// pas. Un navigateur qui passe de 3 200 px à 1 600 px d'un coup perd du détail (il échantillonne trop
+// peu de pixels sources) ; par paliers de moitié, chaque pixel de sortie est une vraie moyenne de ses
+// 4 voisins — c'est exactement ce que fait un logiciel de retouche pour un rendu propre.
+function downscaleCanvas(canvas, targetWidth, backgroundColor){
+  if(canvas.width <= targetWidth) return canvas;
+  let current = canvas;
+  while(current.width > targetWidth * 2){
+    const next = document.createElement('canvas');
+    next.width = Math.round(current.width / 2);
+    next.height = Math.round(current.height / 2);
+    const ctx = next.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if(backgroundColor){ ctx.fillStyle = backgroundColor; ctx.fillRect(0, 0, next.width, next.height); }
+    ctx.drawImage(current, 0, 0, next.width, next.height);
+    current = next;
+  }
+  if(current.width === targetWidth) return current;
+  const out = document.createElement('canvas');
+  out.width = targetWidth;
+  out.height = Math.round(current.height * (targetWidth / current.width));
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  if(backgroundColor){ ctx.fillStyle = backgroundColor; ctx.fillRect(0, 0, out.width, out.height); }
+  ctx.drawImage(current, 0, 0, out.width, out.height);
+  return out;
+}
+
+// Capture un bloc HTML dans une carte mise en page (bandeau titre / date / pied de page) et déclenche
+// le téléchargement du PNG. Utilisé par le Bilan du jour, le Conseil du matin (Admin + Supervision)
+// et les tableaux de paie — une seule mécanique à maintenir pour tous les exports image.
+async function captureBlockToImage(opts){
+  const {
+    innerHTML, width = 900, title = '', badge = '', badgeColor = '#c9a870',
+    caption = '', filename = 'export.png', hq = false, background = '#151d27'
+  } = opts;
+
+  await ensureHtml2Canvas();
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${width}px; background:${background}; padding:28px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2;`;
+  wrap.innerHTML = `
+    <div style="text-align:center; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08);">
+      ${badge ? `<div style="display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:20px; background:${badgeColor}22; border:1px solid ${badgeColor}55; margin-bottom:13px;">
+        <span style="font-size:10.5px; font-weight:700; color:${badgeColor}; letter-spacing:0.5px; text-transform:uppercase;">${badge}</span>
+      </div>` : ''}
+      <div style="font-size:23px; font-weight:800; color:#f0f3f6; letter-spacing:-0.3px;">${title}</div>
+      ${caption ? `<div style="font-size:14.5px; font-weight:500; color:#8b98a6; margin-top:6px; text-transform:capitalize;">${caption}</div>` : ''}
+      <div style="font-size:10.5px; color:#5a6672; margin-top:11px; letter-spacing:0.6px; font-weight:600;">VORTEXNOVA · SUIVI D'ÉQUIPE</div>
+    </div>
+    <div>${innerHTML}</div>
+  `;
+  document.body.appendChild(wrap);
+
+  // La police Inter doit être chargée avant la capture, sinon le tout premier export après ouverture
+  // de l'app retombe sur une police système et le rendu change d'une fois sur l'autre.
+  if(document.fonts && document.fonts.ready){
+    try{ await document.fonts.ready; }catch(e){}
+  }
+
+  const target = hq ? WA_TARGET_WIDTH_HQ : WA_TARGET_WIDTH;
+  // Facteur de rendu ENTIER (2 ou 3) : html2canvas rend le texte nettement plus proprement sur un
+  // multiple entier du pixel CSS. On rend juste au-dessus de la cible, jamais 5× pour rien.
+  const renderScale = width * 2 >= target ? 2 : 3;
+
+  let canvas;
+  try{
+    canvas = await html2canvas(wrap, {
+      backgroundColor: background,
+      scale: renderScale,
+      useCORS: true,
+      logging: false,
+      windowWidth: width + 100,
+      imageTimeout: 0
+    });
+  } finally {
+    document.body.removeChild(wrap);
+  }
+
+  const finalCanvas = downscaleCanvas(canvas, target, background);
+
+  await new Promise(resolve=>{
+    finalCanvas.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=> URL.revokeObjectURL(url), 5000);
+      resolve();
+    }, 'image/png');
+  });
+}
+
+
+// ============================================================
+// 📒 FACTURATION & PAIE — production importée, retours, tableaux par agent, salaire net réel
+// ============================================================
+// Chaîne complète, du contrat validé par le backoffice jusqu'au salaire net payé :
+//
+//   Telegram → Pabbly → Sheet de suivi du mois → export CSV → IMPORT ICI (production du mois)
+//   Tableau de facturation (période 21→20, reçu ~2 mois après) → IMPORT ICI (retours)
+//   → tableau nominatif par agent (prod + rétractés en rouge + retours) → salaire net réel → export
+//
+// Règle des retours (choisie par l'admin) : un retour coûte un montant FIXE réglable par agent
+// (« Coût d'un retour »), divisé ensuite par 3, 2 ou 1 selon le compteur retards/absences du mois —
+// exactement les paliers du règlement interne (÷3 par défaut, ÷2 au 5e, 1:1 au 6e), avec possibilité
+// de forcer le diviseur agent par agent si la situation le justifie.
+//
+// Imputation : les retours s'appliquent au MOIS DE PAIE choisi à l'import (celui où tu les reçois),
+// pas au mois d'origine des contrats. Les mois déjà payés ne bougent jamais rétroactivement.
+// ============================================================
+
+const BILLING_CACHE = {};
+
+function billingProdKey(monthVal){ return `billingProd:${monthVal}`; }
+function billingRetKey(monthVal){ return `billingReturns:${monthVal}`; }
+function billingRatioKey(monthVal){ return `billingRatio:${monthVal}`; }
+function billingPayslipKey(monthVal){ return `billingPayslip:${monthVal}`; }
+
+function billingMonthVal(year, month){ return `${year}-${String(month).padStart(2,'0')}`; }
+
+async function billingLoad(key, fallback){
+  if(BILLING_CACHE[key] !== undefined) return BILLING_CACHE[key];
+  let out = fallback;
+  try{
+    const res = await storageGet(key);
+    if(res && res.value) out = JSON.parse(res.value);
+  }catch(e){ console.error('billingLoad', key, e); }
+  BILLING_CACHE[key] = out;
+  return out;
+}
+async function billingSave(key, obj){
+  BILLING_CACHE[key] = obj;
+  await storageSet(key, JSON.stringify(obj));
+}
+function billingInvalidate(){
+  Object.keys(BILLING_CACHE).forEach(k=> delete BILLING_CACHE[k]);
+  billingDivisorCache = {};
+}
+
+async function getBillingProd(monthVal){ return await billingLoad(billingProdKey(monthVal), { month: monthVal, rows: [], importedAt: null }); }
+async function getBillingReturns(monthVal){ return await billingLoad(billingRetKey(monthVal), { month: monthVal, rows: [], importedAt: null, periodFrom: null, periodTo: null }); }
+async function getBillingRatios(monthVal){ return await billingLoad(billingRatioKey(monthVal), {}); }
+async function getBillingPayslips(monthVal){ return await billingLoad(billingPayslipKey(monthVal), null); }
+
+// ------------------------------------------------------------
+// 📄 LECTURE CSV
+// ------------------------------------------------------------
+// Parseur maison, volontairement tolérant : Google Sheets exporte tantôt en virgule, tantôt en
+// point-virgule (locale FR), et un copier/coller direct depuis la feuille arrive en tabulations.
+// On détecte le séparateur sur la ligne d'en-tête (celui qui apparaît le plus souvent), et on gère
+// les guillemets — indispensable ici, une adresse contient presque toujours une virgule.
+function billingDetectDelimiter(headerLine){
+  const candidates = ['\t', ';', ','];
+  let best = ',', bestCount = -1;
+  candidates.forEach(d=>{
+    const n = headerLine.split(d).length - 1;
+    if(n > bestCount){ bestCount = n; best = d; }
+  });
+  return best;
+}
+
+function billingParseCSV(text){
+  const clean = String(text || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n').trim();
+  if(!clean) return { headers: [], rows: [] };
+  const firstLineEnd = clean.indexOf('\n');
+  const headerLine = firstLineEnd === -1 ? clean : clean.slice(0, firstLineEnd);
+  const delim = billingDetectDelimiter(headerLine);
+
+  const rows = [];
+  let field = '', row = [], inQuotes = false;
+  for(let i = 0; i < clean.length; i++){
+    const ch = clean[i];
+    if(inQuotes){
+      if(ch === '"'){
+        if(clean[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else {
+      if(ch === '"') inQuotes = true;
+      else if(ch === delim){ row.push(field); field = ''; }
+      else if(ch === '\n'){ row.push(field); rows.push(row); row = []; field = ''; }
+      else field += ch;
+    }
+  }
+  row.push(field);
+  rows.push(row);
+
+  const headers = (rows.shift() || []).map(h => String(h).trim());
+  const objs = rows
+    .filter(r => r.some(c => String(c).trim() !== ''))
+    .map(r => {
+      const o = {};
+      headers.forEach((h, i) => { o[h] = r[i] !== undefined ? String(r[i]).trim() : ''; });
+      return o;
+    });
+  return { headers, rows: objs };
+}
+
+// Normalisation d'un nom de colonne : minuscules, accents retirés, ponctuation retirée.
+// « Numéro de contrat », « numero_contrat », « N° Contrat » tombent tous sur la même clé.
+function billingNormKey(s){
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+// Chaque champ interne accepte plusieurs orthographes de colonne — pour que ton export Sheet passe
+// tel quel, et qu'un renommage de colonne un jour ne casse pas l'import du jour au lendemain.
+// Les alias couvrent DEUX fichiers très différents qui décrivent pourtant les mêmes contrats :
+//   • ton tableau de production (colonnes en français : Date, Produit, Référence, Nom, Agent…)
+//   • le tableau de facturation des retours (colonnes en anglais : contract_id, salesman,
+//     client_name, created_at, contract_last_status…)
+// Les deux passent par la même lecture, sans réglage : c'est ce qui permet à un retour de retrouver
+// tout seul l'agent d'un contrat signé deux mois plus tôt.
+const BILLING_FIELD_ALIASES = {
+  date:          ['date', 'createdat', 'datecreation', 'datesignature'],
+  datePropre:    ['datepropre', 'dateclean'],
+  produit:       ['produit', 'product', 'offre', 'contracttype', 'contrattype', 'typecontrat'],
+  // ⚠️ « contract_id » du fichier de retours n'est PAS le numéro #4944 : c'est le hachage
+  // (6a760fa117371) qui correspond à ta colonne Référence. Il est donc rangé ici, et le
+  // rapprochement se fait ensuite sur l'un OU l'autre des identifiants (cf. billingRowKeys).
+  reference:     ['reference', 'ref', 'contractid', 'idcontract', 'contractreference'],
+  nom:           ['nom', 'client', 'nomclient', 'nomprenom', 'clientname', 'nomduclient'],
+  prenom:        ['prenom', 'clientfirstname', 'firstname'],
+  dateNaissance: ['datenaissance', 'naissance', 'ddn', 'clientbirthdate', 'birthdate'],
+  adresse:       ['adresse', 'address', 'clientaddress'],
+  ville:         ['ville', 'clientcity', 'city'],
+  codePostal:    ['codepostal', 'cp', 'clientzipc', 'zipc', 'zipcode'],
+  email:         ['email', 'mail', 'ecourriel', 'clientmail', 'clientemail'],
+  telephone:     ['telephone', 'tel', 'phone', 'mobile', 'clientmobile', 'clientphone'],
+  agent:         ['agent', 'vendeur', 'vendeuse', 'commercial', 'conseiller', 'salesman', 'salesperson', 'seller'],
+  numContrat:    ['numerodecontrat', 'numerocontrat', 'ncontrat', 'nocontrat', 'contrat', 'numcontrat', 'contractnumber'],
+  motif:         ['motif', 'raison', 'cause', 'statut', 'commentaire', 'observation', 'contractlaststatus', 'laststatus', 'status']
+};
+
+// Identifiants exploitables d'une ligne, du plus fiable au moins fiable.
+// POURQUOI UNE LISTE ET PAS UNE SEULE CLÉ : ta production identifie un contrat par le numéro (#4944),
+// ton fichier de retours par le hachage (6a760fa117371). Aucun des deux n'a l'identifiant de l'autre.
+// En indexant et en cherchant sur les DEUX, un retour retrouve son contrat quel que soit celui que le
+// fichier porte — sans que tu aies à ajouter une colonne où que ce soit.
+function billingRowKeys(row){
+  const keys = [];
+  [row.numContrat, row.reference].forEach(v=>{
+    const k = String(v == null ? '' : v).trim().toLowerCase();
+    if(k && !keys.includes(k)) keys.push(k);
+  });
+  return keys;
+}
+
+function billingMapRow(raw){
+  const normalized = {};
+  Object.keys(raw).forEach(k => { normalized[billingNormKey(k)] = raw[k]; });
+  const out = {};
+  Object.keys(BILLING_FIELD_ALIASES).forEach(field => {
+    const alias = BILLING_FIELD_ALIASES[field].find(a => normalized[a] !== undefined && String(normalized[a]).trim() !== '');
+    out[field] = alias ? String(normalized[alias]).trim() : '';
+  });
+  // ---- NUMÉRO DE CONTRAT : toujours ramené au nombre seul ----
+  // Le message Telegram du backoffice envoie le produit et le numéro collés dans une seule ligne :
+  // « Contrat Prime (#4944) ». Cette ligne peut arriver ici dans n'importe quel champ selon la façon
+  // dont Pabbly est réglé. Où qu'elle soit, on en extrait le nombre — même extraction que ta formule
+  // REGEXEXTRACT(C2:C; "#([0-9]+)") dans le Sheet.
+  //
+  // POURQUOI C'EST CRITIQUE : le numéro sert à dédoublonner les contrats ET à rattacher chaque retour
+  // à son agent deux mois plus tard. Si on gardait « Contrat Prime (#4944) » d'un côté et que le
+  // fichier de facturation dit « 4944 » de l'autre, aucun retour ne se rattacherait jamais tout seul.
+  const NUM_IN_TEXT = /#\s*([0-9]+)/;
+  const numSource = [out.numContrat, out.reference, out.produit].find(v => v && NUM_IN_TEXT.test(v));
+  if(numSource){
+    const m = numSource.match(NUM_IN_TEXT);
+    // Le texte qui précède le # est le nom du produit (« Contrat Prime »). On le récupère quand la
+    // colonne Produit est absente, ET on nettoie la colonne Produit quand elle contient elle-même le
+    // numéro — sans ça, chaque case Produit des tableaux afficherait « Contrat Prime (#4944) », le
+    // numéro répété inutilement dans une colonne qui a déjà la sienne.
+    const label = String(numSource).split('#')[0].replace(/[([\s\-–—:]+$/, '').trim();
+    if(!out.produit && label) out.produit = label;
+    else if(out.produit && NUM_IN_TEXT.test(out.produit)){
+      const cleaned = String(out.produit).split('#')[0].replace(/[([\s\-–—:]+$/, '').trim();
+      if(cleaned) out.produit = cleaned;
+    }
+    out.numContrat = m[1];
+  }
+
+  // Prénom et nom sur deux colonnes séparées (cas du fichier de retours : client_firstname +
+  // client_name) : on recompose un nom lisible, sinon les tableaux afficheraient « BALESTIE » sans
+  // savoir de quel client il s'agit.
+  if(out.prenom && out.nom && !out.nom.toLowerCase().includes(out.prenom.toLowerCase())){
+    out.nom = `${out.prenom} ${out.nom}`.trim();
+  } else if(out.prenom && !out.nom){
+    out.nom = out.prenom;
+  }
+  // Idem pour l'adresse éclatée en adresse / code postal / ville.
+  if(out.adresse && (out.codePostal || out.ville)){
+    const suite = [out.codePostal, out.ville].filter(Boolean).join(' ');
+    if(suite && !out.adresse.includes(suite)) out.adresse = `${out.adresse} ${suite}`.trim();
+  }
+  return out;
+}
+
+// Rapprochement du nom d'agent du fichier avec la liste des agents du CRM.
+// Tolère la casse, les accents, un prénom seul, ou un "Nom Prénom" inversé — mais ne devine jamais
+// au-delà : tout ce qui n'est pas reconnu de façon certaine ressort dans le rapport d'import pour que
+// tu tranches toi-même. On ne rattache jamais un contrat au hasard, c'est de l'argent.
+function billingResolveAgent(rawName){
+  const n = billingNormKey(rawName);
+  if(!n) return null;
+  const agents = config.agents || [];
+  const norm = a => billingNormKey(a);
+  const wordsOf = a => String(a).trim().split(/\s+/).map(billingNormKey).filter(Boolean);
+
+  // 1) Correspondance exacte — le cas de loin le plus fréquent (« Modou », « MODOU », « modou »),
+  //    la normalisation ayant déjà retiré casse, accents et ponctuation.
+  let hit = agents.find(a => norm(a) === n);
+  if(hit) return hit;
+
+  // 1bis) ALIAS ENREGISTRÉS PAR L'ADMIN — la seule façon propre de gérer une orthographe qui diffère
+  //    durablement entre le terrain et le CRM (« Nawal » dans le Sheet, « Nawel » dans les Réglages).
+  //    POURQUOI PAS SIMPLEMENT RENOMMER L'AGENT DANS LES RÉGLAGES : le nom de l'agent est la clé de
+  //    TOUTES ses données (pointages, salaires, primes, historique). Le renommer romprait le lien avec
+  //    tout son passé. Un alias, lui, ne touche à rien : il dit juste « quand tu lis ceci, c'est cette
+  //    personne ». Il vaut aussi bien pour les imports que pour les contrats reçus via Pabbly.
+  const aliases = config.agentAliases || {};
+  if(aliases[n] && agents.includes(aliases[n])) return aliases[n];
+
+  // 2) DÉTECTION D'AMBIGUÏTÉ, AVANT TOUT LE RESTE.
+  //    Les agents écrivent librement sur Telegram : « to Modou », « by MODOU », « fait par Modou ».
+  //    On regarde donc quels noms d'agents apparaissent comme MOTS ENTIERS dans le texte.
+  //    Si DEUX agents différents y apparaissent (« Modou et Charles »), on s'arrête ici et on ne
+  //    tranche pas : mieux vaut un contrat en attente, que tu rattaches en 10 secondes, qu'un contrat
+  //    payé à la mauvaise personne. C'est ce contrôle qui doit passer en premier — une recherche par
+  //    préfixe placée avant lui attribuerait « Modou et Charles » à Modou sans se poser de question.
+  const STOPWORDS = ['par','pour','avec','chez','from','the','and','team','nova','contrat','contrats',
+                     'agent','vendeur','vendeuse','fait','signe','signee','client','mme','mle','mlle'];
+  const words = wordsOf(rawName);
+  // Mots de moins de 3 lettres ignorés (« El », « De », « to », « by ») : trop courts pour identifier
+  // qui que ce soit, et présents dans presque toutes les formulations.
+  const longWords = words.filter(w => w.length >= 3 && !STOPWORDS.includes(w));
+  if(longWords.length){
+    const matches = agents.filter(a=>{
+      if(longWords.includes(norm(a))) return true;
+      // Les alias comptent aussi mot à mot : une fois « Nawal » rattaché à Nawel, « to Nawal » et
+      // « par NAWAL » doivent marcher exactement comme « to Nawel ».
+      if(longWords.some(w => aliases[w] === a)) return true;
+      // L'agent peut être enregistré en plusieurs mots (« Karim B. », « Diong Modou ») : on compare
+      // mot à mot, ce qui rattrape aussi les noms complets d'état civil du fichier de retours.
+      return wordsOf(a).filter(w => w.length >= 3).some(aw => longWords.includes(aw));
+    });
+    if(matches.length === 1) return matches[0];
+    if(matches.length > 1) return null; // ambigu → laissé en attente, jamais deviné
+  }
+
+  // 3) « Prénom Nom » écrit à l'envers (« Modou Diong » quand l'agent est enregistré « Diong Modou »).
+  if(words.length >= 2){
+    const rev = words.slice().reverse().join('');
+    hit = agents.find(a => norm(a) === rev);
+    if(hit) return hit;
+  }
+
+  // 4) Rattrapage des fautes de frappe et abréviations (« Charif » pour Charifa, « Modou D » pour
+  //    « Modou Diong ») — uniquement si UN SEUL agent peut correspondre.
+  const prefixMatches = agents.filter(a => norm(a).startsWith(n) || n.startsWith(norm(a)));
+  if(prefixMatches.length === 1) return prefixMatches[0];
+
+  return null;
+}
+
+// ------------------------------------------------------------
+// 📥 IMPORT — PRODUCTION DU MOIS
+// ------------------------------------------------------------
+async function importBillingProd(text, monthVal){
+  const reportEl = document.getElementById('billingProdReport');
+  if(!monthVal){ alert('Choisis d\'abord le mois de production.'); return; }
+  const parsed = billingParseCSV(text);
+  if(!parsed.rows.length){
+    if(reportEl) reportEl.innerHTML = '<div class="empty">Aucune ligne lisible dans ce fichier.</div>';
+    return;
+  }
+
+  // On conserve les rétractations déjà marquées lors d'un import précédent du même mois : réimporter
+  // un CSV corrigé ne doit pas effacer le travail de marquage déjà fait sur les mêmes contrats.
+  const previous = await getBillingProd(monthVal);
+  const previouslyRetracted = new Set();
+  (previous.rows || []).filter(r => r.retracted).forEach(r => billingRowKeys(r).forEach(k => previouslyRetracted.add(k)));
+
+  const rows = [];
+  const unresolved = {};
+  parsed.rows.forEach(raw => {
+    const r = billingMapRow(raw);
+    if(!r.agent && !r.nom && !r.numContrat) return;
+    const resolved = billingResolveAgent(r.agent);
+    if(!resolved && r.agent) unresolved[r.agent] = (unresolved[r.agent] || 0) + 1;
+    r.agentRaw = r.agent;
+    r.agent = resolved || '';
+    r.retracted = billingRowKeys(r).some(k => previouslyRetracted.has(k));
+    rows.push(r);
+  });
+
+  const data = { month: monthVal, rows, importedAt: new Date().toISOString(), headers: parsed.headers };
+  await billingSave(billingProdKey(monthVal), data);
+  logAudit('Admin', 'Import production du mois', `${monthVal} — ${rows.length} contrats`);
+
+  // Rapport d'import : combien par agent, et surtout ce qui n'a PAS été reconnu.
+  const byAgent = {};
+  rows.forEach(r => { const k = r.agent || '⚠️ non rattaché'; byAgent[k] = (byAgent[k] || 0) + 1; });
+  let html = `<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35); font-weight:700; color:var(--green);">✅ ${rows.length} contrat${rows.length>1?'s':''} importé${rows.length>1?'s':''} pour ${monthVal}</div>`;
+  html += '<table class="salary-table" style="margin-top:12px;"><thead><tr><th>Agent</th><th>Contrats importés</th></tr></thead><tbody>';
+  Object.keys(byAgent).sort((a,b)=> byAgent[b]-byAgent[a]).forEach(a=>{
+    const bad = a.startsWith('⚠️');
+    html += `<tr><td${bad ? ' style="color:var(--red);font-weight:700;"' : ''}>${escapeHtml(a)}</td><td><b>${byAgent[a]}</b></td></tr>`;
+  });
+  html += '</tbody></table>';
+  const unresolvedNames = Object.keys(unresolved);
+  if(unresolvedNames.length){
+    html += `<div style="margin-top:12px; padding:14px 16px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4);">
+      <div style="font-weight:800; color:var(--red); margin-bottom:4px;">⚠️ Noms d'agent non reconnus — ces contrats ne sont rattachés à personne</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Choisis à qui correspond chaque nom. Le rattachement est <b>immédiat et définitif</b> : les contrats déjà importés sont récupérés tout de suite, et ce nom sera reconnu automatiquement à l'avenir — import comme réception Pabbly. Rien à corriger dans ton Sheet, rien à réimporter.</div>
+      ${unresolvedNames.map(n=> agentAliasChooser(n, `${unresolved[n]} contrat${unresolved[n]>1?'s':''}`)).join('')}
+      <div style="font-size:12px; color:var(--muted); margin-top:8px;">⚠️ Ne renomme pas l'agent dans Réglages : son nom est la clé de tout son historique (pointages, salaires, primes). L'alias, lui, ne touche à rien.</div>
+    </div>`;
+  }
+  if(reportEl) reportEl.innerHTML = html;
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
+}
+
+function handleBillingProdFile(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => importBillingProd(e.target.result, document.getElementById('billingProdMonth').value);
+  reader.readAsText(file, 'UTF-8');
+}
+function importBillingProdFromPaste(){
+  const txt = document.getElementById('billingProdPaste').value;
+  if(!txt.trim()){ alert('Colle d\'abord le contenu du tableau.'); return; }
+  importBillingProd(txt, document.getElementById('billingProdMonth').value);
+}
+
+// ------------------------------------------------------------
+// 📥 IMPORT — RETOURS DE FACTURATION
+// ------------------------------------------------------------
+async function importBillingReturns(text, monthVal){
+  const reportEl = document.getElementById('billingRetReport');
+  if(!monthVal){ alert('Choisis d\'abord le mois de paie sur lequel imputer ces retours.'); return; }
+  const parsed = billingParseCSV(text);
+  if(!parsed.rows.length){
+    if(reportEl) reportEl.innerHTML = '<div class="empty">Aucune ligne lisible dans ce fichier.</div>';
+    return;
+  }
+
+  // Index numéro de contrat → agent, construit sur TOUTES les productions déjà importées : c'est ce
+  // qui permet de retrouver l'agent d'un retour même quand le fichier de facturation ne porte pas la
+  // colonne Agent (cas fréquent), y compris pour un contrat signé 2 mois plus tôt.
+  const contractIndex = await billingBuildContractIndex();
+
+  const rows = [];
+  const unresolved = {};
+  parsed.rows.forEach(raw => {
+    const r = billingMapRow(raw);
+    if(!r.agent && !r.nom && !r.numContrat) return;
+    // Le contrat d'origine est cherché sur TOUS les identifiants de la ligne (numéro puis référence) :
+    // ton fichier de retours identifie par le hachage, ta production par le numéro. Le rapprochement
+    // par contrat prime sur le nom du vendeur — c'est la donnée la plus sûre des deux.
+    const found = billingRowKeys(r).map(k => contractIndex[k]).find(Boolean);
+    let resolved = found ? found.agent : null;
+    let via = resolved ? 'contrat retrouvé' : '';
+    if(found){
+      if(!r.nom) r.nom = found.nom;
+      if(!r.produit) r.produit = found.produit;
+    }
+    if(!resolved){
+      resolved = billingResolveAgent(r.agent);
+      if(resolved) via = 'nom du vendeur';
+    }
+    if(!resolved) unresolved[r.agent || r.numContrat || r.reference || r.nom || '(ligne sans identifiant)'] = true;
+    r.agentRaw = r.agent;
+    r.agent = resolved || '';
+    r.matchedVia = via;
+    r.originMonth = found ? found.month : '';
+    rows.push(r);
+  });
+
+  const data = {
+    month: monthVal,
+    rows,
+    importedAt: new Date().toISOString(),
+    periodFrom: document.getElementById('billingRetFrom')?.value || null,
+    periodTo: document.getElementById('billingRetTo')?.value || null
+  };
+  await billingSave(billingRetKey(monthVal), data);
+  logAudit('Admin', 'Import des retours de facturation', `${monthVal} — ${rows.length} retours`);
+
+  const byAgent = {};
+  rows.forEach(r => { const k = r.agent || '⚠️ non rattaché'; byAgent[k] = (byAgent[k] || 0) + 1; });
+  let html = `<div style="padding:12px 14px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4); font-weight:700; color:var(--red);">📉 ${rows.length} retour${rows.length>1?'s':''} importé${rows.length>1?'s':''}, imputés sur la paie de ${monthVal}</div>`;
+  html += '<table class="salary-table" style="margin-top:12px;"><thead><tr><th>Agent</th><th>Retours</th><th>Coût unitaire</th><th>Diviseur</th><th>Retenue</th></tr></thead><tbody>';
+  const [y, m] = monthVal.split('-').map(Number);
+  const agentKeys = Object.keys(byAgent).sort((a,b)=> byAgent[b]-byAgent[a]);
+  for(const a of agentKeys){
+    if(a.startsWith('⚠️')){
+      html += `<tr><td style="color:var(--red);font-weight:700;">${escapeHtml(a)}</td><td><b>${byAgent[a]}</b></td><td colspan="3" style="color:var(--red);">Non retenu à personne</td></tr>`;
+      continue;
+    }
+    const d = await billingReturnsDeduction(a, y, m);
+    html += `<tr><td>${escapeHtml(a)}</td><td><b>${d.count}</b></td><td>${Math.round(d.unitCost).toLocaleString('fr-FR')} DH</td><td>${d.divisor === 1 ? '1:1' : '÷'+d.divisor}${d.auto ? '' : ' <span class="tag warn">forcé</span>'}</td><td style="color:var(--red); font-weight:700;">−${d.amount.toLocaleString('fr-FR')} DH</td></tr>`;
+  }
+  html += '</tbody></table>';
+  const unresolvedNames = Object.keys(unresolved);
+  if(unresolvedNames.length){
+    html += `<div style="margin-top:12px; padding:14px 16px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4);">
+      <div style="font-weight:800; color:var(--red); margin-bottom:4px;">⚠️ ${unresolvedNames.length} retour${unresolvedNames.length>1?'s':''} non rattaché${unresolvedNames.length>1?'s':''}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Si c'est un nom de vendeur, rattache-le ci-dessous — c'est immédiat et définitif. Sinon, c'est que le contrat d'origine n'est pas encore dans le CRM : importe la production du mois où il a été signé, le rapprochement se fera tout seul.</div>
+      ${unresolvedNames.slice(0,20).map(n=> agentAliasChooser(n, '')).join('')}
+      ${unresolvedNames.length>20 ? '<div style="font-size:12.5px; color:var(--muted);">… et '+(unresolvedNames.length-20)+' autres</div>' : ''}
+    </div>`;
+  }
+  if(reportEl) reportEl.innerHTML = html;
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
+}
+
+function handleBillingRetFile(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => importBillingReturns(e.target.result, document.getElementById('billingRetMonth').value);
+  reader.readAsText(file, 'UTF-8');
+}
+function importBillingRetFromPaste(){
+  const txt = document.getElementById('billingRetPaste').value;
+  if(!txt.trim()){ alert('Colle d\'abord le contenu du tableau de retours.'); return; }
+  importBillingReturns(txt, document.getElementById('billingRetMonth').value);
+}
+
+// Index global n° de contrat → { agent, nom, produit, mois } sur les 24 derniers mois de production
+// importée. Sert au rapprochement automatique des retours (qui concernent des contrats vieux de ~2 mois).
+let billingContractIndexCache = null;
+async function billingBuildContractIndex(force){
+  if(billingContractIndexCache && !force) return billingContractIndexCache;
+  const idx = {};
+  const now = nowMA();
+  const months = [];
+  for(let i = 0; i < 24; i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
+  }
+  for(const mv of months){
+    const data = await getBillingProd(mv);
+    (data.rows || []).forEach(r => {
+      // Indexé sur le numéro ET sur la référence : le fichier de retours ne porte que l'un des deux
+      // (chez toi, le hachage de la colonne Référence), on doit pouvoir retrouver le contrat par
+      // n'importe lequel.
+      const entry = { agent: r.agent, nom: r.nom, produit: r.produit, month: mv };
+      billingRowKeys(r).forEach(k => { if(!idx[k]) idx[k] = entry; });
+    });
+  }
+  billingContractIndexCache = idx;
+  return idx;
+}
+
+// ------------------------------------------------------------
+// 💸 CALCUL DES RETOURS
+// ------------------------------------------------------------
+// Diviseur appliqué aux retours d'un agent pour un mois donné.
+// Auto = paliers du règlement interne, calculés sur le compteur retards+absences du mois
+// (le même que la prime d'assiduité, cf. monthlyStats / tierForCount) :
+//   0 à 4 retards/absences → ÷3   |   5e → ÷2   |   6e et plus → 1:1
+// L'admin peut forcer une valeur agent par agent (menu « Diviseur des retours »).
+// Mémoïsation : monthlyDeductions est appelée pour chaque agent sur presque tous les écrans d'argent,
+// et chaque appel demanderait sinon un monthlyStats complet (balayage de tous les jours du mois) rien
+// que pour connaître le diviseur. Vidé en même temps que les autres caches par clearRenderCaches().
+let billingDivisorCache = {};
+async function billingReturnDivisor(agent, year, month){
+  const monthVal = billingMonthVal(year, month);
+  const ck = `${monthVal}|${agent}`;
+  if(billingDivisorCache[ck]) return billingDivisorCache[ck];
+  const overrides = await getBillingRatios(monthVal);
+  const forced = Number(overrides[agent]);
+  let out;
+  if(forced === 1 || forced === 2 || forced === 3){
+    out = { divisor: forced, auto: false, count: null };
+  } else {
+    let count = 0;
+    try{
+      const stats = await monthlyStats(agent, year, month);
+      count = stats.retardsCumules || 0;
+    }catch(e){}
+    const tier = tierForCount(count);
+    out = { divisor: tier.level >= 6 ? 1 : (tier.level >= 5 ? 2 : 3), auto: true, count };
+  }
+  billingDivisorCache[ck] = out;
+  return out;
+}
+
+// Retenue "retours" d'un agent sur un mois de paie donné.
+// count × coût unitaire ÷ diviseur, arrondi à l'unité. Appelée par monthlyDeductions (donc visible
+// partout où le salaire est affiché : Cash de l'agent, Admin, exports) et par le tableau détaillé.
+async function billingReturnsDeduction(agent, year, month){
+  const monthVal = billingMonthVal(year, month);
+  const data = await getBillingReturns(monthVal);
+  const rows = (data.rows || []).filter(r => r.agent === agent);
+  const pay = getAgentPay(agent);
+  const unitCost = pay.returnCost || 0;
+  const { divisor, auto, count: lateCount } = await billingReturnDivisor(agent, year, month);
+  const amount = Math.round((rows.length * unitCost) / divisor);
+  let periodLabel = null;
+  if(data.periodFrom && data.periodTo){
+    const f = new Date(data.periodFrom + 'T00:00:00').toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    const t = new Date(data.periodTo + 'T00:00:00').toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    periodLabel = `${f} → ${t}`;
+  }
+  return { count: rows.length, amount, divisor, auto, lateCount, unitCost, rows, periodLabel, periodFrom: data.periodFrom, periodTo: data.periodTo };
+}
+
+// ------------------------------------------------------------
+// 🖥️ INTERFACE — onglet Facturation & Paie
+// ------------------------------------------------------------
+function initBillingDefaults(){
+  const cur = todayStr().slice(0, 7);
+  ['billingProdMonth', 'billingRetMonth', 'billingSheetMonth'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el && !el.value) el.value = cur;
+  });
+  const sel = document.getElementById('billingAgentSelect');
+  if(sel){
+    const prev = sel.value;
+    sel.innerHTML = (config.agents || []).map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+    if(prev && (config.agents || []).includes(prev)) sel.value = prev;
+  }
+  const costEl = document.getElementById('cfgReturnCostDefault');
+  if(costEl && costEl.value === ''){
+    const d = getProdConfig().defaults || {};
+    costEl.value = d.returnCost != null ? d.returnCost : '';
+  }
+  // Période de retours proposée par défaut : la fenêtre 21→20 décalée de 2 mois, ta convention
+  // (ex : paie de mars → retours du 21/12 au 20/01). Modifiable à la main si besoin.
+  const from = document.getElementById('billingRetFrom');
+  const to = document.getElementById('billingRetTo');
+  if(from && to && !from.value && !to.value){
+    const [y, m] = cur.split('-').map(Number);
+    const start = new Date(y, m - 1 - 3, 21);
+    const end = new Date(y, m - 1 - 2, 20);
+    from.value = todayStr(start);
+    to.value = todayStr(end);
+  }
+}
+
+async function saveReturnCostConfig(){
+  const pc = getProdConfig();
+  const v = parseFloat(document.getElementById('cfgReturnCostDefault').value);
+  pc.defaults.returnCost = isNaN(v) || v < 0 ? 0 : v;
+  await saveConfigSilent();
+  logAudit('Admin', 'Coût d\'un retour modifié', `${pc.defaults.returnCost} DH par défaut`);
+  const note = document.getElementById('returnCostSaveNote');
+  if(note){ note.textContent = 'Enregistré ✓'; setTimeout(()=> note.textContent = '', 2000); }
+  renderBillingAgentSheet();
+}
+
+async function saveBillingRatioOverride(){
+  const agent = document.getElementById('billingAgentSelect')?.value;
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  const val = document.getElementById('billingRatioOverride')?.value;
+  if(!agent || !monthVal) return;
+  const ratios = await getBillingRatios(monthVal);
+  if(val === '') delete ratios[agent];
+  else ratios[agent] = Number(val);
+  await billingSave(billingRatioKey(monthVal), ratios);
+  logAudit('Admin', 'Diviseur des retours modifié', `${agent} — ${monthVal} — ${val === '' ? 'auto (règlement)' : (val === '1' ? '1:1' : '÷'+val)}`);
+  renderBillingAgentSheet();
+}
+
+async function renderBillingImportSummary(){
+  const el = document.getElementById('billingImportSummary');
+  if(!el) return;
+  const prodMonth = document.getElementById('billingProdMonth')?.value || todayStr().slice(0,7);
+  const retMonth = document.getElementById('billingRetMonth')?.value || todayStr().slice(0,7);
+  const [prod, ret] = await Promise.all([getBillingProd(prodMonth), getBillingReturns(retMonth)]);
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+  const prodRows = prod.rows || [];
+  const retRows = ret.rows || [];
+  const prodOrphans = prodRows.filter(r => !r.agent).length;
+  const retOrphans = retRows.filter(r => !r.agent).length;
+  el.innerHTML = `
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
+      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
+        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">Production ${escapeHtml(prodMonth)}</div>
+        <div style="font-size:26px; font-weight:800; margin-top:6px;">${prodRows.length}</div>
+        <div style="font-size:12.5px; color:var(--muted);">contrats importés${prodOrphans ? ` · <span style="color:var(--red);">${prodOrphans} non rattaché${prodOrphans>1?'s':''}</span>` : ''}</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;">Dernier import : ${fmtDate(prod.importedAt)}</div>
+      </div>
+      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid rgba(229,90,90,0.35);">
+        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">Retours imputés sur ${escapeHtml(retMonth)}</div>
+        <div style="font-size:26px; font-weight:800; margin-top:6px; color:var(--red);">${retRows.length}</div>
+        <div style="font-size:12.5px; color:var(--muted);">${ret.periodFrom && ret.periodTo ? `période ${escapeHtml(ret.periodFrom)} → ${escapeHtml(ret.periodTo)}` : 'période non précisée'}${retOrphans ? ` · <span style="color:var(--red);">${retOrphans} non rattaché${retOrphans>1?'s':''}</span>` : ''}</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;">Dernier import : ${fmtDate(ret.importedAt)}</div>
+      </div>
+    </div>`;
+}
+
+// Marquage d'un contrat comme rétracté (rétractation légale 14 jours).
+// Le compteur mensuel de rétractations existant (celui de l'Arena / du Cash, seule source de vérité
+// pour la paie) est ajusté du même pas, pour que les deux ne divergent jamais : ce tableau apporte le
+// DÉTAIL (quel client, quel contrat) que le compteur seul ne donnait pas.
+async function toggleBillingRetracted(numContrat){
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  const agent = document.getElementById('billingAgentSelect')?.value;
+  if(!monthVal || !agent) return;
+  const data = await getBillingProd(monthVal);
+  const row = (data.rows || []).find(r => (r.numContrat || r.reference) === numContrat && r.agent === agent);
+  if(!row) return;
+  row.retracted = !row.retracted;
+  await billingSave(billingProdKey(monthVal), data);
+
+  const [y, m] = monthVal.split('-').map(Number);
+  const current = await getMonthlyRetractCount(agent, y, m);
+  const next = Math.max(0, current + (row.retracted ? 1 : -1));
+  await saveMonthlyRetractCount(agent, y, m, next);
+  logAudit('Admin', row.retracted ? 'Contrat marqué rétracté' : 'Rétractation annulée', `${agent} — contrat ${numContrat} — compteur du mois : ${next}`);
+  renderBillingAgentSheet();
+}
+
+// Recale le compteur de rétractations sur le nombre exact de contrats marqués rétractés dans le
+// tableau — utile si l'agent a cliqué +1 dans l'Arena en plus de ton marquage ici.
+async function syncBillingRetractCount(){
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  const agent = document.getElementById('billingAgentSelect')?.value;
+  if(!monthVal || !agent) return;
+  const [y, m] = monthVal.split('-').map(Number);
+  const data = await getBillingProd(monthVal);
+  const flagged = (data.rows || []).filter(r => r.agent === agent && r.retracted).length;
+  if(!confirm(`Fixer le compteur de rétractations de ${agent} pour ${monthVal} à ${flagged} (nombre de contrats marqués rétractés dans le tableau) ?`)) return;
+  await saveMonthlyRetractCount(agent, y, m, flagged);
+  logAudit('Admin', 'Compteur de rétractations recalé', `${agent} — ${monthVal} — ${flagged}`);
+  renderBillingAgentSheet();
+}
+
+// ------------------------------------------------------------
+// 🧾 TABLEAU NOMINATIF D'UN AGENT + SALAIRE NET RÉEL
+// ------------------------------------------------------------
+// Assemble en un seul objet tout ce qui compose la paie du mois, dans l'ordre où tu le fais à la main :
+// contrats du mois → rétractés (retirés) → primes → retenues (retards, absences, infractions) →
+// retours de facturation → net réel.
+async function billingComputeAgent(agent, monthVal){
+  const [year, month] = monthVal.split('-').map(Number);
+  const pay = getAgentPay(agent);
+  const [prodData, stats, retract, ret, paySource] = await Promise.all([
+    getBillingProd(monthVal),
+    monthlyStats(agent, year, month),
+    getMonthlyRetractCount(agent, year, month),
+    billingReturnsDeduction(agent, year, month),
+    getPaySource(year, month)
+  ]);
+  const rows = (prodData.rows || []).filter(r => r.agent === agent);
+  const retractedRows = rows.filter(r => r.retracted);
+  const validRows = rows.filter(r => !r.retracted);
+
+  const assiduiteAcquise = isAssiduiteAcquise(stats);
+  const [salary, counterRealized] = await Promise.all([
+    estimateSalaryMonthReal(agent, year, month, assiduiteAcquise),
+    monthlyRealizedContracts(agent, year, month)
+  ]);
+
+  return {
+    agent, monthVal, year, month, pay, stats, assiduiteAcquise, paySource,
+    importedTotal: rows.length,
+    importedValid: validRows.length,
+    retractedCount: retractedRows.length,
+    retractCounter: retract,
+    counterRealized,
+    rows, validRows, retractedRows,
+    returns: ret,
+    salary,
+    imported: !!prodData.importedAt
+  };
+}
+
+async function renderBillingAgentSheet(){
+  const el = document.getElementById('billingAgentSheet');
+  if(!el) return;
+  const agent = document.getElementById('billingAgentSelect')?.value;
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  if(!agent || !monthVal){ el.innerHTML = '<div class="empty">Choisis un agent et un mois.</div>'; return; }
+  el.innerHTML = '<div class="empty">⏳ Calcul en cours…</div>';
+
+  // Le menu « Diviseur des retours » reflète l'agent actuellement affiché
+  const ratios = await getBillingRatios(monthVal);
+  const ovEl = document.getElementById('billingRatioOverride');
+  if(ovEl) ovEl.value = ratios[agent] != null ? String(ratios[agent]) : '';
+
+  const d = await billingComputeAgent(agent, monthVal);
+  BILLING_LAST_SHEET = d;
+  el.innerHTML = billingAgentSheetHTML(d);
+}
+
+let BILLING_LAST_SHEET = null;
+
+function billingMonthLabel(monthVal){
+  const [y, m] = monthVal.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+function billingAgentSheetHTML(d, forImage){
+  const fmt = n => Math.round(n).toLocaleString('fr-FR');
+  const title = `${d.agent} — ${billingMonthLabel(d.monthVal)}`;
+  const ret = d.returns;
+  const ded = d.salary.deductions;
+
+  // Ligne "contrats" : ce que dit l'import backoffice vs ce que disent les compteurs +1 de l'Arena.
+  // Les deux sont affichés côte à côte SANS en choisir un à ta place — c'est ton arbitrage, et un
+  // écart mérite d'être vu plutôt que masqué. La paie ci-dessous suit les compteurs (comme avant),
+  // l'import sert de contrôle et fournit le détail nominatif.
+  const ecart = d.importedTotal ? (d.counterRealized - d.importedValid) : 0;
+
+  let html = '';
+
+  if(!forImage){
+    html += `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+      <button class="link-btn" onclick="syncBillingRetractCount()">🔄 Recaler le compteur de rétractations sur ce tableau</button>
+    </div>`;
+  }
+
+  html += `<div style="font-size:20px; font-weight:800; margin-bottom:4px;">${escapeHtml(title)}</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">${d.pay.isIndep ? '🧑‍💼 Indépendant' : (d.pay.noObjectif ? '🎯 Sans objectif' : '📋 Salarié')}${d.pay.isSupervisor ? ' · 📊 Superviseur' : ''}</div>`;
+
+  // --- Bandeau chiffres clés
+  const cards = [
+    { lbl: 'Contrats backoffice', val: d.importedTotal ? d.importedValid : '—', sub: d.importedTotal ? `${d.importedTotal} importés − ${d.retractedCount} rétractés` : 'aucun import pour ce mois', color: 'var(--text)' },
+    { lbl: 'Contrats comptés (paie)', val: d.counterRealized, sub: `${d.paySource === 'backoffice' ? '🔒 backoffice validé' : '✍️ compteurs agents'} − ${d.retractCounter} rétractation${d.retractCounter>1?'s':''}`, color: 'var(--text)' },
+    { lbl: 'Retours facturation', val: ret.count, sub: ret.periodLabel || 'période non précisée', color: 'var(--red)' },
+    { lbl: 'Salaire net réel', val: fmt(d.salary.total) + ' DH', sub: `brut ${fmt(d.salary.brut)} DH − retenues ${fmt(ded.total)} DH`, color: d.salary.total >= 0 ? 'var(--green)' : 'var(--red)' }
+  ];
+  html += '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:18px;">';
+  cards.forEach(c => {
+    html += `<div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">${c.lbl}</div>
+      <div style="font-size:24px; font-weight:800; margin-top:5px; color:${c.color};">${c.val}</div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">${escapeHtml(String(c.sub))}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  if(d.paySource === 'backoffice'){
+    html += `<div style="padding:11px 14px; border-radius:9px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.4); font-size:13px; margin-bottom:16px;">
+      🔒 <b>Ce mois est payé sur les contrats validés du backoffice.</b> Le nombre de contrats ci-dessous ne peut pas être modifié depuis le CRM — il vient uniquement de ce que le backoffice a envoyé.
+    </div>`;
+  } else if(d.importedTotal && ecart !== 0){
+    html += `<div style="padding:11px 14px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); font-size:13px; margin-bottom:16px;">
+      ⚠️ <b>Écart de ${Math.abs(ecart)} contrat${Math.abs(ecart)>1?'s':''}</b> entre les compteurs des agents (${d.counterRealized}) et les contrats validés par le backoffice (${d.importedValid}). La paie suit encore les compteurs : bascule le mois sur le backoffice en haut de cet onglet quand tu as tout reçu.
+    </div>`;
+  }
+
+  // --- Tableau des contrats
+  if(d.rows.length){
+    html += `<div class="section-title" style="margin-top:10px; font-size:15px;">Production du mois — ${d.rows.length} contrat${d.rows.length>1?'s':''}</div>`;
+    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th><th>Téléphone</th><th>N° contrat</th>' + (forImage ? '' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
+    d.rows.forEach((r, i) => {
+      const key = r.numContrat || r.reference || '';
+      const red = r.retracted ? ' style="color:var(--red); text-decoration:line-through; opacity:0.85;"' : '';
+      html += `<tr${red}>
+        <td>${i + 1}</td>
+        <td>${escapeHtml(r.datePropre || r.date)}</td>
+        <td>${escapeHtml(r.produit)}</td>
+        <td>${escapeHtml(r.nom)}</td>
+        <td>${escapeHtml(r.telephone)}</td>
+        <td>${escapeHtml(key)}</td>
+        ${forImage ? '' : `<td><button onclick="toggleBillingRetracted('${String(key).replace(/'/g, "\\'")}')" style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>`}
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  } else {
+    html += `<div class="empty" style="margin:10px 0;">Aucun contrat importé pour ${escapeHtml(d.agent)} sur ${escapeHtml(d.monthVal)}. Importe le CSV de production plus haut pour avoir le détail nominatif.</div>`;
+  }
+
+  // --- Tableau des retours
+  html += `<div class="section-title" style="margin-top:26px; font-size:15px; color:var(--red);">Retours de facturation${ret.periodLabel ? ` — ${escapeHtml(ret.periodLabel)}` : ''}</div>`;
+  if(ret.count){
+    html += `<div class="section-sub">${ret.count} retour${ret.count>1?'s':''} × ${fmt(ret.unitCost)} DH ${ret.divisor === 1 ? 'en 1:1' : '÷ '+ret.divisor} = <b style="color:var(--red);">−${fmt(ret.amount)} DH</b> — diviseur ${ret.auto ? `automatique (${ret.lateCount} retard${ret.lateCount>1?'s':''}/absence${ret.lateCount>1?'s':''} ce mois-ci)` : 'forcé manuellement'}.</div>`;
+    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Produit</th><th>Client</th><th>N° contrat</th><th>Mois d\'origine</th><th>Motif</th></tr></thead><tbody>';
+    ret.rows.forEach((r, i) => {
+      html += `<tr><td>${i + 1}</td><td>${escapeHtml(r.produit)}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+    if(!ret.unitCost){
+      html += `<div style="margin-top:10px; padding:11px 14px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); font-size:13px;">⚠️ Le « coût d'un retour » de cet agent est à <b>0 DH</b> — aucune retenue n'est donc appliquée. Règle-le plus haut (valeur par défaut) ou dans Production 🏆 → Rémunération par agent.</div>`;
+    }
+  } else {
+    html += `<div class="empty" style="margin:10px 0;">Aucun retour imputé à ${escapeHtml(d.agent)} sur la paie de ${escapeHtml(d.monthVal)}. ✅</div>`;
+  }
+
+  // --- Décomposition du salaire
+  html += `<div class="section-title" style="margin-top:26px; font-size:15px;">Calcul du salaire net réel</div>`;
+  html += '<table class="salary-table"><tbody>';
+  const line = (lbl, amt, opts) => {
+    const o = opts || {};
+    const color = o.color || (amt < 0 ? 'var(--red)' : 'var(--text)');
+    const weight = o.bold ? '800' : '600';
+    const sign = amt < 0 ? '−' : (o.plus ? '+' : '');
+    html += `<tr${o.top ? ' style="border-top:2px solid var(--border);"' : ''}><td style="font-weight:${weight};">${lbl}</td><td style="text-align:right; font-weight:${weight}; color:${color}; white-space:nowrap;">${sign}${fmt(Math.abs(amt))} DH</td></tr>`;
+  };
+
+  line('Fixe mensuel', d.pay.baseSalary, { plus: true });
+  if(d.pay.primeFixeMensuelle) line('Prime fixe mensuelle', d.pay.primeFixeMensuelle, { plus: true });
+  line(`Prime d'assiduité${d.assiduiteAcquise ? '' : ' — perdue (3e retard/absence)'}`, d.assiduiteAcquise ? d.pay.primeAssiduite : 0, { plus: true, color: d.assiduiteAcquise ? 'var(--green)' : 'var(--muted)' });
+  const st = d.salary.status || {};
+  if(!st.isIndep){
+    line(`Commission contrats (${st.realized != null ? st.realized : d.counterRealized} contrats)`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0)), { plus: true });
+    if(st.primeObjectif) line('Prime objectif atteint', st.primeObjectif, { plus: true, color: 'var(--green)' });
+    if(st.primeExtra) line(`Bonus ${st.extraCount} contrat${st.extraCount>1?'s':''} au-delà de l'objectif`, st.primeExtra, { plus: true, color: 'var(--green)' });
+  } else {
+    line(`Commission contrats (${st.realized || 0} contrats)`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0), { plus: true });
+  }
+  (d.salary.manualPrimes || []).forEach(p => {
+    const amt = p.type === 'occurrences' ? (Number(p.amount) || 0) * (Number(p.count) || 1) : (Number(p.amount) || 0);
+    const applied = p.type !== 'conditional' || (st.realized || 0) >= (Number(p.targetObjective) || 0);
+    if(applied) line(`🎁 ${escapeHtml(p.label || 'Prime')}`, amt, { plus: true, color: 'var(--gold)' });
+  });
+  line('SALAIRE BRUT', d.salary.brut, { bold: true, top: true });
+
+  // Retenues, regroupées par nature pour rester lisible (le détail jour par jour reste dans le CSV)
+  const groups = {};
+  (ded.items || []).forEach(it => {
+    if(!it.amount) return;
+    let g = 'Autres retenues';
+    if(/^Retard/.test(it.label)) g = 'Retards';
+    else if(/^Absence|non payée/.test(it.label)) g = 'Absences / journées non payées';
+    else if(/^Dépassement pause/.test(it.label)) g = 'Dépassements de pause';
+    else if(/^Retours facturation/.test(it.label)) g = 'Retours de facturation';
+    else if(/^Retour client/.test(it.label)) g = 'Retours clients saisis à la main';
+    else if(/Téléphone/.test(it.label)) g = 'Téléphone / YouTube';
+    else if(/Objectif non atteint/.test(it.label)) g = 'Objectif non atteint';
+    groups[g] = (groups[g] || 0) + it.amount;
+  });
+  Object.keys(groups).forEach(g => line(g, -groups[g]));
+  if(!Object.keys(groups).length) line('Aucune retenue ce mois-ci', 0, { color: 'var(--green)' });
+  line('TOTAL RETENUES', -ded.total, { bold: true });
+  line('SALAIRE NET RÉEL À PAYER', d.salary.total, { bold: true, top: true, color: d.salary.total >= 0 ? 'var(--green)' : 'var(--red)' });
+  html += '</tbody></table>';
+
+  html += `<div style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6;">Les retours affichés ici concernent la période ${ret.periodLabel || '(non précisée)'} et sont retenus sur la paie de ${escapeHtml(billingMonthLabel(d.monthVal))}, versée le mois suivant. Diviseur ${ret.divisor === 1 ? '1:1' : '÷'+ret.divisor}${ret.auto ? ' appliqué automatiquement selon le règlement interne' : ' forcé manuellement par l\'admin'}.</div>`;
+
+  return html;
+}
+
+// ------------------------------------------------------------
+// 📥 EXPORTS
+// ------------------------------------------------------------
+function billingDownload(content, filename, mime){
+  const blob = new Blob(['﻿' + content], { type: (mime || 'text/csv') + ';charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function billingAgentCSV(d){
+  const fmt = n => Math.round(n);
+  let csv = `Tableau de paie;${csvSafe(d.agent)};${csvSafe(billingMonthLabel(d.monthVal))}\n\n`;
+  csv += 'PRODUCTION DU MOIS\n';
+  csv += 'N;Date;Produit;Reference;Client;Date naissance;Adresse;Email;Telephone;Numero de contrat;Retracte\n';
+  d.rows.forEach((r, i) => {
+    // `|| ''` sur chaque champ : une colonne absente du fichier importé (ou un import fait avant
+    // l'ajout d'une colonne) écrirait sinon littéralement « undefined » dans la case du tableau.
+    const cell = v => csvSafe(String(v == null ? '' : v).replace(/;/g, ','));
+    csv += [i + 1, cell(r.datePropre || r.date), cell(r.produit), cell(r.reference), cell(r.nom), cell(r.dateNaissance), cell(r.adresse), cell(r.email), cell(r.telephone), cell(r.numContrat), r.retracted ? 'OUI' : ''].join(';') + '\n';
+  });
+  csv += `\nContrats importes;${d.importedTotal}\nDont retractes;${d.retractedCount}\nContrats valides (backoffice);${d.importedValid}\nContrats comptes pour la paie (compteurs);${d.counterRealized}\n`;
+
+  const ret = d.returns;
+  csv += `\nRETOURS DE FACTURATION${ret.periodLabel ? ' (' + ret.periodLabel + ')' : ''}\n`;
+  csv += 'N;Produit;Client;Numero de contrat;Mois d origine;Motif\n';
+  ret.rows.forEach((r, i) => {
+    const cell = v => csvSafe(String(v == null ? '' : v).replace(/;/g, ','));
+    csv += [i + 1, cell(r.produit), cell(r.nom), cell(r.numContrat), cell(r.originMonth), cell(r.motif)].join(';') + '\n';
+  });
+  csv += `\nNombre de retours;${ret.count}\nCout unitaire (DH);${fmt(ret.unitCost)}\nDiviseur;${ret.divisor === 1 ? '1:1' : '/' + ret.divisor}\nRetenue retours (DH);${fmt(ret.amount)}\n`;
+
+  csv += '\nCALCUL DU SALAIRE\nLigne;Montant (DH)\n';
+  csv += `Fixe mensuel;${fmt(d.pay.baseSalary)}\n`;
+  if(d.pay.primeFixeMensuelle) csv += `Prime fixe mensuelle;${fmt(d.pay.primeFixeMensuelle)}\n`;
+  csv += `Prime assiduite;${fmt(d.assiduiteAcquise ? d.pay.primeAssiduite : 0)}\n`;
+  csv += `SALAIRE BRUT;${fmt(d.salary.brut)}\n`;
+  (d.salary.deductions.items || []).forEach(it => {
+    if(it.amount) csv += `${csvSafe(it.date)} - ${csvSafe(String(it.label).replace(/;/g, ','))};-${fmt(it.amount)}\n`;
+  });
+  csv += `TOTAL RETENUES;-${fmt(d.salary.deductions.total)}\n`;
+  csv += `SALAIRE NET REEL;${fmt(d.salary.total)}\n`;
+  return csv;
+}
+
+async function downloadBillingAgentCSV(){
+  const d = BILLING_LAST_SHEET;
+  if(!d){ alert('Affiche d\'abord le tableau d\'un agent.'); return; }
+  billingDownload(billingAgentCSV(d), `${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie.csv`);
+}
+
+async function downloadAllBillingAgentsCSV(){
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  if(!monthVal) return;
+  const agents = config.agents || [];
+  if(!agents.length){ alert('Aucun agent.'); return; }
+  let csv = '';
+  for(const a of agents){
+    const d = await billingComputeAgent(a, monthVal);
+    csv += billingAgentCSV(d) + '\n\n' + '='.repeat(60) + '\n\n';
+  }
+  billingDownload(csv, `tableaux_agents_${monthVal}.csv`);
+  logAudit('Admin', 'Export de tous les tableaux agents', monthVal);
+}
+
+async function exportBillingAgentImage(){
+  const d = BILLING_LAST_SHEET;
+  if(!d){ alert('Affiche d\'abord le tableau d\'un agent.'); return; }
+  const inner = `<div style="font-size:0;"></div>` + billingAgentSheetHTML(d, true);
+  await captureBlockToImage({
+    innerHTML: inner,
+    width: 1000,
+    title: `${d.agent} — ${billingMonthLabel(d.monthVal)}`,
+    badge: 'Tableau de paie',
+    badgeColor: '#c9a870',
+    caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
+    filename: `${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie.png`
+  });
+}
+
+// ------------------------------------------------------------
+// 🔒 HISTORIQUE DES SALAIRES — figer un mois payé
+// ------------------------------------------------------------
+async function freezeBillingMonth(){
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  if(!monthVal) return;
+  if(!confirm(`Figer les salaires nets de ${billingMonthLabel(monthVal)} ?\n\nLes montants seront archivés tels qu'ils sont calculés maintenant et ne bougeront plus, même si un réglage change ensuite. Tu peux refiger le mois plus tard pour écraser l'archive.`)) return;
+  const agents = config.agents || [];
+  const entries = [];
+  for(const a of agents){
+    const d = await billingComputeAgent(a, monthVal);
+    entries.push({
+      agent: a,
+      contracts: d.counterRealized,
+      importedValid: d.importedValid,
+      retracted: d.retractCounter,
+      returns: d.returns.count,
+      returnDivisor: d.returns.divisor,
+      returnAmount: d.returns.amount,
+      brut: d.salary.brut,
+      deductions: d.salary.deductions.total,
+      net: d.salary.total
+    });
+  }
+  const payload = { month: monthVal, frozenAt: new Date().toISOString(), entries };
+  await billingSave(billingPayslipKey(monthVal), payload);
+  logAudit('Admin', 'Salaires du mois figés', `${monthVal} — ${entries.length} agents — total ${entries.reduce((s,e)=>s+e.net,0)} DH`);
+  renderBillingHistory();
+  alert(`✅ ${entries.length} salaires archivés pour ${billingMonthLabel(monthVal)}.`);
+}
+
+async function renderBillingHistory(){
+  const el = document.getElementById('billingHistoryPanel');
+  if(!el) return;
+  el.innerHTML = '<div class="empty">⏳ Chargement…</div>';
+  const now = nowMA();
+  const months = [];
+  for(let i = 0; i < 18; i++){
+    const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(billingMonthVal(dt.getFullYear(), dt.getMonth() + 1));
+  }
+  const found = [];
+  for(const mv of months){
+    const p = await getBillingPayslips(mv);
+    if(p && p.entries && p.entries.length) found.push(p);
+  }
+  if(!found.length){ el.innerHTML = '<div class="empty">Aucun mois figé pour l\'instant.</div>'; return; }
+  let html = '';
+  found.forEach(p => {
+    const total = p.entries.reduce((s, e) => s + e.net, 0);
+    html += `<div style="margin-bottom:18px;">
+      <div style="font-weight:800; font-size:15px; margin-bottom:6px; text-transform:capitalize;">${escapeHtml(billingMonthLabel(p.month))} — masse salariale nette : <span style="color:var(--green);">${total.toLocaleString('fr-FR')} DH</span> <span style="font-weight:500; font-size:12px; color:var(--muted);">(figé le ${new Date(p.frozenAt).toLocaleDateString('fr-FR')})</span></div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Contrats</th><th>Rétractés</th><th>Retours</th><th>Div.</th><th>Retenue retours</th><th>Brut</th><th>Retenues</th><th>NET</th></tr></thead><tbody>`;
+    p.entries.slice().sort((a, b) => b.net - a.net).forEach(e => {
+      html += `<tr><td><b>${escapeHtml(e.agent)}</b></td><td>${e.contracts}</td><td>${e.retracted || 0}</td><td>${e.returns || 0}</td><td>${e.returnDivisor === 1 ? '1:1' : '÷' + e.returnDivisor}</td><td style="color:var(--red);">−${(e.returnAmount || 0).toLocaleString('fr-FR')}</td><td>${e.brut.toLocaleString('fr-FR')}</td><td style="color:var(--red);">−${e.deductions.toLocaleString('fr-FR')}</td><td style="font-weight:800; color:var(--green);">${e.net.toLocaleString('fr-FR')} DH</td></tr>`;
+    });
+    html += '</tbody></table></div></div>';
+  });
+  el.innerHTML = html;
+}
+
+async function downloadSalaryHistoryCSV(){
+  const now = nowMA();
+  let csv = 'Mois;Fige le;Agent;Contrats;Retractes;Retours;Diviseur;Retenue retours (DH);Brut (DH);Retenues (DH);Net reel (DH)\n';
+  let any = false;
+  for(let i = 0; i < 24; i++){
+    const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mv = billingMonthVal(dt.getFullYear(), dt.getMonth() + 1);
+    const p = await getBillingPayslips(mv);
+    if(!p || !p.entries) continue;
+    any = true;
+    p.entries.forEach(e => {
+      csv += [mv, new Date(p.frozenAt).toLocaleDateString('fr-FR'), csvSafe(e.agent), e.contracts, e.retracted || 0, e.returns || 0, e.returnDivisor === 1 ? '1:1' : '/' + e.returnDivisor, Math.round(e.returnAmount || 0), Math.round(e.brut), Math.round(e.deductions), Math.round(e.net)].join(';') + '\n';
+    });
+  }
+  if(!any){ alert('Aucun mois figé à exporter. Utilise « Figer le mois affiché » d\'abord.'); return; }
+  billingDownload(csv, `historique_salaires_${todayStr()}.csv`);
+}
+
+// ------------------------------------------------------------
+// 📦 PACK PATRON — tout le mois dans un seul fichier
+// ------------------------------------------------------------
+async function downloadBossPackCSV(){
+  const monthVal = document.getElementById('billingSheetMonth')?.value || todayStr().slice(0, 7);
+  const [year, month] = monthVal.split('-').map(Number);
+  const agents = config.agents || [];
+  if(!agents.length){ alert('Aucun agent.'); return; }
+
+  const previewEl = document.getElementById('bossPackPreview');
+  if(previewEl) previewEl.innerHTML = '<div class="empty">⏳ Calcul en cours…</div>';
+
+  let csv = `PACK PATRON - ${billingMonthLabel(monthVal)}\nGenere le;${new Date().toLocaleString('fr-FR')}\n\n`;
+  csv += 'AGENTS\n';
+  csv += 'Agent;Statut;Contrats (paie);Contrats backoffice;Retractes;Objectif mini;Objectif atteint;Retards+absences;Prime assiduite;Retours;Diviseur;Retenue retours (DH);Cout unitaire retour (DH);Brut (DH);Total retenues (DH);NET REEL (DH)\n';
+
+  let totalNet = 0, totalBrut = 0, totalContracts = 0, totalReturns = 0, totalReturnCost = 0, totalDed = 0;
+  const rowsForPreview = [];
+  for(const a of agents){
+    const d = await billingComputeAgent(a, monthVal);
+    const st = d.salary.status || {};
+    const statut = d.pay.isIndep ? 'Independant' : (d.pay.noObjectif ? 'Sans objectif' : 'Salarie');
+    csv += [
+      csvSafe(a), statut, d.counterRealized, d.importedValid, d.retractCounter,
+      st.objectif || 0, st.atteint ? 'OUI' : 'NON', d.stats.retardsCumules || 0,
+      d.assiduiteAcquise ? 'Acquise' : 'Perdue',
+      d.returns.count, d.returns.divisor === 1 ? '1:1' : '/' + d.returns.divisor,
+      Math.round(d.returns.amount), Math.round(d.returns.unitCost),
+      Math.round(d.salary.brut), Math.round(d.salary.deductions.total), Math.round(d.salary.total)
+    ].join(';') + '\n';
+    totalNet += d.salary.total; totalBrut += d.salary.brut; totalContracts += d.counterRealized;
+    totalReturns += d.returns.count; totalReturnCost += d.returns.amount; totalDed += d.salary.deductions.total;
+    rowsForPreview.push({ agent: a, contracts: d.counterRealized, returns: d.returns.count, net: d.salary.total });
+  }
+  csv += `TOTAL;;${totalContracts};;;;;;;${totalReturns};;${Math.round(totalReturnCost)};;${Math.round(totalBrut)};${Math.round(totalDed)};${Math.round(totalNet)}\n`;
+
+  // Charges de l'entreprise — mêmes réglages et même total que le bilan net de la Vue d'ensemble
+  // (config.charges + config.customCharges, cf. totalMonthlyCharges), pour que les deux écrans ne
+  // puissent jamais afficher deux chiffres différents.
+  csv += '\nCHARGES DE L ENTREPRISE (mensuelles)\nCharge;Montant (DH)\n';
+  const ch = config.charges || {};
+  [['Les lignes', ch.lignes], ['Loyer bureau', ch.loyerBureau], ['Loyer appart', ch.loyerAppart],
+   ['Syndic', ch.syndic], ['Internet', ch.internet]]
+    .forEach(([lbl, v]) => { csv += `${csvSafe(lbl)};${Number(v) || 0}\n`; });
+  (config.customCharges || []).forEach(c => { csv += `${csvSafe(c.name || 'Sans nom')};${Number(c.amount) || 0}\n`; });
+  const totalCharges = totalMonthlyCharges();
+  csv += `TOTAL CHARGES;${Math.round(totalCharges)}\n`;
+
+  // Chiffre d'affaires estimé du patron (mêmes réglages que la carte "Mon chiffre d'affaires")
+  const commission = Number(config.bossCommissionPerContract) || 0;
+  const returnRate = Number(config.bossReturnRatePct) || 0;
+  const bonusPct = Number(config.bossBonusPct) || 0;
+  const payableContracts = totalContracts * (1 - returnRate / 100);
+  const ca = payableContracts * commission * (1 + bonusPct / 100);
+  csv += '\nCHIFFRE D AFFAIRES (estimation)\nLigne;Valeur\n';
+  csv += `Contrats equipe;${totalContracts}\nCommission par contrat (DH);${commission}\nTaux de retour estime (%);${returnRate}\nBonus (%);${bonusPct}\nCA estime (DH);${Math.round(ca)}\n`;
+  csv += `\nRESULTAT ESTIME (CA - salaires nets - charges) (DH);${Math.round(ca - totalNet - totalCharges)}\n`;
+
+  // Retours reels du mois, toutes periodes confondues
+  const ret = await getBillingReturns(monthVal);
+  csv += `\nRETOURS IMPUTES CE MOIS\nPeriode couverte;${csvSafe((ret.periodFrom || '?') + ' -> ' + (ret.periodTo || '?'))}\nNombre total;${(ret.rows || []).length}\nRetenu aux agents (DH);${Math.round(totalReturnCost)}\n`;
+
+  billingDownload(csv, `pack_patron_${monthVal}.csv`);
+  logAudit('Admin', 'Export pack patron', monthVal);
+
+  if(previewEl){
+    rowsForPreview.sort((a, b) => b.net - a.net);
+    let html = `<div style="padding:12px 14px; border-radius:10px; background:rgba(255,215,0,0.10); border:1px solid rgba(255,215,0,0.35); margin-bottom:12px;">
+      <b style="color:var(--gold);">Masse salariale nette : ${Math.round(totalNet).toLocaleString('fr-FR')} DH</b> · Charges : ${Math.round(totalCharges).toLocaleString('fr-FR')} DH · CA estimé : ${Math.round(ca).toLocaleString('fr-FR')} DH · <b>Résultat estimé : ${Math.round(ca - totalNet - totalCharges).toLocaleString('fr-FR')} DH</b>
+    </div>`;
+    html += '<table class="salary-table"><thead><tr><th>Agent</th><th>Contrats</th><th>Retours</th><th>Net réel</th></tr></thead><tbody>';
+    rowsForPreview.forEach(r => {
+      html += `<tr><td><b>${escapeHtml(r.agent)}</b></td><td>${r.contracts}</td><td style="color:var(--red);">${r.returns}</td><td style="font-weight:800; color:var(--green);">${Math.round(r.net).toLocaleString('fr-FR')} DH</td></tr>`;
+    });
+    html += '</tbody></table>';
+    previewEl.innerHTML = html;
+  }
+}
+
+
+// ============================================================
+// 📡 BOÎTE DE RÉCEPTION BACKOFFICE — le contrat validé arrive tout seul dans le CRM
+// ============================================================
+// LE CIRCUIT COMPLET, SANS INTERVENTION HUMAINE :
+//
+//   Backoffice valide → message Telegram → Pabbly
+//                                            ├─→ ta feuille Google Sheets (comme aujourd'hui)
+//                                            └─→ collection Firestore `vortexnova_backoffice`  ← NOUVEAU
+//                                                          ↓
+//                                    le CRM la vide et range chaque contrat
+//                                    dans le mois de SA PROPRE DATE
+//
+// POURQUOI UNE BOÎTE DE RÉCEPTION QU'ON VIDE, plutôt qu'une collection qui grossit :
+// Pabbly écrit un document par contrat. Si le CRM devait relire toute la collection à chaque
+// rafraîchissement, au bout d'un an il lirait des milliers de documents toutes les 40 secondes — la
+// facture Firestore exploserait pour rien. Ici, le CRM lit la boîte, range les contrats dans les
+// tableaux mensuels (`billingProd:AAAA-MM`, la même base que l'import CSV), puis SUPPRIME les
+// documents traités. La boîte reste donc quasiment toujours vide, et la lecture coûte trois fois rien.
+//
+// LA DATE QUI COMPTE EST CELLE DU CONTRAT, PAS CELLE DE L'ENVOI :
+// un contrat signé le 10/08 mais envoyé par le backoffice le 11/08 est rangé au 10/08. C'est
+// indispensable pour les indépendants et les heures supplémentaires, où la signature et la validation
+// tombent souvent des jours différents. Voir parseContractDate() plus bas.
+//
+// ANTI-DOUBLON : le rattachement se fait sur le numéro de contrat. Si Pabbly renvoie deux fois le même
+// (rejeu d'un scénario, message Telegram dupliqué), le contrat n'est compté qu'une seule fois.
+// ============================================================
+
+const BACKOFFICE_COLLECTION = 'vortexnova_backoffice';
+
+// Convertit toutes les écritures de date rencontrées en pratique vers "AAAA-MM-JJ".
+// Accepte : "2026-08-10", "10/08/2026", "10-08-2026", "lun. 10/08/2026", "10/08/2026 14:32",
+// "10/08/26". Renvoie null si vraiment illisible — dans ce cas le contrat part dans les non rangés
+// plutôt que d'être rangé au mauvais mois (une erreur de mois, c'est un salaire faux).
+function parseContractDate(raw){
+  if(!raw) return null;
+  let s = String(raw).trim();
+
+  // Le message Telegram du backoffice commence par « FAIT LE 07/08/2026 ». Si Pabbly envoie le message
+  // entier (ou plusieurs lignes) au lieu de cette seule ligne, on va chercher la date qui suit
+  // « FAIT LE » en priorité — sinon on risquerait d'attraper la date de naissance du client, qui est
+  // aussi dans le message. Une date de naissance prise pour une date de contrat, c'est un contrat
+  // rangé en 1958.
+  const faitLe = s.match(/FAIT\s*LE\s*[:\-]?\s*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/i);
+  if(faitLe) s = faitLe[1];
+
+  // Format ISO déjà correct (éventuellement suivi d'une heure)
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+
+  // Format français jj/mm/aaaa ou jj-mm-aaaa, avec ou sans préfixe ("lun. ") et sans ou avec heure
+  m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){
+    let [, d, mo, y] = m;
+    if(y.length === 2) y = '20' + y;
+    const dd = String(Number(d)).padStart(2, '0');
+    const mm = String(Number(mo)).padStart(2, '0');
+    if(Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) return null;
+    return `${y}-${mm}-${dd}`;
+  }
+  return null;
+}
+
+// Lit un champ quel que soit le nom exact utilisé par Pabbly (agent / Agent / vendeur…), en réutilisant
+// la table d'alias de l'import CSV : un seul endroit à maintenir si tu renommes une colonne un jour.
+function backofficeReadFields(data){
+  const row = billingMapRow(data || {});
+  row.dateISO = parseContractDate(data.date || data.Date || row.date || row.datePropre);
+  return row;
+}
+
+// Chemin de la boîte aux lettres dans la Realtime Database (voir databaseURL dans firebaseConfig).
+const BACKOFFICE_RTDB_PATH = 'backoffice_inbox';
+
+// Affichage du contenu brut de la boîte : coupé par défaut (bruit inutile au quotidien), allumé le
+// temps de mettre au point le réglage Pabbly.
+let billingShowRawInbox = false;
+function toggleRawInbox(){
+  billingShowRawInbox = !billingShowRawInbox;
+  renderBackofficeInboxPanel();
+}
+
+let backofficeSyncBusy = false;
+let backofficeLastResult = null;
+
+// Vide les boîtes de réception et range les contrats. Appelée automatiquement à chaque tour
+// d'auto-refresh Admin, et à la main par le bouton "Relever maintenant".
+//
+// DEUX BOÎTES SONT RELEVÉES, et elles aboutissent au même endroit :
+//   • Realtime Database (`backoffice_inbox`) — la voie normale, celle branchée sur Pabbly. Son API
+//     REST accepte du JSON à plat, exactement ce que le module API de Pabbly sait produire.
+//   • Firestore (`vortexnova_backoffice`) — conservée au cas où une autre source (un script, un
+//     autre outil que Pabbly) préférerait écrire là. Rien à faire si elle reste vide.
+async function syncBackofficeInbox(opts){
+  const silent = !(opts && opts.manual);
+  if(backofficeSyncBusy) return backofficeLastResult;
+  if(!firebaseReady) return null;
+  backofficeSyncBusy = true;
+
+  const result = { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [], byMonthCount: {}, error: null, rtdbError: null };
+  // Regroupé par mois de contrat avant écriture : un seul enregistrement par mois touché, au lieu
+  // d'une écriture par contrat.
+  const byMonth = {};
+  const processedDocs = [];   // documents Firestore à supprimer une fois rangés
+  const processedKeys = [];   // clés Realtime Database à supprimer une fois rangées
+
+  // Transforme une ligne brute (quelle que soit sa provenance) en contrat rangeable, ou l'écarte
+  // proprement. Une seule règle de lecture pour les deux boîtes : impossible qu'elles divergent.
+  const ingest = (data, idForLog)=>{
+    const r = backofficeReadFields(data || {});
+    if(!r.dateISO){ result.badDate.push(r.numContrat || r.nom || idForLog); return false; }
+    const agent = billingResolveAgent(r.agent);
+    if(!agent){ result.unresolvedAgent.push(r.agent || r.numContrat || idForLog); return false; }
+    const monthVal = r.dateISO.slice(0, 7);
+    if(!byMonth[monthVal]) byMonth[monthVal] = [];
+    byMonth[monthVal].push({
+      date: r.dateISO, datePropre: r.dateISO, produit: r.produit, reference: r.reference,
+      nom: r.nom, dateNaissance: r.dateNaissance, adresse: r.adresse, email: r.email,
+      telephone: r.telephone, agent, agentRaw: r.agent, numContrat: r.numContrat,
+      retracted: false, source: 'backoffice', receivedAt: (data && data.receivedAt) || new Date().toISOString()
+    });
+    return true;
+  };
+
+  try{
+    // --- Boîte 1 : Realtime Database (voie Pabbly) ---
+    if(rtdb){
+      try{
+        const snapR = await rtdb.ref(BACKOFFICE_RTDB_PATH).limitToFirst(500).once('value');
+        const val = snapR.val();
+        if(val){
+          Object.keys(val).forEach(key=>{
+            if(ingest(val[key], key)) processedKeys.push(key);
+          });
+        }
+      }catch(e){
+        // Base pas encore créée, adresse databaseURL erronée, ou règles trop strictes : on l'explique
+        // dans le panneau plutôt que de faire échouer tout le relevé (Firestore est relevé quand même).
+        result.rtdbError = e && e.message ? e.message : String(e);
+      }
+    }
+
+    // --- Boîte 2 : Firestore (voie de secours) ---
+    if(db){
+      try{
+        const snap = await db.collection(BACKOFFICE_COLLECTION).limit(500).get();
+        snap.forEach(doc=>{
+          if(ingest(doc.data() || {}, doc.id)) processedDocs.push(doc.ref);
+        });
+      }catch(e){ console.warn('inbox Firestore:', e); }
+    }
+
+    if(Object.keys(byMonth).length === 0){ backofficeLastResult = result; return result; }
+
+    for(const monthVal of Object.keys(byMonth)){
+      // ⏳ RETARDATAIRE : le backoffice peut valider plusieurs jours après la signature (week-end,
+      // congés, jours fériés). La plupart du temps ça n'a aucune importance — le contrat est rangé à sa
+      // date, point. Mais si le mois concerné a DÉJÀ été figé (donc payé), un contrat qui arrive après
+      // coup ne peut plus être payé sur ce mois-là : il faut que le patron le voie et décide de le
+      // rattraper sur le mois en cours. On l'importe quand même (la donnée est juste), on alerte.
+      const frozen = await getBillingPayslips(monthVal);
+      if(frozen && frozen.entries && frozen.entries.length){
+        byMonth[monthVal].forEach(r=> result.lateForFrozen.push({
+          numContrat: r.numContrat, agent: r.agent, nom: r.nom, date: r.date, monthVal
+        }));
+      }
+      const store = await getBillingProd(monthVal);
+      store.rows = store.rows || [];
+      const seen = new Set();
+      store.rows.forEach(r => billingRowKeys(r).forEach(k => seen.add(k)));
+      byMonth[monthVal].forEach(row=>{
+        const keys = billingRowKeys(row);
+        // Sans identifiant exploitable, on ne peut pas dédoublonner de façon sûre : on ajoute quand
+        // même (mieux vaut un doublon visible dans le tableau qu'un contrat perdu), le tableau de
+        // l'agent le rendra évident.
+        if(keys.length && keys.some(k => seen.has(k))){ result.duplicates++; return; }
+        keys.forEach(k => seen.add(k));
+        store.rows.push(row);
+        result.imported++;
+        // Mémorise DANS QUEL MOIS chaque contrat a été rangé. Indispensable à afficher : un contrat
+        // daté du 02/02 arrive dans février, pas dans le mois courant — sans cette ligne, on cherche
+        // le compteur au mauvais endroit et on croit que rien n'est arrivé.
+        result.byMonthCount[monthVal] = (result.byMonthCount[monthVal] || 0) + 1;
+      });
+      store.importedAt = new Date().toISOString();
+      store.month = monthVal;
+      await billingSave(billingProdKey(monthVal), store);
+    }
+
+    // Boîte vidée : les documents rangés sont supprimés pour qu'elle reste légère et qu'aucun contrat
+    // ne soit relu deux fois. Les documents illisibles (date ou agent introuvable) sont VOLONTAIREMENT
+    // laissés en place : ils réapparaîtront au prochain relevé une fois le nom d'agent corrigé dans
+    // Réglages, plutôt que d'être perdus silencieusement.
+    for(const ref of processedDocs){
+      try{ await ref.delete(); }catch(e){ console.warn('backoffice delete', e); }
+    }
+    for(const key of processedKeys){
+      try{ await rtdb.ref(`${BACKOFFICE_RTDB_PATH}/${key}`).remove(); }catch(e){ console.warn('backoffice rtdb delete', e); }
+    }
+
+    if(result.imported > 0){
+      billingContractIndexCache = null;
+      logAudit('Backoffice', 'Contrats reçus automatiquement', `${result.imported} contrat(s) rangé(s)${result.duplicates ? ` — ${result.duplicates} doublon(s) ignoré(s)` : ''}`);
+      if(!silent || document.getElementById('admin-billing')?.classList.contains('active')){
+        renderBackofficeInboxPanel();
+        renderBillingImportSummary();
+        renderBillingAgentSheet();
+      }
+    }
+  }catch(e){
+    console.error('syncBackofficeInbox:', e);
+    result.error = e && e.message ? e.message : String(e);
+  }finally{
+    backofficeSyncBusy = false;
+  }
+  backofficeLastResult = result;
+  return result;
+}
+
+async function manualSyncBackoffice(){
+  const el = document.getElementById('backofficeInboxPanel');
+  if(el) el.innerHTML = '<div class="empty">⏳ Relevé en cours…</div>';
+  const r = await syncBackofficeInbox({ manual: true });
+  await renderBackofficeInboxPanel(r);
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
+}
+
+async function renderBackofficeInboxPanel(lastResult){
+  const el = document.getElementById('backofficeInboxPanel');
+  if(!el) return;
+  const r = lastResult || backofficeLastResult;
+
+  let pending = 0, pendingKnown = false;
+  if(firebaseReady && db){
+    try{
+      const snap = await db.collection(BACKOFFICE_COLLECTION).limit(50).get();
+      pending += snap.size; pendingKnown = true;
+    }catch(e){}
+  }
+  let rtdbOk = null;
+  if(firebaseReady && rtdb){
+    try{
+      const snapR = await rtdb.ref(BACKOFFICE_RTDB_PATH).limitToFirst(50).once('value');
+      const v = snapR.val();
+      pending += v ? Object.keys(v).length : 0;
+      pendingKnown = true;
+      rtdbOk = true;
+    }catch(e){ rtdbOk = false; }
+  }
+
+  let html = '';
+
+  // 🔍 CONTENU BRUT DE LA BOÎTE — indispensable pour mettre au point le réglage Pabbly : on voit
+  // exactement les champs reçus, tels qu'ils sont arrivés, avant tout traitement. C'est le seul moyen
+  // de repérer en un coup d'œil un champ manquant (ex : `date` oublié dans Set Parameters) ou un nom
+  // de champ mal orthographié, sans avoir à deviner.
+  if(billingShowRawInbox && rtdb){
+    try{
+      const snapRaw = await rtdb.ref(BACKOFFICE_RTDB_PATH).limitToFirst(10).once('value');
+      const v = snapRaw.val();
+      if(v){
+        html += `<div style="margin-bottom:10px; padding:12px 14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
+          <div style="font-weight:800; margin-bottom:8px;">🔍 Contenu brut de la boîte (${Object.keys(v).length})</div>`;
+        Object.keys(v).slice(0, 10).forEach(k=>{
+          const d = v[k] || {};
+          const champs = Object.keys(d);
+          const manquants = ['date', 'agent', 'numContrat'].filter(f => !champs.includes(f) || !String(d[f] || '').trim());
+          html += `<div style="font-family:monospace; font-size:11.5px; color:var(--muted); border-top:1px solid var(--border); padding:8px 0; line-height:1.7;">
+            ${champs.map(f=> `<span style="color:${['date','agent','numContrat'].includes(f) ? 'var(--green)' : 'var(--muted)'};">${escapeHtml(f)}</span> = ${escapeHtml(String(d[f]).slice(0,60))}`).join('<br>')}
+            ${manquants.length ? `<div style="color:var(--red); font-weight:700; margin-top:5px;">⚠️ Manquant ou vide : ${manquants.join(', ')}</div>` : '<div style="color:var(--green); font-weight:700; margin-top:5px;">✅ Les 3 champs obligatoires sont là</div>'}
+          </div>`;
+        });
+        html += '</div>';
+      } else {
+        html += `<div style="margin-bottom:10px; padding:12px 14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border); font-size:12.5px; color:var(--muted);">🔍 La boîte est vide — rien n'est encore arrivé de Pabbly.</div>`;
+      }
+    }catch(e){}
+  }
+
+  // Diagnostic de la boîte aux lettres : tant qu'elle n'est pas joignable, rien n'arrivera jamais —
+  // autant le dire tout de suite, avec l'adresse exacte à vérifier, plutôt que de laisser chercher.
+  const dbUrl = (firebaseConfig && firebaseConfig.databaseURL) || '(non renseignée)';
+  if(rtdbOk === false || (r && r.rtdbError)){
+    html += `<div style="padding:12px 14px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4); margin-bottom:10px;">
+      <div style="font-weight:800; color:var(--red);">⚠️ La boîte aux lettres n'est pas joignable</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.6;">
+        Adresse utilisée : <b style="color:var(--text); word-break:break-all;">${escapeHtml(dbUrl)}</b><br>
+        Trois causes possibles, dans l'ordre de fréquence :<br>
+        1. La Realtime Database n'a pas encore été créée (Firebase Console → Realtime Database → Créer une base de données).<br>
+        2. Elle a été créée dans une autre région : l'adresse affichée dans Firebase ne correspond pas à celle ci-dessus. Envoie-la-moi, c'est une ligne à changer.<br>
+        3. Ses règles ne sont pas encore publiées.
+      </div>
+    </div>`;
+  } else if(rtdbOk === true){
+    html += `<div style="padding:10px 13px; border-radius:9px; background:rgba(52,183,116,0.10); border:1px solid rgba(52,183,116,0.3); margin-bottom:10px; font-size:12.5px;">
+      ✅ Boîte aux lettres joignable — <span style="color:var(--muted); word-break:break-all;">${escapeHtml(dbUrl)}</span>
+    </div>`;
+  }
+
+  if(r && r.error){
+    html += `<div style="padding:12px 14px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4); color:var(--red); font-weight:700;">⚠️ Le relevé a échoué : ${escapeHtml(r.error)}<div style="font-weight:500; color:var(--muted); font-size:12.5px; margin-top:6px;">Le plus souvent, c'est que les règles de sécurité Firestore n'autorisent pas encore la collection <b>${BACKOFFICE_COLLECTION}</b>. Voir le mode d'emploi.</div></div>`;
+  } else {
+    const ok = r && r.imported > 0;
+    html += `<div style="padding:12px 14px; border-radius:10px; background:${ok ? 'rgba(52,183,116,0.12)' : 'var(--panel2)'}; border:1px solid ${ok ? 'rgba(52,183,116,0.35)' : 'var(--border)'};">
+      <div style="font-weight:700; color:${ok ? 'var(--green)' : 'var(--text)'};">${ok ? `✅ ${r.imported} contrat${r.imported>1?'s':''} rangé${r.imported>1?'s':''} au dernier relevé` : '📭 Rien de nouveau au dernier relevé'}${r && r.duplicates ? ` · ${r.duplicates} doublon${r.duplicates>1?'s':''} ignoré${r.duplicates>1?'s':''}` : ''}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:5px;">Le CRM relève la boîte tout seul toutes les 40 secondes tant que tu es sur l'onglet Admin.${pendingKnown ? ` En attente dans la boîte : <b>${pending}</b>.` : ''}</div>
+      ${ok && Object.keys(r.byMonthCount || {}).length ? `<div style="font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--border);">
+        📅 Rangés dans : ${Object.keys(r.byMonthCount).sort().map(mv=> `<b>${escapeHtml(billingMonthLabel(mv))}</b> (${r.byMonthCount[mv]})`).join(' · ')}
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">Chaque contrat va au mois de <b>sa</b> date. Pour le voir dans les tableaux plus bas, sélectionne ce mois-là.</div>
+      </div>` : ''}
+      ${pendingKnown && pending > 0 && !ok ? `<div style="font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--border); color:var(--amber);">
+        👉 <b>${pending} contrat${pending>1?'s':''} attend${pending>1?'ent':''} dans la boîte.</b> Clique sur « 📡 Relever maintenant » pour le${pending>1?'s':''} ranger.
+      </div>` : ''}
+    </div>`;
+  }
+
+  if(r && r.unresolvedAgent && r.unresolvedAgent.length){
+    const uniq = [...new Set(r.unresolvedAgent)];
+    html += `<div style="margin-top:10px; padding:12px 14px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4);">
+      <div style="font-weight:800; color:var(--red); margin-bottom:6px;">⚠️ ${uniq.length} nom${uniq.length>1?'s':''} d'agent non reconnu${uniq.length>1?'s':''}</div>
+      <div style="font-size:13px; color:var(--muted); line-height:1.7;">${uniq.map(escapeHtml).join('<br>')}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Ces contrats <b>restent en attente</b>, ils ne sont pas perdus. Corrige le nom dans Réglages → Agents (ou dans ton scénario Pabbly) : ils se rangeront tout seuls au relevé suivant.</div>
+    </div>`;
+  }
+  if(r && r.lateForFrozen && r.lateForFrozen.length){
+    const byMonth = {};
+    r.lateForFrozen.forEach(x=>{ (byMonth[x.monthVal] = byMonth[x.monthVal] || []).push(x); });
+    html += `<div style="margin-top:10px; padding:12px 14px; border-radius:10px; background:rgba(217,164,65,0.14); border:1px solid rgba(217,164,65,0.5);">
+      <div style="font-weight:800; color:var(--amber); margin-bottom:6px;">⏳ ${r.lateForFrozen.length} contrat${r.lateForFrozen.length>1?'s':''} arrivé${r.lateForFrozen.length>1?'s':''} après la clôture du mois</div>
+      <div style="font-size:13px; color:var(--muted); line-height:1.7;">${Object.keys(byMonth).map(mv=>
+        `<b>${escapeHtml(billingMonthLabel(mv))}</b> (déjà figé) : ${byMonth[mv].map(x=> `${escapeHtml(x.agent)} — contrat ${escapeHtml(x.numContrat || '?')} du ${escapeHtml(x.date || '?')}`).join(', ')}`
+      ).join('<br>')}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Le contrat est bien enregistré à sa date, mais ce mois-là est déjà payé. À toi de décider : soit tu refiges le mois (le net changera), soit tu ajoutes une prime manuelle du montant correspondant sur le mois en cours pour rattraper l'agent.</div>
+    </div>`;
+  }
+  if(r && r.badDate && r.badDate.length){
+    html += `<div style="margin-top:10px; padding:12px 14px; border-radius:10px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4);">
+      <div style="font-weight:800; color:var(--amber); margin-bottom:6px;">⚠️ ${r.badDate.length} contrat${r.badDate.length>1?'s':''} sans date lisible</div>
+      <div style="font-size:12.5px; color:var(--muted);">Ils restent en attente. Vérifie que Pabbly envoie bien le champ <b>date</b> au format 10/08/2026 ou 2026-08-10.</div>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ------------------------------------------------------------
+// 🔢 LE CHIFFRE NON MODIFIABLE DU BACKOFFICE
+// ------------------------------------------------------------
+// Nombre de contrats d'un agent sur un mois, tel que le backoffice l'a validé. Personne ne peut le
+// modifier depuis le CRM : il ne vient ni du bouton +1 de l'Arena, ni d'une correction admin, mais
+// uniquement des contrats reçus (Pabbly) ou importés depuis le fichier du backoffice.
+// Il compte TOUS les contrats du mois, rétractations comprises — exactement comme le compteur de
+// l'Arena — les rétractations étant retirées ensuite, une seule fois, par monthlyRealizedContracts().
+async function backofficeMonthlyCount(agent, year, month){
+  const monthVal = billingMonthVal(year, month);
+  const data = await getBillingProd(monthVal);
+  return (data.rows || []).filter(r => r.agent === agent).length;
+}
+
+async function backofficeMonthHasData(year, month){
+  const data = await getBillingProd(billingMonthVal(year, month));
+  return (data.rows || []).length > 0;
+}
+
+// ------------------------------------------------------------
+// 🔀 QUI PAIE : LE COMPTEUR DE L'AGENT OU LE BACKOFFICE
+// ------------------------------------------------------------
+// Choix retenu : le compteur +1 de l'agent pilote la paie PENDANT le mois (c'est lui qui fait vivre
+// l'Arena, les pauses bonus et les classements en temps réel), et le patron bascule sur le backoffice
+// d'un seul clic en fin de mois, une fois tous les contrats validés reçus. Le réglage est mémorisé
+// PAR MOIS : basculer mars n'a aucun effet sur avril, et un mois déjà payé ne rebouge jamais.
+function paySourceKey(monthVal){ return `billingPaySource:${monthVal}`; }
+
+async function getPaySource(year, month){
+  const monthVal = billingMonthVal(year, month);
+  const v = await billingLoad(paySourceKey(monthVal), 'agent');
+  return v === 'backoffice' ? 'backoffice' : 'agent';
+}
+
+async function setPaySource(monthVal, source){
+  await billingSave(paySourceKey(monthVal), source === 'backoffice' ? 'backoffice' : 'agent');
+  logAudit('Admin', 'Source de paie changée', `${monthVal} → ${source === 'backoffice' ? 'contrats validés backoffice' : 'compteurs des agents'}`);
+  clearRenderCaches();
+}
+
+async function toggleMonthPaySource(){
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  if(!monthVal) return;
+  const [y, m] = monthVal.split('-').map(Number);
+  const current = await getPaySource(y, m);
+  const next = current === 'backoffice' ? 'agent' : 'backoffice';
+  if(next === 'backoffice'){
+    const has = await backofficeMonthHasData(y, m);
+    if(!has){
+      alert(`Aucun contrat backoffice enregistré pour ${billingMonthLabel(monthVal)}.\n\nBasculer maintenant mettrait tous les agents à 0 contrat. Reçois d'abord les contrats (Pabbly) ou importe le CSV du backoffice.`);
+      return;
+    }
+    if(!confirm(`Basculer la paie de ${billingMonthLabel(monthVal)} sur les contrats validés du backoffice ?\n\nÀ partir de maintenant, les salaires de ce mois sont calculés sur le chiffre du backoffice, plus sur les compteurs +1 des agents. Les agents verront le changement dans leur onglet Cash.\n\nTu peux revenir en arrière à tout moment.`)) return;
+  }
+  await setPaySource(monthVal, next);
+  renderPaySourcePanel();
+  renderBillingAgentSheet();
+}
+
+async function renderPaySourcePanel(){
+  const el = document.getElementById('paySourcePanel');
+  if(!el) return;
+  const monthVal = document.getElementById('billingSheetMonth')?.value || todayStr().slice(0, 7);
+  const [y, m] = monthVal.split('-').map(Number);
+  const source = await getPaySource(y, m);
+  const isBo = source === 'backoffice';
+
+  // Comparatif agent par agent : le compteur qu'ils ont saisi eux-mêmes vs ce que le backoffice a validé.
+  const agents = config.agents || [];
+  const rows = [];
+  for(const a of agents){
+    const [bo, counter, retr] = await Promise.all([
+      backofficeMonthlyCount(a, y, m),
+      agentCounterMonthlyCount(a, y, m),
+      getMonthlyRetractCount(a, y, m)
+    ]);
+    rows.push({ agent: a, bo, counter, retr, ecart: counter - bo });
+  }
+  const totalBo = rows.reduce((s, r) => s + r.bo, 0);
+  const totalCounter = rows.reduce((s, r) => s + r.counter, 0);
+
+  let html = `<div style="padding:14px 16px; border-radius:12px; background:${isBo ? 'rgba(52,183,116,0.10)' : 'var(--panel2)'}; border:1px solid ${isBo ? 'rgba(52,183,116,0.4)' : 'var(--border)'};">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:800; font-size:15px;">${isBo ? '🔒 Le backoffice paie ce mois-ci' : '✍️ Les compteurs des agents paient ce mois-ci'}</div>
+        <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">${isBo
+          ? 'Les salaires de ce mois sont calculés sur les contrats validés par le backoffice. Le chiffre ne peut plus être modifié depuis le CRM.'
+          : 'Normal en cours de mois : les agents comptent eux-mêmes en temps réel. Bascule en fin de mois, une fois tous les contrats validés reçus.'}</div>
+      </div>
+      <button onclick="toggleMonthPaySource()" style="padding:11px 18px; border-radius:9px; border:1px solid ${isBo ? 'var(--border)' : 'var(--accent)'}; background:${isBo ? 'transparent' : 'var(--accent)'}; color:${isBo ? 'var(--muted)' : 'white'}; font-weight:800; font-size:13px; cursor:pointer; white-space:nowrap;">
+        ${isBo ? '↩️ Revenir aux compteurs des agents' : '🔒 Basculer sur le backoffice'}
+      </button>
+    </div>
+  </div>`;
+
+  if(agents.length){
+    html += `<div style="overflow-x:auto; margin-top:14px;"><table class="salary-table"><thead><tr>
+      <th>Agent</th><th>✍️ Compteur agent</th><th>🔒 Validé backoffice</th><th>Écart</th><th>Rétractés</th><th>Payé sur</th>
+    </tr></thead><tbody>`;
+    rows.forEach(r=>{
+      const ecartColor = r.ecart === 0 ? 'var(--muted)' : (r.ecart > 0 ? 'var(--red)' : 'var(--amber)');
+      const ecartTxt = r.ecart === 0 ? '—' : (r.ecart > 0 ? `+${r.ecart}` : String(r.ecart));
+      const paid = isBo ? r.bo : r.counter;
+      html += `<tr>
+        <td><b>${escapeHtml(r.agent)}</b></td>
+        <td${isBo ? ' style="opacity:0.5;"' : ' style="font-weight:700;"'}>${r.counter}</td>
+        <td${isBo ? ' style="font-weight:700;"' : ' style="opacity:0.5;"'}>${r.bo}</td>
+        <td style="color:${ecartColor}; font-weight:700;">${ecartTxt}</td>
+        <td>${r.retr || '—'}</td>
+        <td style="font-weight:800; color:var(--green);">${Math.max(0, paid - r.retr)}</td>
+      </tr>`;
+    });
+    html += `<tr style="border-top:2px solid var(--border);"><td><b>TOTAL</b></td><td><b>${totalCounter}</b></td><td><b>${totalBo}</b></td><td colspan="3"></td></tr>`;
+    html += '</tbody></table></div>';
+    html += `<div style="font-size:12px; color:var(--muted); margin-top:8px;">Un écart positif (rouge) = l'agent a compté plus de contrats que le backoffice n'en a validés. C'est exactement ce que cette bascule sert à empêcher de payer.</div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ------------------------------------------------------------
+// 🔗 ALIAS D'AGENT — « Nawal » du terrain = « Nawel » du CRM
+// ------------------------------------------------------------
+// Enregistre une orthographe alternative et RATTRAPE TOUT L'EXISTANT : les contrats déjà importés qui
+// portaient ce nom sans être rattachés, et les retours dans le même cas, sont réattribués aussitôt.
+// Sans ce rattrapage, il faudrait réimporter tous les fichiers à la main après chaque correction.
+async function assignAgentAlias(rawName, agentName){
+  if(!rawName || !agentName) return;
+  const key = billingNormKey(rawName);
+  if(!key) return;
+  config.agentAliases = config.agentAliases || {};
+  config.agentAliases[key] = agentName;
+  await saveConfigSilent();
+  logAudit('Admin', 'Alias d\'agent enregistré', `« ${rawName} » → ${agentName}`);
+
+  // Rattrapage sur les 24 derniers mois : production ET retours.
+  const now = nowMA();
+  let fixedProd = 0, fixedRet = 0;
+  for(let i = 0; i < 24; i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+
+    const prod = await getBillingProd(mv);
+    let touchedProd = false;
+    (prod.rows || []).forEach(r=>{
+      if(!r.agent && billingNormKey(r.agentRaw) === key){ r.agent = agentName; fixedProd++; touchedProd = true; }
+    });
+    if(touchedProd) await billingSave(billingProdKey(mv), prod);
+
+    const ret = await getBillingReturns(mv);
+    let touchedRet = false;
+    (ret.rows || []).forEach(r=>{
+      if(!r.agent && billingNormKey(r.agentRaw) === key){ r.agent = agentName; r.matchedVia = 'alias'; fixedRet++; touchedRet = true; }
+    });
+    if(touchedRet) await billingSave(billingRetKey(mv), ret);
+  }
+
+  billingContractIndexCache = null;
+  clearRenderCaches();
+  alert(`✅ « ${rawName} » sera désormais reconnu comme ${agentName}, partout et pour toujours.\n\nRattrapage immédiat : ${fixedProd} contrat(s) et ${fixedRet} retour(s) qui étaient en attente viennent d'être rattachés à ${agentName}.`);
+
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
+  renderPaySourcePanel();
+  renderAgentAliasPanel();
+  const prodReport = document.getElementById('billingProdReport');
+  if(prodReport) prodReport.innerHTML = '';
+  const retReport = document.getElementById('billingRetReport');
+  if(retReport) retReport.innerHTML = '';
+}
+
+// Bloc réutilisable : « ce nom n'est pas reconnu → rattache-le à un agent ».
+function agentAliasChooser(rawName, count){
+  const safe = String(rawName).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const id = 'alias_' + billingNormKey(rawName);
+  return `<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:7px 0;">
+    <span style="font-weight:700; color:var(--red); min-width:150px;">« ${escapeHtml(rawName)} »${count ? ` <span style="font-weight:500; color:var(--muted);">(${count})</span>` : ''}</span>
+    <span style="color:var(--muted);">→</span>
+    <select id="${id}" style="min-width:150px;">
+      <option value="">— choisis l'agent —</option>
+      ${(config.agents || []).map(a=> `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('')}
+    </select>
+    <button onclick="assignAgentAlias('${safe}', document.getElementById('${id}').value)"
+      style="padding:7px 14px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12.5px;">🔗 Rattacher</button>
+  </div>`;
+}
+
+async function removeAgentAlias(key){
+  if(!config.agentAliases || !config.agentAliases[key]) return;
+  const was = config.agentAliases[key];
+  if(!confirm(`Supprimer l'alias « ${key} » → ${was} ?\n\nLes contrats déjà rattachés le restent ; seuls les prochains imports ne seront plus reconnus.`)) return;
+  delete config.agentAliases[key];
+  await saveConfigSilent();
+  logAudit('Admin', 'Alias d\'agent supprimé', `« ${key} » → ${was}`);
+  renderAgentAliasPanel();
+}
+
+function renderAgentAliasPanel(){
+  const el = document.getElementById('agentAliasPanel');
+  if(!el) return;
+  const aliases = config.agentAliases || {};
+  const keys = Object.keys(aliases);
+  if(!keys.length){
+    el.innerHTML = '<div class="empty" style="padding:14px;">Aucun alias pour l\'instant. Ils se créent tout seuls quand tu rattaches un nom non reconnu lors d\'un import.</div>';
+    return;
+  }
+  let html = '<table class="salary-table"><thead><tr><th>Écrit sur le terrain</th><th>Compte comme</th><th></th></tr></thead><tbody>';
+  keys.sort().forEach(k=>{
+    html += `<tr><td><code style="font-size:12.5px;">${escapeHtml(k)}</code></td><td><b>${escapeHtml(aliases[k])}</b></td>
+      <td><button onclick="removeAgentAlias('${k.replace(/'/g, "\\'")}')" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer; font-size:12px;">Supprimer</button></td></tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// ------------------------------------------------------------
+// 👁️ CE QUE L'AGENT VOIT — son compteur face au chiffre du backoffice
+// ------------------------------------------------------------
+// DEMANDE PATRON : chaque agent doit voir côte à côte ce qu'il a compté lui-même (bouton +1) et ce que
+// le backoffice a réellement validé — ce second chiffre étant impossible à modifier depuis l'appli.
+// Affiché dans l'Arena ET dans le Cash, avec l'écart en clair : c'est le meilleur moyen d'éviter les
+// discussions en fin de mois, chacun voit la même chose au même moment.
+async function renderBackofficeAgentPanel(containerId, agent, year, month){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  if(!agent){ el.innerHTML = ''; return; }
+  try{
+    const [bo, counter, source] = await Promise.all([
+      backofficeMonthlyCount(agent, year, month),
+      agentCounterMonthlyCount(agent, year, month),
+      getPaySource(year, month)
+    ]);
+
+    // Tant qu'aucun contrat validé n'est arrivé pour le mois (début de mois, ou automatisation pas
+    // encore branchée), on n'affiche rien plutôt qu'un « 0 validé » qui ferait paniquer tout le monde.
+    if(bo === 0 && source !== 'backoffice'){ el.innerHTML = ''; return; }
+
+    const isBo = source === 'backoffice';
+    const ecart = counter - bo;
+    let note, noteColor;
+    if(isBo){
+      note = "🔒 Ce mois est payé sur le chiffre du backoffice.";
+      noteColor = 'var(--green)';
+    } else if(ecart > 0){
+      note = `⚠️ ${ecart} contrat${ecart>1?'s':''} que tu as compté${ecart>1?'s':''} ne ${ecart>1?'sont':'est'} pas encore validé${ecart>1?'s':''} par le backoffice. C'est souvent un délai de traitement — si l'écart reste en fin de mois, parle-en.`;
+      noteColor = 'var(--amber)';
+    } else if(ecart < 0){
+      note = `${-ecart} contrat${-ecart>1?'s':''} validé${-ecart>1?'s':''} par le backoffice que tu n'as pas encore compté — pense à cliquer +1 pour que ton Arena soit à jour.`;
+      noteColor = 'var(--muted)';
+    } else {
+      note = '✅ Tout concorde : ton compteur et le backoffice disent la même chose.';
+      noteColor = 'var(--green)';
+    }
+
+    el.innerHTML = `
+      <div style="max-width:520px; margin:0 auto; padding:14px 16px; border-radius:14px; background:var(--panel2); border:1px solid ${isBo ? 'rgba(52,183,116,0.4)' : 'var(--border)'};">
+        <div style="display:flex; gap:12px; text-align:center;">
+          <div style="flex:1;">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">✍️ Comptés par toi</div>
+            <div style="font-size:26px; font-weight:800; margin-top:4px; color:${isBo ? 'var(--muted)' : 'var(--text)'};">${counter}</div>
+          </div>
+          <div style="width:1px; background:var(--border);"></div>
+          <div style="flex:1;">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">🔒 Validés backoffice</div>
+            <div style="font-size:26px; font-weight:800; margin-top:4px; color:${isBo ? 'var(--green)' : 'var(--text)'};">${bo}</div>
+          </div>
+        </div>
+        <div style="font-size:12.5px; color:${noteColor}; margin-top:10px; text-align:center; line-height:1.5;">${note}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:7px; text-align:center;">Le chiffre du backoffice vient directement des contrats validés — personne ne peut le modifier ici, ni toi ni l'administration.</div>
+      </div>`;
+  }catch(e){
+    console.error('renderBackofficeAgentPanel:', e);
+    el.innerHTML = '';
+  }
+}
+
+// Total brut des compteurs +1 saisis par l'agent sur le mois (avant retrait des rétractations) —
+// extrait de monthlyRealizedContracts pour pouvoir comparer les deux sources sans les mélanger.
+async function agentCounterMonthlyCount(agent, year, month){
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dateStrs = [];
+  for(let d = 1; d <= daysInMonth; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  const boards = await Promise.all(dateStrs.map(async dateStr=>{
+    if(prodBoardCache[dateStr]) return prodBoardCache[dateStr];
+    const board = await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = board;
+    return board;
+  }));
+  let total = 0;
+  boards.forEach(board=>{
+    const p = (board.agents && board.agents[agent]) || null;
+    if(p) total += (p.realized || 0);
+  });
+  return total;
+}
+
+// ------------------------------------------------------------
+// 💸 COÛT D'UN RETOUR, AGENT PAR AGENT
+// ------------------------------------------------------------
+// Même donnée que la colonne du tableau de rémunération (Production 🏆), mais éditable ici, à côté des
+// retours : c'est là qu'on y pense. Les deux écrans écrivent au même endroit (prodConfig.agentPay),
+// il n'y a donc jamais deux valeurs différentes pour un même agent.
+function renderReturnCostPerAgent(){
+  const el = document.getElementById('returnCostPerAgentPanel');
+  if(!el) return;
+  const agents = config.agents || [];
+  if(!agents.length){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
+  const pc = getProdConfig();
+  const def = (pc.defaults && pc.defaults.returnCost) || 0;
+  let html = `<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Coût d'un retour (DH)</th><th>Appliqué</th></tr></thead><tbody>`;
+  agents.forEach(a=>{
+    const c = (pc.agentPay && pc.agentPay[a]) || {};
+    const own = c.returnCost;
+    const applied = getAgentPay(a).returnCost || 0;
+    html += `<tr>
+      <td><b>${escapeHtml(a)}</b></td>
+      <td><input type="number" min="0" step="10" data-retcost-agent="${escapeHtml(a)}" value="${own !== undefined && own !== '' ? own : ''}" placeholder="${def || 0}" style="width:120px;"></td>
+      <td style="color:${applied ? 'var(--text)' : 'var(--red)'}; font-weight:700;">${applied ? applied.toLocaleString('fr-FR') + ' DH' : '0 DH — aucune retenue'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  html += `<div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <button onclick="saveReturnCostPerAgent()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer les montants</button>
+    <div class="save-note" id="returnCostAgentNote"></div>
+    <span style="font-size:12px; color:var(--muted);">Vide = la valeur par défaut (${def || 0} DH) s'applique.</span>
+  </div>`;
+  el.innerHTML = html;
+}
+
+async function saveReturnCostPerAgent(){
+  const pc = getProdConfig();
+  pc.agentPay = pc.agentPay || {};
+  document.querySelectorAll('[data-retcost-agent]').forEach(inp=>{
+    const agent = inp.getAttribute('data-retcost-agent');
+    if(!pc.agentPay[agent]) pc.agentPay[agent] = {};
+    const val = inp.value.trim();
+    if(val === '') delete pc.agentPay[agent].returnCost;
+    else pc.agentPay[agent].returnCost = parseFloat(val) || 0;
+    if(Object.keys(pc.agentPay[agent]).length === 0) delete pc.agentPay[agent];
+  });
+  await saveConfigSilent();
+  logAudit('Admin', 'Coût des retours par agent modifié', '');
+  const note = document.getElementById('returnCostAgentNote');
+  if(note){ note.textContent = 'Enregistré ✓'; setTimeout(()=> note.textContent = '', 2000); }
+  billingInvalidate();
+  renderReturnCostPerAgent();
+  renderBillingAgentSheet();
+}
+
 
 (async function bootApp(){
   await firebaseAuthReady;
