@@ -1696,6 +1696,15 @@ function tryDeviceGateAdmin(){
         </div>
 
         <div class="settings-box" style="border-color:rgba(217,164,65,0.4);">
+          <label>🔎 Contrats à vérifier</label>
+          <div class="section-sub">Les contrats dont une donnée semble anormale : date dans le futur (faute de frappe sur l'année), numéro de contrat inhabituel, email ou téléphone illisible. Le CRM les a enregistrés tels quels — il n'a pas voulu deviner. <b>Une date dans le futur est le cas le plus coûteux</b> : le contrat reste invisible dans les tableaux jusqu'au mois venu, donc jamais payé, sans que personne s'en aperçoive.</div>
+          <div class="admin-toolbar" style="margin-top:12px;">
+            <button onclick="renderFlaggedContractsPanel()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--amber);background:rgba(217,164,65,0.14);color:var(--amber);font-weight:700;cursor:pointer;" title="Balaie les 24 derniers mois et liste tous les contrats comportant une donnée douteuse.">🔎 Chercher les anomalies</button>
+          </div>
+          <div id="flaggedContractsPanel" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(217,164,65,0.4);">
           <label>✋ Retours à trancher</label>
           <div class="section-sub">Les retours que le CRM n'a pas pu rattacher tout seul : ancien employé, contrat antérieur au CRM, orthographe trop éloignée, deux vendeurs cités. <b>Tant qu'ils sont ici, ils ne sont retenus à personne.</b> Tu décides ligne par ligne.</div>
           <div id="unmatchedReturnsPanel" style="margin-top:12px;"></div>
@@ -9640,9 +9649,13 @@ async function weekRealizedContracts(agent){
   return { total, daysElapsed: Math.max(1, daysElapsed) };
 }
 
-async function monthlyObjectifStatus(agent, year, month){
+// realizedOverride : nombre de contrats à utiliser au lieu du réalisé brut du mois. Sert au calcul de
+// paie, qui raisonne sur les contrats PAYÉS (réalisé − retours convertis en contrats) : un agent que
+// ses retours font passer sous son minimum perd sa prime d'objectif, c'est la règle du patron.
+// Sans ce paramètre, la fonction se comporte exactement comme avant (affichage Arena, classements).
+async function monthlyObjectifStatus(agent, year, month, realizedOverride){
   const pay = getAgentPay(agent);
-  const realized = await monthlyRealizedContracts(agent, year, month);
+  const realized = realizedOverride != null ? realizedOverride : await monthlyRealizedContracts(agent, year, month);
   if(pay.isIndep){
     return { agent, objectif: 0, realized, atteint: false, extraCount: 0, primeObjectif: 0, primeExtra: 0, pct: 100, remaining: 0, isIndep: true };
   }
@@ -9827,19 +9840,10 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   // récapitulative, avec le détail contrat par contrat dans le tableau de l'agent.
   // Uniquement sur un calcul de MOIS ENTIER : sur une fenêtre de dates choisie (carte "Dépenses temps
   // réel"), on n'impute pas un forfait mensuel à un intervalle de quelques jours.
-  if(!dateRangeOverride){
-    try{
-      const ret = await billingReturnsDeduction(agent, year, month);
-      if(ret.count > 0 && ret.amount > 0){
-        items.push({
-          date: `${year}-${String(month).padStart(2,'0')}-28`,
-          label: `Retours facturation${ret.periodLabel ? ' ('+ret.periodLabel+')' : ''} — ${ret.count} retour${ret.count>1?'s':''} × ${Math.round(ret.unitCost).toLocaleString('fr-FR')} DH ${ret.divisor===1 ? '(1:1)' : '÷'+ret.divisor}`,
-          amount: ret.amount
-        });
-        total += ret.amount;
-      }
-    }catch(e){ console.error('billingReturnsDeduction:', e); }
-  }
+  // ⚠️ LES RETOURS NE SONT PAS UNE RETENUE EN DIRHAMS.
+  // Ils retirent des CONTRATS du compteur payé (voir payableContractsBreakdown), ce qui réduit
+  // mécaniquement la commission ET peut faire perdre la prime d'objectif. Les compter en plus ici
+  // reviendrait à les facturer deux fois à l'agent.
 
   return { total: Math.round(total), items };
 }
@@ -9991,33 +9995,89 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
     </div>`;
 }
 
+// ============================================================
+// 🧮 CONTRATS PAYÉS — la base de tout le calcul de paie
+// ============================================================
+// RÈGLE DU PATRON, formulée sur ses propres exemples :
+//
+//     contrats payés = contrats validés − rétractés − (retours ÷ diviseur)
+//
+// Un retour ne coûte PAS un montant en dirhams : il ANNULE des contrats. Trente retours divisés par
+// trois retirent dix contrats du compteur — et c'est ce compteur réduit qui fait tourner ensuite
+// toute la formule : la commission, MAIS AUSSI le fait que l'objectif soit atteint ou non.
+//
+// Exemple salarié (objectif 30, fixe 3000, assiduité 500, prime objectif 500, 100 DH par contrat
+// au-delà de l'objectif). Il fait 50 contrats, 2 rétractés, 30 retours, aucun souci de discipline :
+//     50 − 2 − (30 ÷ 3) = 38 contrats payés
+//     3000 + 500 + 500 + (38 − 30) × 100 = 4 800 DH
+//
+// Exemple indépendant (150 DH/contrat, pas d'objectif). 100 contrats, 5 rétractés, 30 retours,
+// et plus de 40 contrats donc ÷3 :
+//     100 − 5 − 10 = 85  →  85 × 150 = 12 750 DH
+//
+// Exemple « sans objectif » (fixe 2000, assiduité 500, 100 DH dès le 1er contrat) : même règle.
+//
+// Les rétractations sont toujours en 1 pour 1 : un contrat rétracté est un contrat de moins, point.
+// Seuls les RETOURS passent par un diviseur (discipline pour un salarié, volume pour un indépendant).
+async function returnsContractDeduction(agent, year, month){
+  const ret = await billingReturnsDeduction(agent, year, month);
+  // Arrondi au plus proche : 31 retours ÷ 3 = 10,33 → 10 contrats retirés. Toujours affiché en clair
+  // dans le tableau de l'agent pour que le calcul soit vérifiable à la main.
+  const deducted = ret.count > 0 ? Math.round(ret.count / ret.divisor) : 0;
+  return { count: ret.count, divisor: ret.divisor, deducted, auto: ret.auto, periodLabel: ret.periodLabel, rows: ret.rows };
+}
+
+// Décomposition complète, utilisée par le calcul de paie ET par l'affichage : une seule source, donc
+// impossible que le tableau montre un chiffre et que la paie en applique un autre.
+async function payableContractsBreakdown(agent, year, month){
+  const [realized, retractions, ret] = await Promise.all([
+    monthlyRealizedContracts(agent, year, month),   // déjà net des rétractations
+    monthlyRetractions(agent, year, month),
+    returnsContractDeduction(agent, year, month)
+  ]);
+  const validated = realized + retractions;          // avant retrait des rétractations
+  const payable = Math.max(0, realized - ret.deducted);
+  return {
+    validated, retractions, realized,
+    returnsCount: ret.count, returnsDivisor: ret.divisor, returnsDeducted: ret.deducted,
+    returnsAuto: ret.auto, periodLabel: ret.periodLabel,
+    payable
+  };
+}
+
 async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
   const pay = getAgentPay(agent);
   const ded = await monthlyDeductions(agent, year, month);
+  // Contrats réellement payés = validés − rétractés − retours convertis en contrats (voir ci-dessus).
+  const br = await payableContractsBreakdown(agent, year, month);
+
   if(pay.isIndep){
-    const realized = await monthlyRealizedContracts(agent, year, month);
     // Un indépendant ne pointe pas, donc sa prime d'assiduité (si l'admin lui en a réglé une) est toujours acquise.
     let brut = pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite;
-    brut += contractEarnings(pay, realized, realized).total;
+    brut += contractEarnings(pay, br.payable, br.payable).total;
     const manualPrimes = await getManualPrimes(agent, year, month);
-    const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, realized);
+    const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, br.payable);
     brut += manualPrimesTotal;
     const total = brut - ded.total;
-    return { total: Math.round(total), brut: Math.round(brut), status: { realized, isIndep: true }, deductions: ded, manualPrimes, manualPrimesTotal };
+    return { total: Math.round(total), brut: Math.round(brut), status: { realized: br.payable, isIndep: true }, breakdown: br, deductions: ded, manualPrimes, manualPrimesTotal };
   }
-  const st = await monthlyObjectifStatus(agent, year, month);
+
+  // Statut d'objectif recalculé sur les contrats PAYÉS : un agent qui tombe sous son minimum à cause
+  // de ses retours perd bien sa prime d'objectif, comme dans l'exemple du patron où c'est le 38 (et
+  // non le 50) qui sert à tout.
+  const st = await monthlyObjectifStatus(agent, year, month, br.payable);
   let brut = pay.baseSalary + pay.primeFixeMensuelle;
   if(assiduiteAcquise !== false) brut += pay.primeAssiduite;
   // Palier objectif : contrats jusqu'au mini obligatoire au taux "avant objectif" (0 par défaut), contrats
   // au-delà au taux "DH/contrat" normal — voir contractEarnings(). primeExtra (primeExtraContrat) reste un
   // bonus supplémentaire séparé, réglable par l'admin en plus, inchangé.
-  brut += contractEarnings(pay, st.realized, st.realized).total;
+  brut += contractEarnings(pay, br.payable, br.payable).total;
   brut += st.primeObjectif + st.primeExtra;
   const manualPrimes = await getManualPrimes(agent, year, month);
-  const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, st.realized);
+  const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, br.payable);
   brut += manualPrimesTotal;
   const total = brut - ded.total;
-  return { total: Math.round(total), brut: Math.round(brut), status: st, deductions: ded, manualPrimes, manualPrimesTotal };
+  return { total: Math.round(total), brut: Math.round(brut), status: st, breakdown: br, deductions: ded, manualPrimes, manualPrimesTotal };
 }
 
 function prodBoardKey(dateStr){ return `prodBoard:${dateStr}`; }
@@ -12783,9 +12843,14 @@ const BILLING_FIELD_ALIASES = {
 // date. Chaque valeur est donc reclassée d'après ce qu'elle EST, pas d'après l'endroit où elle est
 // arrivée. Ce qui reste douteux est signalé, jamais deviné.
 function looksLikeEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim()); }
+// Un champ téléphone contient très souvent DEUX numéros (mobile + fixe), séparés par « / », une
+// virgule ou « ou » : « 02 32 56 65 95 / 06 12 34 56 78 ». C'est parfaitement normal et ça n'a
+// jamais posé le moindre problème — le signaler comme douteux ne servait qu'à masquer les vraies
+// anomalies dans une liste de 60 lignes. On valide donc chaque numéro séparément.
 function looksLikePhone(v){
-  const d = String(v || '').replace(/[\s.\-()]/g, '');
-  return /^(\+?\d{9,15})$/.test(d);
+  const parts = String(v || '').split(/[\/,;]|\bou\b/i).map(x => x.trim()).filter(Boolean);
+  if(!parts.length) return false;
+  return parts.every(part => /^(\+?\d{8,15})$/.test(part.replace(/[\s.\-()]/g, '')));
 }
 function looksLikeDate(v){ return !!parseContractDate(v); }
 function looksLikeHexRef(v){ return /^[0-9a-f]{8,}$/i.test(String(v || '').trim()); }
@@ -12858,7 +12923,7 @@ function billingFixSwappedFields(out){
   const isoFinal = parseContractDate(out.date);
   const yFinal = isoFinal ? Number(isoFinal.slice(0, 4)) : null;
   if(yFinal != null && !plausibleContractYear(yFinal)){
-    warnings.push(`date du contrat invraisemblable : « ${String(out.date).slice(0,40)} » — il sera rangé en ${yFinal}, vérifie avant de payer`);
+    warnings.push(`! date du contrat invraisemblable : « ${String(out.date).slice(0,40)} » — il sera rangé en ${yFinal}, vérifie avant de payer`);
   } else if(isoFinal){
     // UN CONTRAT NE SE SIGNE PAS DANS LE FUTUR. La faute de frappe classique est l'année : « 2027 »
     // tapé à la place de « 2026 » dans le message Telegram. Le contrat reste alors invisible dans les
@@ -12868,7 +12933,7 @@ function billingFixSwappedFields(out){
     const limit = new Date(nowMA());
     limit.setDate(limit.getDate() + 7);
     if(isoFinal > todayStr(limit)){
-      warnings.push(`date dans le futur : « ${String(out.date).slice(0,40)} » — faute de frappe sur l'année ? Ce contrat ne serait payé que le mois venu`);
+      warnings.push(`! date dans le futur : « ${String(out.date).slice(0,40)} » — faute de frappe sur l'année ? Ce contrat ne serait payé que le mois venu`);
     }
   }
 
@@ -12879,15 +12944,18 @@ function billingFixSwappedFields(out){
 
   // ---- Ce qu'on ne corrige pas mais qu'on signale ----
   // Ces cas-là demandent un œil humain : on ne devine pas, on prévient.
-  if(out.email && !looksLikeEmail(out.email)) warnings.push(`email douteux : « ${String(out.email).slice(0,40)} »`);
-  if(out.telephone && !looksLikePhone(out.telephone)) warnings.push(`téléphone douteux : « ${String(out.telephone).slice(0,40)} »`);
-  if(out.dateNaissance && !looksLikeDate(out.dateNaissance)) warnings.push(`date de naissance douteuse : « ${String(out.dateNaissance).slice(0,40)} »`);
-  // Le plus important de tous : un numéro de contrat qui n'est ni un nombre ni une référence
-  // exploitable rendra le rapprochement des retours impossible dans deux mois.
+  // ⚠️ HIÉRARCHIE DES ALERTES. Une liste de 60 lignes où tout se vaut ne se lit pas : on ne signale
+  // donc QUE ce qui peut coûter de l'argent, et on marque d'un « ! » ce qui est vraiment grave.
+  //   GRAVE  → le contrat sera perdu, ou le retour ne retrouvera jamais son contrat
+  //   MINEUR → confort d'affichage, aucune conséquence sur la paie
   if(out.numContrat && !/^\d+$/.test(String(out.numContrat)) && !looksLikeHexRef(out.numContrat)){
-    warnings.push(`numéro de contrat inhabituel : « ${String(out.numContrat).slice(0,40)} » — le rapprochement des retours pourrait échouer`);
+    warnings.push(`! numéro de contrat inhabituel : « ${String(out.numContrat).slice(0,40)} » — le rapprochement des retours pourrait échouer`);
   }
-  if(!out.numContrat && !out.reference) warnings.push('aucun identifiant de contrat — ce contrat ne pourra pas être relié à un retour');
+  if(!out.numContrat && !out.reference) warnings.push('! aucun identifiant de contrat — ce contrat ne pourra pas être relié à un retour');
+  // Email et téléphone : signalés seulement s'ils sont manifestement inutilisables (pas juste
+  // inhabituels). Aucun impact sur la paie, mais utile si tu dois rappeler le client.
+  if(out.email && !looksLikeEmail(out.email)) warnings.push(`email inutilisable : « ${String(out.email).slice(0,40)} »`);
+  if(out.telephone && !looksLikePhone(out.telephone)) warnings.push(`téléphone inutilisable : « ${String(out.telephone).slice(0,40)} »`);
 
   return { fixes, warnings };
 }
@@ -13087,11 +13155,27 @@ async function importBillingProd(text, monthVal){
     </div>`;
   }
   if(warningsLog.length){
-    html += `<div style="margin-top:12px; padding:12px 14px; border-radius:10px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.45);">
-      <div style="font-weight:800; color:var(--amber); margin-bottom:6px;">🔎 ${warningsLog.length} ligne${warningsLog.length>1?'s':''} à vérifier — non corrigée${warningsLog.length>1?'s':''}</div>
-      <div style="font-size:12.5px; color:var(--muted); line-height:1.7;">${warningsLog.slice(0,15).map(escapeHtml).join('<br>')}${warningsLog.length>15 ? '<br>…' : ''}</div>
-      <div style="font-size:12px; color:var(--muted); margin-top:7px;">Le CRM n'a pas voulu deviner. Les contrats sont bien importés ; corrige la donnée dans ton Sheet si ça te gêne. Un numéro de contrat inhabituel est le seul point vraiment gênant : c'est lui qui reliera le retour dans deux mois.</div>
-    </div>`;
+    // Les alertes graves (préfixées « ! ») sont celles qui coûtent de l'argent : contrat perdu dans un
+    // mois futur, retour qui ne retrouvera jamais son contrat. Les autres sont du confort : elles sont
+    // repliées, pour ne pas noyer les premières.
+    const graves = warningsLog.filter(w => w.includes('— !') || w.includes(' ! '));
+    const mineurs = warningsLog.filter(w => !graves.includes(w));
+    if(graves.length){
+      html += `<div style="margin-top:12px; padding:14px 16px; border-radius:10px; background:rgba(229,90,90,0.14); border:1px solid rgba(229,90,90,0.5);">
+        <div style="font-weight:800; color:var(--red); margin-bottom:4px;">🚨 ${graves.length} contrat${graves.length>1?'s':''} à corriger — de l'argent est en jeu</div>
+        <div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">Corrige la ligne dans ton Sheet puis réimporte ce mois. Aucun doublon ne sera créé.</div>
+        <div style="font-size:13px; color:var(--text); line-height:1.8;">${graves.slice(0,20).map(w=>escapeHtml(w.replace(' ! ', ' '))).join('<br>')}${graves.length>20 ? '<br>…' : ''}</div>
+      </div>`;
+    }
+    if(mineurs.length){
+      html += `<div style="margin-top:10px; padding:11px 14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
+        <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display==='none'?'block':'none';"
+          style="background:none; border:none; color:var(--muted); font-weight:700; font-size:13px; cursor:pointer; padding:0;">
+          ℹ️ ${mineurs.length} détail${mineurs.length>1?'s':''} de contact à vérifier (sans effet sur la paie) — afficher
+        </button>
+        <div style="display:none; font-size:12.5px; color:var(--muted); line-height:1.7; margin-top:8px;">${mineurs.slice(0,30).map(escapeHtml).join('<br>')}${mineurs.length>30 ? '<br>…' : ''}</div>
+      </div>`;
+    }
   }
   const unresolvedNames = Object.keys(unresolved);
   if(unresolvedNames.length){
@@ -13435,13 +13519,36 @@ async function renderBillingImportSummary(){
   const retRows = ret.rows || [];
   const prodOrphans = prodRows.filter(r => !r.agent).length;
   const retOrphans = retRows.filter(r => !r.agent).length;
+  // Total des +1 saisis par les agents sur le même mois, pour montrer l'écart avec le backoffice
+  // sans avoir à descendre jusqu'au tableau « Qui paie ce mois-ci ».
+  const [py, pm] = prodMonth.split('-').map(Number);
+  let agentTotal = 0;
+  try{
+    const counts = await Promise.all((config.agents || []).map(a => agentCounterMonthlyCount(a, py, pm)));
+    agentTotal = counts.reduce((s, n) => s + n, 0);
+  }catch(e){}
+  const ecart = agentTotal - prodRows.length;
+  const ecartColor = ecart === 0 ? 'var(--muted)' : (ecart > 0 ? 'var(--red)' : 'var(--amber)');
+
   el.innerHTML = `
-    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
-      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
-        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">Production ${escapeHtml(prodMonth)}</div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px;">
+      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);" title="Contrats validés par le backoffice pour ce mois : reçus automatiquement via Pabbly, ou importés depuis ton fichier CSV. C'est le chiffre non modifiable.">
+        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">🔒 Backoffice ${escapeHtml(prodMonth)}</div>
         <div style="font-size:26px; font-weight:800; margin-top:6px;">${prodRows.length}</div>
-        <div style="font-size:12.5px; color:var(--muted);">contrats importés${prodOrphans ? ` · <span style="color:var(--red);">${prodOrphans} non rattaché${prodOrphans>1?'s':''}</span>` : ''}</div>
+        <div style="font-size:12.5px; color:var(--muted);">contrats validés${prodOrphans ? ` · <span style="color:var(--red);">${prodOrphans} non rattaché${prodOrphans>1?'s':''}</span>` : ''}</div>
         <div style="font-size:12px; color:var(--muted); margin-top:6px;">Dernier import : ${fmtDate(prod.importedAt)}</div>
+      </div>
+      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);" title="Total des +1 que les agents ont saisis eux-mêmes dans leur Arena sur ce mois, toutes équipes confondues.">
+        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">✍️ Saisi par les agents</div>
+        <div style="font-size:26px; font-weight:800; margin-top:6px;">${agentTotal}</div>
+        <div style="font-size:12.5px; color:var(--muted);">compteurs Arena</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;">Temps réel, avant validation</div>
+      </div>
+      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid ${ecart === 0 ? 'var(--border)' : 'rgba(229,90,90,0.4)'};" title="Différence entre ce que les agents ont compté et ce que le backoffice a validé. Un écart positif signifie que des contrats comptés n'ont pas été validés — c'est exactement ce que la bascule sur le backoffice sert à ne pas payer.">
+        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">⚖️ Écart</div>
+        <div style="font-size:26px; font-weight:800; margin-top:6px; color:${ecartColor};">${ecart > 0 ? '+' : ''}${ecart}</div>
+        <div style="font-size:12.5px; color:var(--muted);">${ecart === 0 ? 'les deux concordent' : (ecart > 0 ? 'comptés mais pas validés' : 'validés mais pas comptés')}</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;">${ecart > 0 ? 'À surveiller avant de payer' : 'Rien d\'anormal'}</div>
       </div>
       <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid rgba(229,90,90,0.35);">
         <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">Retours imputés sur ${escapeHtml(retMonth)}</div>
@@ -13587,7 +13694,7 @@ function billingAgentSheetHTML(d, forImage){
   const cards = [
     { lbl: 'Contrats backoffice', val: d.importedTotal ? d.importedValid : '—', sub: d.importedTotal ? `${d.importedTotal} importés − ${d.retractedCount} rétractés` : 'aucun import pour ce mois', color: 'var(--text)' },
     { lbl: 'Contrats comptés (paie)', val: d.counterRealized, sub: `${d.paySource === 'backoffice' ? '🔒 backoffice validé' : '✍️ compteurs agents'} − ${d.retractCounter} rétractation${d.retractCounter>1?'s':''}`, color: 'var(--text)' },
-    { lbl: 'Retours facturation', val: ret.count, sub: ret.periodLabel || 'période non précisée', color: 'var(--red)' },
+    { lbl: 'Retours facturation', val: ret.count, sub: `${ret.divisor === 1 ? '1:1' : '÷'+ret.divisor} → ${d.salary.breakdown ? d.salary.breakdown.returnsDeducted : 0} contrat(s) en moins`, color: 'var(--red)' },
     { lbl: 'Salaire net réel', val: fmt(d.salary.total) + ' DH', sub: `brut ${fmt(d.salary.brut)} DH − retenues ${fmt(ded.total)} DH`, color: d.salary.total >= 0 ? 'var(--green)' : 'var(--red)' }
   ];
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:18px;">';
@@ -13653,21 +13760,41 @@ function billingAgentSheetHTML(d, forImage){
   // --- Tableau des retours
   html += `<div class="section-title" style="margin-top:26px; font-size:15px; color:var(--red);">Retours de facturation${ret.periodLabel ? ` — ${escapeHtml(ret.periodLabel)}` : ''}</div>`;
   if(ret.count){
-    html += `<div class="section-sub">${ret.count} retour${ret.count>1?'s':''} × ${fmt(ret.unitCost)} DH ${ret.divisor === 1 ? 'en 1:1' : '÷ '+ret.divisor} = <b style="color:var(--red);">−${fmt(ret.amount)} DH</b> — diviseur ${ret.auto ? `automatique (${ret.lateCount} retard${ret.lateCount>1?'s':''}/absence${ret.lateCount>1?'s':''} ce mois-ci)` : 'forcé manuellement'}.</div>`;
+    const dedContracts = d.salary.breakdown ? d.salary.breakdown.returnsDeducted : 0;
+    const scaleTxt = !ret.auto ? 'diviseur forcé manuellement'
+      : (d.pay.isIndep ? `barème indépendant : ${d.counterRealized} contrats ce mois` : `${ret.lateCount} retard${ret.lateCount>1?'s':''}/absence${ret.lateCount>1?'s':''} ce mois-ci`);
+    html += `<div class="section-sub">${ret.count} retour${ret.count>1?'s':''} ${ret.divisor === 1 ? 'en 1:1' : '÷ '+ret.divisor} = <b style="color:var(--red);">${dedContracts} contrat${dedContracts>1?'s':''} retiré${dedContracts>1?'s':''}</b> du compteur payé — ${scaleTxt}.</div>`;
     html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Produit</th><th>Client</th><th>N° contrat</th><th>Mois d\'origine</th><th>Motif</th></tr></thead><tbody>';
     ret.rows.forEach((r, i) => {
       html += `<tr><td>${i + 1}</td><td>${escapeHtml(r.produit)}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
     });
     html += '</tbody></table></div>';
-    if(!ret.unitCost){
-      html += `<div style="margin-top:10px; padding:11px 14px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); font-size:13px;">⚠️ Le « coût d'un retour » de cet agent est à <b>0 DH</b> — aucune retenue n'est donc appliquée. Règle-le plus haut (valeur par défaut) ou dans Production 🏆 → Rémunération par agent.</div>`;
-    }
+
   } else {
     html += `<div class="empty" style="margin:10px 0;">Aucun retour imputé à ${escapeHtml(d.agent)} sur la paie de ${escapeHtml(d.monthVal)}. ✅</div>`;
   }
 
   // --- Décomposition du salaire
   html += `<div class="section-title" style="margin-top:26px; font-size:15px;">Calcul du salaire net réel</div>`;
+
+  // ---- Étape 1 : combien de contrats sont réellement payés ----
+  // Affiché en premier et en toutes lettres, parce que c'est le chiffre dont tout le reste découle :
+  // la commission, et le fait que l'objectif soit atteint ou non.
+  const br = d.salary.breakdown;
+  if(br){
+    html += `<div style="margin-bottom:14px; padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
+      <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700; margin-bottom:10px;">① Combien de contrats sont payés</div>
+      <table style="width:100%; border-collapse:collapse;">
+        <tr><td style="padding:4px 0;">Contrats validés ce mois</td><td style="text-align:right; font-weight:700;">${br.validated}</td></tr>
+        <tr><td style="padding:4px 0; color:var(--red);">− Rétractés (1 pour 1)</td><td style="text-align:right; font-weight:700; color:var(--red);">−${br.retractions}</td></tr>
+        <tr><td style="padding:4px 0; color:var(--red);">− Retours : ${br.returnsCount} ${br.returnsDivisor === 1 ? 'en 1:1' : '÷ '+br.returnsDivisor}${br.returnsCount ? ` = ${br.returnsDeducted} contrat${br.returnsDeducted>1?'s':''}` : ''}</td><td style="text-align:right; font-weight:700; color:var(--red);">−${br.returnsDeducted}</td></tr>
+        <tr style="border-top:2px solid var(--border);"><td style="padding:7px 0; font-weight:800;">= Contrats payés</td><td style="text-align:right; font-weight:800; font-size:17px; color:var(--green);">${br.payable}</td></tr>
+      </table>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:8px; line-height:1.5;">Un retour n'est pas retenu en dirhams : il <b>annule des contrats</b>. C'est ce nombre de contrats payés qui détermine la commission <b>et</b> si l'objectif est atteint.${br.periodLabel ? ` Retours de la période ${escapeHtml(br.periodLabel)}.` : ''}</div>
+    </div>`;
+  }
+
+  html += `<div style="font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700; margin-bottom:8px;">② Ce que ça donne en salaire</div>`;
   html += '<table class="salary-table"><tbody>';
   const line = (lbl, amt, opts) => {
     const o = opts || {};
@@ -13682,11 +13809,11 @@ function billingAgentSheetHTML(d, forImage){
   line(`Prime d'assiduité${d.assiduiteAcquise ? '' : ' — perdue (3e retard/absence)'}`, d.assiduiteAcquise ? d.pay.primeAssiduite : 0, { plus: true, color: d.assiduiteAcquise ? 'var(--green)' : 'var(--muted)' });
   const st = d.salary.status || {};
   if(!st.isIndep){
-    line(`Commission contrats (${st.realized != null ? st.realized : d.counterRealized} contrats)`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0)), { plus: true });
+    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0)), { plus: true });
     if(st.primeObjectif) line('Prime objectif atteint', st.primeObjectif, { plus: true, color: 'var(--green)' });
     if(st.primeExtra) line(`Bonus ${st.extraCount} contrat${st.extraCount>1?'s':''} au-delà de l'objectif`, st.primeExtra, { plus: true, color: 'var(--green)' });
   } else {
-    line(`Commission contrats (${st.realized || 0} contrats)`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0), { plus: true });
+    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0), { plus: true });
   }
   (d.salary.manualPrimes || []).forEach(p => {
     const amt = p.type === 'occurrences' ? (Number(p.amount) || 0) * (Number(p.count) || 1) : (Number(p.amount) || 0);
@@ -14028,8 +14155,11 @@ function parseContractDate(raw){
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(m) return `${m[1]}-${m[2]}-${m[3]}`;
 
-  // Format français jj/mm/aaaa ou jj-mm-aaaa, avec ou sans préfixe ("lun. ") et sans ou avec heure
-  m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  // Format français jj/mm/aaaa ou jj-mm-aaaa, avec ou sans préfixe ("lun. ") et sans ou avec heure.
+  // Les espaces autour des séparateurs sont tolérés : les agents tapent souvent « 14 /05/1956 » ou
+  // « 03/ 08/ 2026 » depuis un téléphone. Sans cette tolérance, une date parfaitement lisible par un
+  // humain était signalée comme illisible — du bruit inutile qui noyait les vraies anomalies.
+  m = s.match(/(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{2,4})/);
   if(m){
     let [, d, mo, y] = m;
     if(y.length === 2) y = '20' + y;
@@ -14608,26 +14738,126 @@ async function searchContractGlobal(){
   }
 
   let html = `<div style="font-size:13px; color:var(--muted); margin-bottom:8px;">${found.length} résultat${found.length>1?'s':''} pour « <b style="color:var(--text);">${escapeHtml(raw)}</b> »</div>`;
-  html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Type</th><th>Mois</th><th>Agent</th><th>Client</th><th>N° contrat</th><th>Référence</th><th>Date</th><th>État</th></tr></thead><tbody>';
-  found.slice(0, 80).forEach(({ type, mv, r })=>{
+  html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Type</th><th>Mois</th><th>Agent</th><th>Client</th><th>N° contrat</th><th>Date</th><th>État</th><th>Action</th></tr></thead><tbody>';
+  found.slice(0, 80).forEach(({ type, mv, r }, idx)=>{
     const isRet = type === 'retour';
-    let etat = '—';
-    if(isRet) etat = r.dismissed ? '<span style="color:var(--muted);">écarté</span>' : (r.agent ? '<span style="color:var(--red);">retour imputé</span>' : '<span style="color:var(--amber);">à trancher</span>');
-    else if(r.retracted) etat = '<span style="color:var(--red);">rétracté</span>';
-    else etat = '<span style="color:var(--green);">actif</span>';
+    let etat = '—', action = '';
+    const key = String(r.numContrat || r.reference || '').replace(/'/g, "\\'");
+    if(isRet){
+      etat = r.dismissed ? '<span style="color:var(--muted);">écarté</span>'
+           : (r.agent ? '<span style="color:var(--red);">retour imputé à ' + escapeHtml(r.agent) + '</span>'
+                      : '<span style="color:var(--amber);">à trancher</span>');
+      action = `<span style="font-size:12px; color:var(--muted);">Se règle dans « Retours à trancher »</span>`;
+    } else {
+      etat = r.retracted ? '<span style="color:var(--red);">rétracté</span>' : '<span style="color:var(--green);">actif</span>';
+      // Agir sans quitter la recherche : marquer/annuler la rétractation du contrat trouvé, où qu'il soit.
+      action = `<button onclick="toggleRetractedFromSearch('${mv}', '${key}')"
+        title="${r.retracted ? 'Annuler la rétractation : le contrat redevient payé à l\'agent.' : 'Marquer ce contrat comme rétracté : l\'agent n\'est pas payé dessus et son compteur du mois augmente de 1.'}"
+        style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '↩️ Annuler' : '🔻 Rétracter'}</button>`;
+      if(r._warnings && r._warnings.length){
+        action += ` <span title="${escapeHtml(r._warnings.join(' · '))}" style="cursor:help;">🔎</span>`;
+      }
+    }
     html += `<tr>
       <td>${isRet ? '📉 Retour' : '📄 Contrat'}</td>
       <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(mv))}</td>
       <td><b>${escapeHtml(r.agent || r.agentRaw || '—')}</b></td>
       <td>${escapeHtml(r.nom || '—')}</td>
-      <td>${escapeHtml(r.numContrat || '—')}</td>
-      <td style="font-size:12px; color:var(--muted);">${escapeHtml(r.reference || '—')}</td>
+      <td>${escapeHtml(r.numContrat || '—')}<div style="font-size:11px; color:var(--muted);">${escapeHtml(r.reference || '')}</div></td>
       <td style="white-space:nowrap;">${escapeHtml(r.datePropre || r.date || '—')}</td>
       <td>${etat}</td>
+      <td>${action}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
   if(found.length > 80) html += `<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">… et ${found.length - 80} autres. Affine ta recherche.</div>`;
+  el.innerHTML = html;
+}
+
+// Marque (ou démarque) un contrat rétracté depuis les résultats de recherche, sans avoir à retrouver
+// l'agent ni le mois dans les menus. Le compteur mensuel de rétractations de l'agent suit du même pas,
+// exactement comme le bouton du tableau nominatif.
+async function toggleRetractedFromSearch(monthVal, key){
+  const data = await getBillingProd(monthVal);
+  const row = (data.rows || []).find(r => billingRowKeys(r).includes(String(key).toLowerCase()));
+  if(!row){ alert('Contrat introuvable — il a peut-être été réimporté depuis.'); return; }
+  if(!row.agent){ alert("Ce contrat n'est rattaché à aucun agent : rattache-le d'abord (import → bouton Rattacher)."); return; }
+  const next = !row.retracted;
+  if(!confirm(`${next ? 'Marquer' : 'Ne plus marquer'} le contrat ${row.numContrat || key} (${row.nom || '?'}) comme rétracté ?\n\nAgent : ${row.agent}\nMois : ${billingMonthLabel(monthVal)}\n\n${next ? "L'agent ne sera pas payé sur ce contrat." : "L'agent sera de nouveau payé sur ce contrat."}`)) return;
+
+  row.retracted = next;
+  await billingSave(billingProdKey(monthVal), data);
+  const [y, m] = monthVal.split('-').map(Number);
+  const current = await getMonthlyRetractCount(row.agent, y, m);
+  await saveMonthlyRetractCount(row.agent, y, m, Math.max(0, current + (next ? 1 : -1)));
+  logAudit('Admin', next ? 'Contrat marqué rétracté (via recherche)' : 'Rétractation annulée (via recherche)',
+           `${row.agent} — contrat ${row.numContrat || key} — ${monthVal}`);
+  billingInvalidate();
+  clearRenderCaches();
+  await searchContractGlobal();
+  renderBillingAgentSheet();
+  renderBillingImportSummary();
+}
+
+// Liste permanente des contrats signalés douteux, sur les 24 derniers mois. Les alertes d'import sont
+// fugaces (elles disparaissent au rechargement) : celle-ci se retrouve quand on veut, ce qui compte
+// pour une anomalie comme une date en 2027, qu'on ne verra sinon jamais avant un an.
+async function renderFlaggedContractsPanel(){
+  const el = document.getElementById('flaggedContractsPanel');
+  if(!el) return;
+  el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Analyse des 24 derniers mois…</div>';
+  const now = nowMA();
+  const found = [];
+  for(let i = 0; i < 24; i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+    const prod = await getBillingProd(mv);
+    (prod.rows || []).forEach(r=>{
+      if(r._warnings && r._warnings.length) found.push({ mv, r });
+    });
+  }
+  if(!found.length){
+    el.innerHTML = '<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35); font-weight:700; color:var(--green);">✅ Aucune anomalie détectée sur les 24 derniers mois.</div>';
+    return;
+  }
+  // Séparation nette : ce qui coûte de l'argent d'un côté, le confort de l'autre.
+  const graves = found.filter(x => x.r._warnings.some(w => w.trim().startsWith('!')));
+  const mineurs = found.filter(x => !graves.includes(x));
+
+  const table = (list, onlyGrave)=>{
+    let t = '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Mois</th><th>Agent</th><th>Client</th><th>N° contrat</th><th>Date</th><th>Ce qui cloche</th></tr></thead><tbody>';
+    list.slice(0, 60).forEach(({ mv, r })=>{
+      const ws = r._warnings.filter(w => onlyGrave ? w.trim().startsWith('!') : true);
+      t += `<tr>
+        <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(mv))}</td>
+        <td><b>${escapeHtml(r.agent || '—')}</b></td>
+        <td>${escapeHtml(r.nom || '—')}</td>
+        <td>${escapeHtml(r.numContrat || '—')}</td>
+        <td style="white-space:nowrap;">${escapeHtml(r.datePropre || r.date || '—')}</td>
+        <td style="color:${onlyGrave ? 'var(--red)' : 'var(--muted)'}; font-size:12.5px;">${ws.map(w=>escapeHtml(w.replace(/^\s*!\s*/, ''))).join('<br>')}</td>
+      </tr>`;
+    });
+    return t + '</tbody></table></div>';
+  };
+
+  let html = '';
+  if(graves.length){
+    html += `<div style="padding:13px 15px; border-radius:10px; background:rgba(229,90,90,0.14); border:1px solid rgba(229,90,90,0.5); margin-bottom:10px;">
+      <div style="font-weight:800; color:var(--red);">🚨 ${graves.length} contrat${graves.length>1?'s':''} à corriger — de l'argent est en jeu</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Corrige ces lignes dans ton Sheet, puis réimporte le mois concerné. Aucun doublon ne sera créé.</div>
+    </div>` + table(graves, true);
+  } else {
+    html += '<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35); font-weight:700; color:var(--green);">✅ Aucun contrat en danger — rien qui puisse coûter de l\'argent.</div>';
+  }
+  if(mineurs.length){
+    html += `<div style="margin-top:12px; padding:11px 14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
+      <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display==='none'?'block':'none';"
+        style="background:none; border:none; color:var(--muted); font-weight:700; font-size:13px; cursor:pointer; padding:0;">
+        ℹ️ ${mineurs.length} détail${mineurs.length>1?'s':''} de contact à vérifier (sans effet sur la paie) — afficher
+      </button>
+      <div style="display:none; margin-top:10px;">${table(mineurs, false)}</div>
+    </div>`;
+  }
   el.innerHTML = html;
 }
 
