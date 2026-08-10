@@ -1727,7 +1727,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-10-r93';
+const APP_VERSION = '2026-08-10-r94';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -6148,17 +6148,16 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}`;
       const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
       html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
-          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
             ${agentAvatarHtml(r.agent, 34)}
             ${podiumColor ? `<span title="${allRankByAgent[r.agent].rank}${allRankByAgent[r.agent].rank===1?'er':'e'} du classement" style="cursor:help; flex-shrink:0;">${rankEmoji(allRankByAgent[r.agent].rank, allRankByAgent[r.agent].total)}</span>` : ''}
-            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
-            ${streakBadge}
-            ${objectiveStreakBadge}
+            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:24px;">${r.agent}</b>
           </div>
           ${hit
             ? '<span class="tag ok" title="Objectif du jour atteint" style="white-space:nowrap; flex-shrink:0; cursor:help;">✅ Atteint</span>'
             : `<span class="tag ${badge.cls}" title="${badge.title}" style="white-space:nowrap; flex-shrink:0; cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
+          ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
         </div>
         ${noObj
           ? '<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div>'
@@ -6192,15 +6191,14 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(155,89,182,0.3)'}`;
       const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
       html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
-          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
             ${agentAvatarHtml(r.agent, 34)}
             ${podiumColor ? `<span title="${allRankByAgent[r.agent].rank}${allRankByAgent[r.agent].rank===1?'er':'e'} du classement" style="cursor:help; flex-shrink:0;">${rankEmoji(allRankByAgent[r.agent].rank, allRankByAgent[r.agent].total)}</span>` : ''}
-            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
-            ${streakBadge}
-            ${objectiveStreakBadge}
+            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:24px;">${r.agent}</b>
           </div>
           <span class="tag independant" style="white-space:nowrap; flex-shrink:0;">Indé</span>
+          ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
         </div>
         ${hasObj
           ? `<div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
@@ -8404,14 +8402,13 @@ async function buildDailyBriefingHtml(baseRows){
     const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}`;
     const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
     return `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:17px; border-radius:17px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
-      <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:9px; margin-bottom:${(streakBadge||objectiveStreakBadge)?'6px':'12px'}; flex-wrap:wrap;">
         ${agentAvatarHtml(r.agent, 30)}
-        ${podiumColor ? `<span title="${rankInfo.rank}${rankInfo.rank===1?'er':'e'} du classement du mois" style="cursor:help;">${rankEmoji(rankInfo.rank, rankInfo.total)}</span>` : ''}
-        <b style="font-weight:700; font-size:15px; letter-spacing:-0.1px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
-        ${streakBadge}
-        ${objectiveStreakBadge}
+        ${podiumColor ? `<span title="${rankInfo.rank}${rankInfo.rank===1?'er':'e'} du classement du mois" style="cursor:help; flex-shrink:0;">${rankEmoji(rankInfo.rank, rankInfo.total)}</span>` : ''}
+        <b style="font-weight:700; font-size:15px; letter-spacing:-0.1px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:24px;">${r.agent}</b>
         ${r.isIndep ? '<span class="tag independant" title="Statut indépendant — pas de salaire fixe, pas dans le calcul de la prime d\'assiduité" style="flex-shrink:0; cursor:help;">Indé</span>' : ''}
       </div>
+      ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; margin-bottom:12px;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
       ${hasObj
         ? `<div class="arena-prog-bar" style="height:7px; border-radius:4px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:4px;"></div></div>
            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:9px;">
