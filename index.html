@@ -7,6 +7,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1193,33 +1194,41 @@ function tryDeviceGateAdmin(){
             <label style="margin-bottom:6px;">🗓️ Statut spécial du jour</label>
             <select id="corrJustifiedAbsence">
               <option value="">Aucun (jour normal)</option>
-              <optgroup label="Absence justifiée — hors compteur (ne touche jamais la prime d'assiduité)">
-                <option value="full">Absence justifiée — journée complète — retenue pleine, NE compte PAS</option>
-                <option value="half">Absence justifiée — demi-journée — retenue à moitié, NE compte PAS</option>
+              <optgroup label="Absence justifiée (perd le salaire, NE compte JAMAIS dans la prime)">
+                <option value="justifiee_full">🗓️ Absence justifiée — journée complète</option>
+                <option value="justifiee_half">🗓️ Absence justifiée — demi-journée</option>
               </optgroup>
-              <optgroup label="Absence justifiée — comptée (s'ajoute à l'escalade des 3/5/6)">
-                <option value="full_counted">Absence justifiée — journée complète — retenue pleine, COMPTE</option>
-                <option value="half_counted">Absence justifiée — demi-journée — retenue à moitié, COMPTE</option>
+              <optgroup label="Absence injustifiée (perd le salaire, COMPTE TOUJOURS dans la prime)">
+                <option value="injustifiee_full">🚫 Absence injustifiée — journée complète</option>
+                <option value="injustifiee_half">🚫 Absence injustifiée — demi-journée</option>
               </optgroup>
-              <optgroup label="Congé payé (jamais de retenue, jamais compté)">
-                <option value="full_paid">🏖️ Congé payé — journée complète — SANS retenue, NE compte PAS</option>
-                <option value="half_paid">🏖️ Congé payé — demi-journée — SANS retenue, NE compte PAS</option>
+              <optgroup label="Absence autorisée (perd le salaire, choisis si ça compte dans la prime)">
+                <option value="autorisee_full_compte">✅ Absence autorisée — journée complète — COMPTE dans la prime</option>
+                <option value="autorisee_half_compte">✅ Absence autorisée — demi-journée — COMPTE dans la prime</option>
+                <option value="autorisee_full_horscompteur">✅ Absence autorisée — journée complète — NE compte PAS dans la prime</option>
+                <option value="autorisee_half_horscompteur">✅ Absence autorisée — demi-journée — NE compte PAS dans la prime</option>
               </optgroup>
-              <optgroup label="Absence non justifiée (compte toujours)">
-                <option value="unjustified_full">🚫 Absence non justifiée — journée complète — retenue pleine, COMPTE</option>
-                <option value="unjustified_half">🚫 Absence non justifiée — demi-journée — retenue à moitié, COMPTE</option>
+              <optgroup label="Congé payé (ne perd rien, ne compte jamais)">
+                <option value="conge_paye_full">🏖️ Congé payé — journée complète</option>
+                <option value="conge_paye_half">🏖️ Congé payé — demi-journée</option>
               </optgroup>
-              <optgroup label="Mise à pied (sanction disciplinaire, journée jamais payée)">
-                <option value="mise_a_pied">🚫 Mise à pied — conséquence de l'escalade retards, NE recompte PAS</option>
-                <option value="mise_a_pied_counted">🚫 Mise à pied — sanction indépendante, COMPTE dans l'escalade</option>
+              <optgroup label="Mise à pied (perd le salaire, COMPTE TOUJOURS dans la prime)">
+                <option value="mise_a_pied_full">⛔ Mise à pied — journée complète</option>
+                <option value="mise_a_pied_half">⛔ Mise à pied — demi-journée</option>
               </optgroup>
             </select>
-            <div class="section-sub" style="margin-top:6px;"><b>Absence justifiée</b> (avec justificatif : arrêt maladie, convocation administrative, etc.) : choisis "NE compte PAS" pour la version classique qui ne touche jamais à la prime d'assiduité, ou "COMPTE" si tu veux malgré tout qu'elle s'ajoute à l'escalade des 3ᵉ/5ᵉ/6ᵉ retards-absences du règlement. <b>Congé payé</b> : jamais de retenue, jamais compté — congé légal ou jour compensé. <b>Absence non justifiée</b> : l'agent ne s'est pas présenté sans justificatif — compte toujours. <b>Mise à pied</b> : sanction disciplinaire, journée jamais payée — "NE recompte PAS" quand c'est déjà la conséquence directe du 5ᵉ/6ᵉ retard (règlement interne), "COMPTE" si c'est une sanction indépendante que tu veux voir peser sur l'escalade du mois.</div>
+            <div class="section-sub" style="margin-top:6px;"><b>Absence justifiée</b> (avec justificatif : arrêt maladie, convocation administrative, etc.) : perd le salaire, ne pèse jamais sur la prime d'assiduité. <b>Absence injustifiée</b> : l'agent ne s'est pas présenté sans justificatif — perd le salaire et compte toujours dans l'escalade des 3ᵉ/5ᵉ/6ᵉ retards-absences du règlement. <b>Absence autorisée</b> : accord préalable de l'admin — perd le salaire dans tous les cas, à toi de choisir si elle compte ou non dans l'escalade. <b>Congé payé</b> : jamais de retenue, jamais compté — congé légal ou jour compensé. <b>Mise à pied</b> : sanction disciplinaire — perd le salaire et compte toujours dans l'escalade.</div>
           </div>
           <div style="margin-bottom:14px;">
             <label style="margin-bottom:6px;">📝 Motif / commentaire (optionnel)</label>
             <input type="text" id="corrAbsenceComment" placeholder="Ex: certificat médical, rendez-vous CNSS, absence non justifiée depuis 14h...">
             <div class="section-sub" style="margin-top:6px;">Visible en survol (ℹ️) partout où ce statut apparaît (Bilan, Explorateur, Alertes) — pour te souvenir du pourquoi sans rouvrir ce formulaire.</div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label style="margin-bottom:6px;">📎 Pièce jointe (certificat médical, justificatif...)</label>
+            <div id="corrAttachmentCurrent" style="display:none; align-items:center; gap:8px; margin-bottom:8px;"></div>
+            <input type="file" id="corrAttachmentFile" accept="image/*,.pdf" onchange="onCorrAttachmentPicked()">
+            <div id="corrAttachmentStatus" class="section-sub" style="margin-top:6px;"></div>
           </div>
 
           <div class="settings-grid">
@@ -1718,7 +1727,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r87';
+const APP_VERSION = '2026-08-10-r89';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2106,6 +2115,7 @@ const firebaseConfig = {
 };
 
 let db = null;
+let fbStorage = null;
 let firebaseReady = false;
 // Résolue tout de suite si Firebase n'est pas configuré ; sinon résolue seulement une fois la connexion
 // anonyme établie (ou tentée) — le reste de l'appli (loadConfig, etc.) attend cette promesse avant de
@@ -2116,6 +2126,7 @@ try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "REMPLACE_MOI"){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    fbStorage = firebase.storage();
     // ============================================================
     // 🔒 SÉCURITÉ — authentification anonyme obligatoire
     // ============================================================
@@ -3570,6 +3581,47 @@ function renderCorrFreeBreakEditor(){
 function addCorrFreeBreakRow(){ corrFreeBreakRows.push({ start:'', end:'' }); renderCorrFreeBreakEditor(); }
 function removeCorrFreeBreakRow(i){ corrFreeBreakRows.splice(i,1); renderCorrFreeBreakEditor(); }
 
+// ---- Pièce jointe (certificat médical, justificatif...) sur une absence ----
+// Stockée dans Firebase Storage (bucket déjà configuré dans firebaseConfig), sous
+// absence-attachments/{agent}/{dateStr}/{timestamp}_{nomFichier} — seule l'URL de téléchargement et le
+// nom du fichier sont écrits sur le log Firestore (attachmentUrl / attachmentName / attachmentPath).
+const CORR_ATTACHMENT_MAX_MB = 10;
+let corrCurrentAttachment = null; // { url, name, path } du fichier déjà enregistré pour le jour affiché
+let corrAttachmentPendingRemove = false;
+
+function onCorrAttachmentPicked(){
+  const input = document.getElementById('corrAttachmentFile');
+  const status = document.getElementById('corrAttachmentStatus');
+  const file = input.files[0];
+  if(!file){ status.textContent = ''; return; }
+  if(file.size > CORR_ATTACHMENT_MAX_MB * 1024 * 1024){
+    status.textContent = `⚠️ Fichier trop lourd (max ${CORR_ATTACHMENT_MAX_MB} Mo) — choisis un autre fichier.`;
+    input.value = '';
+    return;
+  }
+  corrAttachmentPendingRemove = false;
+  status.textContent = `Sera enregistré avec le jour : ${file.name} (${(file.size/1024/1024).toFixed(1)} Mo)`;
+}
+
+function renderCorrAttachmentCurrent(){
+  const box = document.getElementById('corrAttachmentCurrent');
+  if(!box) return;
+  if(corrCurrentAttachment && !corrAttachmentPendingRemove){
+    box.style.display = 'flex';
+    box.innerHTML = `<a href="${corrCurrentAttachment.url}" target="_blank" rel="noopener" style="color:var(--accent);">📎 ${corrCurrentAttachment.name || 'Pièce jointe'}</a>
+      <button type="button" onclick="markCorrAttachmentForRemoval()" title="Supprimer" style="color:var(--red);">🗑️ Supprimer</button>`;
+  } else {
+    box.style.display = 'none';
+    box.innerHTML = '';
+  }
+}
+
+function markCorrAttachmentForRemoval(){
+  corrAttachmentPendingRemove = true;
+  document.getElementById('corrAttachmentStatus').textContent = 'La pièce jointe sera supprimée à l\'enregistrement du jour.';
+  renderCorrAttachmentCurrent();
+}
+
 async function loadDayCorrectionForm(){
   const agent = document.getElementById('corrAgent').value;
   const dateInput = document.getElementById('corrDate');
@@ -3585,6 +3637,10 @@ async function loadDayCorrectionForm(){
     document.getElementById('corrRealise').value = '';
     document.getElementById('corrJustifiedAbsence').value = '';
     document.getElementById('corrAbsenceComment').value = '';
+    document.getElementById('corrAttachmentFile').value = '';
+    document.getElementById('corrAttachmentStatus').textContent = '';
+    corrCurrentAttachment = null; corrAttachmentPendingRemove = false;
+    renderCorrAttachmentCurrent();
     return;
   }
 
@@ -3596,6 +3652,11 @@ async function loadDayCorrectionForm(){
   document.getElementById('corrOut').value = outEvt ? outEvt.time.slice(0,5) : '';
   document.getElementById('corrJustifiedAbsence').value = log.justifiedAbsence || '';
   document.getElementById('corrAbsenceComment').value = log.absenceComment || '';
+  document.getElementById('corrAttachmentFile').value = '';
+  document.getElementById('corrAttachmentStatus').textContent = '';
+  corrCurrentAttachment = log.attachmentUrl ? { url: log.attachmentUrl, name: log.attachmentName, path: log.attachmentPath } : null;
+  corrAttachmentPendingRemove = false;
+  renderCorrAttachmentCurrent();
   renderCorrBreaksEditor(extractBreakPairs(log.events));
   corrLockoutRows = extractLockouts(log.events).map(l=>({ start: l.start||'', end: l.end||'' }));
   renderCorrLockoutEditor();
@@ -3674,7 +3735,50 @@ async function saveDayCorrection(){
     const logToSave = { events };
     if(justifiedAbsence) logToSave.justifiedAbsence = justifiedAbsence;
     if(absenceComment) logToSave.absenceComment = absenceComment;
+
+    // Pièce jointe : upload d'un nouveau fichier, suppression demandée, ou conservation de l'existant —
+    // saveDayLog remplace tout le log à chaque sauvegarde, donc une pièce jointe déjà présente doit être
+    // explicitement reportée dans logToSave sous peine d'être effacée silencieusement.
+    const attachmentFile = document.getElementById('corrAttachmentFile').files[0];
+    const attachmentStatus = document.getElementById('corrAttachmentStatus');
+    if(attachmentFile){
+      if(!fbStorage){
+        alert("Firebase Storage n'est pas disponible — la pièce jointe n'a pas pu être envoyée. Le reste du jour a bien été enregistré.");
+      } else {
+        try{
+          if(attachmentStatus) attachmentStatus.textContent = 'Envoi de la pièce jointe…';
+          const path = `absence-attachments/${agent}/${dateStr}/${Date.now()}_${attachmentFile.name}`;
+          const ref = fbStorage.ref(path);
+          await ref.put(attachmentFile);
+          const url = await ref.getDownloadURL();
+          if(corrCurrentAttachment && corrCurrentAttachment.path){
+            fbStorage.ref(corrCurrentAttachment.path).delete().catch(()=>{});
+          }
+          logToSave.attachmentUrl = url;
+          logToSave.attachmentName = attachmentFile.name;
+          logToSave.attachmentPath = path;
+          if(attachmentStatus) attachmentStatus.textContent = '';
+        }catch(e){
+          console.error('Upload pièce jointe échoué:', e);
+          alert("Échec de l'envoi de la pièce jointe (vérifie les règles de sécurité Firebase Storage). Le reste du jour a bien été enregistré.");
+        }
+      }
+    } else if(corrAttachmentPendingRemove){
+      if(corrCurrentAttachment && corrCurrentAttachment.path && fbStorage){
+        fbStorage.ref(corrCurrentAttachment.path).delete().catch(()=>{});
+      }
+      // Champs volontairement omis de logToSave : la pièce jointe est bien supprimée du jour.
+    } else if(corrCurrentAttachment){
+      logToSave.attachmentUrl = corrCurrentAttachment.url;
+      logToSave.attachmentName = corrCurrentAttachment.name;
+      logToSave.attachmentPath = corrCurrentAttachment.path;
+    }
+
     await saveDayLog(agent, dateStr, logToSave);
+    corrCurrentAttachment = logToSave.attachmentUrl ? { url: logToSave.attachmentUrl, name: logToSave.attachmentName, path: logToSave.attachmentPath } : null;
+    corrAttachmentPendingRemove = false;
+    document.getElementById('corrAttachmentFile').value = '';
+    renderCorrAttachmentCurrent();
   }
 
   const objectif = parseInt(document.getElementById('corrObjectif').value);
@@ -4305,17 +4409,27 @@ function tickADFTimer(){
 // — « dès le 3e retard ou absence, la prime d'assiduité est définitivement perdue »). Tout nouveau statut
 // ne doit se créer QU'ICI : toutes les autres fonctions (libellé, retenue, escalade, export CSV) lisent
 // cette table plutôt que de retester la chaîne de caractères chacune de leur côté.
+//
+// 5 catégories (règle fixée le 10/08/2026, remplace l'ancien système à choix libre) :
+//  - Absence justifiée   : perd le salaire, NE compte JAMAIS dans la prime d'assiduité.
+//  - Absence injustifiée : perd le salaire, COMPTE TOUJOURS dans la prime d'assiduité.
+//  - Absence autorisée   : perd le salaire, avec un choix — compte ou ne compte pas dans la prime.
+//  - Congé payé          : ne perd rien, ne compte jamais.
+//  - Mise à pied          : perd le salaire, COMPTE TOUJOURS dans la prime d'assiduité.
+// Chacune existe en version journée complète et demi-journée.
 const JUSTIFIED_ABSENCE_TYPES = {
-  full:                { label: 'Absence justifiée (journée)',          shortLabel: 'Absence justifiée (jour)',          icon: '🗓️', deduction: 'full', counted: false, paid: false, justified: true },
-  half:                { label: 'Absence justifiée (demi-journée)',     shortLabel: 'Absence justifiée (demi-j)',        icon: '🗓️', deduction: 'half', counted: false, paid: false, justified: true },
-  full_counted:        { label: 'Absence justifiée (journée)',          shortLabel: 'Absence justifiée (jour)',          icon: '🗓️', deduction: 'full', counted: true,  paid: false, justified: true },
-  half_counted:        { label: 'Absence justifiée (demi-journée)',     shortLabel: 'Absence justifiée (demi-j)',        icon: '🗓️', deduction: 'half', counted: true,  paid: false, justified: true },
-  full_paid:           { label: 'Congé payé (journée)',                 shortLabel: '🏖️ Congé payé (jour)',              icon: '🏖️', deduction: 'none', counted: false, paid: true,  justified: true },
-  half_paid:           { label: 'Congé payé (demi-journée)',            shortLabel: '🏖️ Congé payé (demi-j)',            icon: '🏖️', deduction: 'none', counted: false, paid: true,  justified: true },
-  unjustified_full:    { label: 'Absence non justifiée (journée)',      shortLabel: 'Absence non justifiée (jour)',      icon: '🚫', deduction: 'full', counted: true,  paid: false, justified: false },
-  unjustified_half:    { label: 'Absence non justifiée (demi-journée)', shortLabel: 'Absence non justifiée (demi-j)',    icon: '🚫', deduction: 'half', counted: true,  paid: false, justified: false },
-  mise_a_pied:         { label: 'Mise à pied (disciplinaire)',          shortLabel: 'Mise à pied',                       icon: '🚫', deduction: 'full', counted: false, paid: false, justified: false },
-  mise_a_pied_counted: { label: 'Mise à pied (disciplinaire)',          shortLabel: 'Mise à pied',                       icon: '🚫', deduction: 'full', counted: true,  paid: false, justified: false }
+  justifiee_full:              { label: 'Absence justifiée (journée)',                          shortLabel: 'Absence justifiée (jour)',              icon: '🗓️', deduction: 'full', counted: false, paid: false, justified: true },
+  justifiee_half:               { label: 'Absence justifiée (demi-journée)',                     shortLabel: 'Absence justifiée (demi-j)',            icon: '🗓️', deduction: 'half', counted: false, paid: false, justified: true },
+  injustifiee_full:             { label: 'Absence injustifiée (journée)',                        shortLabel: 'Absence injustifiée (jour)',            icon: '🚫', deduction: 'full', counted: true,  paid: false, justified: false },
+  injustifiee_half:             { label: 'Absence injustifiée (demi-journée)',                   shortLabel: 'Absence injustifiée (demi-j)',          icon: '🚫', deduction: 'half', counted: true,  paid: false, justified: false },
+  autorisee_full_compte:        { label: 'Absence autorisée (journée) — compte dans la prime',   shortLabel: 'Absence autorisée (jour, compte)',      icon: '✅', deduction: 'full', counted: true,  paid: false, justified: true },
+  autorisee_half_compte:        { label: 'Absence autorisée (demi-journée) — compte dans la prime', shortLabel: 'Absence autorisée (demi-j, compte)', icon: '✅', deduction: 'half', counted: true,  paid: false, justified: true },
+  autorisee_full_horscompteur:  { label: 'Absence autorisée (journée) — hors compteur',          shortLabel: 'Absence autorisée (jour, hors compteur)', icon: '✅', deduction: 'full', counted: false, paid: false, justified: true },
+  autorisee_half_horscompteur:  { label: 'Absence autorisée (demi-journée) — hors compteur',     shortLabel: 'Absence autorisée (demi-j, hors compteur)', icon: '✅', deduction: 'half', counted: false, paid: false, justified: true },
+  conge_paye_full:              { label: 'Congé payé (journée)',                                 shortLabel: '🏖️ Congé payé (jour)',                  icon: '🏖️', deduction: 'none', counted: false, paid: true,  justified: true },
+  conge_paye_half:              { label: 'Congé payé (demi-journée)',                            shortLabel: '🏖️ Congé payé (demi-j)',                icon: '🏖️', deduction: 'none', counted: false, paid: true,  justified: true },
+  mise_a_pied_full:             { label: 'Mise à pied (journée)',                                shortLabel: 'Mise à pied (jour)',                    icon: '⛔', deduction: 'full', counted: true,  paid: false, justified: false },
+  mise_a_pied_half:             { label: 'Mise à pied (demi-journée)',                           shortLabel: 'Mise à pied (demi-j)',                  icon: '⛔', deduction: 'half', counted: true,  paid: false, justified: false }
 };
 
 // Libellé lisible pour chacun des statuts ci-dessus — utilisé partout où le statut d'un agent est
@@ -4345,6 +4459,14 @@ function absenceCommentTitleStr(comment){
 }
 function absenceCommentTitle(log){
   return absenceCommentTitleStr(log && log.absenceComment);
+}
+
+// Petit lien 📎 cliquable vers la pièce jointe (certificat médical, justificatif...) éventuellement
+// enregistrée sur ce jour — affiché juste après le badge d'absence, partout où il apparaît.
+function absenceAttachmentLinkHtml(log){
+  if(!log || !log.attachmentUrl) return '';
+  const name = log.attachmentName ? String(log.attachmentName).replace(/&/g,'&amp;').replace(/"/g,'&quot;') : 'pièce jointe';
+  return ` <a href="${log.attachmentUrl}" target="_blank" rel="noopener" title="Voir la pièce jointe : ${name}" style="color:var(--accent);">📎</a>`;
 }
 
 // Badge visuel selon le nombre de contrats du jour — pour repérer d'un coup d'œil qui a besoin d'aide
@@ -4551,7 +4673,7 @@ async function renderAgentHistory(){
     } else if(log.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
-      tagsHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>`;
+      tagsHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>${absenceAttachmentLinkHtml(log)}`;
     } else {
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       if(ev.lateMinutes > 0){
@@ -4749,7 +4871,7 @@ async function renderReport(){
       const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       const lockouts = extractLockouts(log.events);
-      return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
+      return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, attachmentUrl: log.attachmentUrl || null, attachmentName: log.attachmentName || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
     }));
 
   let html = `<table><thead><tr>
@@ -4823,7 +4945,7 @@ async function renderReport(){
     } else if(r.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[r.justifiedAbsence];
-      html += `<span class="tag independant"${absenceCommentTitleStr(r.absenceComment)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(r.justifiedAbsence)}</span>`;
+      html += `<span class="tag independant"${absenceCommentTitleStr(r.absenceComment)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(r.justifiedAbsence)}</span>${absenceAttachmentLinkHtml(r)}`;
       if(anyBreakOver){
         html += `<span class="tag warn">Pause dépassée</span>`;
       }
@@ -5266,7 +5388,7 @@ async function renderExploDailyDetail(agents, dateList){
         if(log.justifiedAbsence){
           const lbl = justifiedAbsenceLabel(log.justifiedAbsence);
           const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
-          statusHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>`;
+          statusHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>${absenceAttachmentLinkHtml(log)}`;
         } else if(!log.events || log.events.length === 0){
           const noActivity = realJour === 0 && objJour === 0;
           // Idem que partout ailleurs : on n'affiche "Absent" que si la journée est vraiment terminée —
@@ -6294,6 +6416,8 @@ async function buildTodayProblemRow(agent, dateStr, board){
   const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
   const justifiedAbsence = log.justifiedAbsence || null;
   const absenceComment = log.absenceComment || null;
+  const attachmentUrl = log.attachmentUrl || null;
+  const attachmentName = log.attachmentName || null;
   const hasAnyEvent = log.events.length > 0;
   // BUG CORRIGÉ : le panneau Alertes ne signalait jamais un agent totalement absent (zéro pointage) —
   // seuls retard/pause/infraction/absence-JUSTIFIÉE-saisie-manuellement faisaient apparaître une alerte.
@@ -6327,7 +6451,7 @@ if(!justifiedAbsence && isWorkingDay(dateStr)){
   // mais pas de départ.
   const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr) && isWorkingDay(dateStr);
   const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut;
-  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, isAbsent, missingBreakReturn, missingClockOut, problem, hasAnyEvent, isIndep: false };
+  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, attachmentUrl, attachmentName, isAbsent, missingBreakReturn, missingClockOut, problem, hasAnyEvent, isIndep: false };
 }
 
 // Clic sur une ligne d'alerte (ou sur la notification correspondante) → ouvre directement Admin →
@@ -6385,7 +6509,7 @@ async function renderTodaySnapshot(){
     } else if(r.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[r.justifiedAbsence];
-      tags += `<span class="tag independant"${absenceCommentTitleStr(r.absenceComment)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(r.justifiedAbsence)}</span>`;
+      tags += `<span class="tag independant"${absenceCommentTitleStr(r.absenceComment)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(r.justifiedAbsence)}</span>${absenceAttachmentLinkHtml(r)}`;
       r.infr.forEach(i=>{
         const meta = INFR_TYPES[i.type];
         tags += `<span class="tag warn">${meta.label} (${infrSanctionText(i)})</span>`;
