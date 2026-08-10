@@ -1727,7 +1727,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-10-r89';
+const APP_VERSION = '2026-08-10-r90';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4506,10 +4506,10 @@ function supervisorActionComment(count){
 }
 
 function dailyProgressBadge(count){
-  if(count <= 0) return { txt: '🚨 0 contrat', cls: 'late', pulse: true };
-  if(count <= 2) return { txt: `⚡ ${count} — à pousser`, cls: 'warn', pulse: false };
-  if(count <= 4) return { txt: `🔥 ${count} — motivé`, cls: 'ok', pulse: false };
-  return { txt: `🏆 ${count} — lancé`, cls: 'ok', pulse: false };
+  if(count <= 0) return { txt: '🚨 0 contrat', cls: 'late', pulse: true, title: 'Aucun contrat réalisé aujourd\'hui' };
+  if(count <= 2) return { txt: `⚡ ${count} — à pousser`, cls: 'warn', pulse: false, title: `${count} contrat${count>1?'s':''} aujourd'hui — encore un effort` };
+  if(count <= 4) return { txt: `🔥 ${count} — motivé`, cls: 'ok', pulse: false, title: `${count} contrats aujourd'hui — bon rythme` };
+  return { txt: `🏆 ${count} — lancé`, cls: 'ok', pulse: false, title: `${count} contrats aujourd'hui — excellente journée` };
 }
 
 const POINTAGE_TYPES = ['in','break_start','break_end','out'];
@@ -6119,8 +6119,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
             <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
           </div>
           ${hit
-            ? '<span class="tag ok" style="white-space:nowrap; flex-shrink:0;">✅ Atteint</span>'
-            : `<span class="tag ${badge.cls}" style="white-space:nowrap; flex-shrink:0; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
+            ? '<span class="tag ok" title="Objectif du jour atteint" style="white-space:nowrap; flex-shrink:0; cursor:help;">✅ Atteint</span>'
+            : `<span class="tag ${badge.cls}" title="${badge.title}" style="white-space:nowrap; flex-shrink:0; cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
         </div>
         ${noObj
           ? '<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div>'
@@ -8282,11 +8282,45 @@ async function buildDailyBriefingHtml(baseRows){
 
   // Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
   // réalisé est > 0. C'est le repère qui compte le plus pour le boss (peur n°1 : une journée à 0).
-  function computeZeroStreak(todayRealized, historyFull){
+  // Weekend/jour férié : `historyFull` (via lastNWorkingDaysBefore) ne contient déjà que des jours ouvrés,
+  // donc la boucle en dessous ne casse jamais la série sur un jour non travaillé — MAIS le jour courant
+  // (todayRealized) est toujours à 0 un weekend/férié puisque personne ne travaille, donc SI on l'utilisait
+  // comme jour de départ, la série retomberait à tort à 0 chaque samedi. isTodayWorkingDay évite ça : les
+  // jours non travaillés n'entrent jamais dans le calcul, la série reste figée à sa valeur du dernier jour
+  // ouvré jusqu'à ce que l'agent reprenne le travail.
+  function computeZeroStreak(todayRealized, historyFull, isTodayWorkingDay){
+    if(!isTodayWorkingDay){
+      let streak = 0;
+      for(const day of historyFull){
+        if((day.realized||0) > 0) streak++; else break;
+      }
+      return streak;
+    }
     if(todayRealized <= 0) return 0;
     let streak = 1;
     for(const day of historyFull){
       if((day.realized||0) > 0) streak++; else break;
+    }
+    return streak;
+  }
+
+  // Série "objectif du jour atteint" — même principe que la série "sans finir à 0" mais côté positif :
+  // combien de jours ouvrés d'affilée l'agent a atteint (ou dépassé) l'objectif qu'il s'était fixé le
+  // matin. Ne compte que les jours où un objectif avait réellement été fixé (objectif=0 = pas de repère,
+  // ignoré plutôt que compté comme un échec ou une réussite).
+  function computeObjectiveStreak(todayRealized, todayObjective, historyFull, isTodayWorkingDay){
+    const dayHits = day => (day.objective||0) > 0 && (day.realized||0) >= (day.objective||0);
+    if(!isTodayWorkingDay){
+      let streak = 0;
+      for(const day of historyFull){
+        if(dayHits(day)) streak++; else break;
+      }
+      return streak;
+    }
+    if(!(todayObjective > 0) || todayRealized < todayObjective) return 0;
+    let streak = 1;
+    for(const day of historyFull){
+      if(dayHits(day)) streak++; else break;
     }
     return streak;
   }
@@ -8303,14 +8337,18 @@ async function buildDailyBriefingHtml(baseRows){
     const agentDaysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
     const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, agentDaysElapsed, remainingDays, rankInfo);
     const allLines = [...(monthlyLines || [])].filter(Boolean);
-    const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull);
-    const streakBadge = zeroStreak >= 2 ? `<span style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap;">🔥 ${zeroStreak}j</span>` : '';
+    const todayIsWorkingDay = isWorkingDay(dateStr);
+    const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull, todayIsWorkingDay);
+    const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
+    const objectiveStreak = computeObjectiveStreak(r.todayRealized, r.todayObjective, r.historyFull, todayIsWorkingDay);
+    const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
     return `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:17px; border-radius:17px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
       <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
         ${agentAvatarHtml(r.agent, 30)}
         <b style="font-weight:700; font-size:15px; letter-spacing:-0.1px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
         ${streakBadge}
-        ${r.isIndep ? '<span class="tag independant" style="flex-shrink:0;">Indé</span>' : ''}
+        ${objectiveStreakBadge}
+        ${r.isIndep ? '<span class="tag independant" title="Statut indépendant — pas de salaire fixe, pas dans le calcul de la prime d\'assiduité" style="flex-shrink:0; cursor:help;">Indé</span>' : ''}
       </div>
       ${hasObj
         ? `<div class="arena-prog-bar" style="height:7px; border-radius:4px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:4px;"></div></div>
@@ -10133,7 +10171,7 @@ async function renderArena(){
 
     return `<div class="lb-row ${rowCls}">
       <div class="lb-rank">${rankEmoji(r.rank, rankings.length)}</div>
-      <div class="lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}${dayBadge ? ` <span class="tag ${dayBadge.cls}" style="${dayBadge.pulse?'animation: pulseWarn 1s infinite;':''}">${dayBadge.txt}</span>` : ''}<small>${taunt.text}</small></div>
+      <div class="lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}${dayBadge ? ` <span class="tag ${dayBadge.cls}" title="${dayBadge.title}" style="cursor:help; ${dayBadge.pulse?'animation: pulseWarn 1s infinite;':''}">${dayBadge.txt}</span>` : ''}<small>${taunt.text}</small></div>
       <div class="lb-stat"><b>${isMonthScope ? (miniVal > 0 ? miniVal : (isFreeRow ? '∞' : '—')) : '—'}</b>${isMonthScope ? 'mini' : ''}</div>
       <div class="lb-stat lb-stat-desired"><b>${desiredVal != null ? desiredVal : '—'}</b>visé</div>
       <div class="lb-stat"><b>${r.realized}</b>signés</div>
@@ -11296,7 +11334,7 @@ async function renderSupervision(){
       return `<tr style="${rowStyle}">
         <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}</td>
         <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
-        <td><span class="tag ${badge.cls}" style="${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></td>
+        <td><span class="tag ${badge.cls}" title="${badge.title}" style="cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></td>
         <td style="font-size:12.5px; max-width:220px; ${r.dayRealized<=0?'color:var(--red); font-weight:700;':'color:var(--muted);'}">${isMe ? '' : comment}</td>
         <td>${r.dayRealized} / ${r.dayObjective || '—'}</td>
         <td>${r.weekReal}/${r.weekObjective||'—'}</td>
