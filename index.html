@@ -839,6 +839,20 @@ function tryDeviceGateAdmin(){
 
       <div id="supervisionContent" style="display:none; margin-top:18px;">
         <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">🔄 Actualisation automatique toutes les 35s — les chiffres restent à jour sans avoir à recharger la page.</div>
+
+        <div id="weeklyBriefingBannerSupervision" style="display:none; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; background:linear-gradient(135deg, rgba(184,147,90,0.26), rgba(184,147,90,0.12)); border:2px solid #c9a870; border-radius:16px; padding:22px 26px; margin-bottom:18px; animation: pulseWarn 2.4s infinite;">
+          <div style="display:flex; align-items:center; gap:16px;">
+            <div style="font-size:38px; line-height:1; flex-shrink:0;">📋</div>
+            <div>
+              <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;"><span style="font-size:20px; font-weight:900; color:#c9a870; letter-spacing:0.1px;">Briefing hebdomadaire à faire</span><span style="font-size:11.5px; font-weight:800; background:#c9a870; color:#151d27; border-radius:20px; padding:3px 11px; letter-spacing:0.4px;">AUJOURD'HUI</span></div>
+              <div style="font-size:13.5px; font-weight:600; color:var(--text); opacity:0.9; margin-top:3px;">Rituel obligatoire, 1 fois par semaine, avec tous les agents présents — le Bilan de la semaine est prêt plus bas.</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0;">
+            <button type="button" onclick="acknowledgeWeeklyBriefingSupervision()" style="padding:12px 22px; border-radius:10px; border:1px solid #c9a870; background:rgba(184,147,90,0.24); color:#c9a870; font-weight:800; font-size:13.5px; cursor:pointer;">✅ Noté, briefing fait</button>
+          </div>
+        </div>
+
         <div class="supervision-dashboard" id="supervisionDashboard"></div>
 
         <div id="supervisionDetail"></div>
@@ -1704,7 +1718,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-09-r86';
+const APP_VERSION = '2026-08-09-r87';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2223,6 +2237,7 @@ function startAutoRefresh(kind){
         // exclu : son tableau de rémunération par agent est un grand formulaire éditable, le rafraîchir
         // effacerait une saisie de salaire en cours.
         renderAnomalyBanner();
+        checkSupervisionBriefingAcksForAdmin();
         const overviewEl = document.getElementById('admin-overview');
         if(overviewEl && overviewEl.classList.contains('active')) showAdminSub('overview');
         const dayEl = document.getElementById('admin-day');
@@ -2734,7 +2749,7 @@ function showAdminSub(sub){
     const btnId = s==='prod' ? 'subtabProd' : 'subtab'+s.charAt(0).toUpperCase()+s.slice(1);
     document.getElementById(btnId).classList.toggle('active', s===sub);
   });
-  if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin'); }
+  if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
   if(sub==='settings'){ renderAuditLog(); }
@@ -2788,13 +2803,14 @@ function tryAdminLogin(){
     logAudit('Admin', 'Connexion au panneau Admin', '');
     checkMonthRollover();
     checkWeeklyBriefingReminder();
+    checkSupervisionBriefingAcksForAdmin();
     initExploDefaults();
     initObjSnapDefaults();
     renderAllMonthly();
     renderExplorateur();
     renderNotifStatusPanel();
     renderDailyBriefingSection('dailyBriefingAdmin');
-    renderWeeklyBriefingSection('weeklyBriefingAdmin');
+    renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin');
     renderReport();
     renderProdAdmin();
     renderMonthlyObjectif();
@@ -8202,10 +8218,54 @@ async function renderDailyBriefingSection(containerId){
 // ============================================================
 // 📋 BILAN DE LA SEMAINE — BRIEFING HEBDOMADAIRE OBLIGATOIRE
 // ============================================================
-// NOTE : le design a changé en cours de route — ce bilan tourne désormais sur la semaine EN COURS, en
-// temps réel (cf. currentWeekDateStrs(), utilisée par buildWeeklyBriefingHtml ci-dessous), et non plus
-// sur la semaine précédente complète. L'ancienne fonction previousWeekDateStrs() (semaine précédente,
-// lundi→dimanche) a été supprimée ici — code mort, plus jamais appelée depuis ce changement.
+// BUG CORRIGÉ : le bilan tournait uniquement sur la semaine EN COURS, en temps réel — un lundi matin,
+// « semaine en cours » ne contient donc que le lundi lui-même (quasi aucune donnée), alors que le rituel
+// du lundi porte justement sur la semaine qui vient de SE TERMINER. Le bilan accepte maintenant un lundi
+// de référence (mondayOverride) — n'importe quelle semaine passée reste consultable en entier via le
+// sélecteur ci-dessous, et la semaine en cours reste calculée en temps réel (lundi → aujourd'hui) comme
+// avant quand elle est sélectionnée.
+
+// Lundi (YYYY-MM-DD) de la semaine contenant dateStr.
+function mondayOfWeek(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  const daysSinceMonday = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - daysSinceMonday);
+  return todayStr(d);
+}
+// Dates (lundi → dimanche) de la semaine dont le lundi est mondayDateStr, sans jamais dépasser
+// aujourd'hui — une semaine passée est donc complète (7 jours), la semaine en cours s'arrête à aujourd'hui.
+function weekDateStrsFrom(mondayDateStr){
+  const monday = new Date(mondayDateStr + 'T00:00:00');
+  const todayD = todayStr();
+  const days = [];
+  for(let i=0;i<7;i++){
+    const d = new Date(monday);
+    d.setDate(d.getDate()+i);
+    const ds = todayStr(d);
+    if(ds > todayD) break;
+    days.push(ds);
+  }
+  return days;
+}
+// Les N derniers lundis (semaine en cours incluse), du plus récent au plus ancien — pour peupler le
+// sélecteur d'historique des bilans.
+function recentMondays(n){
+  const thisMonday = mondayOfWeek(todayStr());
+  const list = [];
+  for(let i=0;i<n;i++){
+    const d = new Date(thisMonday + 'T00:00:00');
+    d.setDate(d.getDate() - 7*i);
+    list.push(todayStr(d));
+  }
+  return list;
+}
+function weekOptionLabel(mondayDateStr){
+  const monday = new Date(mondayDateStr + 'T00:00:00');
+  const sunday = new Date(monday); sunday.setDate(sunday.getDate()+6);
+  const fmt = d => d.toLocaleDateString('fr-FR', { day:'numeric', month:'short' });
+  const label = `Semaine du ${fmt(monday)} au ${fmt(sunday)}`;
+  return mondayDateStr === mondayOfWeek(todayStr()) ? `${label} (en cours)` : label;
+}
 
 // Semaine ISO (année-Wxx), pour se souvenir "le briefing de cette semaine a déjà été vu" sans dépendre
 // du jour exact — peu importe quand dans la semaine l'admin se connecte, ça ne réapparaît qu'une fois.
@@ -8237,6 +8297,68 @@ function acknowledgeWeeklyBriefing(){
   if(banner) banner.style.display = 'none';
 }
 
+// ---- Variante Supervision : même rituel, mais déclenché par un superviseur plutôt que l'admin — on
+// prévient en plus l'admin (écriture Firestore + notification navigateur si son onglet est ouvert et les
+// notifications autorisées, même mécanisme que 🚨 Nouvelle anomalie). Mémorisation par superviseur (pas
+// un seul compteur global) pour que chaque superviseur confirme le sien, et que l'admin sache lequel.
+function checkWeeklyBriefingReminderSupervision(supervisorName){
+  const banner = document.getElementById('weeklyBriefingBannerSupervision');
+  if(!banner || !supervisorName) return;
+  const now = nowMA();
+  if(now.getDay() !== WEEKLY_BRIEFING_DAY){ banner.style.display = 'none'; return; }
+  const currentWeek = isoWeekString(now);
+  let lastSeen = null;
+  try{ lastSeen = localStorage.getItem(`vn_lastBriefingWeekSeen_${supervisorName}`); }catch(e){}
+  if(lastSeen === currentWeek){ banner.style.display = 'none'; return; }
+  banner.style.display = 'flex';
+}
+async function acknowledgeWeeklyBriefingSupervision(){
+  const supervisorName = currentSupervisionAgent;
+  if(!supervisorName) return;
+  const currentWeek = isoWeekString(nowMA());
+  try{ localStorage.setItem(`vn_lastBriefingWeekSeen_${supervisorName}`, currentWeek); }catch(e){}
+  const banner = document.getElementById('weeklyBriefingBannerSupervision');
+  if(banner) banner.style.display = 'none';
+  // Prévient l'admin : écrit qui a confirmé et quand, pour que renderNotifStatusPanel-like polling admin
+  // (voir checkSupervisionBriefingAcksForAdmin) puisse détecter la nouveauté et notifier.
+  try{
+    await storageSet(`weeklyBriefingAck:${currentWeek}:${supervisorName}`, JSON.stringify({ by: supervisorName, at: new Date().toISOString() }));
+    logAudit(supervisorName, `Briefing hebdomadaire confirmé (${currentWeek})`, '');
+  }catch(e){}
+}
+
+// Côté admin : détecte une NOUVELLE confirmation de briefing par un superviseur (poll, même mécanisme que
+// 🚨 Nouvelle anomalie) et notifie par notification navigateur — seulement le jour du rituel, et jamais
+// au tout premier calcul après un rechargement de page (sinon un ack déjà vu avant serait re-notifié).
+let seenBriefingAcks = null;
+async function checkSupervisionBriefingAcksForAdmin(){
+  const now = nowMA();
+  if(now.getDay() !== WEEKLY_BRIEFING_DAY){ seenBriefingAcks = null; return; }
+  const currentWeek = isoWeekString(now);
+  const supervisors = listSupervisors();
+  if(supervisors.length === 0) return;
+  const results = await Promise.all(supervisors.map(async sup=>{
+    const res = await storageGet(`weeklyBriefingAck:${currentWeek}:${sup}`);
+    return res && res.value ? `${currentWeek}|${sup}` : null;
+  }));
+  const nowSeen = new Set(results.filter(Boolean));
+  if(seenBriefingAcks === null){
+    seenBriefingAcks = nowSeen;
+    return;
+  }
+  nowSeen.forEach(ackKey=>{
+    if(seenBriefingAcks.has(ackKey)) return;
+    const sup = ackKey.split('|')[1];
+    if('Notification' in window && Notification.permission === 'granted'){
+      try{
+        const notif = new Notification("📋 Briefing hebdomadaire confirmé", { body: `${sup} a confirmé avoir fait le briefing hebdomadaire avec son équipe.`, tag: `vortexnova-briefing-ack-${ackKey}`, renotify: true });
+        notif.onclick = ()=>{ window.focus(); notif.close(); };
+      }catch(e){}
+    }
+  });
+  seenBriefingAcks = nowSeen;
+}
+
 // Banque de conseils "métier" pour un centre d'appel sortant qui vend des contrats — piochés un par un
 // chaque semaine (varie automatiquement selon la semaine, jamais deux fois le même conseil de suite), en
 // complément des conseils calculés sur les vrais chiffres de la semaine.
@@ -8254,20 +8376,24 @@ const CALL_CENTER_WEEKLY_TIPS = [
 ];
 
 // Construit le Bilan de la semaine — même logique de classement que le briefing du jour (le plus de
-// contrats réalisés d'abord, alphabétique si égalité), sur la semaine EN COURS en temps réel (du lundi
-// à aujourd'hui, mise à jour au fil des jours), avec les agents répartis en 4 groupes selon leur vraie
-// situation, un point discipline, et des conseils qui s'adaptent aux chiffres réels de la semaine
-// (jamais un texte figé).
-async function buildWeeklyBriefingHtml(){
+// contrats réalisés d'abord, alphabétique si égalité), avec les agents répartis en 4 groupes selon leur
+// vraie situation, un point discipline, et des conseils qui s'adaptent aux chiffres réels de la semaine
+// (jamais un texte figé). mondayOverride : lundi de la semaine à afficher (défaut : semaine en cours,
+// calculée en temps réel du lundi à aujourd'hui) — une semaine passée est toujours affichée complète.
+async function buildWeeklyBriefingHtml(mondayOverride){
   if(config.agents.length === 0) return '<div class="empty">Ajoute des agents dans Réglages.</div>';
-  const weekDates = currentWeekDateStrs();
+  const monday = mondayOverride || mondayOfWeek(todayStr());
+  const isCurrentWeek = monday === mondayOfWeek(todayStr());
+  const weekDates = weekDateStrsFrom(monday);
   const workingDates = weekDates.filter(isWorkingDay);
   const weekLabel = weekDates.length
-    ? `Du ${new Date(weekDates[0]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long'})} à aujourd'hui, ${new Date(weekDates[weekDates.length-1]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})} · temps réel`
+    ? (isCurrentWeek
+        ? `Du ${new Date(weekDates[0]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long'})} à aujourd'hui, ${new Date(weekDates[weekDates.length-1]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})} · temps réel`
+        : `Du ${new Date(weekDates[0]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long'})} au ${new Date(weekDates[weekDates.length-1]+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})} · semaine terminée`)
     : '';
 
   if(workingDates.length === 0){
-    return `<div class="empty">Aucun jour ouvré depuis le début de la semaine pour l'instant (${weekLabel}).</div>`;
+    return `<div class="empty">Aucun jour ouvré cette semaine-là (${weekLabel}).</div>`;
   }
 
   const boardsByDate = {};
@@ -8510,10 +8636,39 @@ async function buildWeeklyBriefingHtml(){
   return html;
 }
 
-async function renderWeeklyBriefingSection(containerId){
+// selectId : id du <select> d'historique des semaines, propre à chaque appelant (Admin / Supervision)
+// pour ne jamais se marcher dessus. Le <select> n'est construit qu'UNE FOIS (sinon le choix de semaine
+// de l'utilisateur serait perdu à chaque auto-refresh, ~25s en Admin — même piège que les menus ADF/
+// écoute avant correction) ; seul le contenu du bilan se rafraîchit ensuite sur la semaine déjà choisie.
+async function renderWeeklyBriefingSection(containerId, selectId){
   const container = document.getElementById(containerId);
   if(!container) return;
-  container.innerHTML = await buildWeeklyBriefingHtml();
+  let sel = document.getElementById(selectId);
+  if(!sel){
+    const now = nowMA();
+    const thisMonday = mondayOfWeek(todayStr());
+    const prevMondayD = new Date(thisMonday + 'T00:00:00'); prevMondayD.setDate(prevMondayD.getDate()-7);
+    const prevMonday = todayStr(prevMondayD);
+    // Le jour du briefing (lundi), on veut par défaut la semaine qui vient de se terminer (celle sur
+    // laquelle porte le rituel) — les autres jours, la semaine en cours en temps réel comme avant.
+    const defaultMonday = now.getDay() === WEEKLY_BRIEFING_DAY ? prevMonday : thisMonday;
+    const weeks = recentMondays(12);
+    container.innerHTML = `<div style="margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <label style="margin:0; font-size:12.5px; color:var(--muted);" for="${selectId}">📆 Semaine du bilan :</label>
+      <select id="${selectId}" style="max-width:300px;" onchange="renderWeeklyBriefingWeek('${containerId}','${selectId}')">
+        ${weeks.map(m=>`<option value="${m}">${weekOptionLabel(m)}</option>`).join('')}
+      </select>
+    </div><div id="${containerId}-content"></div>`;
+    sel = document.getElementById(selectId);
+    sel.value = defaultMonday;
+  }
+  await renderWeeklyBriefingWeek(containerId, selectId);
+}
+async function renderWeeklyBriefingWeek(containerId, selectId){
+  const contentEl = document.getElementById(containerId + '-content');
+  if(!contentEl) return;
+  const monday = document.getElementById(selectId)?.value || mondayOfWeek(todayStr());
+  contentEl.innerHTML = await buildWeeklyBriefingHtml(monday);
 }
 
 function getProdConfig(){
@@ -10986,9 +11141,12 @@ async function renderSupervision(){
     <div id="dailyBriefingSup">` + await buildDailyBriefingHtml(briefingBaseRows) + `</div>`;
 
   // Nouvelle section également ici : le Bilan de la semaine, identique à celui d'Admin → Vue d'ensemble,
-  // pour que le superviseur prépare le même briefing hebdomadaire obligatoire avec son équipe.
+  // pour que le superviseur prépare le même briefing hebdomadaire obligatoire avec son équipe. Contenu
+  // dans un conteneur séparé (rempli juste après, via renderWeeklyBriefingSection) plutôt qu'inline ici
+  // — sinon le sélecteur de semaine serait reconstruit et le choix perdu à chaque auto-refresh (35s).
   const weeklyBriefingHtml = `<div style="font-size:23px; font-weight:900; margin:0 0 4px; padding-top:30px; border-top:3px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:-0.2px; color:#e5a83d;">📋 Bilan de la semaine <span style="font-size:12px; font-weight:800; border-radius:20px; padding:3px 12px; letter-spacing:0.3px; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.4); color:#e5a83d;">BRIEFING OBLIGATOIRE · 1×/SEMAINE</span></div>
-    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.7; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(229,168,61,0.09); border-left:4px solid #e5a83d;"><b style="color:#e5a83d;">👉 Ce que tu dois faire :</b> une fois par semaine, réunis toute l'équipe. Lis les chiffres à voix haute. Félicite ceux qui ont bien travaillé. Parle en privé à ceux qui sont en difficulté. Rappelle les règles si besoin.</div>` + await buildWeeklyBriefingHtml();
+    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.7; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(229,168,61,0.09); border-left:4px solid #e5a83d;"><b style="color:#e5a83d;">👉 Ce que tu dois faire :</b> une fois par semaine, réunis toute l'équipe. Lis les chiffres à voix haute. Félicite ceux qui ont bien travaillé. Parle en privé à ceux qui sont en difficulté. Rappelle les règles si besoin.</div>
+    <div id="weeklyBriefingSup"></div>`;
 
   let html = pressureHtml + dailyBriefingHtml + objBlockHtml + weeklyBriefingHtml + pressureExtraHtml + `
     <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
@@ -11114,6 +11272,8 @@ async function renderSupervision(){
   }
 
   detail.innerHTML = html;
+  renderWeeklyBriefingSection('weeklyBriefingSup', 'weeklyBriefingWeekSelectSupervision');
+  checkWeeklyBriefingReminderSupervision(supervisor);
 
   // Même rendu que l'Admin pour le Bilan de la journée (carte Total équipe + cartes détaillées) :
   // on réutilise renderObjSnapSingleDay au lieu de dupliquer le code, pour que les deux vues
