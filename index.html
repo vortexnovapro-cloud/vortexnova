@@ -1727,7 +1727,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-10-r92';
+const APP_VERSION = '2026-08-10-r93';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -6050,6 +6050,21 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     monthlyByAgent[r.agent] = { monthlyRealized, mini, vise: desired || 0 };
   }));
 
+  // Historique des 5 derniers jours ouvrés AVANT dateStr — pour les séries 🔥 (sans finir à 0) et 🎯
+  // (objectif atteint), calculées avec les mêmes fonctions globales que le "Conseil du matin" (voir
+  // computeZeroStreak/computeObjectiveStreak). Comme dateStr est déjà garanti être un jour ouvré à ce
+  // stade (early-return plus haut), le jour affiché compte pleinement dans la série dès que dayIsOver.
+  const streakRecentDates = lastNWorkingDaysBefore(dateStr, 5);
+  const streakBoardsByDate = {};
+  await Promise.all(streakRecentDates.map(async d=>{
+    streakBoardsByDate[d] = prodBoardCache[d] || await getProdBoard(d);
+    prodBoardCache[d] = streakBoardsByDate[d];
+  }));
+  const streakHistoryByAgent = {};
+  allDayRows.forEach(r=>{
+    streakHistoryByAgent[r.agent] = streakRecentDates.map(d => getAgentProd(streakBoardsByDate[d], r.agent));
+  });
+
   // Veille (jour ouvré juste avant la date affichée) — pour comparer le bilan du jour à celui d'hier.
   // Ça n'a de sens que dans CE panneau ("Bilan de la journée", pensé pour la fin de journée) : au
   // "Conseil du matin", la journée vient de commencer et une comparaison à un jour complet serait injuste.
@@ -6125,11 +6140,21 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
         </div>` : '';
-      html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
+      const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
+      const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
+      const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], dayIsOver);
+      const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
+      const podiumColor = podiumBorderColor(allRankByAgent[r.agent]?.rank);
+      const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}`;
+      const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
+      html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
           <div style="display:flex; align-items:center; gap:10px; min-width:0;">
             ${agentAvatarHtml(r.agent, 34)}
+            ${podiumColor ? `<span title="${allRankByAgent[r.agent].rank}${allRankByAgent[r.agent].rank===1?'er':'e'} du classement" style="cursor:help; flex-shrink:0;">${rankEmoji(allRankByAgent[r.agent].rank, allRankByAgent[r.agent].total)}</span>` : ''}
             <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
+            ${streakBadge}
+            ${objectiveStreakBadge}
           </div>
           ${hit
             ? '<span class="tag ok" title="Objectif du jour atteint" style="white-space:nowrap; flex-shrink:0; cursor:help;">✅ Atteint</span>'
@@ -6159,11 +6184,21 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
         </div>` : '';
-      html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(155,89,182,0.3)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
+      const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
+      const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
+      const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], dayIsOver);
+      const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
+      const podiumColor = podiumBorderColor(allRankByAgent[r.agent]?.rank);
+      const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(155,89,182,0.3)'}`;
+      const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
+      html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
           <div style="display:flex; align-items:center; gap:10px; min-width:0;">
             ${agentAvatarHtml(r.agent, 34)}
+            ${podiumColor ? `<span title="${allRankByAgent[r.agent].rank}${allRankByAgent[r.agent].rank===1?'er':'e'} du classement" style="cursor:help; flex-shrink:0;">${rankEmoji(allRankByAgent[r.agent].rank, allRankByAgent[r.agent].total)}</span>` : ''}
             <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
+            ${streakBadge}
+            ${objectiveStreakBadge}
           </div>
           <span class="tag independant" style="white-space:nowrap; flex-shrink:0;">Indé</span>
         </div>
@@ -8217,6 +8252,52 @@ function historyStripHtml(historyFull){
   return `<div style="margin-top:10px;"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours <span style="opacity:0.7;">(vert = objectif atteint, orange = objectif manqué, rouge = 0 contrat)</span></div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
 }
 
+// Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
+// réalisé est > 0. C'est le repère qui compte le plus pour le boss (peur n°1 : une journée à 0). Fonction
+// GLOBALE (pas locale à buildDailyBriefingHtml) : réutilisée aussi dans le Bilan de la journée.
+// Weekend/jour férié : `historyFull` (via lastNWorkingDaysBefore) ne contient déjà que des jours ouvrés,
+// donc la boucle en dessous ne casse jamais la série sur un jour non travaillé. Le matin (jour pas encore
+// terminé), le "0" du jour n'est qu'un compteur pas encore rempli, pas un vrai échec — la série reste donc
+// celle des jours ouvrés PASSÉS tant que todayCounts est faux (voir isDayOverForMessage chez l'appelant),
+// pour que l'agent voie "tu as une série de 4, ne la casse pas aujourd'hui" dès le matin plutôt que de voir
+// la flamme disparaître entre minuit et son premier contrat du jour.
+function computeZeroStreak(todayRealized, historyFull, todayCounts){
+  if(!todayCounts){
+    let streak = 0;
+    for(const day of historyFull){
+      if((day.realized||0) > 0) streak++; else break;
+    }
+    return streak;
+  }
+  if(todayRealized <= 0) return 0;
+  let streak = 1;
+  for(const day of historyFull){
+    if((day.realized||0) > 0) streak++; else break;
+  }
+  return streak;
+}
+
+// Série "objectif du jour atteint" — même principe que la série "sans finir à 0" mais côté positif :
+// combien de jours ouvrés d'affilée l'agent a atteint (ou dépassé) l'objectif qu'il s'était fixé le matin.
+// Ne compte que les jours où un objectif avait réellement été fixé (objectif=0 = pas de repère, ignoré
+// plutôt que compté comme un échec ou une réussite). Fonction GLOBALE, même règle todayCounts que ci-dessus.
+function computeObjectiveStreak(todayRealized, todayObjective, historyFull, todayCounts){
+  const dayHits = day => (day.objective||0) > 0 && (day.realized||0) >= (day.objective||0);
+  if(!todayCounts){
+    let streak = 0;
+    for(const day of historyFull){
+      if(dayHits(day)) streak++; else break;
+    }
+    return streak;
+  }
+  if(!(todayObjective > 0) || todayRealized < todayObjective) return 0;
+  let streak = 1;
+  for(const day of historyFull){
+    if(dayHits(day)) streak++; else break;
+  }
+  return streak;
+}
+
 // Construit le "briefing du jour" pour chaque agent — même principe que les cartes 🎯 Objectif choisi &
 // réalisé (classement + conseils adaptatifs), enrichi de la comparaison à la veille et de la tendance des
 // derniers jours. Fonction partagée entre Admin → Vue d'ensemble et Supervision, pour un rendu identique
@@ -8294,52 +8375,8 @@ async function buildDailyBriefingHtml(baseRows){
   const teamRows = rows.filter(r=>!r.isIndep).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
   const indepRows = rows.filter(r=>r.isIndep).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
 
-  // Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
-  // réalisé est > 0. C'est le repère qui compte le plus pour le boss (peur n°1 : une journée à 0).
-  // Weekend/jour férié : `historyFull` (via lastNWorkingDaysBefore) ne contient déjà que des jours ouvrés,
-  // donc la boucle en dessous ne casse jamais la série sur un jour non travaillé. ET ce panneau est le
-  // "Conseil DU MATIN" : tant que la journée n'est pas terminée (isDayOverForMessage), le "0" du jour n'est
-  // qu'un compteur pas encore rempli, pas un vrai échec — la série doit donc rester celle des jours ouvrés
-  // PASSÉS (déjà joués) pour que l'agent voie "tu as une série de 4, ne la casse pas aujourd'hui" dès le
-  // matin, au lieu de voir la flamme disparaître entre minuit et son premier contrat du jour. Seul un jour
-  // ouvré déjà TERMINÉ compte le résultat du jour lui-même dans la série (todayCounts).
-  function computeZeroStreak(todayRealized, historyFull, todayCounts){
-    if(!todayCounts){
-      let streak = 0;
-      for(const day of historyFull){
-        if((day.realized||0) > 0) streak++; else break;
-      }
-      return streak;
-    }
-    if(todayRealized <= 0) return 0;
-    let streak = 1;
-    for(const day of historyFull){
-      if((day.realized||0) > 0) streak++; else break;
-    }
-    return streak;
-  }
-
-  // Série "objectif du jour atteint" — même principe que la série "sans finir à 0" mais côté positif :
-  // combien de jours ouvrés d'affilée l'agent a atteint (ou dépassé) l'objectif qu'il s'était fixé le
-  // matin. Ne compte que les jours où un objectif avait réellement été fixé (objectif=0 = pas de repère,
-  // ignoré plutôt que compté comme un échec ou une réussite). Même règle "Conseil du matin" que ci-dessus :
-  // tant que la journée n'est pas terminée, on affiche la série des jours déjà joués.
-  function computeObjectiveStreak(todayRealized, todayObjective, historyFull, todayCounts){
-    const dayHits = day => (day.objective||0) > 0 && (day.realized||0) >= (day.objective||0);
-    if(!todayCounts){
-      let streak = 0;
-      for(const day of historyFull){
-        if(dayHits(day)) streak++; else break;
-      }
-      return streak;
-    }
-    if(!(todayObjective > 0) || todayRealized < todayObjective) return 0;
-    let streak = 1;
-    for(const day of historyFull){
-      if(dayHits(day)) streak++; else break;
-    }
-    return streak;
-  }
+  // computeZeroStreak / computeObjectiveStreak sont désormais des fonctions GLOBALES (définies plus haut,
+  // juste avant cette fonction) — réutilisées telles quelles dans le Bilan de la journée.
 
   function cardFor(r, rankInfo){
     const hasObj = r.todayObjective > 0;
@@ -8361,9 +8398,15 @@ async function buildDailyBriefingHtml(baseRows){
     const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
     const objectiveStreak = computeObjectiveStreak(r.todayRealized, r.todayObjective, r.historyFull, todayCounts);
     const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
-    return `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:17px; border-radius:17px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
+    // Podium : contour or/argent/bronze pour le top 3 du classement du mois — prend le pas sur le contour
+    // "objectif atteint" habituel, la carte du 1er/2e/3e reste identifiable même sans objectif fixé.
+    const podiumColor = podiumBorderColor(rankInfo?.rank);
+    const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}`;
+    const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
+    return `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:17px; border-radius:17px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
       <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
         ${agentAvatarHtml(r.agent, 30)}
+        ${podiumColor ? `<span title="${rankInfo.rank}${rankInfo.rank===1?'er':'e'} du classement du mois" style="cursor:help;">${rankEmoji(rankInfo.rank, rankInfo.total)}</span>` : ''}
         <b style="font-weight:700; font-size:15px; letter-spacing:-0.1px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.agent}</b>
         ${streakBadge}
         ${objectiveStreakBadge}
@@ -8556,6 +8599,38 @@ const CALL_CENTER_WEEKLY_TIPS = [
   "Célèbre les petites victoires individuelles à voix haute pendant la semaine, pas seulement au bilan du vendredi."
 ];
 
+// Conseils dédiés aux agents en période d'intégration (< 1 mois d'ancienneté) — jamais de comparaison
+// chiffrée avec le reste de l'équipe (injuste à ce stade), toujours un conseil concret et bienveillant.
+const NEW_AGENT_WEEKLY_TIPS = [
+  "Reste à côté pour quelques appels cette semaine et donne un retour concret juste après, pendant que c'est encore frais.",
+  "Fais-lui réécouter un bon appel d'un agent confirmé — le script s'apprend souvent mieux à l'oreille que sur papier.",
+  "Fixe un petit objectif atteignable pour la semaine (pas le mini de l'équipe) pour construire la confiance étape par étape.",
+  "Un point quotidien de 5 minutes en fin de journée cette semaine vaut mieux qu'un seul point en fin de semaine.",
+  "Valorise chaque contrat signé, même un seul — à ce stade, la régularité compte plus que le volume."
+];
+
+// Calcule uniquement le total de contrats réalisés par agent pour LA SEMAINE dont le lundi est passé en
+// paramètre — volontairement léger (pas de lecture des logs de pointage/retards/absences, juste les
+// tableaux de production), utilisé pour comparer la semaine affichée à celle d'avant. Retourne null s'il
+// n'y a aucun jour ouvré cette semaine-là (mécanisme qui continuera de fonctionner sans rien changer au
+// fur et à mesure que l'historique de l'app s'accumule dans le temps).
+async function weekRealizedTotalsForMonday(monday){
+  const wDates = weekDateStrsFrom(monday).filter(isWorkingDay);
+  if(wDates.length === 0) return null;
+  const boards = {};
+  await Promise.all(wDates.map(async d=>{
+    boards[d] = prodBoardCache[d] || await getProdBoard(d);
+    prodBoardCache[d] = boards[d];
+  }));
+  const totals = {};
+  config.agents.forEach(agent=>{
+    const agentStartDate = getAgentStartDate(agent);
+    const agentDates = agentStartDate ? wDates.filter(ds=>ds>=agentStartDate) : wDates;
+    totals[agent] = agentDates.reduce((s,d)=> s + (getAgentProd(boards[d], agent).realized || 0), 0);
+  });
+  return { weekDates: wDates, totals };
+}
+
 // Construit le Bilan de la semaine — même logique de classement que le briefing du jour (le plus de
 // contrats réalisés d'abord, alphabétique si égalité), avec les agents répartis en 4 groupes selon leur
 // vraie situation, un point discipline, et des conseils qui s'adaptent aux chiffres réels de la semaine
@@ -8577,14 +8652,30 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     return `<div class="empty">Aucun jour ouvré cette semaine-là (${weekLabel}).</div>`;
   }
 
-  const boardsByDate = {};
-  await Promise.all(workingDates.map(async d=>{
-    boardsByDate[d] = prodBoardCache[d] || await getProdBoard(d);
-    prodBoardCache[d] = boardsByDate[d];
-  }));
-
+  // Semaine précédente (pour la section "Évolution") et total du mois en cours par agent (pour le
+  // contexte) — chargés en parallèle avec les tableaux de production de la semaine affichée. previousWeek
+  // vaut null s'il n'y a simplement pas encore d'historique aussi loin (tout début d'utilisation de
+  // l'app) : la comparaison est alors omise plutôt que d'inventer des chiffres, et réapparaîtra d'elle-
+  // même semaine après semaine à mesure que l'historique s'accumule.
+  const prevMondayD = new Date(monday + 'T00:00:00'); prevMondayD.setDate(prevMondayD.getDate() - 7);
+  const prevMonday = todayStr(prevMondayD);
+  const [monthYear, monthNum] = monday.split('-').map(Number);
   const teamAgents = config.agents.filter(a=>!isIndependant(a));
   const indepAgents = config.agents.filter(a=>isIndependant(a));
+
+  const [boardsByDate, previousWeek, monthTotalsList] = await Promise.all([
+    (async ()=>{
+      const b = {};
+      await Promise.all(workingDates.map(async d=>{
+        b[d] = prodBoardCache[d] || await getProdBoard(d);
+        prodBoardCache[d] = b[d];
+      }));
+      return b;
+    })(),
+    weekRealizedTotalsForMonday(prevMonday),
+    Promise.all(teamAgents.map(async agent=>({ agent, total: await monthlyRealizedContracts(agent, monthYear, monthNum) })))
+  ]);
+  const monthTotalsByAgent = Object.fromEntries(monthTotalsList.map(x=>[x.agent, x.total]));
 
   const teamStats = await Promise.all(teamAgents.map(async agent=>{
     let weekRealized = 0, zeroDays = 0, daysPresent = 0, lateCount = 0, absenceCount = 0, justifiedAbsenceCount = 0;
@@ -8626,7 +8717,10 @@ async function buildWeeklyBriefingHtml(mondayOverride){
       }
     }));
     zeroDayDates.sort();
-    return { agent, weekRealized, zeroDays, zeroDayDates, daysPresent, lateCount, absenceCount, justifiedAbsenceCount };
+    // "Nouveau" = moins d'1 mois d'ancienneté à la fin de CETTE semaine (pas forcément aujourd'hui — une
+    // semaine passée doit rester jugée avec l'ancienneté qu'avait l'agent À CE MOMENT-LÀ, pas maintenant).
+    const isNew = isNewAgent(agent, workingDates[workingDates.length-1]);
+    return { agent, weekRealized, zeroDays, zeroDayDates, daysPresent, lateCount, absenceCount, justifiedAbsenceCount, isNew };
   }));
 
   const indepStats = indepAgents.map(agent=>{
@@ -8646,15 +8740,26 @@ async function buildWeeklyBriefingHtml(mondayOverride){
 
   const totalTeamRealized = teamStats.reduce((s,r)=>s+r.weekRealized, 0);
   const totalIndepRealized = indepStats.reduce((s,r)=>s+r.weekRealized, 0);
-  const activeTeam = teamStats.filter(r=>r.daysPresent > 0);
-  const teamAvg = activeTeam.length ? totalTeamRealized / activeTeam.length : 0;
+
+  // Ancienneté : un agent à moins d'1 mois est en pleine phase d'apprentissage — le comparer à la moyenne
+  // d'agents confirmés serait injuste et démotivant, et le placer en "pression" pour une semaine faible
+  // alors qu'il découvre encore le métier n'aide personne. Il sort donc du classement 4-groupes ET du
+  // calcul de la moyenne équipe, et reçoit sa propre section dédiée, plus indulgente, plus riche en
+  // conseils (cf. plus bas "🌱 Nouveaux agents").
+  const veteranTeamStats = teamStats.filter(r=>!r.isNew);
+  const newTeamStats = teamStats.filter(r=>r.isNew);
+  const activeTeam = veteranTeamStats.filter(r=>r.daysPresent > 0);
+  const teamAvg = activeTeam.length ? veteranTeamStats.reduce((s,r)=>s+r.weekRealized,0) / activeTeam.length : 0;
 
   // Répartition en 4 groupes — règles simples et transparentes, basées sur des faits, jamais du ressenti :
   // pression si au moins 1 jour à 0 (LA peur du boss) OU très en dessous de la moyenne OU 3 retards+ ;
   // féliciter si 1er du classement ou nettement au-dessus de la moyenne sans aucun retard ; motiver si en
   // dessous de la moyenne équipe ; encourager pour le reste (dans la moyenne ou au-dessus, sans éclat).
+  // Uniquement les agents confirmés (cf. note ancienneté ci-dessus) — le rang utilisé est leur rang PARMI
+  // LES CONFIRMÉS, pas leur rang toutes catégories confondues (sinon un nouvel agent devant tout le monde
+  // fausserait qui est "1er" parmi les vétérans).
   const buckets = { feliciter: [], motiver: [], encourager: [], pression: [] };
-  teamStats.forEach((r, i)=>{
+  veteranTeamStats.forEach((r, i)=>{
     const rank = i + 1;
     if(r.zeroDays >= 1 || (teamAvg > 0 && r.weekRealized < teamAvg * 0.5) || r.lateCount >= 3){
       buckets.pression.push(r);
@@ -8673,6 +8778,18 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   const cleanAgents = teamStats.filter(r=>r.lateCount===0 && r.absenceCount===0).length;
   const zeroDayAgents = teamStats.filter(r=>r.zeroDays >= 1);
 
+  // ---- Évolution vs semaine précédente — previousWeek est null tant qu'il n'y a pas d'historique aussi
+  // loin (cf. weekRealizedTotalsForMonday plus haut) : tout ce bloc est alors simplement vide, sans erreur.
+  const weekComparisons = previousWeek ? teamStats.map(r=>{
+    const prevTotal = previousWeek.totals[r.agent];
+    return { agent: r.agent, thisWeek: r.weekRealized, prevWeek: prevTotal ?? null, delta: prevTotal != null ? r.weekRealized - prevTotal : null, isNew: r.isNew };
+  }) : null;
+  const prevTotalTeamRealized = previousWeek ? teamAgents.reduce((s,a)=> s + (previousWeek.totals[a] || 0), 0) : null;
+  const teamDelta = previousWeek ? totalTeamRealized - prevTotalTeamRealized : null;
+  const validDeltas = weekComparisons ? weekComparisons.filter(c=>c.delta != null) : [];
+  const biggestImprover = validDeltas.length ? validDeltas.reduce((best,c)=> (c.delta > best.delta ? c : best)) : null;
+  const biggestDrop = validDeltas.length ? validDeltas.reduce((worst,c)=> (c.delta < worst.delta ? c : worst)) : null;
+
   // ---- Conseils pour la semaine à venir — calculés sur les vrais chiffres, jamais un texte tout fait ----
   const tips = [];
   if(zeroDayAgents.length > 0){
@@ -8689,6 +8806,26 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   }
   if(zeroDayAgents.length === 0 && totalLate === 0 && totalAbsences === 0){
     tips.push(`Semaine propre sur la discipline jusqu'ici (aucun retard, aucune absence, aucune journée à 0) : dis-le clairement à l'équipe en ouverture du briefing, ça se mérite.`);
+  }
+  if(newTeamStats.length > 0){
+    tips.push(`${newTeamStats.length} agent${newTeamStats.length>1?'s':''} en intégration (moins d'1 mois) cette semaine : ${newTeamStats.map(r=>firstName(r.agent)).join(', ')}. ${seedPick(NEW_AGENT_WEEKLY_TIPS, weekDates[0]+'|newtip')}`);
+  }
+  if(weekComparisons){
+    if(teamDelta > 0){
+      tips.push(`L'équipe progresse par rapport à la semaine précédente (+${teamDelta} contrat${teamDelta>1?'s':''} au total) — dis-le clairement en ouverture du briefing, c'est un signal fort à entretenir.`);
+    } else if(teamDelta < 0){
+      tips.push(`L'équipe recule par rapport à la semaine précédente (${teamDelta} contrat${teamDelta<-1?'s':''} au total) — creuse pourquoi en briefing : un souci ponctuel, du moral, ou un vrai problème de fond ?`);
+    } else if(teamDelta === 0 && prevTotalTeamRealized > 0){
+      tips.push(`Exactement le même total que la semaine précédente (${totalTeamRealized} contrats) — stable, mais rappelle à l'équipe que l'objectif est de progresser, pas de stagner.`);
+    }
+    if(biggestImprover && biggestImprover.delta > 0){
+      tips.push(`${firstName(biggestImprover.agent)} progresse le plus par rapport à la semaine dernière (+${biggestImprover.delta} contrat${biggestImprover.delta>1?'s':''}) — une reconnaissance publique renforcera cette dynamique.`);
+    }
+    if(biggestDrop && biggestDrop.delta < 0 && biggestDrop.agent !== biggestImprover?.agent){
+      tips.push(`${firstName(biggestDrop.agent)} recule le plus par rapport à la semaine dernière (${biggestDrop.delta}) — un point individuel permettra de comprendre si c'est ponctuel ou plus profond.`);
+    }
+  } else {
+    tips.push(`Pas encore d'historique pour la semaine précédente — dès la semaine prochaine, ce bilan pourra comparer l'évolution semaine par semaine pour chaque agent.`);
   }
   tips.push(seedPick(CALL_CENTER_WEEKLY_TIPS, weekDates[0]));
 
@@ -8792,10 +8929,30 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   </div>`;
 
   // 4 groupes
-  html += `<div style="font-weight:700; font-size:13.5px; margin-bottom:10px; opacity:0.85;">Où en est chaque agent</div>`;
+  html += `<div style="font-weight:700; font-size:13.5px; margin-bottom:10px; opacity:0.85;">Où en est chaque agent${newTeamStats.length ? ` <span style="opacity:0.6; font-weight:500; font-size:12px;">(hors nouveaux agents, cf. section dédiée plus bas)</span>` : ''}</div>`;
   html += `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;">`;
   html += bucketCard('feliciter') + bucketCard('encourager') + bucketCard('motiver') + bucketCard('pression');
   html += `</div>`;
+
+  // Nouveaux agents (< 1 mois) — jamais comparés chiffre pour chiffre au reste de l'équipe (cf. note plus
+  // haut sur veteranTeamStats/teamAvg), avec un conseil concret et bienveillant par agent.
+  if(newTeamStats.length > 0){
+    html += `<div style="font-weight:700; font-size:13.5px; margin-bottom:10px; opacity:0.85;">🌱 Nouveaux agents (moins d'1 mois d'ancienneté)</div>`;
+    html += `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;">`;
+    html += newTeamStats.map(r=>{
+      const start = getAgentStartDate(r.agent);
+      const refDate = workingDates[workingDates.length-1];
+      const daysSinceStart = start ? Math.max(0, Math.round((new Date(refDate+'T00:00:00') - new Date(start+'T00:00:00')) / 86400000)) : null;
+      const tip = seedPick(NEW_AGENT_WEEKLY_TIPS, `${r.agent}|${weekDates[0]}`);
+      return `<div style="flex:1; min-width:240px; padding:16px; border-radius:14px; background:rgba(79,157,120,0.08); border:1px solid rgba(79,157,120,0.28); font-family:'Inter',sans-serif;">
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${r.agent}</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">${daysSinceStart != null ? `Depuis ${daysSinceStart} jour${daysSinceStart>1?'s':''}` : 'Date de début non réglée dans Réglages'}${r.zeroDays>=1 ? ` · ${r.zeroDays} jour${r.zeroDays>1?'s':''} à 0 (normal en phase d'apprentissage)` : ''}</div>
+        <div style="font-size:20px; font-weight:800; margin-bottom:8px;">${r.weekRealized} <span style="font-size:12px; color:var(--muted); font-weight:500;">contrat${r.weekRealized>1?'s':''} cette semaine</span></div>
+        <div style="font-size:12.5px; color:var(--text); line-height:1.5;">💡 ${tip}</div>
+      </div>`;
+    }).join('');
+    html += `</div>`;
+  }
 
   // Discipline
   html += `<div style="padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); margin-bottom:20px;">
@@ -8804,6 +8961,46 @@ async function buildWeeklyBriefingHtml(mondayOverride){
       ${totalLate} retard${totalLate>1?'s':''} · ${totalAbsences} absence${totalAbsences>1?'s':''} non justifiée${totalAbsences>1?'s':''}${totalJustified>0?` · ${totalJustified} absence${totalJustified>1?'s':''} justifiée${totalJustified>1?'s':''}`:''} · <b style="color:${cleanAgents===teamStats.length?'#4f9d78':'var(--text);'}">${cleanAgents}/${teamStats.length}</b> agent${teamStats.length>1?'s':''} sans aucun écart cette semaine.
     </div>
   </div>`;
+
+  // Évolution vs semaine précédente — absente si pas encore d'historique aussi loin (weekComparisons null),
+  // réapparaît d'elle-même semaine après semaine à mesure que l'historique de l'app s'accumule.
+  if(weekComparisons){
+    const sortedComparisons = [...weekComparisons].sort((a,b)=> (b.delta ?? -999) - (a.delta ?? -999));
+    html += `<div style="padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); margin-bottom:20px;">
+      <div style="font-weight:700; font-size:13.5px; margin-bottom:4px;">📈 Évolution vs semaine précédente</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Total équipe : <b style="color:var(--text);">${totalTeamRealized}</b> contrats (${prevTotalTeamRealized} la semaine d'avant) — ${teamDelta > 0 ? `<b style="color:#4f9d78;">+${teamDelta}</b>` : (teamDelta < 0 ? `<b style="color:#b5595c;">${teamDelta}</b>` : `<b>stable</b>`)}</div>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        ${sortedComparisons.map(c=>{
+          const deltaTxt = c.delta == null ? '<span style="color:var(--muted);">Pas de donnée la semaine dernière</span>' :
+            (c.delta > 0 ? `<span style="color:#4f9d78; font-weight:700;">↗ +${c.delta}</span>` : (c.delta < 0 ? `<span style="color:#b5595c; font-weight:700;">↘ ${c.delta}</span>` : `<span style="color:var(--muted);">➡ stable</span>`));
+          return `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:13px;">
+            <span style="font-weight:600;">${c.agent}${c.isNew?' <span style="font-size:10px; color:#4f9d78;">🌱 nouveau</span>':''}</span>
+            <span style="text-align:right;">${c.thisWeek} <span style="color:var(--muted); font-size:11.5px;">(${c.prevWeek ?? '—'} avant)</span> · ${deltaTxt}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  } else {
+    html += `<div style="padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); margin-bottom:20px;">
+      <div style="font-weight:700; font-size:13.5px; margin-bottom:4px;">📈 Évolution vs semaine précédente</div>
+      <div style="font-size:12.5px; color:var(--muted);">Pas encore d'historique pour la semaine précédente. Dès la semaine prochaine, cette section comparera automatiquement chaque agent (et le total équipe) à la semaine d'avant — rien à faire de ton côté, ça se remplit tout seul avec le temps.</div>
+    </div>`;
+  }
+
+  // Contexte du mois en cours — vue macro pour situer la semaine dans le mois (le mois de référence est
+  // celui du lundi de la semaine affichée, pas forcément le mois calendaire d'aujourd'hui si on consulte
+  // un vieux bilan).
+  {
+    const monthTotalTeam = teamAgents.reduce((s,a)=> s + (monthTotalsByAgent[a] || 0), 0);
+    const monthLabel = new Date(monday+'T00:00:00').toLocaleDateString('fr-FR', {month:'long', year:'numeric'});
+    const weekShareOfMonth = monthTotalTeam > 0 ? Math.round((totalTeamRealized / monthTotalTeam) * 100) : 0;
+    html += `<div style="padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); margin-bottom:20px;">
+      <div style="font-weight:700; font-size:13.5px; margin-bottom:8px;">📅 Contexte du mois en cours (${monthLabel})</div>
+      <div style="font-size:13px; color:var(--text); line-height:1.7;">
+        <b>${monthTotalTeam}</b> contrat${monthTotalTeam>1?'s':''} équipe réalisé${monthTotalTeam>1?'s':''} depuis le début du mois — cette semaine représente <b>${weekShareOfMonth}%</b> du total du mois jusqu'ici.
+      </div>
+    </div>`;
+  }
 
   // Conseils semaine à venir
   html += `<div style="padding:16px; border-radius:14px; background:rgba(184,147,90,0.08); border:1px solid rgba(184,147,90,0.28);">
@@ -9868,6 +10065,15 @@ function rankEmoji(rank, total){
   if(rank === 3) return '🥉';
   if(rank === total && total > 3) return '💀';
   return `#${rank}`;
+}
+
+// Couleur podium (contour de carte) pour le top 3 du classement — or/argent/bronze, mêmes teintes que
+// .arena-rank-badge. null au-delà du top 3 (pas de contour spécial, l'appelant garde son style par défaut).
+function podiumBorderColor(rank){
+  if(rank === 1) return '#ffd700';
+  if(rank === 2) return '#c0c0c0';
+  if(rank === 3) return '#cd7f32';
+  return null;
 }
 
 async function onArenaAgentChange(){
