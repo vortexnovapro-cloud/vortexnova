@@ -7,7 +7,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1228,6 +1227,7 @@ function tryDeviceGateAdmin(){
             <label style="margin-bottom:6px;">📎 Pièce jointe (certificat médical, justificatif...)</label>
             <div id="corrAttachmentCurrent" style="display:none; align-items:center; gap:8px; margin-bottom:8px;"></div>
             <input type="file" id="corrAttachmentFile" accept="image/*,.pdf" onchange="onCorrAttachmentPicked()">
+            <div class="section-sub" style="margin-top:6px;">Photo ou PDF, 500 Ko max (compresse/redimensionne la photo si besoin).</div>
             <div id="corrAttachmentStatus" class="section-sub" style="margin-top:6px;"></div>
           </div>
 
@@ -1727,7 +1727,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-10-r90';
+const APP_VERSION = '2026-08-10-r92';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2115,7 +2115,6 @@ const firebaseConfig = {
 };
 
 let db = null;
-let fbStorage = null;
 let firebaseReady = false;
 // Résolue tout de suite si Firebase n'est pas configuré ; sinon résolue seulement une fois la connexion
 // anonyme établie (ou tentée) — le reste de l'appli (loadConfig, etc.) attend cette promesse avant de
@@ -2126,7 +2125,6 @@ try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "REMPLACE_MOI"){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    fbStorage = firebase.storage();
     // ============================================================
     // 🔒 SÉCURITÉ — authentification anonyme obligatoire
     // ============================================================
@@ -3582,25 +3580,56 @@ function addCorrFreeBreakRow(){ corrFreeBreakRows.push({ start:'', end:'' }); re
 function removeCorrFreeBreakRow(i){ corrFreeBreakRows.splice(i,1); renderCorrFreeBreakEditor(); }
 
 // ---- Pièce jointe (certificat médical, justificatif...) sur une absence ----
-// Stockée dans Firebase Storage (bucket déjà configuré dans firebaseConfig), sous
-// absence-attachments/{agent}/{dateStr}/{timestamp}_{nomFichier} — seule l'URL de téléchargement et le
-// nom du fichier sont écrits sur le log Firestore (attachmentUrl / attachmentName / attachmentPath).
-const CORR_ATTACHMENT_MAX_MB = 10;
-let corrCurrentAttachment = null; // { url, name, path } du fichier déjà enregistré pour le jour affiché
+// Le projet Firebase est resté sur le forfait gratuit (Spark) — Firebase Storage y est indisponible sans
+// passer au forfait payant (Blaze). Choix retenu : le fichier est encodé en base64 et écrit DIRECTEMENT
+// dans le log Firestore du jour (attachmentData / attachmentType / attachmentName), comme le reste des
+// données de pointage — aucune facturation, aucune config supplémentaire. Contrepartie : taille limitée
+// (un document Firestore ne dépasse pas 1 Mo, base64 gonfle le fichier d'environ 33% ) — largement
+// suffisant pour une photo ou un scan PDF d'un certificat médical.
+const CORR_ATTACHMENT_MAX_KB = 500;
+let corrCurrentAttachment = null; // { data (base64), type (mime), name } déjà enregistré pour le jour affiché
+let corrPendingAttachment = null; // nouveau fichier choisi, pas encore enregistré (même forme)
 let corrAttachmentPendingRemove = false;
 
-function onCorrAttachmentPicked(){
+function fileToBase64(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = () => {
+      // reader.result = "data:<mime>;base64,<données>" — on ne garde que la partie après la virgule.
+      const commaIdx = reader.result.indexOf(',');
+      resolve(commaIdx >= 0 ? reader.result.slice(commaIdx + 1) : reader.result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function onCorrAttachmentPicked(){
   const input = document.getElementById('corrAttachmentFile');
   const status = document.getElementById('corrAttachmentStatus');
   const file = input.files[0];
+  corrPendingAttachment = null;
   if(!file){ status.textContent = ''; return; }
-  if(file.size > CORR_ATTACHMENT_MAX_MB * 1024 * 1024){
-    status.textContent = `⚠️ Fichier trop lourd (max ${CORR_ATTACHMENT_MAX_MB} Mo) — choisis un autre fichier.`;
+  if(file.size > CORR_ATTACHMENT_MAX_KB * 1024){
+    status.textContent = `⚠️ Fichier trop lourd (max ${CORR_ATTACHMENT_MAX_KB} Ko) — choisis une photo/scan plus léger.`;
     input.value = '';
     return;
   }
-  corrAttachmentPendingRemove = false;
-  status.textContent = `Sera enregistré avec le jour : ${file.name} (${(file.size/1024/1024).toFixed(1)} Mo)`;
+  status.textContent = 'Lecture du fichier…';
+  try{
+    const data = await fileToBase64(file);
+    corrPendingAttachment = { data, type: file.type || 'application/octet-stream', name: file.name };
+    corrAttachmentPendingRemove = false;
+    status.textContent = `Sera enregistré avec le jour : ${file.name} (${(file.size/1024).toFixed(0)} Ko)`;
+  }catch(e){
+    console.error('Lecture pièce jointe échouée:', e);
+    status.textContent = "⚠️ Impossible de lire ce fichier — choisis-en un autre.";
+    input.value = '';
+  }
+}
+
+function corrAttachmentHref(att){
+  return `data:${att.type || 'application/octet-stream'};base64,${att.data}`;
 }
 
 function renderCorrAttachmentCurrent(){
@@ -3608,7 +3637,7 @@ function renderCorrAttachmentCurrent(){
   if(!box) return;
   if(corrCurrentAttachment && !corrAttachmentPendingRemove){
     box.style.display = 'flex';
-    box.innerHTML = `<a href="${corrCurrentAttachment.url}" target="_blank" rel="noopener" style="color:var(--accent);">📎 ${corrCurrentAttachment.name || 'Pièce jointe'}</a>
+    box.innerHTML = `<a href="${corrAttachmentHref(corrCurrentAttachment)}" target="_blank" rel="noopener" style="color:var(--accent);">📎 ${corrCurrentAttachment.name || 'Pièce jointe'}</a>
       <button type="button" onclick="markCorrAttachmentForRemoval()" title="Supprimer" style="color:var(--red);">🗑️ Supprimer</button>`;
   } else {
     box.style.display = 'none';
@@ -3618,6 +3647,8 @@ function renderCorrAttachmentCurrent(){
 
 function markCorrAttachmentForRemoval(){
   corrAttachmentPendingRemove = true;
+  corrPendingAttachment = null;
+  document.getElementById('corrAttachmentFile').value = '';
   document.getElementById('corrAttachmentStatus').textContent = 'La pièce jointe sera supprimée à l\'enregistrement du jour.';
   renderCorrAttachmentCurrent();
 }
@@ -3639,7 +3670,7 @@ async function loadDayCorrectionForm(){
     document.getElementById('corrAbsenceComment').value = '';
     document.getElementById('corrAttachmentFile').value = '';
     document.getElementById('corrAttachmentStatus').textContent = '';
-    corrCurrentAttachment = null; corrAttachmentPendingRemove = false;
+    corrCurrentAttachment = null; corrPendingAttachment = null; corrAttachmentPendingRemove = false;
     renderCorrAttachmentCurrent();
     return;
   }
@@ -3654,7 +3685,8 @@ async function loadDayCorrectionForm(){
   document.getElementById('corrAbsenceComment').value = log.absenceComment || '';
   document.getElementById('corrAttachmentFile').value = '';
   document.getElementById('corrAttachmentStatus').textContent = '';
-  corrCurrentAttachment = log.attachmentUrl ? { url: log.attachmentUrl, name: log.attachmentName, path: log.attachmentPath } : null;
+  corrCurrentAttachment = log.attachmentData ? { data: log.attachmentData, type: log.attachmentType, name: log.attachmentName } : null;
+  corrPendingAttachment = null;
   corrAttachmentPendingRemove = false;
   renderCorrAttachmentCurrent();
   renderCorrBreaksEditor(extractBreakPairs(log.events));
@@ -3736,48 +3768,28 @@ async function saveDayCorrection(){
     if(justifiedAbsence) logToSave.justifiedAbsence = justifiedAbsence;
     if(absenceComment) logToSave.absenceComment = absenceComment;
 
-    // Pièce jointe : upload d'un nouveau fichier, suppression demandée, ou conservation de l'existant —
-    // saveDayLog remplace tout le log à chaque sauvegarde, donc une pièce jointe déjà présente doit être
-    // explicitement reportée dans logToSave sous peine d'être effacée silencieusement.
-    const attachmentFile = document.getElementById('corrAttachmentFile').files[0];
-    const attachmentStatus = document.getElementById('corrAttachmentStatus');
-    if(attachmentFile){
-      if(!fbStorage){
-        alert("Firebase Storage n'est pas disponible — la pièce jointe n'a pas pu être envoyée. Le reste du jour a bien été enregistré.");
-      } else {
-        try{
-          if(attachmentStatus) attachmentStatus.textContent = 'Envoi de la pièce jointe…';
-          const path = `absence-attachments/${agent}/${dateStr}/${Date.now()}_${attachmentFile.name}`;
-          const ref = fbStorage.ref(path);
-          await ref.put(attachmentFile);
-          const url = await ref.getDownloadURL();
-          if(corrCurrentAttachment && corrCurrentAttachment.path){
-            fbStorage.ref(corrCurrentAttachment.path).delete().catch(()=>{});
-          }
-          logToSave.attachmentUrl = url;
-          logToSave.attachmentName = attachmentFile.name;
-          logToSave.attachmentPath = path;
-          if(attachmentStatus) attachmentStatus.textContent = '';
-        }catch(e){
-          console.error('Upload pièce jointe échoué:', e);
-          alert("Échec de l'envoi de la pièce jointe (vérifie les règles de sécurité Firebase Storage). Le reste du jour a bien été enregistré.");
-        }
-      }
+    // Pièce jointe : encodée en base64 et écrite directement sur le log Firestore (pas de Firebase
+    // Storage — forfait gratuit du projet). saveDayLog remplace tout le log à chaque sauvegarde, donc une
+    // pièce jointe déjà présente doit être explicitement reportée dans logToSave sous peine d'être
+    // effacée silencieusement.
+    if(corrPendingAttachment){
+      logToSave.attachmentData = corrPendingAttachment.data;
+      logToSave.attachmentType = corrPendingAttachment.type;
+      logToSave.attachmentName = corrPendingAttachment.name;
     } else if(corrAttachmentPendingRemove){
-      if(corrCurrentAttachment && corrCurrentAttachment.path && fbStorage){
-        fbStorage.ref(corrCurrentAttachment.path).delete().catch(()=>{});
-      }
       // Champs volontairement omis de logToSave : la pièce jointe est bien supprimée du jour.
     } else if(corrCurrentAttachment){
-      logToSave.attachmentUrl = corrCurrentAttachment.url;
+      logToSave.attachmentData = corrCurrentAttachment.data;
+      logToSave.attachmentType = corrCurrentAttachment.type;
       logToSave.attachmentName = corrCurrentAttachment.name;
-      logToSave.attachmentPath = corrCurrentAttachment.path;
     }
 
     await saveDayLog(agent, dateStr, logToSave);
-    corrCurrentAttachment = logToSave.attachmentUrl ? { url: logToSave.attachmentUrl, name: logToSave.attachmentName, path: logToSave.attachmentPath } : null;
+    corrCurrentAttachment = logToSave.attachmentData ? { data: logToSave.attachmentData, type: logToSave.attachmentType, name: logToSave.attachmentName } : null;
+    corrPendingAttachment = null;
     corrAttachmentPendingRemove = false;
     document.getElementById('corrAttachmentFile').value = '';
+    document.getElementById('corrAttachmentStatus').textContent = '';
     renderCorrAttachmentCurrent();
   }
 
@@ -4464,9 +4476,10 @@ function absenceCommentTitle(log){
 // Petit lien 📎 cliquable vers la pièce jointe (certificat médical, justificatif...) éventuellement
 // enregistrée sur ce jour — affiché juste après le badge d'absence, partout où il apparaît.
 function absenceAttachmentLinkHtml(log){
-  if(!log || !log.attachmentUrl) return '';
+  if(!log || !log.attachmentData) return '';
   const name = log.attachmentName ? String(log.attachmentName).replace(/&/g,'&amp;').replace(/"/g,'&quot;') : 'pièce jointe';
-  return ` <a href="${log.attachmentUrl}" target="_blank" rel="noopener" title="Voir la pièce jointe : ${name}" style="color:var(--accent);">📎</a>`;
+  const href = `data:${log.attachmentType || 'application/octet-stream'};base64,${log.attachmentData}`;
+  return ` <a href="${href}" target="_blank" rel="noopener" title="Voir la pièce jointe : ${name}" style="color:var(--accent);">📎</a>`;
 }
 
 // Badge visuel selon le nombre de contrats du jour — pour repérer d'un coup d'œil qui a besoin d'aide
@@ -4871,7 +4884,7 @@ async function renderReport(){
       const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
       const ev = evaluateDay(log.events, dateStr, log.freeBreakBonusMin || 0);
       const lockouts = extractLockouts(log.events);
-      return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, attachmentUrl: log.attachmentUrl || null, attachmentName: log.attachmentName || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
+      return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, attachmentData: log.attachmentData || null, attachmentType: log.attachmentType || null, attachmentName: log.attachmentName || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
     }));
 
   let html = `<table><thead><tr>
@@ -6416,7 +6429,8 @@ async function buildTodayProblemRow(agent, dateStr, board){
   const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
   const justifiedAbsence = log.justifiedAbsence || null;
   const absenceComment = log.absenceComment || null;
-  const attachmentUrl = log.attachmentUrl || null;
+  const attachmentData = log.attachmentData || null;
+  const attachmentType = log.attachmentType || null;
   const attachmentName = log.attachmentName || null;
   const hasAnyEvent = log.events.length > 0;
   // BUG CORRIGÉ : le panneau Alertes ne signalait jamais un agent totalement absent (zéro pointage) —
@@ -6451,7 +6465,7 @@ if(!justifiedAbsence && isWorkingDay(dateStr)){
   // mais pas de départ.
   const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr) && isWorkingDay(dateStr);
   const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut;
-  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, attachmentUrl, attachmentName, isAbsent, missingBreakReturn, missingClockOut, problem, hasAnyEvent, isIndep: false };
+  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, attachmentData, attachmentType, attachmentName, isAbsent, missingBreakReturn, missingClockOut, problem, hasAnyEvent, isIndep: false };
 }
 
 // Clic sur une ligne d'alerte (ou sur la notification correspondante) → ouvre directement Admin →
@@ -8283,13 +8297,14 @@ async function buildDailyBriefingHtml(baseRows){
   // Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
   // réalisé est > 0. C'est le repère qui compte le plus pour le boss (peur n°1 : une journée à 0).
   // Weekend/jour férié : `historyFull` (via lastNWorkingDaysBefore) ne contient déjà que des jours ouvrés,
-  // donc la boucle en dessous ne casse jamais la série sur un jour non travaillé — MAIS le jour courant
-  // (todayRealized) est toujours à 0 un weekend/férié puisque personne ne travaille, donc SI on l'utilisait
-  // comme jour de départ, la série retomberait à tort à 0 chaque samedi. isTodayWorkingDay évite ça : les
-  // jours non travaillés n'entrent jamais dans le calcul, la série reste figée à sa valeur du dernier jour
-  // ouvré jusqu'à ce que l'agent reprenne le travail.
-  function computeZeroStreak(todayRealized, historyFull, isTodayWorkingDay){
-    if(!isTodayWorkingDay){
+  // donc la boucle en dessous ne casse jamais la série sur un jour non travaillé. ET ce panneau est le
+  // "Conseil DU MATIN" : tant que la journée n'est pas terminée (isDayOverForMessage), le "0" du jour n'est
+  // qu'un compteur pas encore rempli, pas un vrai échec — la série doit donc rester celle des jours ouvrés
+  // PASSÉS (déjà joués) pour que l'agent voie "tu as une série de 4, ne la casse pas aujourd'hui" dès le
+  // matin, au lieu de voir la flamme disparaître entre minuit et son premier contrat du jour. Seul un jour
+  // ouvré déjà TERMINÉ compte le résultat du jour lui-même dans la série (todayCounts).
+  function computeZeroStreak(todayRealized, historyFull, todayCounts){
+    if(!todayCounts){
       let streak = 0;
       for(const day of historyFull){
         if((day.realized||0) > 0) streak++; else break;
@@ -8307,10 +8322,11 @@ async function buildDailyBriefingHtml(baseRows){
   // Série "objectif du jour atteint" — même principe que la série "sans finir à 0" mais côté positif :
   // combien de jours ouvrés d'affilée l'agent a atteint (ou dépassé) l'objectif qu'il s'était fixé le
   // matin. Ne compte que les jours où un objectif avait réellement été fixé (objectif=0 = pas de repère,
-  // ignoré plutôt que compté comme un échec ou une réussite).
-  function computeObjectiveStreak(todayRealized, todayObjective, historyFull, isTodayWorkingDay){
+  // ignoré plutôt que compté comme un échec ou une réussite). Même règle "Conseil du matin" que ci-dessus :
+  // tant que la journée n'est pas terminée, on affiche la série des jours déjà joués.
+  function computeObjectiveStreak(todayRealized, todayObjective, historyFull, todayCounts){
     const dayHits = day => (day.objective||0) > 0 && (day.realized||0) >= (day.objective||0);
-    if(!isTodayWorkingDay){
+    if(!todayCounts){
       let streak = 0;
       for(const day of historyFull){
         if(dayHits(day)) streak++; else break;
@@ -8337,10 +8353,13 @@ async function buildDailyBriefingHtml(baseRows){
     const agentDaysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
     const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, agentDaysElapsed, remainingDays, rankInfo);
     const allLines = [...(monthlyLines || [])].filter(Boolean);
-    const todayIsWorkingDay = isWorkingDay(dateStr);
-    const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull, todayIsWorkingDay);
+    // todayCounts : le jour du jour n'entre dans le calcul de la série que si c'est un jour ouvré ET qu'il
+    // est déjà terminé (sinon le "0 contrat" du matin casserait la flamme avant même que la journée ait
+    // commencé — voir commentaire de computeZeroStreak plus haut).
+    const todayCounts = isWorkingDay(dateStr) && isDayOverForMessage(dateStr);
+    const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull, todayCounts);
     const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
-    const objectiveStreak = computeObjectiveStreak(r.todayRealized, r.todayObjective, r.historyFull, todayIsWorkingDay);
+    const objectiveStreak = computeObjectiveStreak(r.todayRealized, r.todayObjective, r.historyFull, todayCounts);
     const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
     return `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:17px; border-radius:17px; background:var(--panel2); border:1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}; box-shadow:0 2px 10px rgba(0,0,0,0.18);">
       <div style="display:flex; align-items:center; gap:9px; margin-bottom:12px;">
