@@ -2074,7 +2074,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-10-r96';
+const APP_VERSION = '2026-08-10-r97';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -6292,9 +6292,15 @@ async function exportObjectifSnapshotImage(hq){
     // Largeur dynamique selon le nombre d'agents : plus il y en a, plus l'image s'étale en largeur
     // (plusieurs colonnes) plutôt qu'en hauteur — pour éviter la longue photo verticale illisible sans
     // zoomer une fois partagée sur WhatsApp. On vise un rendu proche du carré.
+    // ═══ QUALITÉ WHATSAPP : DONNER PLUS DE PIXELS AU TEXTE ═══
+    // Le facteur limitant n'est pas la définition de l'image, c'est la place occupée par chaque carte
+    // à l'intérieur. Avec 6 colonnes étroites, le texte ne représente qu'une poignée de pixels de
+    // large et devient illisible après la compression de WhatsApp. On élargit donc les cartes (390 px
+    // au lieu de 296) et on limite à 4 colonnes : l'image est plus haute, mais chaque mot est écrit
+    // avec bien plus de pixels — et c'est ça qui se lit sur un téléphone.
     const cardCount = source.querySelectorAll('.objsnap-card').length || 1;
-    const cols = Math.max(2, Math.min(6, Math.round(Math.sqrt(cardCount * 1.7))));
-    const wrapWidth = cols * 296 + 48;
+    const cols = Math.max(2, Math.min(4, Math.round(Math.sqrt(cardCount * 1.1))));
+    const wrapWidth = cols * 390 + 56;
 
     const dateForFile = mode === 'single'
       ? (document.getElementById('objSnapDate')?.value || todayStr())
@@ -6340,9 +6346,15 @@ async function exportBriefingImage(sourceId, btnId, titleText, badgeText, filena
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Génération...'; }
 
   try{
+    // ═══ QUALITÉ WHATSAPP : DONNER PLUS DE PIXELS AU TEXTE ═══
+    // Le facteur limitant n'est pas la définition de l'image, c'est la place occupée par chaque carte
+    // à l'intérieur. Avec 6 colonnes étroites, le texte ne représente qu'une poignée de pixels de
+    // large et devient illisible après la compression de WhatsApp. On élargit donc les cartes (390 px
+    // au lieu de 296) et on limite à 4 colonnes : l'image est plus haute, mais chaque mot est écrit
+    // avec bien plus de pixels — et c'est ça qui se lit sur un téléphone.
     const cardCount = source.querySelectorAll('.objsnap-card').length || 1;
-    const cols = Math.max(2, Math.min(6, Math.round(Math.sqrt(cardCount * 1.7))));
-    const wrapWidth = cols * 296 + 48;
+    const cols = Math.max(2, Math.min(4, Math.round(Math.sqrt(cardCount * 1.1))));
+    const wrapWidth = cols * 390 + 56;
 
     await captureBlockToImage({
       innerHTML: source.innerHTML,
@@ -6601,10 +6613,28 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
 
   // dayOverDayComment est désormais asynchrone (elle regarde l'historique du mois pour graduer le ton
   // des "0 contrat") — on précalcule tous les commentaires en parallèle avant la boucle d'affichage.
+  // ═══ LE COMMENTAIRE DU JOUR A BESOIN DE CONTEXTE ═══
+  // Sans lui, on comparait bêtement aujourd'hui à hier : une agente qui fait 8 contrats, meilleur
+  // score de l'équipe, 48 pour un objectif de 30 et première du classement, s'entendait dire qu'elle
+  // était « un peu en retrait » parce qu'elle en avait fait 9 la veille. Absurde, et démotivant.
+  // On transmet donc de quoi juger la journée pour ce qu'elle vaut réellement : la moyenne de
+  // l'équipe ce jour-là, le meilleur score du jour, le rang, l'avancement sur l'objectif du mois.
+  const activeDay = combinedDayRows.filter(r => (r.realized || 0) > 0);
+  const teamAvgToday = activeDay.length
+    ? combinedDayRows.reduce((s, r) => s + (r.realized || 0), 0) / combinedDayRows.length : 0;
+  const bestToday = combinedDayRows.reduce((m, r) => Math.max(m, r.realized || 0), 0);
+
   const dayOverDayMap = {};
   await Promise.all(combinedDayRows.map(async r=>{
     const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
-    dayOverDayMap[r.agent] = await dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison, dateStr);
+    const mo = monthlyByAgent[r.agent] || {};
+    dayOverDayMap[r.agent] = await dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison, dateStr, {
+      rank: (allRankByAgent[r.agent] || {}).rank,
+      total: (allRankByAgent[r.agent] || {}).total,
+      teamAvgToday, bestToday,
+      monthlyRealized: mo.monthlyRealized || 0,
+      mini: mo.mini || 0
+    });
   }));
 
   combinedDayRows.forEach(r=>{
@@ -8379,14 +8409,26 @@ function workingDaysElapsedThrough(dateStr){
   }
   return count;
 }
+// ⚠️ BUG CORRIGÉ — les rythmes affichés étaient absurdes.
+// Cette fonction comptait les jours ouvrés depuis la DATE D'EMBAUCHE de l'agent jusqu'à aujourd'hui,
+// tous mois confondus. Or elle sert à diviser les contrats DU MOIS. Une agente à 48 contrats sur le
+// mois se voyait donc annoncer « tu es à 0,3 contrat/jour » — 48 divisé par les ~160 jours ouvrés
+// écoulés depuis son arrivée. Un chiffre faux, et humiliant pour quelqu'un qui domine le classement.
+// On ne compte plus que les jours ouvrés écoulés DANS LE MOIS de la date de référence, en partant
+// de l'arrivée de l'agent s'il est arrivé en cours de mois.
 function workingDaysElapsedForAgent(agent, refDateStr){
+  const ref = refDateStr || todayStr();
+  const debutMois = ref.slice(0, 8) + '01';
   const start = getAgentStartDate(agent);
-  if(!start) return workingDaysElapsedThrough(refDateStr);
+  // Le point de départ est le 1er du mois, ou l'arrivée de l'agent si elle est plus tardive.
+  const from = (start && start > debutMois) ? start : debutMois;
+  if(from > ref) return 0;
+
   let count = 0;
-  let cur = new Date(start + 'T00:00:00');
-  const end = new Date(refDateStr + 'T00:00:00');
+  let cur = new Date(from + 'T00:00:00');
+  const end = new Date(ref + 'T00:00:00');
   let guard = 0;
-  while(cur <= end && guard < 370){
+  while(cur <= end && guard < 40){
     const ds = todayStr(cur);
     if(isWorkingDay(ds)) count++;
     cur.setDate(cur.getDate()+1);
@@ -8469,7 +8511,7 @@ function genderPick(agentName, masc, fem){
 // auprès de sa propre équipe. Ces deux helpers choisissent le bon interlocuteur selon le rôle, et
 // sont utilisés partout où un commentaire propose d'aller voir quelqu'un.
 function escalationWith(agentName){
-  return isSupervisor(agentName) ? 'avec le patron' : 'avec ton superviseur';
+  return isSupervisor(agentName) ? 'avec ton supérieur hiérarchique' : 'avec ton superviseur';
 }
 // Rappel de posture pour un superviseur : son compteur est lu par toute son équipe, l'exemplarité
 // fait partie du poste. Chaîne vide pour un agent normal (rien à ajouter).
@@ -8768,14 +8810,16 @@ async function countZeroDaysThisMonthSoFar(agentName, refDateStr){
 // comparer "0 aujourd'hui vs hier" à la prise de poste n'a aucun sens, la journée vient de commencer.
 // zeroCount = combientième 0 du mois c'est pour cet agent (1er/2e/3e+) — module la sévérité du ton.
 // newAgent = agent en poste depuis moins d'un mois — toujours plus indulgent, quel que soit zeroCount.
-async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr){
+async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr, ctx){
   if(yesterdayRealized == null) return null;
   if(todayRealized === 0 && (nowHour == null || nowHour < 11)) return null;
+  const c = ctx || {};
   const SAGE = '#4f9d78', SAGE_BG = 'rgba(79,157,120,0.12)';
   const SLATE = '#7885ad', SLATE_BG = 'rgba(120,133,173,0.14)';
   const TERRACOTTA = '#b5595c', TERRACOTTA_BG = 'rgba(181,89,92,0.12)';
   const CRITICAL = '#a83a3f', CRITICAL_BG = 'rgba(168,58,63,0.16)';
   const AMBER2 = '#b98a42', AMBER2_BG = 'rgba(185,138,66,0.12)';
+  const GOLD_DOD = '#b8935a', GOLD_DOD_BG = 'rgba(184,147,90,0.14)';
 
   // LE scénario à éviter à tout prix : une journée complète à 0 contrat. Le ton se gradue désormais
   // selon deux choses : l'ancienneté (un agent nouveau — moins d'1 mois — reste toujours accompagné avec
@@ -8823,42 +8867,91 @@ async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, no
     ], `${agentName}|zero|3plus|${refDateStr || todayStr()}`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
   }
 
-  if(todayRealized > yesterdayRealized){
-    const diff = todayRealized - yesterdayRealized;
+  // ═══════════════════════════════════════════════════════════════
+  // JUGER LA JOURNÉE POUR CE QU'ELLE VAUT, PAS SEULEMENT FACE À HIER
+  // ═══════════════════════════════════════════════════════════════
+  // Comparer aujourd'hui à hier tout seul produit des messages faux et blessants : 8 contrats après
+  // une journée à 9 devient « un peu en retrait », alors que c'est le meilleur score de l'équipe.
+  // On regarde donc d'abord OÙ SE SITUE LA JOURNÉE — meilleur score du jour, au-dessus de la moyenne
+  // d'équipe, objectif du mois déjà atteint — et la variation face à hier ne devient un reproche que
+  // si la journée est réellement faible. Une baisse d'un contrat sur une grosse journée n'en est pas
+  // une : c'est du bruit.
+  const diff = todayRealized - yesterdayRealized;
+  const avg = c.teamAvgToday || 0;
+  const best = c.bestToday || 0;
+  const estMeilleur = best > 0 && todayRealized >= best;
+  const bienAuDessus = avg > 0 && todayRealized >= avg * 1.3;
+  const auDessus = avg > 0 && todayRealized >= avg;
+  const objAtteint = (c.mini || 0) > 0 && (c.monthlyRealized || 0) >= c.mini;
+  const rangTxt = c.rank === 1 ? '1er de la journée' : (c.rank ? `${c.rank}e de la journée` : null);
+
+  // ---- 1) Journée forte : on félicite, quoi qu'ait donné la veille ----
+  if(estMeilleur && todayRealized > 0){
     return { text: seedPick([
-      `Progression : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (+${diff}). Continue sur cette lancée !`,
+      `${todayRealized} contrats, meilleur score de l'équipe aujourd'hui. C'est toi qui tires tout le monde vers le haut.`,
+      genderPick(agentName,
+        `Meilleur score du jour avec ${todayRealized} contrats. Personne n'a fait mieux — tu peux être fier de cette journée.`,
+        `Meilleur score du jour avec ${todayRealized} contrats. Personne n'a fait mieux — tu peux être fière de cette journée.`),
+      `${todayRealized} contrats : la meilleure journée de l'équipe. ${objAtteint ? 'Et ton objectif du mois est déjà bouclé.' : 'Continue comme ça et le mois est plié.'}`,
+      `Personne devant toi aujourd'hui (${todayRealized} contrats). Ce niveau-là, c'est ce qui fait la différence sur un mois.`
+    ], `${agentName}|best|${refDateStr || todayStr()}`), color: GOLD_DOD, bg: GOLD_DOD_BG, critical: false };
+  }
+
+  if(bienAuDessus && todayRealized > 0){
+    return { text: seedPick([
+      `Belle journée : ${todayRealized} contrats, nettement au-dessus de la moyenne de l'équipe${rangTxt ? ` (${rangTxt})` : ''}.`,
+      `${todayRealized} contrats aujourd'hui — bien au-dessus de ce que fait l'équipe en moyenne. Journée solide.`,
+      `Grosse journée à ${todayRealized} contrats. ${objAtteint ? 'Objectif du mois déjà en poche, tout ce qui vient maintenant est du bonus.' : 'À ce rythme, ton objectif du mois arrive vite.'}`
+    ], `${agentName}|high|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
+  }
+
+  // ---- 2) Progression réelle par rapport à hier ----
+  if(diff > 0){
+    return { text: seedPick([
+      `Ça monte : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (+${diff}). Continue sur cette lancée !`,
       `+${diff} par rapport à hier (${todayRealized} contre ${yesterdayRealized}). Tu prends la bonne direction, garde ce rythme !`,
-      `Ça monte : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Beau sursaut, ne relâche rien !`,
-      `+${diff} vs hier — tu montes en régime comme il faut. Cette dynamique-là, on la garde !`,
-      `Hier c'était ${yesterdayRealized}, aujourd'hui ${todayRealized}. La courbe monte, ton compte en banque te dit merci.`,
-      `${yesterdayRealized} hier, ${todayRealized} aujourd'hui : tu as trouvé quelque chose qui marche. Note-le pendant que c'est frais, et refais-le demain.`,
-      `+${diff} par rapport à hier. Ce n'est pas de la chance quand ça monte deux jours de suite — c'est du métier.`,
+      `${yesterdayRealized} hier, ${todayRealized} aujourd'hui : tu as trouvé quelque chose qui marche. Refais-le demain.`,
       genderPick(agentName,
         `${todayRealized} contre ${yesterdayRealized} hier. Tu es clairement lancé, ne casse pas ce rythme maintenant.`,
-        `${todayRealized} contre ${yesterdayRealized} hier. Tu es clairement lancée, ne casse pas ce rythme maintenant.`
-      )
-    ], `${agentName}|up|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical:false };
+        `${todayRealized} contre ${yesterdayRealized} hier. Tu es clairement lancée, ne casse pas ce rythme maintenant.`)
+    ], `${agentName}|up|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
   }
-  if(todayRealized === yesterdayRealized){
+
+  // ---- 3) Même total qu'hier ----
+  if(diff === 0){
+    if(auDessus || objAtteint){
+      return { text: seedPick([
+        `${todayRealized} contrats, comme hier — et toujours au-dessus de la moyenne. Cette régularité, c'est précieux.`,
+        `Deux journées de suite à ${todayRealized}. Tenir ce niveau jour après jour vaut mieux qu'un coup d'éclat isolé.`
+      ], `${agentName}|flatok|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
+    }
     return { text: seedPick([
       `Rythme régulier : ${todayRealized} aujourd'hui, comme hier. Stable — maintenant, essaie de passer un cap.`,
-      `${todayRealized} aujourd'hui, pareil qu'hier. C'est stable, mais stable n'a jamais gagné un classement.`,
-      `Même total qu'hier (${todayRealized}). Correct, mais tu peux clairement faire mieux.`,
       `${todayRealized} deux jours de suite : tu tiens la cadence. Maintenant il faut la casser, dans le bon sens.`,
-      `Copié-collé d'hier (${todayRealized}). Solide, mais la routine ne fait jamais gagner de classement.`,
-      `${todayRealized} hier, ${todayRealized} aujourd'hui. La régularité est une qualité rare — sers-t'en comme d'un socle, pas comme d'un plafond.`,
-      `Tu ne baisses pas, c'est déjà ça. Maintenant trouve le petit truc qui te fait passer au-dessus : un créneau d'appel, une relance de plus.`,
-      `Deux fois ${todayRealized}. Tu es dans ta zone de confort — c'est exactement là que se joue la différence avec le mois prochain.`
-    ], `${agentName}|flat|${refDateStr || todayStr()}`), color: SLATE, bg: SLATE_BG, critical:false };
+      `Copié-collé d'hier (${todayRealized}). Solide, mais la routine ne fait jamais gagner de classement.`
+    ], `${agentName}|flat|${refDateStr || todayStr()}`), color: SLATE, bg: SLATE_BG, critical: false };
   }
-  const diff = yesterdayRealized - todayRealized;
+
+  // ---- 4) En baisse — mais on ne crie pas au loup sur une journée qui reste bonne ----
+  const baisse = -diff;
+  if(auDessus || objAtteint){
+    return { text: seedPick([
+      `${todayRealized} contrats aujourd'hui, ${baisse} de moins qu'hier — mais tu restes au-dessus de la moyenne. Rien d'inquiétant.`,
+      `Légère baisse face à hier (${todayRealized} contre ${yesterdayRealized}), sur une journée qui reste bonne. ${objAtteint ? 'Ton objectif du mois est déjà sécurisé.' : 'Rien à corriger, garde le cap.'}`,
+      `${todayRealized} aujourd'hui. Un peu moins qu'hier, mais au-dessus de ce que fait l'équipe — une journée normale, pas un signal.`
+    ], `${agentName}|downok|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
+  }
+  if(baisse <= 1){
+    return { text: seedPick([
+      `${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Un contrat d'écart, ça ne veut rien dire — vise un peu plus haut demain.`,
+      `Presque le même total qu'hier (${todayRealized}). Rien d'alarmant, mais il y a de la place pour mieux.`
+    ], `${agentName}|down1|${refDateStr || todayStr()}`), color: SLATE, bg: SLATE_BG, critical: false };
+  }
   return { text: seedPick([
-    `Un peu en retrait : ${todayRealized} aujourd'hui contre ${yesterdayRealized} hier (-${diff}). Repars fort demain !`,
-    `-${diff} par rapport à hier (${todayRealized} contre ${yesterdayRealized}). Ce n'est pas dramatique, mais il faut vite redresser la barre.`,
-    `Baisse aujourd'hui (${todayRealized} contre ${yesterdayRealized} hier). Analyse ce qui a coincé et reviens plus fort.`,
-    `-${diff} vs hier. Un jour plus calme, ça arrive — l'essentiel c'est de ne pas enchaîner deux comme ça.`,
-    `${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Petit trou d'air — on le rattrape demain, pas dans une semaine.`
-  ], `${agentName}|down`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical:false };
+    `En retrait aujourd'hui : ${todayRealized} contre ${yesterdayRealized} hier (-${baisse}). Repars fort demain, dès les premiers appels.`,
+    `${baisse} contrats de moins qu'hier. Regarde ce qui a changé dans ta journée — l'heure de démarrage, le nombre d'appels — et corrige ça demain.`,
+    `Journée en dessous d'hier (${todayRealized} contre ${yesterdayRealized}). Une journée creuse arrive à tout le monde ; deux d'affilée, c'est une tendance.`
+  ], `${agentName}|down|${refDateStr || todayStr()}`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical: false };
 }
 
 // Petit historique visuel des derniers jours ouvrés (barres + chiffres), lu de gauche (le plus ancien) à
@@ -12900,8 +12993,11 @@ try{
 //     lisible au zoom. Utile pour un tableau de paie dense.
 // ============================================================
 
-const WA_TARGET_WIDTH = 1600;
-const WA_TARGET_WIDTH_HQ = 2400;
+// Largeur finale visée. WhatsApp ré-encode toute image envoyée en photo ; viser un peu au-dessus de
+// ce qu'il conserve donne un texte plus net qu'en collant pile à sa limite, sans déclencher de
+// redimensionnement brutal. La version « document » n'est jamais recompressée : on peut y aller franchement.
+const WA_TARGET_WIDTH = 1900;
+const WA_TARGET_WIDTH_HQ = 3000;
 
 async function ensureHtml2Canvas(){
   if(typeof html2canvas !== 'undefined') return;
@@ -12956,7 +13052,9 @@ async function captureBlockToImage(opts){
   await ensureHtml2Canvas();
 
   const wrap = document.createElement('div');
-  wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${width}px; background:${background}; padding:28px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2;`;
+  // -webkit-font-smoothing:antialiased donne des lettres plus franches à la capture ; la taille de
+  // base est relevée pour que le texte reste lisible même après la compression de WhatsApp.
+  wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${width}px; background:${background}; padding:32px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2; font-size:15.5px; line-height:1.55; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;`;
   wrap.innerHTML = `
     <div style="text-align:center; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08);">
       ${badge ? `<div style="display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:20px; background:${badgeColor}22; border:1px solid ${badgeColor}55; margin-bottom:13px;">
@@ -12979,7 +13077,10 @@ async function captureBlockToImage(opts){
   const target = hq ? WA_TARGET_WIDTH_HQ : WA_TARGET_WIDTH;
   // Facteur de rendu ENTIER (2 ou 3) : html2canvas rend le texte nettement plus proprement sur un
   // multiple entier du pixel CSS. On rend juste au-dessus de la cible, jamais 5× pour rien.
-  const renderScale = width * 2 >= target ? 2 : 3;
+  // Facteur de rendu entier, et jamais en dessous de 2,5× la largeur cible : html2canvas dessine le
+  // texte avec la finesse du facteur choisi, donc plus il est élevé, plus les lettres sont nettes
+  // avant réduction. On plafonne à 4 pour ne pas produire une image démesurée.
+  const renderScale = Math.max(2, Math.min(4, Math.ceil((target * 1.25) / width)));
 
   let canvas;
   try{
@@ -13571,19 +13672,38 @@ async function applyAllAnomalyFixes(){
   const getStore = async mv => (stores[mv] = stores[mv] || await getBillingProd(mv));
   const retractToFix = {};
 
-  for(const { a, mv, ag } of ops){
-    const src = await getStore(a.month);
-    const idx = (src.rows || []).findIndex(r => billingRowKeys(r).includes(String(a.key).toLowerCase()));
-    if(idx < 0) continue;
-    const row = src.rows[idx];
-    if(ag && ag !== row.agent) row.agent = ag;
-    if(mv && mv !== a.month){
-      const dst = await getStore(mv);
-      dst.rows = dst.rows || [];
-      const already = dst.rows.some(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)));
-      src.rows.splice(idx, 1);
-      if(!already){ dst.rows.push(row); dst.month = mv; }
-      if(row.agent){ retractToFix[`${a.month}|${row.agent}`] = true; retractToFix[`${mv}|${row.agent}`] = true; }
+  // On traite mois par mois, en partant de la fin : retirer une ligne décale toutes les suivantes.
+  const parMois = {};
+  ops.forEach(o => (parMois[o.a.month] = parMois[o.a.month] || []).push(o));
+  let appliquees = 0, introuvables = 0;
+
+  for(const srcMv of Object.keys(parMois)){
+    const src = await getStore(srcMv);
+    const trouves = parMois[srcMv].map(o=>{
+      // Identifiant interne d'abord (marche même sans numéro de contrat), numéro ensuite.
+      let idx = o.a.rid ? (src.rows || []).findIndex(r => r._rid === o.a.rid) : -1;
+      if(idx < 0 && o.a.key) idx = (src.rows || []).findIndex(r => billingRowKeys(r).includes(String(o.a.key).toLowerCase()));
+      return { ...o, idx };
+    }).sort((x, y) => y.idx - x.idx);
+
+    for(const { a, mv, ag, idx } of trouves){
+      if(idx < 0){ introuvables++; continue; }
+      const row = src.rows[idx];
+      if(ag && ag !== row.agent) row.agent = ag;
+      // L'alerte est effacée dès que tu as tranché : sans ça, la ligne corrigée revenait telle quelle
+      // au contrôle suivant, et rien ne semblait avoir été appliqué.
+      delete row._warnings;
+      row._reviewed = true;
+      if(mv && mv !== srcMv){
+        const dst = await getStore(mv);
+        dst.rows = dst.rows || [];
+        const already = billingRowKeys(row).length &&
+          dst.rows.some(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)));
+        src.rows.splice(idx, 1);
+        if(!already){ dst.rows.push(row); dst.month = mv; }
+        if(row.agent){ retractToFix[`${srcMv}|${row.agent}`] = true; retractToFix[`${mv}|${row.agent}`] = true; }
+      }
+      appliquees++;
     }
   }
 
@@ -13597,7 +13717,8 @@ async function applyAllAnomalyFixes(){
     await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
 
-  logAudit('Admin', 'Anomalies d\'import corrigées en lot', `${ops.length} ligne(s)`);
+  logAudit('Admin', 'Anomalies d\'import corrigées en lot', `${appliquees} appliquée(s), ${introuvables} introuvable(s)`);
+  if(introuvables) alert(`${appliquees} ligne(s) corrigée(s).\n\n⚠️ ${introuvables} n'ont pas été retrouvées — elles ont sans doute déjà été traitées. Relance l'analyse pour voir l'état réel.`);
   billingContractIndexCache = null;
   billingInvalidate();
   clearRenderCaches();
@@ -13923,6 +14044,7 @@ async function importBillingProd(text, monthVal){
   const anomalies = [];
   const keysInFile = new Set();
   const duplicatesInFile = [];
+  let ridCounter = 0;
   let undatedCount = 0;
 
   // Ordre des dates déterminé sur la colonne entière avant toute lecture : ton suivi est en français
@@ -13958,6 +14080,13 @@ async function importBillingProd(text, monthVal){
     // Doublon À L'INTÉRIEUR du fichier : deux lignes strictement identiques, même numéro de contrat.
     // Ça arrive quand une ligne est recopiée par erreur dans le Sheet. Une seule est conservée — et
     // surtout, on te le DIT : sans ça, tu croirais avoir vendu un contrat de plus.
+    // ═══ IDENTIFIANT INTERNE ═══
+    // Une ligne sans numéro NI référence (colonnes décalées, #VALUE!…) ne pouvait être retrouvée par
+    // rien du tout : les boutons Déplacer et Supprimer restaient sans effet, et c'est pour ça que tes
+    // corrections de dates ne s'appliquaient pas. Chaque ligne reçoit désormais un identifiant propre
+    // au CRM, invisible mais stable, qui permet de la retrouver quoi qu'il arrive.
+    r._rid = `r${Date.now().toString(36)}${(ridCounter++).toString(36)}`;
+
     const rowKeys = billingRowKeys(r);
     if(rowKeys.length && rowKeys.some(k => keysInFile.has(k))){
       duplicatesInFile.push(`${r.numContrat || rowKeys[0]} — ${r.nom || '?'}`);
@@ -13974,11 +14103,11 @@ async function importBillingProd(text, monthVal){
     else if(target !== monthVal) reason = `Date hors du mois importé — rangée en ${billingMonthLabel(target)}`;
     else if(!r.agent) reason = 'Agent introuvable';
     else if(r._warnings && r._warnings.some(w => w.trim().startsWith('!'))) reason = r._warnings.find(w => w.trim().startsWith('!')).replace(/^\s*!\s*/, '');
-    if(reason && key){
+    if(reason){
       // Faute de frappe sur le nom ? On pré-positionne le menu sur le candidat le plus probable.
       const suggestion = r.agent ? null : suggestAgentName(r.agentRaw);
       if(suggestion) reason += ` — probablement ${suggestion} ?`;
-      anomalies.push({ key, reason, month: target, agent: r.agent || suggestion || '', suggested: !!suggestion,
+      anomalies.push({ key, rid: r._rid, reason, month: target, agent: r.agent || suggestion || '', suggested: !!suggestion,
                        rawAgent: r.agentRaw, nom: r.nom, numContrat: r.numContrat,
                        rawDate: r.datePropre || r.date, resolved: false });
     }
