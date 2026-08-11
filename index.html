@@ -1773,6 +1773,12 @@ function tryDeviceGateAdmin(){
           <div id="agentAliasPanel" style="margin-top:12px;"></div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(61,139,253,0.45);">
+          <label>📅 Depuis quand tes agents pointent-ils ?</label>
+          <div class="section-sub">La borne la plus importante de tout ton historique. Avant cette date, personne ne pointait — le CRM ne doit donc compter <b>ni retard, ni absence, ni perte de prime d'assiduité</b>. Sans elle, chaque jour ouvré d'un mois importé compte comme une absence et la journée est retenue : les salaires historiques sont faux, et très en dessous de la réalité.</div>
+          <div id="pointageStartPanel" style="margin-top:12px;"></div>
+        </div>
+
         <div class="settings-box">
           <label>🩺 Contrôle d'intégrité</label>
           <div class="section-sub">Quand un chiffre te surprend, va voir plutôt que de te fier à moi. Ce contrôle cherche les trois défauts qui coûtent réellement de l'argent : un contrat compté <b>deux fois dans le même mois</b>, un contrat présent dans <b>deux mois différents</b>, et un <b>compteur de rétractations</b> qui ne colle pas aux contrats marqués.</div>
@@ -2557,6 +2563,7 @@ function clearRenderCaches(){
   // besoin, pour qu'un import fait depuis un autre poste apparaisse ici sans recharger la page.
   if(typeof billingInvalidate === 'function') billingInvalidate();
   billingContractIndexCache = null;
+  if(typeof clearDailyCountCache === 'function') clearDailyCountCache();
 }
 
 let autoRefreshBusy = false;
@@ -3123,6 +3130,7 @@ function showAdminSub(sub){
     renderPaySourcePanel();
     renderReturnCostPerAgent();
     renderAdminIndepReturnTable();
+    renderPointageStartPanel();
     renderUnmatchedReturnsPanel();
     renderAgentAliasPanel();
     renderBillingImportSummary();
@@ -3251,8 +3259,65 @@ function hasNoObjectif(agent){
 // retards/absences/prime d'assiduité (monthlyStats, monthlyDeductions) — comme si l'agent n'existait
 // pas encore chez nous ces jours-là. Utile pour un agent qui rejoint en cours de mois : il ne doit
 // jamais être vu comme "absent" avant son premier jour réel.
+// ============================================================
+// 📅 DATE DE MISE EN SERVICE DU POINTAGE — la borne qui protège tout l'historique
+// ============================================================
+// PROBLÈME RÉEL : avant que le CRM existe, personne ne pointait. Or l'application, elle, considère
+// qu'un jour ouvré sans pointage est une ABSENCE — et retient la journée. Résultat : sur les mois
+// importés a posteriori, chaque agent apparaissait absent tous les jours, et les salaires historiques
+// étaient massivement faux (et ridiculement bas).
+//
+// Cette date globale règle le problème d'un coup : AVANT elle, aucun retard, aucune absence, aucune
+// perte de prime d'assiduité n'est jamais compté, pour personne. Les contrats, eux, comptent
+// normalement — c'est bien ce qu'on veut pour l'historique : la production est réelle, la discipline
+// n'était simplement pas mesurée.
+// La date de début propre à un agent (nouvel arrivant) reste prioritaire si elle est plus tardive.
+function getPointageStartDate(){
+  return config.pointageStartDate || null;
+}
+
 function getAgentStartDate(agent){
-  return (config.agentsStartDate && config.agentsStartDate[agent]) || null;
+  const perso = (config.agentsStartDate && config.agentsStartDate[agent]) || null;
+  const global = getPointageStartDate();
+  if(perso && global) return perso > global ? perso : global;
+  return perso || global;
+}
+
+async function setPointageStartDate(){
+  const current = getPointageStartDate() || '';
+  const val = window.prompt(
+    "Date de mise en service du pointage, au format AAAA-MM-JJ.\n\n" +
+    "Avant cette date, AUCUN retard ni absence n'est compté, pour personne — les agents ne pointaient pas encore.\n" +
+    "Les contrats importés, eux, comptent normalement.\n\n" +
+    "À régler sur le jour où tes agents ont commencé à pointer dans le CRM. Laisse vide pour retirer.",
+    current);
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)){ alert('Format attendu : AAAA-MM-JJ (ex : 2026-08-01)'); return; }
+  config.pointageStartDate = trimmed || null;
+  await saveConfigSilent();
+  logAudit('Admin', 'Date de mise en service du pointage', trimmed || 'retirée');
+  clearRenderCaches();
+  billingInvalidate();
+  renderPointageStartPanel();
+  renderBillingAgentSheet();
+  renderHistoryStats();
+}
+
+function renderPointageStartPanel(){
+  const el = document.getElementById('pointageStartPanel');
+  if(!el) return;
+  const d = getPointageStartDate();
+  el.innerHTML = `<div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:13px 15px; border-radius:10px;
+      background:${d ? 'rgba(52,183,116,0.10)' : 'rgba(229,90,90,0.12)'}; border:1px solid ${d ? 'rgba(52,183,116,0.4)' : 'rgba(229,90,90,0.45)'};">
+    <div style="flex:1; min-width:260px;">
+      <div style="font-weight:800; color:${d ? 'var(--green)' : 'var(--red)'};">${d ? `✅ Pointage en service depuis le ${d.split('-').reverse().join('/')}` : '⚠️ Aucune date de mise en service définie'}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:5px; line-height:1.55;">${d
+        ? "Avant cette date, aucun retard ni absence n'est compté : les salaires des mois importés ne sont plus amputés d'absences qui n'ont jamais existé. Les contrats comptent normalement."
+        : "Sans elle, chaque jour ouvré sans pointage d'un mois importé est compté comme une <b>absence</b> — et la journée retenue. Tes salaires historiques sont donc faux, et beaucoup trop bas. Règle-la sur le jour où tes agents ont commencé à pointer."}</div>
+    </div>
+    <button onclick="setPointageStartDate()" style="padding:10px 18px; border-radius:9px; border:1px solid var(--accent); background:rgba(61,139,253,0.14); color:var(--accent); font-weight:700; cursor:pointer; white-space:nowrap;">${d ? 'Modifier' : '📅 Définir la date'}</button>
+  </div>`;
 }
 
 async function setAgentStartDate(name){
@@ -7523,16 +7588,9 @@ async function renderTrendChart(targetId){
     d.setDate(d.getDate()-i);
     days.push(todayStr(d));
   }
-  const totals = await Promise.all(days.map(async dateStr=>{
-    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-    prodBoardCache[dateStr] = board;
-    let total = 0;
-    config.agents.forEach(agent=>{
-      const p = (board.agents && board.agents[agent]) || { realized: 0 };
-      total += p.realized || 0;
-    });
-    return { dateStr, total };
-  }));
+  // Production importée en priorité, compteurs Arena à défaut : la courbe ne tombe plus à zéro sur
+  // les jours antérieurs à la mise en service du CRM (cf. dailyContractCount).
+  const totals = await Promise.all(days.map(async dateStr=>({ dateStr, total: await dailyContractCount(dateStr) })));
 
   const max = Math.max(1, ...totals.map(t=>t.total));
   const bars = totals.map(t=>{
@@ -7566,20 +7624,14 @@ async function renderMonthComparison(targetId){
   const daysInLastMonth = new Date(lastMonthYear, lastMonth, 0).getDate();
   const uptoDayLastMonth = Math.min(dayOfMonth, daysInLastMonth);
 
+  // Même source que partout ailleurs : production importée si elle existe pour le mois, compteurs
+  // Arena sinon. Sans ça, comparer un mois en cours à un mois importé revenait à comparer un chiffre
+  // réel à un zéro — la comparaison n'avait aucun sens sur tout l'historique.
   const sumRange = async (year, month, uptoDay)=>{
     const dates = [];
     for(let d=1; d<=uptoDay; d++) dates.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-    const boards = await Promise.all(dates.map(async dateStr=>{
-      const b = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-      prodBoardCache[dateStr] = b;
-      return b;
-    }));
-    let total = 0;
-    boards.forEach(board=> config.agents.forEach(agent=>{
-      const p = (board.agents && board.agents[agent]) || { realized: 0 };
-      total += p.realized || 0;
-    }));
-    return total;
+    const counts = await Promise.all(dates.map(ds => dailyContractCount(ds)));
+    return counts.reduce((s, n) => s + n, 0);
   };
 
   const [thisTotal, lastTotal] = await Promise.all([
@@ -7734,42 +7786,100 @@ async function renderRepeatOffendersPanel(){
 // ============================================================
 // 📊 MEILLEUR / PIRE JOUR DU MOIS
 // ============================================================
+// ============================================================
+// 🔗 LIER L'HISTORIQUE AUX ANALYSES
+// ============================================================
+// Les panneaux d'analyse (tendance, comparaison de mois, meilleur/pire jour) ne lisaient que les
+// compteurs +1 de l'Arena. Pour un mois antérieur au CRM, ces compteurs sont vides : les courbes
+// tombaient à zéro et les comparaisons ne voulaient rien dire, alors même que la production importée
+// existait. On prend donc, pour chaque jour, la MEILLEURE source disponible :
+//   1) les contrats validés importés pour ce mois-là (données réelles du backoffice) ;
+//   2) à défaut, les compteurs de l'Arena (mois en cours, avant import).
+// Un seul point d'entrée pour toute l'app : impossible que deux écrans racontent deux histoires.
+const dailyCountCache = {};
+async function dailyContractCount(dateStr){
+  if(dailyCountCache[dateStr] != null) return dailyCountCache[dateStr];
+  const mv = dateStr.slice(0, 7);
+  let n = null;
+  try{
+    const prod = await getBillingProd(mv);
+    if((prod.rows || []).length){
+      n = prod.rows.filter(r=>{
+        const iso = parseContractDate(r.datePropre || r.date);
+        return iso === dateStr && !r.retracted;
+      }).length;
+    }
+  }catch(e){}
+  if(n == null){
+    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    prodBoardCache[dateStr] = board;
+    n = 0;
+    (config.agents || []).forEach(a=>{ n += ((board.agents && board.agents[a]) || {}).realized || 0; });
+  }
+  dailyCountCache[dateStr] = n;
+  return n;
+}
+function clearDailyCountCache(){ Object.keys(dailyCountCache).forEach(k => delete dailyCountCache[k]); }
+
 async function renderBestWorstDayPanel(targetId){
   const el = document.getElementById(targetId || 'bestWorstDayPanel');
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = ''; return; }
   const now = nowMA();
+  // ⏳ PÉRIODE AU CHOIX. Le record du mois en cours n'a de sens qu'après quelques semaines ; sur un
+  // historique complet, c'est le record de l'année qui parle. Le sélecteur laisse donc remonter aussi
+  // loin qu'on veut, sans quitter l'écran. La borne est mémorisée sur l'appareil.
+  let depuis = null;
+  try{ depuis = localStorage.getItem('vn_bestWorstSince'); }catch(e){}
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
   const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
-  const daysToCheck = isCurrentMonth ? now.getDate() : new Date(year, month, 0).getDate();
 
-  const dateStrs = [];
-  for(let d=1; d<=daysToCheck; d++){
-    const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    // Samedi, dimanche et jours fériés français : jamais un jour travaillé, donc jamais éligible au
-    // "record" du meilleur/pire jour — même si un contrat y a été saisi par exception, ce n'est pas un
-    // jour de référence pour comparer les performances.
-    if(isWorkingDay(ds)) dateStrs.push(ds);
+  let dateStrs = [];
+  let periodeLabel = '';
+  if(depuis && depuis !== 'mois'){
+    // Depuis une date choisie jusqu'à aujourd'hui, tous mois confondus.
+    let cur = new Date(depuis + 'T00:00:00');
+    const end = nowMA(); let guard = 0;
+    while(cur <= end && guard < 800){
+      const ds = todayStr(cur);
+      if(isWorkingDay(ds)) dateStrs.push(ds);
+      cur.setDate(cur.getDate() + 1); guard++;
+    }
+    periodeLabel = `depuis le ${depuis.split('-').reverse().join('/')}`;
+  } else {
+    const daysToCheck = isCurrentMonth ? now.getDate() : new Date(year, month, 0).getDate();
+    for(let d=1; d<=daysToCheck; d++){
+      const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      // Samedi, dimanche et jours fériés français : jamais un jour travaillé, donc jamais éligible au
+      // "record" du meilleur/pire jour — même si un contrat y a été saisi par exception, ce n'est pas un
+      // jour de référence pour comparer les performances.
+      if(isWorkingDay(ds)) dateStrs.push(ds);
+    }
+    periodeLabel = 'ce mois-ci';
   }
 
-  const totals = await Promise.all(dateStrs.map(async dateStr=>{
-    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-    prodBoardCache[dateStr] = board;
-    let total = 0;
-    config.agents.forEach(agent=>{
-      const p = (board.agents && board.agents[agent]) || { realized: 0 };
-      total += p.realized || 0;
-    });
-    return { dateStr, total };
-  }));
+  // Source : production importée si elle existe pour le mois, sinon compteurs Arena (cf. dailyContractCount).
+  const totals = await Promise.all(dateStrs.map(async dateStr=>({ dateStr, total: await dailyContractCount(dateStr) })));
+  // Sélecteur de période, affiché au-dessus des deux cartes.
+  const selector = `<div class="admin-toolbar" style="margin-bottom:10px;">
+    <label style="margin:0; font-size:12.5px; color:var(--muted);">Records calculés :</label>
+    <select onchange="setBestWorstSince(this.value)" title="Sur le mois affiché, ou depuis une date de ton choix — pratique dès que tu as importé plusieurs mois d'historique.">
+      <option value="mois"${!depuis || depuis === 'mois' ? ' selected' : ''}>sur le mois affiché</option>
+      <option value="__pick__">depuis une date précise…</option>
+    </select>
+    ${depuis && depuis !== 'mois' ? `<span style="font-size:12.5px; color:var(--accent); font-weight:700;">${escapeHtml(periodeLabel)}</span>
+      <button class="link-btn" onclick="setBestWorstSince('mois')" style="font-size:12px;">revenir au mois</button>` : ''}
+  </div>`;
+
   const withActivity = totals.filter(t=>t.total>0);
-  if(withActivity.length===0){ el.innerHTML = '<div class="empty">Pas encore de contrat ce mois.</div>'; return; }
+  if(withActivity.length===0){ el.innerHTML = selector + '<div class="empty">Pas encore de contrat sur cette période.</div>'; return; }
   const best = withActivity.reduce((a,b)=> b.total>a.total?b:a);
   const worst = withActivity.reduce((a,b)=> b.total<a.total?b:a);
-  const fmt = (dateStr)=> new Date(dateStr+'T00:00:00').toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+  const moyenne = Math.round(withActivity.reduce((s,t)=>s+t.total,0) / withActivity.length);
+  const fmt = (dateStr)=> new Date(dateStr+'T00:00:00').toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year: (depuis && depuis !== 'mois') ? 'numeric' : undefined });
 
-  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">
+  el.innerHTML = selector + `<div style="display:flex; gap:12px; flex-wrap:wrap;">
     <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(52,183,116,0.4); flex:1; min-width:200px;">
       <div style="font-size:12px; color:var(--muted);">🏆 Meilleur jour</div>
       <div style="font-size:26px; font-weight:900; color:var(--green);">${best.total}</div>
@@ -7780,7 +7890,29 @@ async function renderBestWorstDayPanel(targetId){
       <div style="font-size:26px; font-weight:900; color:var(--red);">${worst.total}</div>
       <div style="font-size:12.5px; color:var(--muted); text-transform:capitalize;">${fmt(worst.dateStr)}</div>
     </div>
+    <div style="padding:16px; border-radius:12px; background:var(--panel2); border:1px solid var(--border); flex:1; min-width:200px;">
+      <div style="font-size:12px; color:var(--muted);">📊 Moyenne par jour travaillé</div>
+      <div style="font-size:26px; font-weight:900;">${moyenne}</div>
+      <div style="font-size:12.5px; color:var(--muted);">${withActivity.length} jour${withActivity.length>1?'s':''} avec activité · ${escapeHtml(periodeLabel)}</div>
+    </div>
   </div>`;
+}
+
+// Change la borne de calcul des records et rafraîchit. Mémorisé sur l'appareil, pas dans la base :
+// c'est un confort d'affichage, pas une donnée d'entreprise.
+function setBestWorstSince(v){
+  if(v === '__pick__'){
+    const cur = (()=>{ try{ return localStorage.getItem('vn_bestWorstSince') || ''; }catch(e){ return ''; } })();
+    const val = window.prompt("Calculer les records depuis quelle date ? Format AAAA-MM-JJ.\n\nExemple : 2025-12-01 pour couvrir tout ton historique importé.", cur && cur !== 'mois' ? cur : '2025-12-01');
+    if(val === null) return;
+    const t = val.trim();
+    if(t && !/^\d{4}-\d{2}-\d{2}$/.test(t)){ alert('Format attendu : AAAA-MM-JJ'); return; }
+    try{ localStorage.setItem('vn_bestWorstSince', t || 'mois'); }catch(e){}
+  } else {
+    try{ localStorage.setItem('vn_bestWorstSince', v); }catch(e){}
+  }
+  clearDailyCountCache();
+  renderBestWorstDayPanel();
 }
 
 // ============================================================
@@ -9882,6 +10014,16 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   // mois), aucun jour n'est examiné — ni retenue, ni retard, ni absence, ni impact sur l'assiduité.
   const agentStartDate = getAgentStartDate(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
+
+  // ═══ MISE EN SERVICE DU POINTAGE — corrige des salaires historiques totalement faux ═══
+  // Avant que le pointage existe, personne ne pointait. Chaque jour ouvré sans pointage était donc
+  // compté comme une ABSENCE, et une journée entière de salaire était retenue. Sur un mois importé
+  // pour l'historique, ça retirait la quasi-totalité du salaire de chaque agent — des chiffres faux,
+  // et faux dans des proportions absurdes.
+  // Avant cette date, on n'examine plus aucun jour : ni retard, ni absence, ni pause, ni prime perdue.
+  // Les contrats, eux, comptent normalement — c'est tout l'intérêt d'importer l'historique.
+  const attendanceStart = attendanceStartDate();
+  if(attendanceStart) dateStrs = dateStrs.filter(ds => ds >= attendanceStart);
 
   // Les indépendants ne pointent pas : pas de retenue liée au pointage ou à un objectif pour eux,
   // donc on ne va même pas chercher le pointage jour par jour pour eux (plus rapide).
