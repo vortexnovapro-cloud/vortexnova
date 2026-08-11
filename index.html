@@ -16501,8 +16501,9 @@ async function renderFlaggedContractsPanel(){
   }
   const prodsFlag = await Promise.all(mvsFlag.map(mv => getBillingProd(mv)));
   mvsFlag.forEach((mv, i)=>{
-    (prodsFlag[i].rows || []).forEach(r=>{
-      if(r._warnings && r._warnings.length) found.push({ mv, r });
+    (prodsFlag[i].rows || []).forEach((r, index)=>{
+      // `_reviewed` : ligne que tu as déclarée correcte telle quelle — elle ne réapparaît plus.
+      if(r._warnings && r._warnings.length && !r._reviewed) found.push({ mv, r, index });
     });
   });
   if(!found.length){
@@ -16529,7 +16530,11 @@ async function renderFlaggedContractsPanel(){
 
   const fiche = (x, idx, grave)=>{
     const r = x.r;
+    // Une ligne sans numéro NI référence (le cas « aucun identifiant ») ne pouvait être retrouvée par
+    // aucune clé : les boutons Déplacer et 🗑️ ne faisaient donc rien du tout. On se rabat alors sur
+    // sa POSITION dans le mois, transmise par l'analyse — la seule chose qui l'identifie de façon sûre.
     const key = String(r.numContrat || r.reference || '');
+    const pos = x.index != null ? x.index : -1;
     const ws = r._warnings.filter(w => grave ? w.trim().startsWith('!') : true)
                           .map(w => w.replace(/^\s*!\s*/, ''));
     const accent = grave ? '#e05a5a' : '#d9a441';
@@ -16552,14 +16557,19 @@ async function renderFlaggedContractsPanel(){
             <select id="flagmv_${idx}" style="flex:1; font-size:12.5px;">${monthOpts(x.mv)}</select>
           </div>
           <div style="display:flex; gap:6px;">
-            <button onclick="flagFixes['${idx}']={mv:'${x.mv}',key:'${key.replace(/'/g,"\\'")}',action:'move',to:document.getElementById('flagmv_${idx}').value}; this.closest('div[style*=border-left]').style.opacity=0.45; renderFlaggedCount();"
+            <button onclick="flagFixes['${idx}']={mv:'${x.mv}',key:'${key.replace(/'/g,"\\'")}',pos:${pos},action:'move',to:document.getElementById('flagmv_${idx}').value}; this.closest('div[style*=border-left]').style.opacity=0.45; renderFlaggedCount();"
               style="flex:1; padding:7px 10px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">📦 Déplacer</button>
-            <button onclick="flagFixes['${idx}']={mv:'${x.mv}',key:'${key.replace(/'/g,"\\'")}',action:'delete'}; this.closest('div[style*=border-left]').style.opacity=0.45; renderFlaggedCount();"
+            <button onclick="flagFixes['${idx}']={mv:'${x.mv}',key:'${key.replace(/'/g,"\\'")}',pos:${pos},action:'delete'}; this.closest('div[style*=border-left]').style.opacity=0.45; renderFlaggedCount();"
               title="Supprimer définitivement ce contrat — pour une ligne fantôme."
               style="padding:7px 11px; border-radius:7px; border:1px solid rgba(229,90,90,0.5); background:transparent; color:var(--red); font-weight:700; cursor:pointer; font-size:12px;">🗑️</button>
           </div>
-          <button onclick="delete flagFixes['${idx}']; this.closest('div[style*=border-left]').style.opacity=1; renderFlaggedCount();"
-            style="padding:5px 10px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:11.5px;">annuler ce choix</button>
+          <div style="display:flex; gap:6px;">
+            <button onclick="flagFixes['${idx}']={mv:'${x.mv}',key:'${key.replace(/'/g,"\\'")}',pos:${pos},action:'ok'}; this.closest('div[style*=border-left]').style.opacity=0.45; renderFlaggedCount();"
+              title="La ligne est correcte telle quelle : ne plus la signaler."
+              style="flex:1; padding:5px 10px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:11.5px;">✔️ correct tel quel</button>
+            <button onclick="delete flagFixes['${idx}']; this.closest('div[style*=border-left]').style.opacity=1; renderFlaggedCount();"
+              style="padding:5px 10px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:11.5px;">annuler</button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -16611,21 +16621,58 @@ async function applyAllFlagFixes(){
   const getStore = async mv => (stores[mv] = stores[mv] || await getBillingProd(mv));
   const retractToFix = {};
 
-  for(const f of list){
-    const src = await getStore(f.mv);
-    const idx = (src.rows || []).findIndex(r => billingRowKeys(r).includes(String(f.key).toLowerCase()));
-    if(idx < 0) continue;
-    const row = src.rows[idx];
-    if(f.action === 'delete'){
-      src.rows.splice(idx, 1);
-      if(row.agent) retractToFix[`${f.mv}|${row.agent}`] = true;
-    } else if(f.action === 'move' && f.to && f.to !== f.mv){
-      const dst = await getStore(f.to);
-      dst.rows = dst.rows || [];
-      const already = dst.rows.some(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)));
-      src.rows.splice(idx, 1);
-      if(!already){ dst.rows.push(row); dst.month = f.to; }
-      if(row.agent){ retractToFix[`${f.mv}|${row.agent}`] = true; retractToFix[`${f.to}|${row.agent}`] = true; }
+  // On traite en partant de la FIN de chaque mois : supprimer une ligne décale l'index de toutes
+  // celles qui suivent. En descendant, les positions déjà relevées restent valables.
+  const parMois = {};
+  list.forEach(f => (parMois[f.mv] = parMois[f.mv] || []).push(f));
+  let appliquees = 0, introuvables = 0;
+
+  for(const mv of Object.keys(parMois)){
+    const src = await getStore(mv);
+    const ops = parMois[mv].slice().sort((a, b) => (b.pos ?? -1) - (a.pos ?? -1));
+    for(const f of ops){
+      // On retrouve la ligne par son identifiant quand elle en a un, sinon par sa position — c'est
+      // le seul repère des lignes sans numéro ni référence, qui étaient jusqu'ici introuvables et
+      // dont les boutons ne faisaient donc strictement rien.
+      let idx = -1;
+      const k = String(f.key || '').toLowerCase();
+      if(k) idx = (src.rows || []).findIndex(r => billingRowKeys(r).includes(k));
+      if(idx < 0 && f.pos != null && f.pos >= 0 && f.pos < (src.rows || []).length) idx = f.pos;
+      if(idx < 0){ introuvables++; continue; }
+      const row = src.rows[idx];
+
+      if(f.action === 'delete'){
+        src.rows.splice(idx, 1);
+        if(row.agent) retractToFix[`${mv}|${row.agent}`] = true;
+        appliquees++;
+      } else if(f.action === 'ok'){
+        // Déclarée correcte : on retire l'alerte pour de bon, elle ne réapparaîtra plus.
+        row._reviewed = true;
+        delete row._warnings;
+        appliquees++;
+      } else if(f.action === 'move' && f.to && f.to !== mv){
+        const dst = await getStore(f.to);
+        dst.rows = dst.rows || [];
+        const already = billingRowKeys(row).length &&
+          dst.rows.some(r => billingRowKeys(r).some(x => billingRowKeys(row).includes(x)));
+        src.rows.splice(idx, 1);
+        if(!already){
+          // ⚠️ SANS CECI, LA CORRECTION NE SERVAIT À RIEN : l'alerte est stockée SUR la ligne. Un
+          // contrat déplacé dans le bon mois gardait son « date dans le futur » et réapparaissait
+          // intact au contrôle suivant — d'où l'impression que le bouton ne faisait rien.
+          delete row._warnings;
+          row._reviewed = true;
+          dst.rows.push(row);
+          dst.month = f.to;
+        }
+        if(row.agent){ retractToFix[`${mv}|${row.agent}`] = true; retractToFix[`${f.to}|${row.agent}`] = true; }
+        appliquees++;
+      } else {
+        // « Déplacer » vers le mois où la ligne est déjà : on considère la date validée par toi.
+        row._reviewed = true;
+        delete row._warnings;
+        appliquees++;
+      }
     }
   }
 
@@ -16639,7 +16686,8 @@ async function applyAllFlagFixes(){
     await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
 
-  logAudit('Admin', 'Contrats à vérifier corrigés en lot', `${list.length} correction(s)`);
+  logAudit('Admin', 'Contrats à vérifier corrigés en lot', `${appliquees} appliquée(s), ${introuvables} introuvable(s)`);
+  if(introuvables) alert(`${appliquees} correction(s) appliquée(s).\n\n⚠️ ${introuvables} ligne(s) n'ont pas été retrouvées — elles ont probablement déjà été déplacées ou supprimées. Relance l'analyse pour voir l'état réel.`);
   flagFixes = {};
   billingContractIndexCache = null;
   billingInvalidate();
