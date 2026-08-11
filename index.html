@@ -978,7 +978,7 @@ function tryDeviceGateAdmin(){
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
           <div id="syncStatusIndicator" style="font-size:13px; font-weight:700;">🟢 Synchronisé</div>
           <button type="button" id="privacyToggleBtn" class="privacy-btn" onclick="togglePrivacyMode()"
-            title="Masque d'un coup tout ce qui touche à ton argent : chiffre d'affaires, charges, résultat, masse salariale, salaires. Pratique quand quelqu'un passe derrière toi ou que tu partages ton écran. Passe la souris sur une valeur floutée pour la relire sans tout réafficher.">👁️ Masquer mes chiffres</button>
+            title="Masque d'un coup tout ce qui touche à TON argent : chiffre d'affaires, charges, résultat, masse salariale. Uniquement ici, dans Admin — les agents ne voient jamais ces chiffres de toute façon. Pratique quand quelqu'un passe derrière toi ou que tu partages ton écran. Passe la souris sur une zone floutée pour la relire sans tout réafficher.">👁️ Masquer mes chiffres</button>
         </div>
         <div style="font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.55;">Ce statut vient du navigateur, pas d'un vrai test de connexion à la base de données — il peut parfois rester bloqué sur « Hors ligne » même quand le réseau fonctionne. Si ça arrive : vérifie que l'appareil a bien internet (ouvre un autre site), puis <b>rafraîchis la page</b>. Dans tous les cas, rien n'est perdu — les écritures en attente sont gardées et s'envoient automatiquement dès que la connexion revient.</div>
         <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">🔄 Actualisation automatique toutes les 25s dans « Vue d'ensemble » — les chiffres restent à jour sans avoir à recharger la page. Volontairement désactivée dans « Pointage du jour » et « Production » (formulaires de correction et de salaire) pour ne jamais effacer une saisie en cours.</div>
@@ -9268,7 +9268,7 @@ const CALL_CENTER_WEEKLY_TIPS = [
   "Rappelle à l'équipe l'importance du ton et du sourire au téléphone — ça s'entend, même sans se voir.",
   "Fixe un petit défi collectif pour la semaine (ex : un total d'équipe à dépasser) pour souder le groupe.",
   "Prends 5 minutes avec un agent en difficulté pour réécouter un de ses appels et l'aider à s'améliorer.",
-  "Regarde à quelles heures les contrats tombent réellement cette semaine (Vue d'ensemble → meilleur/pire jour) et fais démarrer les appels plus tôt sur les créneaux qui rapportent.",
+  "Regarde quel jour de la semaine rapporte le plus (Vue d'ensemble → meilleur/pire jour) et place les dossiers les plus prometteurs ce jour-là plutôt qu'au hasard.",
   "Un rappel collectif du règlement (retards, pauses) en début de semaine évite d'avoir à sanctionner en fin de semaine.",
   "Célèbre les petites victoires individuelles à voix haute pendant la semaine, pas seulement au bilan du vendredi."
 ];
@@ -10057,15 +10057,10 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   const agentStartDate = disciplineFrom(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
 
-  // ═══ MISE EN SERVICE DU POINTAGE — corrige des salaires historiques totalement faux ═══
-  // Avant que le pointage existe, personne ne pointait. Chaque jour ouvré sans pointage était donc
-  // compté comme une ABSENCE, et une journée entière de salaire était retenue. Sur un mois importé
-  // pour l'historique, ça retirait la quasi-totalité du salaire de chaque agent — des chiffres faux,
-  // et faux dans des proportions absurdes.
-  // Avant cette date, on n'examine plus aucun jour : ni retard, ni absence, ni pause, ni prime perdue.
-  // Les contrats, eux, comptent normalement — c'est tout l'intérêt d'importer l'historique.
-  const attendanceStart = attendanceStartDate();
-  if(attendanceStart) dateStrs = dateStrs.filter(ds => ds >= attendanceStart);
+  // (La mise en service du pointage est déjà prise en compte : disciplineFrom() ci-dessus retient la
+  // plus tardive entre l'arrivée de l'agent et la date de mise en service. Un second filtrage ici
+  // faisait doublon — et appelait une fonction inexistante, ce qui faisait échouer TOUT le calcul de
+  // salaire : chaque écran d'argent restait bloqué sur « ⏳ Calcul… ».)
 
   // Les indépendants ne pointent pas : pas de retenue liée au pointage ou à un objectif pour eux,
   // donc on ne va même pas chercher le pointage jour par jour pour eux (plus rapide).
