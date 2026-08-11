@@ -13169,6 +13169,14 @@ function billingParseCSV(text){
   // Le suivi de mai commence par une ligne « ,,,,,,,,,, » — sans ça, elle devenait l'en-tête et
   // absolument aucune colonne n'était reconnue.
   while(rows.length && rows[0].every(c => String(c || '').trim() === '')) rows.shift();
+  // Une ligne d'en-tête elle aussi séparée par des espaces : on la redécoupe avant de la lire.
+  if(rows.length){
+    const ne = rows[0].map(c => String(c || '').trim()).filter(Boolean);
+    if(ne.length === 1 && /\s{5,}/.test(ne[0])){
+      const parts = ne[0].split(/\s{5,}/).map(x => x.trim()).filter(Boolean);
+      if(parts.length >= 4) rows[0] = parts;
+    }
+  }
 
   let rawHeaders = (rows.shift() || []).map(h => String(h).trim());
 
@@ -13192,7 +13200,33 @@ function billingParseCSV(text){
     used[h || `colonne_${i + 1}`] = (used[h || `colonne_${i + 1}`] || 0) + 1;
     return key;
   });
-  const objs = rows
+  // ═══ NETTOYAGE DE CHAQUE LIGNE AVANT LECTURE ═══
+  // Deux accidents fréquents d'un export Google Sheets, tous deux constatés en vrai :
+  //   • une erreur de formule (#VALUE!, #REF!, #N/A…) recopiée comme si c'était une donnée. Elle
+  //     finissait affichée comme nom de client. On la traite comme une case vide.
+  //   • une ligne dont les colonnes sont séparées par de longues suites d'ESPACES au lieu de
+  //     virgules : tout le contrat se retrouvait tassé dans une seule case, donc illisible. Dès qu'une
+  //     case contient plusieurs blocs séparés par 5 espaces ou plus, on la redécoupe en colonnes.
+  const SHEET_ERRORS = ['#VALUE!', '#REF!', '#N/A', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!', '#ERROR!'];
+  const cleanCell = v => {
+    const t = String(v == null ? '' : v).trim();
+    return SHEET_ERRORS.includes(t.toUpperCase()) ? '' : t;
+  };
+  const expanded = rows.map(r=>{
+    const cells = r.map(cleanCell);
+    // On dédoublonne avant de juger : la ligne fautive répétait la même chaîne dans plusieurs
+    // colonnes. Si tout le contenu utile de la ligne se réduit à UNE seule chaîne, et que cette
+    // chaîne contient plusieurs blocs séparés par de longs espaces, c'est une ligne dont les
+    // colonnes ont été écrasées — on la redécoupe.
+    const uniq = [...new Set(cells.filter(Boolean))];
+    if(uniq.length === 1 && /\s{5,}/.test(uniq[0])){
+      const parts = uniq[0].split(/\s{5,}/).map(x => x.trim()).filter(Boolean);
+      if(parts.length >= 4) return parts;
+    }
+    return cells;
+  });
+
+  const objs = expanded
     .filter(r => r.some(c => String(c).trim() !== ''))
     .map(r => {
       const o = {};
@@ -13687,9 +13721,16 @@ function billingRowKeys(row){
   return keys;
 }
 
+const SHEET_ERROR_VALUES = ['#VALUE!', '#REF!', '#N/A', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!', '#ERROR!'];
+
 function billingMapRow(raw){
   const normalized = {};
-  Object.keys(raw).forEach(k => { normalized[billingNormKey(k)] = raw[k]; });
+  // Erreurs de formule Google Sheets recopiées comme données : traitées comme des cases vides,
+  // ici aussi — cette fonction est appelée par d'autres chemins que l'import CSV (Pabbly, collage).
+  Object.keys(raw).forEach(k => {
+    const v = String(raw[k] == null ? '' : raw[k]).trim();
+    normalized[billingNormKey(k)] = SHEET_ERROR_VALUES.includes(v.toUpperCase()) ? '' : raw[k];
+  });
   const out = {};
   Object.keys(BILLING_FIELD_ALIASES).forEach(field => {
     const alias = BILLING_FIELD_ALIASES[field].find(a => normalized[a] !== undefined && String(normalized[a]).trim() !== '');
@@ -13733,6 +13774,38 @@ function billingMapRow(raw){
   if(out.adresse && (out.codePostal || out.ville)){
     const suite = [out.codePostal, out.ville].filter(Boolean).join(' ');
     if(suite && !out.adresse.includes(suite)) out.adresse = `${out.adresse} ${suite}`.trim();
+  }
+
+  // ═══ DERNIER RECOURS : CHERCHER L'IDENTIFIANT DU CONTRAT PARTOUT DANS LA LIGNE ═══
+  // Quand une ligne est décalée (colonne manquante, virgule non protégée, colonnes écrasées par des
+  // espaces), le numéro et la référence atterrissent dans des cases qui ne leur correspondent pas et
+  // finissent ignorés. Or l'identifiant est le champ le plus précieux : c'est lui qui empêche les
+  // doublons ET qui permettra au retour de retrouver son contrat dans deux mois. On le récupère donc
+  // par son FORME, où qu'il soit : « #2857 » pour le numéro, une suite hexadécimale de 10 à 16
+  // caractères pour la référence. Même méthode que pour l'agent (billingFindAgentInRow).
+  const numOk = out.numContrat && /^\d+$/.test(String(out.numContrat));
+  const refOk = out.reference && /^[0-9a-f]{10,16}$/i.test(String(out.reference));
+  if(!numOk || !refOk){
+    const values = Object.values(raw).map(v => String(v == null ? '' : v));
+    if(!numOk){
+      for(const v of values){
+        const m = v.match(/#\s*(\d+)/);
+        if(m){
+          out.numContrat = m[1];
+          if(!out.produit || /^\d/.test(out.produit)){
+            const label = v.split('#')[0].replace(/[([\s\-–—:]+$/, '').trim();
+            if(label && label.length < 60) out.produit = label;
+          }
+          break;
+        }
+      }
+    }
+    if(!refOk){
+      for(const v of values){
+        const t = v.trim();
+        if(/^[0-9a-f]{10,16}$/i.test(t) && /[a-f]/i.test(t)){ out.reference = t; break; }
+      }
+    }
   }
 
   // Dernier passage : remise en place des valeurs manifestement mal rangées (lignes inversées dans le
@@ -16685,50 +16758,145 @@ async function renderFlaggedContractsPanel(){
     el.innerHTML = '<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35); font-weight:700; color:var(--green);">✅ Aucune anomalie détectée sur les 24 derniers mois.</div>';
     return;
   }
-  // Séparation nette : ce qui coûte de l'argent d'un côté, le confort de l'autre.
+  // ═══ AFFICHAGE EN FICHES, PAS EN TABLEAU ═══
+  // Un tableau à 7 colonnes dans un panneau étroit écrase tout : le client passe sur trois lignes, la
+  // date est coupée, et le message d'erreur — le plus important — devient illisible. Une fiche par
+  // contrat règle le problème : le problème s'affiche en grand, les données en dessous, les boutons
+  // à droite. Et on peut corriger plusieurs fiches avant de valider, en une seule fois.
   const graves = found.filter(x => x.r._warnings.some(w => w.trim().startsWith('!')));
   const mineurs = found.filter(x => !graves.includes(x));
 
-  const table = (list, onlyGrave)=>{
-    let t = '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Mois</th><th>Agent</th><th>Client</th><th>N° contrat</th><th>Date</th><th>Ce qui cloche</th><th>Corriger</th></tr></thead><tbody>';
-    list.slice(0, 60).forEach(({ mv, r })=>{
-      const ws = r._warnings.filter(w => onlyGrave ? w.trim().startsWith('!') : true);
-      t += `<tr>
-        <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(mv))}</td>
-        <td><b>${escapeHtml(r.agent || '—')}</b></td>
-        <td>${escapeHtml(r.nom || '—')}</td>
-        <td>${escapeHtml(r.numContrat || '—')}</td>
-        <td style="white-space:nowrap;">${escapeHtml(r.datePropre || r.date || '—')}</td>
-        <td style="color:${onlyGrave ? 'var(--red)' : 'var(--muted)'}; font-size:12.5px;">${ws.map(w=>escapeHtml(w.replace(/^\s*!\s*/, ''))).join('<br>')}</td>
-        <td style="white-space:nowrap;">
-          <select id="flagmv_${escapeHtml(String(r.numContrat || r.reference || ''))}_${escapeHtml(mv)}" style="min-width:120px; font-size:12px;">${flaggedMonthOptions(mv)}</select>
-          <button onclick="fixContractMonth('${mv}', '${String(r.numContrat || r.reference || '').replace(/'/g,"\\'")}', document.getElementById('flagmv_${escapeHtml(String(r.numContrat || r.reference || ''))}_${escapeHtml(mv)}').value).then(()=>renderFlaggedContractsPanel())" title="Déplacer ce contrat vers le mois choisi." style="padding:4px 9px; border-radius:6px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:11.5px;">Déplacer</button>
-          <button onclick="deleteContractAndRefresh('${mv}', '${String(r.numContrat || r.reference || '').replace(/'/g,"\\'")}', 'flagged')" title="Supprimer définitivement ce contrat." style="padding:4px 8px; border-radius:6px; border:1px solid rgba(229,90,90,0.5); background:transparent; color:var(--red); cursor:pointer; font-size:11.5px;">🗑️</button>
-        </td>
-      </tr>`;
-    });
-    return t + '</tbody></table></div>';
+  const monthOpts = sel=>{
+    const now2 = nowMA(); let out = '';
+    for(let i = -2; i < 24; i++){
+      const d = new Date(now2.getFullYear(), now2.getMonth() - i, 1);
+      const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+      out += `<option value="${mv}"${mv === sel ? ' selected' : ''}>${billingMonthLabel(mv)}</option>`;
+    }
+    return out;
   };
 
+  const fiche = (x, idx, grave)=>{
+    const r = x.r;
+    const key = String(r.numContrat || r.reference || '');
+    const ws = r._warnings.filter(w => grave ? w.trim().startsWith('!') : true)
+                          .map(w => w.replace(/^\s*!\s*/, ''));
+    const accent = grave ? '#e05a5a' : '#d9a441';
+    const dateLue = r.datePropre || r.date || '—';
+    return `<div style="border:1px solid ${accent}55; border-left:4px solid ${accent}; border-radius:11px; padding:14px 16px; margin-bottom:11px; background:var(--panel2);">
+      <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+        <div style="flex:1; min-width:260px;">
+          <div style="font-weight:800; color:${accent}; font-size:13.5px; line-height:1.5;">${ws.map(escapeHtml).join('<br>')}</div>
+          <div style="margin-top:9px; font-size:13px; line-height:1.7;">
+            <b>${escapeHtml(r.nom || 'client inconnu')}</b>
+            ${r.numContrat ? ` · contrat <b>${escapeHtml(r.numContrat)}</b>` : ''}
+            ${r.produit ? ` · ${escapeHtml(r.produit)}` : ''}
+            <br><span style="color:var(--muted);">Date lue : <b style="color:var(--text);">${escapeHtml(dateLue)}</b> · rangé dans <b style="color:var(--text);">${escapeHtml(billingMonthLabel(x.mv))}</b> · agent <b style="color:var(--text);">${escapeHtml(r.agent || '—')}</b></span>
+            ${r.reference ? `<br><span style="color:var(--muted); font-size:11.5px;">réf. ${escapeHtml(r.reference)}</span>` : ''}
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:7px; min-width:210px;">
+          <div style="display:flex; gap:6px; align-items:center;">
+            <span style="font-size:12px; color:var(--muted); white-space:nowrap;">Déplacer vers</span>
+            <select id="flagmv_${idx}" style="flex:1; font-size:12.5px;">${monthOpts(x.mv)}</select>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button onclick="flagFixes['${idx}']={mv:'${x.mv}',key:'${key.replace(/'/g,"\\'")}',action:'move',to:document.getElementById('flagmv_${idx}').value}; this.closest('div[style*=border-left]').style.opacity=0.45; renderFlaggedCount();"
+              style="flex:1; padding:7px 10px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">📦 Déplacer</button>
+            <button onclick="flagFixes['${idx}']={mv:'${x.mv}',key:'${key.replace(/'/g,"\\'")}',action:'delete'}; this.closest('div[style*=border-left]').style.opacity=0.45; renderFlaggedCount();"
+              title="Supprimer définitivement ce contrat — pour une ligne fantôme."
+              style="padding:7px 11px; border-radius:7px; border:1px solid rgba(229,90,90,0.5); background:transparent; color:var(--red); font-weight:700; cursor:pointer; font-size:12px;">🗑️</button>
+          </div>
+          <button onclick="delete flagFixes['${idx}']; this.closest('div[style*=border-left]').style.opacity=1; renderFlaggedCount();"
+            style="padding:5px 10px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:11.5px;">annuler ce choix</button>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  flagFixes = {};
   let html = '';
   if(graves.length){
-    html += `<div style="padding:13px 15px; border-radius:10px; background:rgba(229,90,90,0.14); border:1px solid rgba(229,90,90,0.5); margin-bottom:10px;">
+    html += `<div style="padding:13px 15px; border-radius:10px; background:rgba(229,90,90,0.14); border:1px solid rgba(229,90,90,0.5); margin-bottom:12px;">
       <div style="font-weight:800; color:var(--red);">🚨 ${graves.length} contrat${graves.length>1?'s':''} à corriger — de l'argent est en jeu</div>
-      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Corrige ces lignes dans ton Sheet, puis réimporte le mois concerné. Aucun doublon ne sera créé.</div>
-    </div>` + table(graves, true);
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Choisis quoi faire de chacun, puis applique tout d'un coup. Le plus propre reste de corriger aussi la ligne dans ton Sheet, sinon elle reviendra au prochain import.</div>
+      <div style="margin-top:11px;"><button onclick="applyAllFlagFixes()" id="flagApplyBtn" style="padding:10px 18px; border-radius:9px; border:none; background:var(--accent); color:white; font-weight:800; cursor:pointer;">✅ Appliquer les corrections</button></div>
+    </div>`;
+    html += graves.slice(0, 60).map((x, i) => fiche(x, 'g' + i, true)).join('');
   } else {
     html += '<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35); font-weight:700; color:var(--green);">✅ Aucun contrat en danger — rien qui puisse coûter de l\'argent.</div>';
   }
+
   if(mineurs.length){
-    html += `<div style="margin-top:12px; padding:11px 14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
+    html += `<div style="margin-top:14px; padding:11px 14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
       <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display==='none'?'block':'none';"
         style="background:none; border:none; color:var(--muted); font-weight:700; font-size:13px; cursor:pointer; padding:0;">
         ℹ️ ${mineurs.length} détail${mineurs.length>1?'s':''} de contact à vérifier (sans effet sur la paie) — afficher
       </button>
-      <div style="display:none; margin-top:10px;">${table(mineurs, false)}</div>
+      <div style="display:none; margin-top:10px;">${mineurs.slice(0, 40).map((x, i) => fiche(x, 'm' + i, false)).join('')}</div>
     </div>`;
   }
   el.innerHTML = html;
+}
+
+// Corrections choisies sur les fiches, appliquées en une seule fois.
+let flagFixes = {};
+function renderFlaggedCount(){
+  const btn = document.getElementById('flagApplyBtn');
+  if(!btn) return;
+  const n = Object.keys(flagFixes).length;
+  btn.textContent = n ? `✅ Appliquer ${n} correction${n>1?'s':''}` : '✅ Appliquer les corrections';
+}
+
+async function applyAllFlagFixes(){
+  const list = Object.values(flagFixes);
+  if(!list.length){ alert('Choisis d\'abord au moins une correction (Déplacer ou 🗑️) sur une fiche.'); return; }
+  if(!confirm(`Appliquer ${list.length} correction${list.length>1?'s':''} ?\n\nTout est enregistré d'un coup, puis l'analyse est relancée.`)) return;
+  const el = document.getElementById('flaggedContractsPanel');
+  if(el) el.innerHTML = `<div class="empty" style="padding:12px;">⏳ Application de ${list.length} correction(s)…</div>`;
+
+  // Écritures groupées par mois : un seul chargement et une seule sauvegarde par mois touché.
+  const stores = {};
+  const getStore = async mv => (stores[mv] = stores[mv] || await getBillingProd(mv));
+  const retractToFix = {};
+
+  for(const f of list){
+    const src = await getStore(f.mv);
+    const idx = (src.rows || []).findIndex(r => billingRowKeys(r).includes(String(f.key).toLowerCase()));
+    if(idx < 0) continue;
+    const row = src.rows[idx];
+    if(f.action === 'delete'){
+      src.rows.splice(idx, 1);
+      if(row.agent) retractToFix[`${f.mv}|${row.agent}`] = true;
+    } else if(f.action === 'move' && f.to && f.to !== f.mv){
+      const dst = await getStore(f.to);
+      dst.rows = dst.rows || [];
+      const already = dst.rows.some(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)));
+      src.rows.splice(idx, 1);
+      if(!already){ dst.rows.push(row); dst.month = f.to; }
+      if(row.agent){ retractToFix[`${f.mv}|${row.agent}`] = true; retractToFix[`${f.to}|${row.agent}`] = true; }
+    }
+  }
+
+  for(const mv of Object.keys(stores)) await billingSave(billingProdKey(mv), stores[mv]);
+  for(const ck of Object.keys(retractToFix)){
+    const [mv, agent] = ck.split('|');
+    if(!agent) continue;
+    const [yy, mm] = mv.split('-').map(Number);
+    const st = stores[mv] || await getBillingProd(mv);
+    const exact = (st.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    await saveMonthlyRetractCount(agent, yy, mm, exact);
+  }
+
+  logAudit('Admin', 'Contrats à vérifier corrigés en lot', `${list.length} correction(s)`);
+  flagFixes = {};
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  clearDailyCountCache();
+  await renderFlaggedContractsPanel();
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
 }
 
 // ============================================================
