@@ -16661,6 +16661,65 @@ async function renderFlaggedContractsPanel(){
 //   • un contrat présent DEUX FOIS dans le même mois (l'agent serait payé deux fois)
 //   • un contrat présent dans DEUX MOIS différents (même conséquence, plus difficile à repérer)
 //   • un compteur de rétractations qui ne correspond pas aux contrats réellement marqués
+// Conserve l'exemplaire d'un mois et supprime celui de l'autre. Le contrat étant identifié par
+// plusieurs clés, on supprime sur n'importe laquelle d'entre elles.
+async function resolveCrossMonthDuplicate(garder, supprimer, key){
+  if(!confirm(`Conserver l'exemplaire de ${billingMonthLabel(garder)} et supprimer celui de ${billingMonthLabel(supprimer)} ?`)) return;
+  const ok = await deleteContractFromMonth(supprimer, key, true);
+  if(!ok){
+    // La clé fournie est peut-être le numéro alors que le mois à purger porte la référence : on
+    // cherche alors le contrat par tous ses identifiants.
+    const src = await getBillingProd(garder);
+    const row = (src.rows || []).find(r => billingRowKeys(r).includes(String(key).toLowerCase()));
+    if(row){
+      for(const k of billingRowKeys(row)){
+        if(await deleteContractFromMonth(supprimer, k, true)) break;
+      }
+    }
+  }
+  logAudit('Admin', 'Doublon inter-mois résolu', `${key} — conservé ${garder}, supprimé ${supprimer}`);
+  await runIntegrityCheck();
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
+}
+
+// Retire UN seul exemplaire d'un contrat présent deux fois dans le même mois, et conserve l'autre.
+async function removeDuplicateInMonth(monthVal, key){
+  const store = await getBillingProd(monthVal);
+  const matches = (store.rows || []).map((r, i) => ({ r, i }))
+    .filter(x => billingRowKeys(x.r).includes(String(key).toLowerCase()));
+  if(matches.length < 2){ alert('Plus de doublon sur ce contrat — il a déjà été traité.'); await runIntegrityCheck(); return; }
+  const r = matches[0].r;
+  if(!confirm(`Retirer un exemplaire en double de ce contrat ?\n\n${r.nom || '?'} — n° ${r.numContrat || key}\n${billingMonthLabel(monthVal)}\n\nIl en restera exactement un.`)) return;
+  // On retire le dernier : si l'un des deux a été marqué rétracté entre-temps, c'est le premier qui
+  // porte le plus souvent l'information, autant le conserver.
+  store.rows.splice(matches[matches.length - 1].i, 1);
+  await billingSave(billingProdKey(monthVal), store);
+  if(r.agent){
+    const [yy, mm] = monthVal.split('-').map(Number);
+    const exact = (store.rows || []).filter(x => x.agent === r.agent && x.retracted).length;
+    await saveMonthlyRetractCount(r.agent, yy, mm, exact);
+  }
+  logAudit('Admin', 'Doublon retiré', `${r.numContrat || key} — ${monthVal}`);
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  await runIntegrityCheck();
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
+}
+
+async function alignRetractCounter(agent, monthVal, exact){
+  if(!confirm(`Fixer le compteur de rétractations de ${agent} pour ${billingMonthLabel(monthVal)} à ${exact} ?\n\nC'est le nombre exact de contrats marqués rétractés ce mois-là. C'est ce compteur qui décide de sa paie.`)) return;
+  const [yy, mm] = monthVal.split('-').map(Number);
+  await saveMonthlyRetractCount(agent, yy, mm, exact);
+  logAudit('Admin', 'Compteur de rétractations aligné', `${agent} — ${monthVal} → ${exact}`);
+  billingInvalidate();
+  clearRenderCaches();
+  await runIntegrityCheck();
+  renderBillingAgentSheet();
+}
+
 async function runIntegrityCheck(){
   const el = document.getElementById('integrityPanel');
   if(!el) return;
@@ -16674,6 +16733,7 @@ async function runIntegrityCheck(){
   }
 
   const seen = {};              // clé → premier mois où on l'a vue
+  const crossSeen = new Set();  // signatures déjà signalées, pour ne pas compter un contrat deux fois
   const dupSameMonth = [];
   const dupCrossMonth = [];
   const retractMismatch = [];
@@ -16688,7 +16748,16 @@ async function runIntegrityCheck(){
       billingRowKeys(r).forEach(k=>{
         if(local[k]){ dupSameMonth.push({ mv, k, nom: r.nom, agent: r.agent }); }
         else local[k] = true;
-        if(seen[k] && seen[k] !== mv) dupCrossMonth.push({ k, a: seen[k], b: mv, nom: r.nom, agent: r.agent });
+        if(seen[k] && seen[k] !== mv){
+          // Un contrat porte DEUX identifiants (numéro + référence) : sans ce regroupement, il
+          // apparaissait deux fois dans la liste et on croyait avoir deux fois plus d'anomalies.
+          const sig = billingRowKeys(r).join('|');
+          if(!crossSeen.has(sig)){
+            crossSeen.add(sig);
+            dupCrossMonth.push({ k, sig, a: seen[k], b: mv, nom: r.nom, agent: r.agent,
+                                 num: r.numContrat, date: r.datePropre || r.date });
+          }
+        }
         if(!seen[k]) seen[k] = mv;
       });
     });
@@ -16712,19 +16781,55 @@ async function runIntegrityCheck(){
       <div style="font-weight:800; color:var(--red);">⚠️ ${total} anomalie${total>1?'s':''} sur ${totalContracts} contrats vérifiés</div>
     </div>`;
     if(dupSameMonth.length){
-      html += `<div style="margin-bottom:10px;"><b style="color:var(--red);">👯 ${dupSameMonth.length} contrat(s) en double dans le même mois</b>
-        <div style="font-size:12.5px; color:var(--muted); margin:5px 0;">L'agent serait payé deux fois dessus. Utilise 🔎 Trouver un contrat pour supprimer l'exemplaire en trop.</div>
-        <div style="font-size:12.5px; line-height:1.7;">${dupSameMonth.slice(0,15).map(d=>`${escapeHtml(billingMonthLabel(d.mv))} — n° ${escapeHtml(d.k)} — ${escapeHtml(d.nom||'?')} (${escapeHtml(d.agent||'—')})`).join('<br>')}</div></div>`;
+      html += `<div style="margin-bottom:14px;"><b style="color:var(--red);">👯 ${dupSameMonth.length} contrat${dupSameMonth.length>1?'s':''} en double dans le même mois</b>
+        <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">L'agent serait payé deux fois dessus. Un clic retire l'exemplaire en trop et garde l'autre.</div>
+        <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Mois</th><th>Contrat</th><th>Client</th><th>Agent</th><th></th></tr></thead><tbody>
+        ${dupSameMonth.slice(0,20).map(d=>`<tr>
+          <td>${escapeHtml(billingMonthLabel(d.mv))}</td>
+          <td>${escapeHtml(d.k)}</td>
+          <td>${escapeHtml(d.nom || '?')}</td>
+          <td>${escapeHtml(d.agent || '—')}</td>
+          <td><button onclick="removeDuplicateInMonth('${escapeHtml(d.mv)}', '${String(d.k).replace(/'/g,"\\'")}')"
+            title="Supprime UN seul exemplaire et conserve l'autre."
+            style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">Retirer le doublon</button></td>
+        </tr>`).join('')}
+        </tbody></table></div></div>`;
     }
     if(dupCrossMonth.length){
-      html += `<div style="margin-bottom:10px;"><b style="color:var(--red);">🗓️ ${dupCrossMonth.length} contrat(s) présents dans deux mois</b>
-        <div style="font-size:12.5px; color:var(--muted); margin:5px 0;">Presque toujours une date corrigée puis réimportée avant la mise à jour. Supprime celui du mois qui n'est pas le bon.</div>
-        <div style="font-size:12.5px; line-height:1.7;">${dupCrossMonth.slice(0,15).map(d=>`n° ${escapeHtml(d.k)} — ${escapeHtml(billingMonthLabel(d.a))} ET ${escapeHtml(billingMonthLabel(d.b))} — ${escapeHtml(d.nom||'?')}`).join('<br>')}</div></div>`;
+      // On corrige SUR PLACE : deux boutons, « garder ce mois-ci » pour chacun des deux mois. Celui
+      // qu'on ne garde pas est supprimé. Plus besoin d'aller chercher le contrat ailleurs.
+      html += `<div style="margin-bottom:14px;"><b style="color:var(--red);">🗓️ ${dupCrossMonth.length} contrat${dupCrossMonth.length>1?'s':''} présent${dupCrossMonth.length>1?'s':''} dans deux mois</b>
+        <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">Presque toujours une date corrigée puis réimportée. Choisis le mois à conserver — l'autre exemplaire est supprimé aussitôt.</div>
+        <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Contrat</th><th>Client</th><th>Agent</th><th>Date lue</th><th>À conserver</th></tr></thead><tbody>
+        ${dupCrossMonth.slice(0,20).map(d=>`<tr>
+          <td>${escapeHtml(d.num || d.k)}</td>
+          <td>${escapeHtml(d.nom || '?')}</td>
+          <td>${escapeHtml(d.agent || '—')}</td>
+          <td style="white-space:nowrap;">${escapeHtml(d.date || '—')}</td>
+          <td style="white-space:nowrap;">
+            <button onclick="resolveCrossMonthDuplicate('${escapeHtml(d.a)}', '${escapeHtml(d.b)}', '${String(d.k).replace(/'/g,"\\'")}')"
+              title="Conserver l'exemplaire de ${escapeHtml(billingMonthLabel(d.a))} et supprimer celui de ${escapeHtml(billingMonthLabel(d.b))}."
+              style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px; margin-right:5px;">Garder ${escapeHtml(billingMonthLabel(d.a))}</button>
+            <button onclick="resolveCrossMonthDuplicate('${escapeHtml(d.b)}', '${escapeHtml(d.a)}', '${String(d.k).replace(/'/g,"\\'")}')"
+              title="Conserver l'exemplaire de ${escapeHtml(billingMonthLabel(d.b))} et supprimer celui de ${escapeHtml(billingMonthLabel(d.a))}."
+              style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">Garder ${escapeHtml(billingMonthLabel(d.b))}</button>
+          </td></tr>`).join('')}
+        </tbody></table></div></div>`;
     }
     if(retractMismatch.length){
-      html += `<div><b style="color:var(--amber);">🔻 ${retractMismatch.length} compteur(s) de rétractations décalé(s)</b>
-        <div style="font-size:12.5px; color:var(--muted); margin:5px 0;">Le compteur qui paie ne correspond pas aux contrats marqués rétractés. Ouvre le tableau de l'agent et clique « Aligner le compteur ».</div>
-        <div style="font-size:12.5px; line-height:1.7;">${retractMismatch.slice(0,15).map(d=>`${escapeHtml(d.agent)} — ${escapeHtml(billingMonthLabel(d.mv))} : compteur ${d.counter}, marqués ${d.marked}`).join('<br>')}</div></div>`;
+      html += `<div style="margin-bottom:10px;"><b style="color:var(--amber);">🔻 ${retractMismatch.length} compteur${retractMismatch.length>1?'s':''} de rétractations décalé${retractMismatch.length>1?'s':''}</b>
+        <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">C'est le compteur qui paie. Aligne-le sur les contrats réellement marqués rétractés — ou corrige d'abord le marquage si c'est lui qui est faux.</div>
+        <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Mois</th><th>Compteur actuel</th><th>Contrats marqués</th><th></th></tr></thead><tbody>
+        ${retractMismatch.slice(0,20).map(d=>`<tr>
+          <td><b>${escapeHtml(d.agent)}</b></td>
+          <td>${escapeHtml(billingMonthLabel(d.mv))}</td>
+          <td style="color:var(--red); font-weight:700;">${d.counter}</td>
+          <td style="color:var(--green); font-weight:700;">${d.marked}</td>
+          <td><button onclick="alignRetractCounter('${escapeHtml(d.agent)}', '${escapeHtml(d.mv)}', ${d.marked})"
+            title="Fixer le compteur à ${d.marked}, le nombre exact de contrats marqués rétractés ce mois-là."
+            style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">Aligner sur ${d.marked}</button></td>
+        </tr>`).join('')}
+        </tbody></table></div></div>`;
     }
   }
   el.innerHTML = html;
