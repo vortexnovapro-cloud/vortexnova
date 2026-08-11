@@ -13482,7 +13482,11 @@ function renderImportAnomalies(){
 
   let html = `<div style="padding:13px 15px; border-radius:10px; background:rgba(217,164,65,0.14); border:1px solid rgba(217,164,65,0.55); margin-bottom:10px;">
     <div style="font-weight:800; color:var(--amber);">🛠️ ${list.length} ligne${list.length>1?'s':''} à confirmer</div>
-    <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Le CRM a fait une proposition pour chacune. Corrige le mois ou l'agent si besoin, puis applique — ligne par ligne, rien n'est imposé.</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Ajuste les menus qui te semblent faux, puis applique tout d'un coup — une seule attente pour l'ensemble.</div>
+    <div style="margin-top:11px; display:flex; gap:10px; flex-wrap:wrap;">
+      <button onclick="applyAllAnomalyFixes()" style="padding:10px 18px; border-radius:9px; border:none; background:var(--accent); color:white; font-weight:800; cursor:pointer;">✅ Appliquer toutes les lignes</button>
+      <button onclick="lastImportAnomalies = lastImportAnomalies.map(x=>({...x, resolved:true})); renderImportAnomalies();" style="padding:10px 16px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer;" title="Accepter toutes les propositions du CRM sans rien changer.">Tout laisser tel quel</button>
+    </div>
   </div>`;
   html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Problème</th><th>Date lue</th><th>Client</th><th>N° contrat</th><th>Agent</th><th>Mois</th><th></th></tr></thead><tbody>';
   list.slice(0, 60).forEach((a, i)=>{
@@ -13505,6 +13509,64 @@ function renderImportAnomalies(){
   html += '</tbody></table></div>';
   if(list.length > 60) html += `<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">… et ${list.length - 60} autres.</div>`;
   el.innerHTML = html;
+}
+
+// Applique en une passe toutes les lignes affichées : les déplacements de mois sont regroupés par
+// couple (mois source → mois cible), les changements d'agent groupés par mois. Une seule série
+// d'écritures, un seul rafraîchissement à la fin.
+async function applyAllAnomalyFixes(){
+  const el = document.getElementById('importAnomaliesPanel');
+  const list = lastImportAnomalies.filter(a => !a.resolved);
+  if(!list.length) return;
+
+  // On relit les menus tels qu'ils sont à l'écran au moment du clic.
+  const ops = [];
+  list.forEach((a, i)=>{
+    const mv = document.getElementById(`anoMo_${i}`)?.value || a.month;
+    const ag = document.getElementById(`anoAg_${i}`)?.value || '';
+    ops.push({ a, mv, ag });
+  });
+  if(el) el.innerHTML = `<div class="empty" style="padding:12px;">⏳ Application de ${ops.length} ligne(s)…</div>`;
+
+  const stores = {};
+  const getStore = async mv => (stores[mv] = stores[mv] || await getBillingProd(mv));
+  const retractToFix = {};
+
+  for(const { a, mv, ag } of ops){
+    const src = await getStore(a.month);
+    const idx = (src.rows || []).findIndex(r => billingRowKeys(r).includes(String(a.key).toLowerCase()));
+    if(idx < 0) continue;
+    const row = src.rows[idx];
+    if(ag && ag !== row.agent) row.agent = ag;
+    if(mv && mv !== a.month){
+      const dst = await getStore(mv);
+      dst.rows = dst.rows || [];
+      const already = dst.rows.some(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)));
+      src.rows.splice(idx, 1);
+      if(!already){ dst.rows.push(row); dst.month = mv; }
+      if(row.agent){ retractToFix[`${a.month}|${row.agent}`] = true; retractToFix[`${mv}|${row.agent}`] = true; }
+    }
+  }
+
+  for(const mv of Object.keys(stores)) await billingSave(billingProdKey(mv), stores[mv]);
+  for(const ck of Object.keys(retractToFix)){
+    const [mv, agent] = ck.split('|');
+    if(!agent) continue;
+    const [yy, mm] = mv.split('-').map(Number);
+    const st = stores[mv] || await getBillingProd(mv);
+    const exact = (st.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    await saveMonthlyRetractCount(agent, yy, mm, exact);
+  }
+
+  logAudit('Admin', 'Anomalies d\'import corrigées en lot', `${ops.length} ligne(s)`);
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  clearDailyCountCache();
+  lastImportAnomalies = lastImportAnomalies.map(x => ({ ...x, resolved: true }));
+  renderImportAnomalies();
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
 }
 
 async function applyAnomalyFix(currentMv, key, newMv, newAgent){
@@ -14547,8 +14609,10 @@ async function billingBuildContractIndex(force){
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     months.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
   }
-  for(const mv of months){
-    const data = await getBillingProd(mv);
+  // Chargement parallèle : l'index sert au rattachement des retours, il est reconstruit souvent.
+  const datas = await Promise.all(months.map(mv => getBillingProd(mv)));
+  months.forEach((mv, mi)=>{
+    const data = datas[mi];
     (data.rows || []).forEach(r => {
       // Indexé sur le numéro ET sur la référence : le fichier de retours ne porte que l'un des deux
       // (chez toi, le hachage de la colonne Référence), on doit pouvoir retrouver le contrat par
@@ -14556,7 +14620,7 @@ async function billingBuildContractIndex(force){
       const entry = { agent: r.agent, nom: r.nom, produit: r.produit, month: mv };
       billingRowKeys(r).forEach(k => { if(!idx[k]) idx[k] = entry; });
     });
-  }
+  });
   billingContractIndexCache = idx;
   return idx;
 }
@@ -16243,12 +16307,18 @@ async function renderHistoryStats(){
   const now = nowMA();
   const commissionRate = Number(config.bossCommissionPerContract) || 0;
   const rows = [];
+  const mvsHist = [];
   for(let i = 0; i < 18; i++){
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
-    const [prod, ret, frozen, stats] = await Promise.all([
-      getBillingProd(mv), getBillingReturns(mv), getBillingPayslips(mv), getBillingStats(mv)
-    ]);
+    mvsHist.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
+  }
+  // Les 72 lectures (18 mois × 4 jeux de données) partent d'un bloc au lieu de s'enchaîner.
+  const packs = await Promise.all(mvsHist.map(mv => Promise.all([
+    getBillingProd(mv), getBillingReturns(mv), getBillingPayslips(mv), getBillingStats(mv)
+  ])));
+  for(let i = 0; i < mvsHist.length; i++){
+    const mv = mvsHist[i];
+    const [prod, ret, frozen, stats] = packs[i];
     const contracts = (prod.rows || []).length;
     const retracted = (prod.rows || []).filter(r => r.retracted).length;
     const returns = (ret.rows || []).filter(r => !r.dismissed).length;
@@ -16456,24 +16526,29 @@ async function searchContractGlobal(){
   }
   el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Recherche dans les 24 derniers mois…</div>';
 
+  // 24 mois chargés EN PARALLÈLE plutôt qu'en file : la recherche passe de plusieurs secondes à
+  // quasi instantanée, et les mois déjà lus sortent du cache sans aucun aller-retour.
   const now = nowMA();
   const found = [];
+  const mvs = [];
   for(let i = 0; i < 24; i++){
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
-
-    const prod = await getBillingProd(mv);
-    (prod.rows || []).forEach(r=>{
+    mvs.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
+  }
+  const [prods, rets] = await Promise.all([
+    Promise.all(mvs.map(mv => getBillingProd(mv))),
+    Promise.all(mvs.map(mv => getBillingReturns(mv)))
+  ]);
+  mvs.forEach((mv, i)=>{
+    (prods[i].rows || []).forEach(r=>{
       const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.telephone, r.email, r.agent].join(' '));
       if(hay.includes(q)) found.push({ type: 'contrat', mv, r });
     });
-
-    const ret = await getBillingReturns(mv);
-    (ret.rows || []).forEach(r=>{
+    (rets[i].rows || []).forEach(r=>{
       const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.agent, r.agentRaw].join(' '));
       if(hay.includes(q)) found.push({ type: 'retour', mv, r });
     });
-  }
+  });
 
   if(!found.length){
     el.innerHTML = `<div class="empty" style="padding:12px;">Aucun résultat pour « ${escapeHtml(raw)} » sur les 24 derniers mois.<br><span style="font-size:12px;">Si le contrat est ancien, pense à importer le CSV du mois concerné.</span></div>`;
@@ -16595,14 +16670,17 @@ async function renderFlaggedContractsPanel(){
   el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Analyse des 24 derniers mois…</div>';
   const now = nowMA();
   const found = [];
+  const mvsFlag = [];
   for(let i = 0; i < 24; i++){
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
-    const prod = await getBillingProd(mv);
-    (prod.rows || []).forEach(r=>{
+    mvsFlag.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
+  }
+  const prodsFlag = await Promise.all(mvsFlag.map(mv => getBillingProd(mv)));
+  mvsFlag.forEach((mv, i)=>{
+    (prodsFlag[i].rows || []).forEach(r=>{
       if(r._warnings && r._warnings.length) found.push({ mv, r });
     });
-  }
+  });
   if(!found.length){
     el.innerHTML = '<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35); font-weight:700; color:var(--green);">✅ Aucune anomalie détectée sur les 24 derniers mois.</div>';
     return;
@@ -16720,10 +16798,21 @@ async function alignRetractCounter(agent, monthVal, exact){
   renderBillingAgentSheet();
 }
 
+let lastIntegrityResult = null;
+let integrityFixes = {};   // id d'anomalie → correction choisie
+
+// ============================================================
+// 🩺 CONTRÔLE D'INTÉGRITÉ — analyser une fois, choisir, appliquer en une fois
+// ============================================================
+// AVANT : chaque correction déclenchait une écriture puis une réanalyse complète des 24 mois. Corriger
+// cinq anomalies demandait cinq attentes. Désormais on analyse UNE fois, tu coches ce que tu veux
+// corriger, et tout part d'un seul coup — les écritures sont groupées et la réanalyse n'a lieu qu'à
+// la fin. Le balayage lui-même est parallélisé : les mois sont lus tous ensemble au lieu d'un par un.
 async function runIntegrityCheck(){
   const el = document.getElementById('integrityPanel');
   if(!el) return;
   el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Vérification des 24 derniers mois…</div>';
+  integrityFixes = {};
 
   const now = nowMA();
   const months = [];
@@ -16732,107 +16821,209 @@ async function runIntegrityCheck(){
     months.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
   }
 
-  const seen = {};              // clé → premier mois où on l'a vue
-  const crossSeen = new Set();  // signatures déjà signalées, pour ne pas compter un contrat deux fois
-  const dupSameMonth = [];
-  const dupCrossMonth = [];
-  const retractMismatch = [];
+  // Tous les mois lus EN PARALLÈLE (au lieu d'un par un) : c'est ce qui prenait le plus de temps.
+  const stores = await Promise.all(months.map(mv => getBillingProd(mv)));
+
+  const seen = {};
+  const crossSeen = new Set();
+  const dupSameMonth = [], dupCrossMonth = [], retractMismatch = [];
   let totalContracts = 0;
 
-  for(const mv of months){
-    const store = await getBillingProd(mv);
-    const rows = store.rows || [];
+  months.forEach((mv, mi)=>{
+    const rows = stores[mi].rows || [];
     totalContracts += rows.length;
     const local = {};
     rows.forEach(r=>{
       billingRowKeys(r).forEach(k=>{
-        if(local[k]){ dupSameMonth.push({ mv, k, nom: r.nom, agent: r.agent }); }
-        else local[k] = true;
+        if(local[k]){
+          const sig = billingRowKeys(r).join('|') + '@' + mv;
+          if(!crossSeen.has(sig)){ crossSeen.add(sig); dupSameMonth.push({ mv, k, nom: r.nom, agent: r.agent, num: r.numContrat }); }
+        } else local[k] = true;
         if(seen[k] && seen[k] !== mv){
-          // Un contrat porte DEUX identifiants (numéro + référence) : sans ce regroupement, il
-          // apparaissait deux fois dans la liste et on croyait avoir deux fois plus d'anomalies.
           const sig = billingRowKeys(r).join('|');
           if(!crossSeen.has(sig)){
             crossSeen.add(sig);
-            dupCrossMonth.push({ k, sig, a: seen[k], b: mv, nom: r.nom, agent: r.agent,
+            dupCrossMonth.push({ k, a: seen[k], b: mv, nom: r.nom, agent: r.agent,
                                  num: r.numContrat, date: r.datePropre || r.date });
           }
         }
         if(!seen[k]) seen[k] = mv;
       });
     });
-    // Compteur de rétractations vs contrats réellement marqués
+  });
+
+  // Compteurs de rétractations : toutes les lectures lancées d'un bloc.
+  const agents = allKnownAgents();
+  const checks = [];
+  months.forEach((mv, mi)=>{
+    const rows = stores[mi].rows || [];
     const [yy, mm] = mv.split('-').map(Number);
-    for(const agent of allKnownAgents()){
+    agents.forEach(agent=>{
       const marked = rows.filter(r => r.agent === agent && r.retracted).length;
-      const counter = await getMonthlyRetractCount(agent, yy, mm);
-      if(marked !== counter && (marked || counter)) retractMismatch.push({ mv, agent, marked, counter });
+      checks.push(getMonthlyRetractCount(agent, yy, mm).then(counter=>{
+        if(marked !== counter && (marked || counter)) retractMismatch.push({ mv, agent, marked, counter });
+      }));
+    });
+  });
+  await Promise.all(checks);
+
+  lastIntegrityResult = { dupSameMonth, dupCrossMonth, retractMismatch, totalContracts };
+  renderIntegrityResult();
+}
+
+function renderIntegrityResult(){
+  const el = document.getElementById('integrityPanel');
+  if(!el || !lastIntegrityResult) return;
+  const { dupSameMonth, dupCrossMonth, retractMismatch, totalContracts } = lastIntegrityResult;
+  const total = dupSameMonth.length + dupCrossMonth.length + retractMismatch.length;
+
+  if(!total){
+    el.innerHTML = `<div style="padding:13px 15px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.4); font-weight:700; color:var(--green);">
+      ✅ Aucun doublon, aucun écart de compteur sur ${totalContracts} contrats vérifiés.
+    </div>`;
+    return;
+  }
+
+  const nbChoisis = Object.keys(integrityFixes).filter(k => integrityFixes[k]).length;
+  let html = `<div style="padding:13px 15px; border-radius:10px; background:rgba(229,90,90,0.13); border:1px solid rgba(229,90,90,0.45); margin-bottom:12px;">
+    <div style="font-weight:800; color:var(--red);">⚠️ ${total} anomalie${total>1?'s':''} sur ${totalContracts} contrats vérifiés</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:5px;">Choisis la correction de chaque ligne, puis applique tout d'un coup — une seule attente, pas une par correction.</div>
+    <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <button onclick="applyAllIntegrityFixes()" ${nbChoisis ? '' : 'disabled'} style="padding:11px 20px; border-radius:9px; border:none;
+        background:${nbChoisis ? 'var(--accent)' : 'var(--panel2)'}; color:${nbChoisis ? 'white' : 'var(--muted)'};
+        font-weight:800; cursor:${nbChoisis ? 'pointer' : 'not-allowed'};">✅ Appliquer ${nbChoisis || ''} correction${nbChoisis>1?'s':''}</button>
+      <button onclick="autoSelectIntegrityFixes()" style="padding:11px 18px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:700; cursor:pointer;" title="Coche la correction la plus probable pour chaque ligne : garder l'exemplaire le plus ancien, et aligner les compteurs sur les contrats marqués. Tu peux ensuite ajuster avant d'appliquer.">🪄 Tout pré-sélectionner</button>
+      <button onclick="integrityFixes={}; renderIntegrityResult();" style="padding:11px 16px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer;">Tout décocher</button>
+    </div>
+  </div>`;
+
+  const radio = (id, value, label, title)=>{
+    const on = integrityFixes[id] === value;
+    return `<label title="${title || ''}" style="display:inline-flex; align-items:center; gap:5px; margin-right:10px; cursor:pointer; font-size:12px;
+      padding:4px 9px; border-radius:7px; border:1px solid ${on ? 'var(--green)' : 'var(--border)'};
+      background:${on ? 'rgba(52,183,116,0.14)' : 'transparent'}; color:${on ? 'var(--green)' : 'var(--muted)'}; font-weight:${on ? '800' : '600'};">
+      <input type="radio" name="${id}" ${on ? 'checked' : ''} onchange="integrityFixes['${id}']='${value}'; renderIntegrityResult();" style="width:auto; margin:0;">${label}</label>`;
+  };
+
+  if(dupCrossMonth.length){
+    html += `<div style="margin-bottom:14px;"><b style="color:var(--red);">🗓️ ${dupCrossMonth.length} contrat${dupCrossMonth.length>1?'s':''} présent${dupCrossMonth.length>1?'s':''} dans deux mois</b>
+      <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">Presque toujours une date corrigée puis réimportée. Choisis le mois à conserver.</div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Contrat</th><th>Client</th><th>Agent</th><th>Date lue</th><th>Conserver</th></tr></thead><tbody>
+      ${dupCrossMonth.map((d, i)=>{
+        const id = `cross_${i}`;
+        return `<tr>
+          <td>${escapeHtml(d.num || d.k)}</td><td>${escapeHtml(d.nom || '?')}</td>
+          <td>${escapeHtml(d.agent || '—')}</td><td style="white-space:nowrap;">${escapeHtml(d.date || '—')}</td>
+          <td style="white-space:nowrap;">
+            ${radio(id, 'a', billingMonthLabel(d.a), `Conserver ${billingMonthLabel(d.a)}, supprimer ${billingMonthLabel(d.b)}`)}
+            ${radio(id, 'b', billingMonthLabel(d.b), `Conserver ${billingMonthLabel(d.b)}, supprimer ${billingMonthLabel(d.a)}`)}
+            ${radio(id, 'skip', 'ne rien faire', 'Laisser tel quel pour l\'instant')}
+          </td></tr>`;
+      }).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  if(dupSameMonth.length){
+    html += `<div style="margin-bottom:14px;"><b style="color:var(--red);">👯 ${dupSameMonth.length} contrat${dupSameMonth.length>1?'s':''} en double dans le même mois</b>
+      <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">L'agent serait payé deux fois dessus.</div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Mois</th><th>Contrat</th><th>Client</th><th>Agent</th><th>Action</th></tr></thead><tbody>
+      ${dupSameMonth.map((d, i)=>{
+        const id = `same_${i}`;
+        return `<tr><td>${escapeHtml(billingMonthLabel(d.mv))}</td><td>${escapeHtml(d.num || d.k)}</td>
+          <td>${escapeHtml(d.nom || '?')}</td><td>${escapeHtml(d.agent || '—')}</td>
+          <td style="white-space:nowrap;">${radio(id, 'remove', 'retirer le doublon')}${radio(id, 'skip', 'ne rien faire')}</td></tr>`;
+      }).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  if(retractMismatch.length){
+    html += `<div style="margin-bottom:10px;"><b style="color:var(--amber);">🔻 ${retractMismatch.length} compteur${retractMismatch.length>1?'s':''} de rétractations décalé${retractMismatch.length>1?'s':''}</b>
+      <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">C'est ce compteur qui décide de la paie.</div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Mois</th><th>Compteur</th><th>Marqués</th><th>Action</th></tr></thead><tbody>
+      ${retractMismatch.map((d, i)=>{
+        const id = `retr_${i}`;
+        return `<tr><td><b>${escapeHtml(d.agent)}</b></td><td>${escapeHtml(billingMonthLabel(d.mv))}</td>
+          <td style="color:var(--red); font-weight:700;">${d.counter}</td><td style="color:var(--green); font-weight:700;">${d.marked}</td>
+          <td style="white-space:nowrap;">${radio(id, 'align', `aligner sur ${d.marked}`)}${radio(id, 'skip', 'ne rien faire')}</td></tr>`;
+      }).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// Pré-sélectionne la correction la plus probable partout : conserver l'exemplaire le plus ancien
+// (celui d'origine, avant réimport), retirer les doublons, aligner les compteurs sur les contrats
+// réellement marqués. Rien n'est appliqué tant que tu n'as pas validé.
+function autoSelectIntegrityFixes(){
+  if(!lastIntegrityResult) return;
+  lastIntegrityResult.dupCrossMonth.forEach((d, i)=>{ integrityFixes[`cross_${i}`] = d.a <= d.b ? 'a' : 'b'; });
+  lastIntegrityResult.dupSameMonth.forEach((d, i)=>{ integrityFixes[`same_${i}`] = 'remove'; });
+  lastIntegrityResult.retractMismatch.forEach((d, i)=>{ integrityFixes[`retr_${i}`] = 'align'; });
+  renderIntegrityResult();
+}
+
+async function applyAllIntegrityFixes(){
+  if(!lastIntegrityResult) return;
+  const { dupSameMonth, dupCrossMonth, retractMismatch } = lastIntegrityResult;
+  const actions = [];
+  dupCrossMonth.forEach((d, i)=>{ const c = integrityFixes[`cross_${i}`]; if(c === 'a' || c === 'b') actions.push({ t:'cross', d, keep: c === 'a' ? d.a : d.b, drop: c === 'a' ? d.b : d.a }); });
+  dupSameMonth.forEach((d, i)=>{ if(integrityFixes[`same_${i}`] === 'remove') actions.push({ t:'same', d }); });
+  retractMismatch.forEach((d, i)=>{ if(integrityFixes[`retr_${i}`] === 'align') actions.push({ t:'retr', d }); });
+  if(!actions.length) return;
+  if(!confirm(`Appliquer ${actions.length} correction${actions.length>1?'s':''} ?\n\nTout est enregistré d'un seul coup, puis le contrôle est relancé pour vérifier qu'il ne reste rien.`)) return;
+
+  const el = document.getElementById('integrityPanel');
+  if(el) el.innerHTML = `<div class="empty" style="padding:12px;">⏳ Application de ${actions.length} correction(s)…</div>`;
+
+  // On regroupe par mois : un seul chargement et une seule écriture par mois touché, au lieu d'un
+  // aller-retour par correction. C'est ce qui rend l'opération quasi instantanée.
+  const touchedStores = {};
+  const getStore = async mv => (touchedStores[mv] = touchedStores[mv] || await getBillingProd(mv));
+  const retractToFix = {};
+
+  for(const a of actions){
+    if(a.t === 'cross'){
+      const store = await getStore(a.drop);
+      const before = store.rows.length;
+      store.rows = store.rows.filter(r => !billingRowKeys(r).includes(String(a.d.k).toLowerCase()));
+      if(store.rows.length === before){
+        // La clé fournie n'existe pas dans ce mois-là (l'exemplaire y porte l'autre identifiant) :
+        // on retrouve le contrat via le mois conservé et on retente sur toutes ses clés.
+        const src = await getStore(a.keep);
+        const row = (src.rows || []).find(r => billingRowKeys(r).includes(String(a.d.k).toLowerCase()));
+        if(row){ const ks = billingRowKeys(row); store.rows = store.rows.filter(r => !billingRowKeys(r).some(k => ks.includes(k))); }
+      }
+      if(a.d.agent) retractToFix[`${a.drop}|${a.d.agent}`] = true;
+    } else if(a.t === 'same'){
+      const store = await getStore(a.d.mv);
+      const idxs = store.rows.map((r, i) => ({ r, i })).filter(x => billingRowKeys(x.r).includes(String(a.d.k).toLowerCase()));
+      if(idxs.length >= 2) store.rows.splice(idxs[idxs.length - 1].i, 1);
+      if(a.d.agent) retractToFix[`${a.d.mv}|${a.d.agent}`] = true;
+    } else if(a.t === 'retr'){
+      retractToFix[`${a.d.mv}|${a.d.agent}`] = 'force';
     }
   }
 
-  const total = dupSameMonth.length + dupCrossMonth.length + retractMismatch.length;
-  let html = '';
-  if(!total){
-    html = `<div style="padding:13px 15px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.4); font-weight:700; color:var(--green);">
-      ✅ Aucun doublon, aucun écart de compteur sur ${totalContracts} contrats vérifiés.
-    </div>`;
-  } else {
-    html = `<div style="padding:13px 15px; border-radius:10px; background:rgba(229,90,90,0.13); border:1px solid rgba(229,90,90,0.45); margin-bottom:10px;">
-      <div style="font-weight:800; color:var(--red);">⚠️ ${total} anomalie${total>1?'s':''} sur ${totalContracts} contrats vérifiés</div>
-    </div>`;
-    if(dupSameMonth.length){
-      html += `<div style="margin-bottom:14px;"><b style="color:var(--red);">👯 ${dupSameMonth.length} contrat${dupSameMonth.length>1?'s':''} en double dans le même mois</b>
-        <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">L'agent serait payé deux fois dessus. Un clic retire l'exemplaire en trop et garde l'autre.</div>
-        <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Mois</th><th>Contrat</th><th>Client</th><th>Agent</th><th></th></tr></thead><tbody>
-        ${dupSameMonth.slice(0,20).map(d=>`<tr>
-          <td>${escapeHtml(billingMonthLabel(d.mv))}</td>
-          <td>${escapeHtml(d.k)}</td>
-          <td>${escapeHtml(d.nom || '?')}</td>
-          <td>${escapeHtml(d.agent || '—')}</td>
-          <td><button onclick="removeDuplicateInMonth('${escapeHtml(d.mv)}', '${String(d.k).replace(/'/g,"\\'")}')"
-            title="Supprime UN seul exemplaire et conserve l'autre."
-            style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">Retirer le doublon</button></td>
-        </tr>`).join('')}
-        </tbody></table></div></div>`;
-    }
-    if(dupCrossMonth.length){
-      // On corrige SUR PLACE : deux boutons, « garder ce mois-ci » pour chacun des deux mois. Celui
-      // qu'on ne garde pas est supprimé. Plus besoin d'aller chercher le contrat ailleurs.
-      html += `<div style="margin-bottom:14px;"><b style="color:var(--red);">🗓️ ${dupCrossMonth.length} contrat${dupCrossMonth.length>1?'s':''} présent${dupCrossMonth.length>1?'s':''} dans deux mois</b>
-        <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">Presque toujours une date corrigée puis réimportée. Choisis le mois à conserver — l'autre exemplaire est supprimé aussitôt.</div>
-        <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Contrat</th><th>Client</th><th>Agent</th><th>Date lue</th><th>À conserver</th></tr></thead><tbody>
-        ${dupCrossMonth.slice(0,20).map(d=>`<tr>
-          <td>${escapeHtml(d.num || d.k)}</td>
-          <td>${escapeHtml(d.nom || '?')}</td>
-          <td>${escapeHtml(d.agent || '—')}</td>
-          <td style="white-space:nowrap;">${escapeHtml(d.date || '—')}</td>
-          <td style="white-space:nowrap;">
-            <button onclick="resolveCrossMonthDuplicate('${escapeHtml(d.a)}', '${escapeHtml(d.b)}', '${String(d.k).replace(/'/g,"\\'")}')"
-              title="Conserver l'exemplaire de ${escapeHtml(billingMonthLabel(d.a))} et supprimer celui de ${escapeHtml(billingMonthLabel(d.b))}."
-              style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px; margin-right:5px;">Garder ${escapeHtml(billingMonthLabel(d.a))}</button>
-            <button onclick="resolveCrossMonthDuplicate('${escapeHtml(d.b)}', '${escapeHtml(d.a)}', '${String(d.k).replace(/'/g,"\\'")}')"
-              title="Conserver l'exemplaire de ${escapeHtml(billingMonthLabel(d.b))} et supprimer celui de ${escapeHtml(billingMonthLabel(d.a))}."
-              style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">Garder ${escapeHtml(billingMonthLabel(d.b))}</button>
-          </td></tr>`).join('')}
-        </tbody></table></div></div>`;
-    }
-    if(retractMismatch.length){
-      html += `<div style="margin-bottom:10px;"><b style="color:var(--amber);">🔻 ${retractMismatch.length} compteur${retractMismatch.length>1?'s':''} de rétractations décalé${retractMismatch.length>1?'s':''}</b>
-        <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">C'est le compteur qui paie. Aligne-le sur les contrats réellement marqués rétractés — ou corrige d'abord le marquage si c'est lui qui est faux.</div>
-        <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Mois</th><th>Compteur actuel</th><th>Contrats marqués</th><th></th></tr></thead><tbody>
-        ${retractMismatch.slice(0,20).map(d=>`<tr>
-          <td><b>${escapeHtml(d.agent)}</b></td>
-          <td>${escapeHtml(billingMonthLabel(d.mv))}</td>
-          <td style="color:var(--red); font-weight:700;">${d.counter}</td>
-          <td style="color:var(--green); font-weight:700;">${d.marked}</td>
-          <td><button onclick="alignRetractCounter('${escapeHtml(d.agent)}', '${escapeHtml(d.mv)}', ${d.marked})"
-            title="Fixer le compteur à ${d.marked}, le nombre exact de contrats marqués rétractés ce mois-là."
-            style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">Aligner sur ${d.marked}</button></td>
-        </tr>`).join('')}
-        </tbody></table></div></div>`;
-    }
+  // Écritures groupées
+  for(const mv of Object.keys(touchedStores)) await billingSave(billingProdKey(mv), touchedStores[mv]);
+  for(const ck of Object.keys(retractToFix)){
+    const [mv, agent] = ck.split('|');
+    if(!agent) continue;
+    const [yy, mm] = mv.split('-').map(Number);
+    const store = touchedStores[mv] || await getBillingProd(mv);
+    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
-  el.innerHTML = html;
+
+  logAudit('Admin', 'Corrections d\'intégrité appliquées', `${actions.length} correction(s)`);
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  clearDailyCountCache();
+  await runIntegrityCheck();
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
 }
 
 // ------------------------------------------------------------
