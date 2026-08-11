@@ -1716,6 +1716,7 @@ function tryDeviceGateAdmin(){
           <textarea id="billingProdPaste" rows="4" placeholder="Date&#9;Date Propre&#9;Produit&#9;Référence&#9;Nom&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
           <button onclick="importBillingProdFromPaste()" title="Importe la production collée ci-dessus. Un contrat déjà présent n'est pas compté deux fois : la déduplication se fait sur le numéro de contrat." style="margin-top:10px; padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Importer la production</button>
           <div id="billingProdReport" style="margin-top:14px;"></div>
+          <div id="importAnomaliesPanel" style="margin-top:14px;"></div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
@@ -13145,6 +13146,128 @@ function billingFixSwappedFields(out){
   return { fixes, warnings };
 }
 
+// ============================================================
+// 🛠️ ANOMALIES D'IMPORT — te rendre la main plutôt que décider à ta place
+// ============================================================
+// Après chaque import de production, les lignes douteuses sont listées ici avec deux menus : le mois
+// et l'agent. Le CRM y met sa proposition, tu corriges ce qui te semble faux, et rien d'autre ne
+// bouge. Ce qui est considéré comme douteux :
+//   • une date qui tombe hors du mois importé (faute de frappe sur le mois ou l'année)
+//   • une date illisible (« 28/0/2026 ») — la ligne a atterri dans le mois de repli
+//   • un agent introuvable
+//   • une donnée signalée par les contrôles de cohérence
+let lastImportAnomalies = [];
+
+// Déplace un contrat déjà importé d'un mois à un autre, en emportant tout ce qui le concerne.
+async function fixContractMonth(fromMv, key, toMv){
+  if(!toMv || fromMv === toMv) return;
+  const from = await getBillingProd(fromMv);
+  const idx = (from.rows || []).findIndex(r => billingRowKeys(r).includes(String(key).toLowerCase()));
+  if(idx < 0){ alert('Contrat introuvable — il a peut-être déjà été déplacé.'); return; }
+  const row = from.rows[idx];
+
+  const to = await getBillingProd(toMv);
+  to.rows = to.rows || [];
+  if(to.rows.some(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)))){
+    alert(`Ce contrat existe déjà dans ${billingMonthLabel(toMv)} — rien n'a été déplacé.`);
+    return;
+  }
+  from.rows.splice(idx, 1);
+  to.rows.push(row);
+  to.month = toMv;
+  await billingSave(billingProdKey(fromMv), from);
+  await billingSave(billingProdKey(toMv), to);
+
+  // Une rétractation suit toujours son contrat : les compteurs des deux mois sont recalculés.
+  if(row.retracted && row.agent){
+    for(const mv of [fromMv, toMv]){
+      const st = await getBillingProd(mv);
+      const [yy, mm] = mv.split('-').map(Number);
+      const exact = (st.rows || []).filter(r => r.agent === row.agent && r.retracted).length;
+      await saveMonthlyRetractCount(row.agent, yy, mm, exact);
+    }
+  }
+  logAudit('Admin', 'Contrat déplacé de mois', `${row.numContrat || key} — ${fromMv} → ${toMv}`);
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  lastImportAnomalies = lastImportAnomalies.map(a => a.key === String(key).toLowerCase() ? { ...a, month: toMv, resolved: true } : a);
+  renderImportAnomalies();
+  renderBillingImportSummary();
+  renderBillingAgentSheet();
+}
+
+async function fixContractAgent(mv, key, agent){
+  if(!agent) return;
+  const store = await getBillingProd(mv);
+  const row = (store.rows || []).find(r => billingRowKeys(r).includes(String(key).toLowerCase()));
+  if(!row) return;
+  row.agent = agent;
+  await billingSave(billingProdKey(mv), store);
+  logAudit('Admin', 'Agent d\'un contrat corrigé', `${row.numContrat || key} — ${mv} → ${agent}`);
+  billingContractIndexCache = null;
+  billingInvalidate();
+  lastImportAnomalies = lastImportAnomalies.map(a => a.key === String(key).toLowerCase() ? { ...a, agent, resolved: true } : a);
+  renderImportAnomalies();
+  renderBillingAgentSheet();
+}
+
+function renderImportAnomalies(){
+  const el = document.getElementById('importAnomaliesPanel');
+  if(!el) return;
+  const list = lastImportAnomalies.filter(a => !a.resolved);
+  if(!lastImportAnomalies.length){ el.innerHTML = ''; return; }
+  if(!list.length){
+    el.innerHTML = '<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35); font-weight:700; color:var(--green);">✅ Toutes les anomalies de cet import ont été traitées.</div>';
+    return;
+  }
+
+  const monthOptions = sel=>{
+    const now = nowMA(); let out = '';
+    for(let i = -2; i < 24; i++){
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+      out += `<option value="${mv}"${mv === sel ? ' selected' : ''}>${billingMonthLabel(mv)}</option>`;
+    }
+    return out;
+  };
+
+  let html = `<div style="padding:13px 15px; border-radius:10px; background:rgba(217,164,65,0.14); border:1px solid rgba(217,164,65,0.55); margin-bottom:10px;">
+    <div style="font-weight:800; color:var(--amber);">🛠️ ${list.length} ligne${list.length>1?'s':''} à confirmer</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Le CRM a fait une proposition pour chacune. Corrige le mois ou l'agent si besoin, puis applique — ligne par ligne, rien n'est imposé.</div>
+  </div>`;
+  html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Problème</th><th>Date lue</th><th>Client</th><th>N° contrat</th><th>Agent</th><th>Mois</th><th></th></tr></thead><tbody>';
+  list.slice(0, 60).forEach((a, i)=>{
+    const idA = `anoAg_${i}`, idM = `anoMo_${i}`;
+    html += `<tr>
+      <td style="color:var(--amber); font-size:12.5px; max-width:230px;">${escapeHtml(a.reason)}</td>
+      <td style="white-space:nowrap; font-size:12.5px;">${escapeHtml(a.rawDate || '—')}</td>
+      <td>${escapeHtml(a.nom || '—')}</td>
+      <td>${escapeHtml(a.numContrat || a.key || '—')}</td>
+      <td><select id="${idA}" style="min-width:120px;"><option value="">— agent —</option>${allKnownAgents().map(x=>`<option value="${escapeHtml(x)}"${x === a.agent ? ' selected' : ''}>${escapeHtml(x)}${isArchivedAgent(x) ? ' (ancien)' : ''}</option>`).join('')}</select></td>
+      <td><select id="${idM}" style="min-width:130px;">${monthOptions(a.month)}</select></td>
+      <td style="white-space:nowrap;">
+        <button onclick="applyAnomalyFix('${a.month}', '${String(a.key).replace(/'/g,"\\'")}', document.getElementById('${idM}').value, document.getElementById('${idA}').value)"
+          style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:12px;">Appliquer</button>
+        <button onclick="lastImportAnomalies=lastImportAnomalies.map(x=>x.key==='${String(a.key).replace(/'/g,"\\'")}'?{...x,resolved:true}:x); renderImportAnomalies();"
+          title="Laisser tel quel — la proposition du CRM me convient." style="padding:5px 9px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:12px;">OK tel quel</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  if(list.length > 60) html += `<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">… et ${list.length - 60} autres.</div>`;
+  el.innerHTML = html;
+}
+
+async function applyAnomalyFix(currentMv, key, newMv, newAgent){
+  if(newAgent) await fixContractAgent(currentMv, key, newAgent);
+  if(newMv && newMv !== currentMv) await fixContractMonth(currentMv, key, newMv);
+  else {
+    lastImportAnomalies = lastImportAnomalies.map(a => a.key === String(key).toLowerCase() ? { ...a, resolved: true } : a);
+    renderImportAnomalies();
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 🔎 RETROUVER L'AGENT QUAND LA LIGNE EST DÉCALÉE
 // ═══════════════════════════════════════════════════════════════
@@ -13343,7 +13466,15 @@ async function importBillingProd(text, monthVal){
   const unresolved = {};
   const fixesLog = [];
   const warningsLog = [];
+  const anomalies = [];
   let undatedCount = 0;
+
+  // Ordre des dates déterminé sur la colonne entière avant toute lecture : ton suivi est en français
+  // (09/12/2025), un export d'un autre outil pourrait être en américain. On ne suppose rien.
+  const dateOrder = detectDateOrder(parsed.rows.map(r => {
+    const k = Object.keys(r).find(x => billingNormKey(x).includes('date'));
+    return k ? r[k] : '';
+  })) || 'dmy';
 
   parsed.rows.forEach(raw => {
     const r = billingMapRow(raw);
@@ -13364,10 +13495,22 @@ async function importBillingProd(text, monthVal){
     r.agent = resolved || '';
     if(shifted) r.agentShifted = true;
 
-    const iso = parseContractDate(r.datePropre || r.date);
+    const iso = parseContractDate(r.datePropre || r.date, dateOrder);
     const target = iso ? iso.slice(0, 7) : monthVal;
     if(!iso) undatedCount++;
     (rowsByMonth[target] = rowsByMonth[target] || []).push(r);
+
+    // Relevé des lignes douteuses, pour te les proposer à confirmer après l'import.
+    const key = (billingRowKeys(r)[0] || '');
+    let reason = null;
+    if(!iso) reason = `Date illisible « ${String(r.date || '').slice(0,28)} » — placée dans le mois choisi par défaut`;
+    else if(target !== monthVal) reason = `Date hors du mois importé — rangée en ${billingMonthLabel(target)}`;
+    else if(!r.agent) reason = 'Agent introuvable';
+    else if(r._warnings && r._warnings.some(w => w.trim().startsWith('!'))) reason = r._warnings.find(w => w.trim().startsWith('!')).replace(/^\s*!\s*/, '');
+    if(reason && key){
+      anomalies.push({ key, reason, month: target, agent: r.agent || '',
+                       nom: r.nom, numContrat: r.numContrat, rawDate: r.datePropre || r.date, resolved: false });
+    }
   });
 
   // Écriture mois par mois, en préservant à chaque fois les rétractations déjà marquées et en
@@ -13407,6 +13550,7 @@ async function importBillingProd(text, monthVal){
   }
 
   const rows = Object.values(rowsByMonth).flat();
+  lastImportAnomalies = anomalies;
   billingContractIndexCache = null;
   logAudit('Admin', 'Import production', `${rowsTotal} contrats — ${Object.keys(perMonthCount).map(m=>`${m}: ${perMonthCount[m]}`).join(', ')}`);
 
@@ -13466,6 +13610,7 @@ async function importBillingProd(text, monthVal){
     </div>`;
   }
   if(reportEl) reportEl.innerHTML = html;
+  renderImportAnomalies();
   renderBillingImportSummary();
   renderBillingAgentSheet();
 }
