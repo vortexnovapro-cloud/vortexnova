@@ -8468,9 +8468,6 @@ function genderPick(agentName, masc, fem){
 // au-dessus de lui — lui écrire « parle à ton superviseur » n'a aucun sens et le décrédibilise
 // auprès de sa propre équipe. Ces deux helpers choisissent le bon interlocuteur selon le rôle, et
 // sont utilisés partout où un commentaire propose d'aller voir quelqu'un.
-function escalationTarget(agentName){
-  return isSupervisor(agentName) ? 'le patron' : 'ton superviseur';
-}
 function escalationWith(agentName){
   return isSupervisor(agentName) ? 'avec le patron' : 'avec ton superviseur';
 }
@@ -9268,9 +9265,12 @@ const CALL_CENTER_WEEKLY_TIPS = [
   "Rappelle à l'équipe l'importance du ton et du sourire au téléphone — ça s'entend, même sans se voir.",
   "Fixe un petit défi collectif pour la semaine (ex : un total d'équipe à dépasser) pour souder le groupe.",
   "Prends 5 minutes avec un agent en difficulté pour réécouter un de ses appels et l'aider à s'améliorer.",
-  "Regarde quel jour de la semaine rapporte le plus (Vue d'ensemble → meilleur/pire jour) et place les dossiers les plus prometteurs ce jour-là plutôt qu'au hasard.",
+  "Compare le meilleur et le pire jour de la semaine (Vue d'ensemble). Si l'écart est gros, cherche ce qui a changé ce jour-là : qui était présent, à quelle heure ça a démarré, l'ambiance dans la salle.",
   "Un rappel collectif du règlement (retards, pauses) en début de semaine évite d'avoir à sanctionner en fin de semaine.",
-  "Célèbre les petites victoires individuelles à voix haute pendant la semaine, pas seulement au bilan du vendredi."
+  "Célèbre les petites victoires individuelles à voix haute pendant la semaine, pas seulement au bilan du vendredi.",
+  "Regarde l'écart entre le premier et le dernier du classement. S'il se creuse, ce n'est pas un problème de motivation : va écouter les appels de celui du bas, il bloque sur quelque chose de précis.",
+  "Un agent qui décroche moins ne signe pas moins par malchance. Compare le nombre d'appels passés avant de parler de résultats — le volume vient toujours avant la conversion.",
+  "Les contrats rétractés reviennent souvent des mêmes situations : client mal informé, closing trop rapide. Reprends deux rétractations récentes en équipe, sans nommer personne."
 ];
 
 // Conseils dédiés aux agents en période d'intégration (< 1 mois d'ancienneté) — jamais de comparaison
@@ -10943,29 +10943,6 @@ async function decrementRealized(){
 
 // Déclaration en libre-service d'une rétractation (contrat résilié) ce mois-ci — pas une punition,
 // juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
-async function arenaAddRetraction(delta){
-  if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const now = nowMA();
-  const year = now.getFullYear(), month = now.getMonth()+1;
-  const beforeNet = await monthlyRealizedContracts(currentArenaAgent, year, month);
-  const current = await getMonthlyRetractCount(currentArenaAgent, year, month);
-  const nextCount = Math.max(0, current + delta);
-  if(delta > 0 && beforeNet <= 0){
-    alert("Aucun contrat à retirer ce mois-ci.");
-    return;
-  }
-  await saveMonthlyRetractCount(currentArenaAgent, year, month, nextCount);
-  const afterNet = Math.max(0, beforeNet - (nextCount - current));
-  if(nextCount > current){
-    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats ce mois`, 'warn');
-  } else if(nextCount < current){
-    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats ce mois`, 'ok');
-  }
-  await renderArena();
-  if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
-  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
-}
-
 let arenaScope = 'day';
 
 function setArenaScope(scope){
@@ -11025,9 +11002,14 @@ async function renderArena(){
     const rc = await getMonthlyRetractCount(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     const grossContracts = netContracts + rc;
     const arenaRetractEl = document.getElementById('arenaRetractCount');
+    // L'agent ne déclare plus lui-même ses rétractations : elles viennent du tableau de facturation
+    // (fichier officiel) et du marquage fait par l'administration. Deux saisies parallèles créaient
+    // des compteurs divergents, donc des salaires faux. On le dit clairement plutôt que de laisser
+    // croire à un oubli.
     arenaRetractEl.textContent = rc>0
       ? `🔻 ${rc} rétracté${rc>1?'s':''} — ${grossContracts} signés → ${netContracts} ce mois`
       : `✅ Aucune rétraction ce mois — ${netContracts} contrat${netContracts>1?'s':''}`;
+    arenaRetractEl.title = "Enregistré par l'administration d'après le tableau de facturation officiel. Si un contrat te semble compté à tort, signale-le.";
     arenaRetractEl.style.background = rc>0 ? 'rgba(229,72,77,0.18)' : 'rgba(52,183,116,0.15)';
     arenaRetractEl.style.color = rc>0 ? 'var(--red)' : 'var(--green)';
     arenaRetractEl.style.border = rc>0 ? '1px solid rgba(229,72,77,0.3)' : '1px solid rgba(52,183,116,0.3)';
@@ -11260,29 +11242,6 @@ async function cashAddContract(delta){
   if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
   if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
 }
-async function cashAddRetraction(delta){
-  if(!currentCashAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const now = nowMA();
-  const year = now.getFullYear(), month = now.getMonth()+1;
-  const beforeNet = await monthlyRealizedContracts(currentCashAgent, year, month);
-  const current = await getMonthlyRetractCount(currentCashAgent, year, month);
-  const nextCount = Math.max(0, current + delta);
-  if(delta > 0 && beforeNet <= 0){
-    alert("Aucun contrat à retirer ce mois-ci.");
-    return;
-  }
-  await saveMonthlyRetractCount(currentCashAgent, year, month, nextCount);
-  const afterNet = Math.max(0, beforeNet - (nextCount - current));
-  if(nextCount > current){
-    showToast(`🔻 Contrat rétracté pris en compte : ${beforeNet} → ${afterNet} contrats ce mois`, 'warn');
-  } else if(nextCount < current){
-    showToast(`↩️ Rétraction annulée : ${beforeNet} → ${afterNet} contrats ce mois`, 'ok');
-  }
-  await renderCash();
-  if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
-  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
-}
-
 async function onCashAgentChange(){
   const sel = document.getElementById('cashAgentSelect');
   const selected = sel.value;
@@ -14530,194 +14489,6 @@ async function confirmReturnsImport(){
   renderHistoryStats();
 }
 
-async function importBillingReturns(text, monthVal){
-  const reportEl = document.getElementById('billingRetReport');
-  if(!monthVal){ alert('Choisis d\'abord le mois de paie sur lequel imputer ces retours.'); return; }
-  const parsed = billingParseCSV(text);
-  if(!parsed.rows.length){
-    if(reportEl) reportEl.innerHTML = '<div class="empty">Aucune ligne lisible dans ce fichier.</div>';
-    return;
-  }
-
-  // Index numéro de contrat → agent, construit sur TOUTES les productions déjà importées : c'est ce
-  // qui permet de retrouver l'agent d'un retour même quand le fichier de facturation ne porte pas la
-  // colonne Agent (cas fréquent), y compris pour un contrat signé 2 mois plus tôt.
-  const contractIndex = await billingBuildContractIndex();
-
-  const rows = [];
-  const retractedRows = [];
-  const unresolved = {};
-  for(const raw of parsed.rows){
-    const r = billingMapRow(raw);
-    if(!r.agent && !r.nom && !r.numContrat) continue;
-    // Le contrat d'origine est cherché sur TOUS les identifiants de la ligne (numéro puis référence) :
-    // ton fichier de retours identifie par le hachage, ta production par le numéro. Le rapprochement
-    // par contrat prime sur le nom du vendeur — c'est la donnée la plus sûre des deux.
-    const found = billingRowKeys(r).map(k => contractIndex[k]).find(Boolean);
-    let resolved = found ? found.agent : null;
-    let via = resolved ? 'contrat retrouvé' : '';
-    if(found){
-      if(!r.nom) r.nom = found.nom;
-      if(!r.produit) r.produit = found.produit;
-    }
-    if(!resolved){
-      resolved = billingResolveAgent(r.agent);
-      if(resolved) via = 'nom du vendeur';
-    }
-    if(!resolved) unresolved[r.agent || r.numContrat || r.reference || r.nom || '(ligne sans identifiant)'] = true;
-    r.agentRaw = r.agent;
-    r.agent = resolved || '';
-    r.matchedVia = via;
-    r.originMonth = found ? found.month : '';
-    // Deux natures dans le même fichier : « retracted » (rétractation légale, 1 pour 1) et
-    // « unpaid » (impayé, soumis au diviseur). Voir billingReturnKind().
-    r.kind = billingReturnKind(r);
-    if(r.kind === 'retracted') retractedRows.push(r); else rows.push(r);
-  }
-
-  // ---- Les RÉTRACTÉS repartent marquer leur contrat d'origine, dans SON mois ----
-  // On retrouve le contrat signé par son numéro ou sa référence, on le marque rétracté dans le mois
-  // où il a été signé, et on incrémente le compteur de rétractations de l'agent pour ce mois-là.
-  // Exactement le travail que tu faisais à la main, fait en un import.
-  let retractedApplied = 0, retractedNotFound = 0;
-  const retractByAgentMonth = {};
-  for(const r of retractedRows){
-    const keys = billingRowKeys(r);
-    let done = false;
-    for(let i = 0; i < 24 && !done; i++){
-      const dd = new Date(nowMA().getFullYear(), nowMA().getMonth() - i, 1);
-      const mv = billingMonthVal(dd.getFullYear(), dd.getMonth() + 1);
-      const store = await getBillingProd(mv);
-      const row = (store.rows || []).find(x => billingRowKeys(x).some(k => keys.includes(k)));
-      if(!row) continue;
-      done = true;
-      if(!row.retracted && row.agent){
-        row.retracted = true;
-        await billingSave(billingProdKey(mv), store);
-        const ck = `${mv}|${row.agent}`;
-        retractByAgentMonth[ck] = (retractByAgentMonth[ck] || 0) + 1;
-        retractedApplied++;
-      }
-    }
-    if(!done) retractedNotFound++;
-  }
-  // Le compteur n'est plus INCRÉMENTÉ mais RECALCULÉ à partir des contrats effectivement marqués
-  // rétractés dans le mois. Incrémenter était dangereux : réimporter un fichier corrigé, ou un agent
-  // ayant déjà déclaré sa rétractation depuis son Arena, et le même contrat était compté deux fois —
-  // donc payé une fois de trop en moins. Recalculer est idempotent : quel que soit le nombre
-  // d'imports, le compteur vaut toujours exactement le nombre de contrats rétractés du tableau.
-  const recalced = [];
-  for(const ck of Object.keys(retractByAgentMonth)){
-    const [mv, agent] = ck.split('|');
-    const [yy, mm] = mv.split('-').map(Number);
-    const store = await getBillingProd(mv);
-    const exact = (store.rows || []).filter(x => x.agent === agent && x.retracted).length;
-    const before = await getMonthlyRetractCount(agent, yy, mm);
-    if(before !== exact){
-      await saveMonthlyRetractCount(agent, yy, mm, exact);
-      recalced.push(`${agent} — ${billingMonthLabel(mv)} : ${before} → ${exact}`);
-    }
-  }
-
-  // ═══ OÙ IMPUTER LES IMPAYÉS ═══
-  // Fonctionnement normal (fin de mois) : tout va sur le mois de paie choisi — c'est le mois où tu
-  // reçois le fichier, et c'est là que tu répercutes.
-  // Rattrapage d'historique : un fichier couvrant plusieurs mois passés doit être RÉPARTI, sinon des
-  // mois de retours s'empileraient sur un seul mois de paie et écraseraient les salaires de ce
-  // mois-là tout en laissant les autres vides — statistiques faussées, et retenue absurde pour
-  // l'agent. Dans ce mode, chaque ligne part au mois de sa propre date.
-  const dispatchByDate = document.getElementById('billingRetDispatch')?.checked;
-  const retByMonth = {};
-  if(dispatchByDate){
-    rows.forEach(r=>{
-      const iso = parseContractDate(r.datePropre || r.date);
-      const mv = iso ? iso.slice(0, 7) : monthVal;
-      (retByMonth[mv] = retByMonth[mv] || []).push(r);
-    });
-  } else {
-    retByMonth[monthVal] = rows;
-  }
-
-  for(const mv of Object.keys(retByMonth)){
-    const existing = dispatchByDate ? await getBillingReturns(mv) : { rows: [] };
-    // En mode répartition on complète les mois existants (sans doublonner) ; en mode normal on
-    // remplace le mois, comme avant — réimporter un fichier corrigé doit repartir propre.
-    const seen = new Set();
-    (existing.rows || []).forEach(r => billingRowKeys(r).forEach(k => seen.add(k)));
-    const merged = dispatchByDate
-      ? (existing.rows || []).concat(retByMonth[mv].filter(r => !billingRowKeys(r).some(k => seen.has(k))))
-      : retByMonth[mv];
-    await billingSave(billingRetKey(mv), {
-      month: mv,
-      rows: merged,
-      importedAt: new Date().toISOString(),
-      periodFrom: document.getElementById('billingRetFrom')?.value || null,
-      periodTo: document.getElementById('billingRetTo')?.value || null
-    });
-  }
-  const dispatchMonths = Object.keys(retByMonth).sort();
-  logAudit('Admin', 'Import du tableau de facturation', `${monthVal} — ${rows.length} impayés, ${retractedRows.length} rétractations (${retractedApplied} appliquées)`);
-
-  const byAgent = {};
-  rows.forEach(r => { const k = r.agent || '⚠️ non rattaché'; byAgent[k] = (byAgent[k] || 0) + 1; });
-  let html = `<div style="padding:13px 15px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4);"><div style="font-weight:700; color:var(--red);">📉 ${rows.length} impayé${rows.length>1?'s':''} imputé${rows.length>1?'s':''} sur la paie de ${escapeHtml(billingMonthLabel(monthVal))}</div>
-    ${retractedRows.length ? `<div style="font-weight:700; color:var(--amber); margin-top:7px;">🔻 ${retractedRows.length} rétractation${retractedRows.length>1?'s':''} — ${retractedApplied} appliquée${retractedApplied>1?'s':''} au contrat d'origine${retractedNotFound ? `, ${retractedNotFound} contrat${retractedNotFound>1?'s':''} introuvable${retractedNotFound>1?'s':''}` : ''}</div>` : ''}
-    <div style="font-weight:500; font-size:12px; color:var(--muted); margin-top:8px; line-height:1.55;">Ton fichier mélange deux natures. Les <b>rétractations</b> (retracted) comptent 1 pour 1 et sont marquées sur le contrat, dans le mois où il a été signé. Les <b>impayés</b> (unpaid) passent par le diviseur ÷3 / ÷2 / 1:1 et sont retenus sur le mois de paie choisi ci-dessus.${retractedNotFound ? ' Les contrats introuvables sont ceux dont le mois de signature n\'a pas encore été importé — importe-le puis relance cet import.' : ''}</div></div>`;
-  if(dispatchByDate){
-    html += `<div style="margin-top:10px; padding:11px 14px; border-radius:10px; background:rgba(86,128,171,0.12); border:1px solid rgba(86,128,171,0.4); font-size:13px;">
-      📅 <b>Rattrapage d'historique</b> — impayés répartis sur ${dispatchMonths.length} mois : ${dispatchMonths.map(m=>escapeHtml(billingMonthLabel(m))).join(' · ')}
-    </div>`;
-  }
-  if(recalced.length){
-    html += `<div style="margin-top:10px; padding:11px 14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border); font-size:12.5px;">
-      🔄 <b>Compteurs de rétractations recalés</b> sur le nombre exact de contrats marqués :<br>
-      <span style="color:var(--muted);">${recalced.slice(0,12).map(escapeHtml).join('<br>')}${recalced.length>12 ? '<br>…' : ''}</span>
-    </div>`;
-  }
-  html += '<table class="salary-table" style="margin-top:12px;"><thead><tr><th>Agent</th><th>Impayés</th><th>Diviseur</th><th>Contrats retirés</th></tr></thead><tbody>';
-  const [y, m] = monthVal.split('-').map(Number);
-  const agentKeys = Object.keys(byAgent).sort((a,b)=> byAgent[b]-byAgent[a]);
-  for(const a of agentKeys){
-    if(a.startsWith('⚠️')){
-      html += `<tr><td style="color:var(--red);font-weight:700;">${escapeHtml(a)}</td><td><b>${byAgent[a]}</b></td><td colspan="2" style="color:var(--red);">Non retenu à personne</td></tr>`;
-      continue;
-    }
-    // Affiché en CONTRATS RETIRÉS, pas en dirhams : c'est ainsi que la paie fonctionne réellement
-    // (contrats payés = validés − rétractés − retours ÷ diviseur), et c'est ce que l'agent verra.
-    const br = await returnsContractDeduction(a, y, m);
-    html += `<tr><td>${escapeHtml(a)}</td><td><b>${br.count}</b></td><td>${br.divisor === 1 ? '1:1' : '÷'+br.divisor}${br.auto ? '' : ' <span class="tag warn">forcé</span>'}</td><td style="color:var(--red); font-weight:700;">−${br.deducted} contrat${br.deducted>1?'s':''}</td></tr>`;
-  }
-  html += '</tbody></table>';
-  const unresolvedNames = Object.keys(unresolved);
-  if(unresolvedNames.length){
-    html += `<div style="margin-top:12px; padding:14px 16px; border-radius:10px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4);">
-      <div style="font-weight:800; color:var(--red); margin-bottom:4px;">⚠️ ${unresolvedNames.length} retour${unresolvedNames.length>1?'s':''} non rattaché${unresolvedNames.length>1?'s':''}</div>
-      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Si c'est un nom de vendeur, rattache-le ci-dessous — c'est immédiat et définitif. Sinon, c'est que le contrat d'origine n'est pas encore dans le CRM : importe la production du mois où il a été signé, le rapprochement se fera tout seul.</div>
-      ${unresolvedNames.slice(0,20).map(n=> agentAliasChooser(n, '')).join('')}
-      ${unresolvedNames.length>20 ? '<div style="font-size:12.5px; color:var(--muted);">… et '+(unresolvedNames.length-20)+' autres</div>' : ''}
-    </div>`;
-  }
-  if(reportEl) reportEl.innerHTML = html;
-  renderBillingImportSummary();
-  renderBillingAgentSheet();
-  renderUnmatchedReturnsPanel();
-}
-
-function handleBillingRetFile(input){
-  const file = input.files && input.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = e => importBillingReturns(e.target.result, document.getElementById('billingRetMonth').value);
-  reader.readAsText(file, 'UTF-8');
-}
-function importBillingRetFromPaste(){
-  const txt = document.getElementById('billingRetPaste').value;
-  if(!txt.trim()){ alert('Colle d\'abord le contenu du tableau de retours.'); return; }
-  importBillingReturns(txt, document.getElementById('billingRetMonth').value);
-}
-
-// Index global n° de contrat → { agent, nom, produit, mois } sur les 24 derniers mois de production
-// importée. Sert au rapprochement automatique des retours (qui concernent des contrats vieux de ~2 mois).
 let billingContractIndexCache = null;
 async function billingBuildContractIndex(force){
   if(billingContractIndexCache && !force) return billingContractIndexCache;
@@ -16240,13 +16011,6 @@ function feesTotal(fees){
   return (fees || []).reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
 }
 
-async function openMonthFees(monthVal){
-  const stats = await getBillingStats(monthVal);
-  const fees = (stats.fees && stats.fees.length) ? stats.fees : defaultFeeLines();
-  billingFeesDraft = { monthVal, fees: fees.map(f => ({ ...f })) };
-  renderMonthFeesEditor();
-  document.getElementById('monthFeesModal').style.display = 'flex';
-}
 let billingFeesDraft = null;
 
 function renderMonthFeesEditor(){
@@ -16369,55 +16133,6 @@ async function copyChargesToPreviousMonths(monthVal){
 // contrats × ta commission par contrat. C'est une SUGGESTION : tu la valides ou tu tapes ton vrai
 // encaissement. Le CRM ne l'écrit jamais tout seul — ton CA réel dépend d'impayés et de décalages
 // que lui ne voit pas.
-function suggestedCA(contracts){
-  const commission = Number(config.bossCommissionPerContract) || 0;
-  return commission > 0 ? Math.round(contracts * commission) : null;
-}
-async function applySuggestedCA(monthVal, value){
-  const stats = await getBillingStats(monthVal);
-  stats.ca = value;
-  await billingSave(billingStatsKey(monthVal), stats);
-  logAudit('Admin', 'CA estimé appliqué', `${monthVal} — ${value} DH`);
-  renderHistoryStats();
-}
-
-// ---- Masse salariale d'un mois passé, calculée en supposant une discipline parfaite ----
-// Pour un mois antérieur au CRM, il n'existe aucun pointage. Plutôt que d'afficher zéro, on calcule
-// ce que les agents auraient touché SANS aucun retard ni absence : fixe + primes + commission sur
-// les contrats réellement enregistrés. C'est un plancher réaliste — le vrai versé était au mieux
-// égal, jamais supérieur. La valeur atterrit dans la case, où tu peux la corriger.
-async function computeHistoricPayroll(monthVal){
-  const [y, m] = monthVal.split('-').map(Number);
-  const prod = await getBillingProd(monthVal);
-  if(!(prod.rows || []).length){ alert('Aucun contrat enregistré pour ce mois — importe d\'abord le tableau.'); return; }
-  if(!confirm(`Calculer la masse salariale de ${billingMonthLabel(monthVal)} ?\n\nHypothèse : aucun retard, aucune absence, prime d'assiduité acquise pour tout le monde. Les contrats utilisés sont ceux réellement enregistrés pour ce mois.\n\nLe résultat s'inscrit dans la case, tu peux ensuite le corriger à la main.`)) return;
-
-  const byAgent = {};
-  (prod.rows || []).forEach(r=>{ if(r.agent && !r.retracted) byAgent[r.agent] = (byAgent[r.agent] || 0) + 1; });
-
-  let total = 0;
-  const detail = [];
-  for(const agent of Object.keys(byAgent)){
-    const pay = getAgentPay(agent);
-    const contracts = byAgent[agent];
-    let brut = pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite;
-    brut += contractEarnings(pay, contracts, contracts).total;
-    if(!pay.isIndep && !pay.noObjectif && pay.objectifMensuel > 0 && contracts >= pay.objectifMensuel){
-      brut += pay.primeObjectifJour;
-      brut += Math.max(0, contracts - pay.objectifMensuel) * pay.primeExtraContrat;
-    }
-    total += Math.round(brut);
-    detail.push(`${agent} : ${contracts} contrats → ${Math.round(brut).toLocaleString('fr-FR')} DH`);
-  }
-
-  const stats = await getBillingStats(monthVal);
-  stats.payroll = Math.round(total);
-  await billingSave(billingStatsKey(monthVal), stats);
-  logAudit('Admin', 'Masse salariale historique calculée', `${monthVal} — ${Math.round(total)} DH (hypothèse discipline parfaite)`);
-  alert(`Masse salariale estimée pour ${billingMonthLabel(monthVal)} : ${Math.round(total).toLocaleString('fr-FR')} DH\n\n${detail.join('\n')}\n\n⚠️ Calculé avec les réglages de paie ACTUELS de chaque agent. Si leurs conditions ont changé depuis, corrige la case à la main.`);
-  renderHistoryStats();
-}
-
 async function renderHistoryStats(){
   const el = document.getElementById('historyStatsPanel');
   if(!el) return;
@@ -16773,16 +16488,6 @@ async function toggleRetractedFromSearch(monthVal, key){
 // Liste permanente des contrats signalés douteux, sur les 24 derniers mois. Les alertes d'import sont
 // fugaces (elles disparaissent au rechargement) : celle-ci se retrouve quand on veut, ce qui compte
 // pour une anomalie comme une date en 2027, qu'on ne verra sinon jamais avant un an.
-function flaggedMonthOptions(sel){
-  const now = nowMA(); let out = '';
-  for(let i = -2; i < 24; i++){
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
-    out += `<option value="${mv}"${mv === sel ? ' selected' : ''}>${billingMonthLabel(mv)}</option>`;
-  }
-  return out;
-}
-
 async function renderFlaggedContractsPanel(){
   const el = document.getElementById('flaggedContractsPanel');
   if(!el) return;
@@ -16955,63 +16660,6 @@ async function applyAllFlagFixes(){
 //   • un compteur de rétractations qui ne correspond pas aux contrats réellement marqués
 // Conserve l'exemplaire d'un mois et supprime celui de l'autre. Le contrat étant identifié par
 // plusieurs clés, on supprime sur n'importe laquelle d'entre elles.
-async function resolveCrossMonthDuplicate(garder, supprimer, key){
-  if(!confirm(`Conserver l'exemplaire de ${billingMonthLabel(garder)} et supprimer celui de ${billingMonthLabel(supprimer)} ?`)) return;
-  const ok = await deleteContractFromMonth(supprimer, key, true);
-  if(!ok){
-    // La clé fournie est peut-être le numéro alors que le mois à purger porte la référence : on
-    // cherche alors le contrat par tous ses identifiants.
-    const src = await getBillingProd(garder);
-    const row = (src.rows || []).find(r => billingRowKeys(r).includes(String(key).toLowerCase()));
-    if(row){
-      for(const k of billingRowKeys(row)){
-        if(await deleteContractFromMonth(supprimer, k, true)) break;
-      }
-    }
-  }
-  logAudit('Admin', 'Doublon inter-mois résolu', `${key} — conservé ${garder}, supprimé ${supprimer}`);
-  await runIntegrityCheck();
-  renderBillingImportSummary();
-  renderBillingAgentSheet();
-}
-
-// Retire UN seul exemplaire d'un contrat présent deux fois dans le même mois, et conserve l'autre.
-async function removeDuplicateInMonth(monthVal, key){
-  const store = await getBillingProd(monthVal);
-  const matches = (store.rows || []).map((r, i) => ({ r, i }))
-    .filter(x => billingRowKeys(x.r).includes(String(key).toLowerCase()));
-  if(matches.length < 2){ alert('Plus de doublon sur ce contrat — il a déjà été traité.'); await runIntegrityCheck(); return; }
-  const r = matches[0].r;
-  if(!confirm(`Retirer un exemplaire en double de ce contrat ?\n\n${r.nom || '?'} — n° ${r.numContrat || key}\n${billingMonthLabel(monthVal)}\n\nIl en restera exactement un.`)) return;
-  // On retire le dernier : si l'un des deux a été marqué rétracté entre-temps, c'est le premier qui
-  // porte le plus souvent l'information, autant le conserver.
-  store.rows.splice(matches[matches.length - 1].i, 1);
-  await billingSave(billingProdKey(monthVal), store);
-  if(r.agent){
-    const [yy, mm] = monthVal.split('-').map(Number);
-    const exact = (store.rows || []).filter(x => x.agent === r.agent && x.retracted).length;
-    await saveMonthlyRetractCount(r.agent, yy, mm, exact);
-  }
-  logAudit('Admin', 'Doublon retiré', `${r.numContrat || key} — ${monthVal}`);
-  billingContractIndexCache = null;
-  billingInvalidate();
-  clearRenderCaches();
-  await runIntegrityCheck();
-  renderBillingImportSummary();
-  renderBillingAgentSheet();
-}
-
-async function alignRetractCounter(agent, monthVal, exact){
-  if(!confirm(`Fixer le compteur de rétractations de ${agent} pour ${billingMonthLabel(monthVal)} à ${exact} ?\n\nC'est le nombre exact de contrats marqués rétractés ce mois-là. C'est ce compteur qui décide de sa paie.`)) return;
-  const [yy, mm] = monthVal.split('-').map(Number);
-  await saveMonthlyRetractCount(agent, yy, mm, exact);
-  logAudit('Admin', 'Compteur de rétractations aligné', `${agent} — ${monthVal} → ${exact}`);
-  billingInvalidate();
-  clearRenderCaches();
-  await runIntegrityCheck();
-  renderBillingAgentSheet();
-}
-
 let lastIntegrityResult = null;
 let integrityFixes = {};   // id d'anomalie → correction choisie
 
