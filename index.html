@@ -555,8 +555,19 @@
   color:var(--text) !important; cursor:pointer; font-size:16px; padding:0 13px !important; line-height:1; }
 .pw-eye-btn:hover { border-color:var(--accent) !important; }
 
-.money-private { filter: blur(9px); transition: filter 0.18s ease; user-select: none; cursor: pointer; }
-.money-private:hover { filter: blur(2.5px); }
+/* Le flou seul prêtait à confusion : on croyait à un bug d'affichage plutôt qu'à un masquage
+   volontaire. On l'accompagne donc d'un bandeau explicite, et le survol dévoile la zone. */
+.money-private { position: relative; }
+.money-private > * { filter: blur(9px); transition: filter 0.18s ease; user-select: none; }
+.money-private:hover > * { filter: blur(0); }
+.money-private::before {
+  content: "👁️ Chiffres masqués — passe la souris pour lire, ou clique « Afficher mes chiffres » en haut";
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 12px; font-size: 13px; font-weight: 700; color: #c9a870;
+  background: rgba(21,29,39,0.55); border: 1px dashed rgba(201,168,112,0.45); border-radius: 12px;
+  z-index: 3; pointer-events: none; transition: opacity 0.18s ease;
+}
+.money-private:hover::before { opacity: 0; }
 .privacy-btn { background:none; border:1px solid var(--border); border-radius:8px; padding:7px 12px;
   cursor:pointer; font-size:13px; font-weight:700; color:var(--muted); display:inline-flex;
   align-items:center; gap:7px; }
@@ -3276,8 +3287,25 @@ function getPointageStartDate(){
   return config.pointageStartDate || null;
 }
 
+// ⚠️ DEUX NOTIONS À NE SURTOUT PAS CONFONDRE — la première version les mélangeait, et tous les
+// agents se retrouvaient affichés comme « nouveaux, depuis 10 jours ».
+//
+//   getAgentStartDate  = la date d'ARRIVÉE de l'agent dans l'équipe. Elle dit son ancienneté, donc
+//                        s'il est encore « nouvel agent », et le ton des messages qui lui sont
+//                        adressés. Elle ne concerne que lui.
+//   disciplineFrom     = la date à partir de laquelle on COMPTE les retards et absences. C'est la
+//                        plus tardive entre son arrivée et la mise en service du pointage.
+//
+// La date globale de mise en service ne doit jamais faire croire que quelqu'un vient d'arriver :
+// un agent présent depuis deux ans reste un agent de deux ans, même si le pointage date d'août.
 function getAgentStartDate(agent){
-  const perso = (config.agentsStartDate && config.agentsStartDate[agent]) || null;
+  return (config.agentsStartDate && config.agentsStartDate[agent]) || null;
+}
+
+// Date à partir de laquelle retards et absences comptent pour cet agent. Utilisée uniquement par les
+// calculs de discipline (monthlyStats, monthlyDeductions), jamais pour juger de l'ancienneté.
+function disciplineFrom(agent){
+  const perso = getAgentStartDate(agent);
   const global = getPointageStartDate();
   if(perso && global) return perso > global ? perso : global;
   return perso || global;
@@ -5553,7 +5581,9 @@ async function monthlyStats(agent, year, month){
   // Un agent avec une date de début réglée (nouvel arrivant en cours de mois) : les jours avant son
   // premier jour réel sont exclus ici, pas juste "justifiés" — ils n'existent tout simplement pas pour
   // le calcul (pas d'absence, pas de retard, aucun impact sur la prime d'assiduité).
-  const agentStartDate = getAgentStartDate(agent);
+  // Discipline : ni retard ni absence avant l'arrivée de l'agent NI avant la mise en service du
+  // pointage (voir disciplineFrom). Les contrats, eux, comptent toujours.
+  const agentStartDate = disciplineFrom(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
   const dayData = await Promise.all(dateStrs.map(async dateStr=>{
     const [log, infr, board] = await Promise.all([
@@ -9238,7 +9268,7 @@ const CALL_CENTER_WEEKLY_TIPS = [
   "Rappelle à l'équipe l'importance du ton et du sourire au téléphone — ça s'entend, même sans se voir.",
   "Fixe un petit défi collectif pour la semaine (ex : un total d'équipe à dépasser) pour souder le groupe.",
   "Prends 5 minutes avec un agent en difficulté pour réécouter un de ses appels et l'aider à s'améliorer.",
-  "Teste des créneaux d'appels différents cette semaine pour voir ce qui convertit le mieux.",
+  "Regarde à quelles heures les contrats tombent réellement cette semaine (Vue d'ensemble → meilleur/pire jour) et fais démarrer les appels plus tôt sur les créneaux qui rapportent.",
   "Un rappel collectif du règlement (retards, pauses) en début de semaine évite d'avoir à sanctionner en fin de semaine.",
   "Célèbre les petites victoires individuelles à voix haute pendant la semaine, pas seulement au bilan du vendredi."
 ];
@@ -9258,8 +9288,15 @@ const NEW_AGENT_WEEKLY_TIPS = [
 // tableaux de production), utilisé pour comparer la semaine affichée à celle d'avant. Retourne null s'il
 // n'y a aucun jour ouvré cette semaine-là (mécanisme qui continuera de fonctionner sans rien changer au
 // fur et à mesure que l'historique de l'app s'accumule dans le temps).
-async function weekRealizedTotalsForMonday(monday){
-  const wDates = weekDateStrsFrom(monday).filter(isWorkingDay);
+async function weekRealizedTotalsForMonday(monday, limitDays){
+  // ⏳ COMPARAISON AU PRORATA — sinon elle ment.
+  // Comparer une semaine en cours arrêtée au mercredi à une semaine complète de 5 jours donne
+  // toujours l'impression d'un effondrement. On ne retient donc de la semaine de référence que le
+  // MÊME NOMBRE DE JOURS OUVRÉS que celui déjà écoulé dans la semaine courante : mercredi contre
+  // mercredi. `limitDays` est transmis par l'appelant ; sans lui, la semaine entière est prise
+  // (cas d'une semaine passée, déjà terminée).
+  let wDates = weekDateStrsFrom(monday).filter(isWorkingDay);
+  if(limitDays != null && limitDays > 0) wDates = wDates.slice(0, limitDays);
   if(wDates.length === 0) return null;
   const boards = {};
   await Promise.all(wDates.map(async d=>{
@@ -9268,11 +9305,11 @@ async function weekRealizedTotalsForMonday(monday){
   }));
   const totals = {};
   config.agents.forEach(agent=>{
-    const agentStartDate = getAgentStartDate(agent);
+    const agentStartDate = disciplineFrom(agent);
     const agentDates = agentStartDate ? wDates.filter(ds=>ds>=agentStartDate) : wDates;
     totals[agent] = agentDates.reduce((s,d)=> s + (getAgentProd(boards[d], agent).realized || 0), 0);
   });
-  return { weekDates: wDates, totals };
+  return { weekDates: wDates, totals, daysUsed: wDates.length };
 }
 
 // Construit le Bilan de la semaine — même logique de classement que le briefing du jour (le plus de
@@ -9316,7 +9353,10 @@ async function buildWeeklyBriefingHtml(mondayOverride){
       }));
       return b;
     })(),
-    weekRealizedTotalsForMonday(prevMonday),
+    // Semaine précédente limitée au MÊME nombre de jours ouvrés que celui déjà écoulé cette semaine :
+    // mercredi se compare à mercredi. `workingDates` contient les jours ouvrés retenus pour la
+    // semaine affichée, sa longueur est donc exactement la borne à appliquer.
+    weekRealizedTotalsForMonday(prevMonday, workingDates.length),
     Promise.all(teamAgents.map(async agent=>({ agent, total: await monthlyRealizedContracts(agent, monthYear, monthNum) })))
   ]);
   const monthTotalsByAgent = Object.fromEntries(monthTotalsList.map(x=>[x.agent, x.total]));
@@ -9327,7 +9367,7 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     // Même exemption que monthlyStats : les jours avant la date de début d'un agent ne comptent jamais
     // (pas d'absence, pas de retard) — sinon un nouvel arrivant apparaît à tort "absent" ici pour des
     // jours où il n'était même pas encore censé travailler, alors que Conformité du mois l'exclut déjà.
-    const agentStartDate = getAgentStartDate(agent);
+    const agentStartDate = disciplineFrom(agent);
     const agentWorkingDates = agentStartDate ? workingDates.filter(ds => ds >= agentStartDate) : workingDates;
     await Promise.all(agentWorkingDates.map(async d=>{
       const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
@@ -9456,9 +9496,9 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   }
   if(weekComparisons){
     if(teamDelta > 0){
-      tips.push(`L'équipe progresse par rapport à la semaine précédente (+${teamDelta} contrat${teamDelta>1?'s':''} au total) — dis-le clairement en ouverture du briefing, c'est un signal fort à entretenir.`);
+      tips.push(`L'équipe progresse par rapport à la semaine précédente (+${teamDelta} contrat${teamDelta>1?'s':''} au total, à nombre de jours égal) — dis-le clairement en ouverture du briefing, c'est un signal fort à entretenir.`);
     } else if(teamDelta < 0){
-      tips.push(`L'équipe recule par rapport à la semaine précédente (${teamDelta} contrat${teamDelta<-1?'s':''} au total) — creuse pourquoi en briefing : un souci ponctuel, du moral, ou un vrai problème de fond ?`);
+      tips.push(`L'équipe recule par rapport à la semaine précédente (${teamDelta} contrat${teamDelta<-1?'s':''} au total, à nombre de jours égal) — creuse pourquoi en briefing : un souci ponctuel, du moral, ou un vrai problème de fond ?`);
     } else if(teamDelta === 0 && prevTotalTeamRealized > 0){
       tips.push(`Exactement le même total que la semaine précédente (${totalTeamRealized} contrats) — stable, mais rappelle à l'équipe que l'objectif est de progresser, pas de stagner.`);
     }
@@ -10012,7 +10052,9 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
 
   // Idem monthlyStats : avant la date de début réglée pour cet agent (nouvel arrivant en cours de
   // mois), aucun jour n'est examiné — ni retenue, ni retard, ni absence, ni impact sur l'assiduité.
-  const agentStartDate = getAgentStartDate(agent);
+  // Discipline : ni retard ni absence avant l'arrivée de l'agent NI avant la mise en service du
+  // pointage (voir disciplineFrom). Les contrats, eux, comptent toujours.
+  const agentStartDate = disciplineFrom(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
 
   // ═══ MISE EN SERVICE DU POINTAGE — corrige des salaires historiques totalement faux ═══
@@ -12807,18 +12849,27 @@ async function renderProdAdmin(){
     let totalDaySal = 0, totalMonthBrut = 0, totalMonthBrutIndep = 0;
     // Toutes les lectures agent par agent sont lancées en parallèle (au lieu d'une par une) — le tableau
     // de simulation charge nettement plus vite dès qu'il y a une dizaine d'agents ou plus.
+    // Chaque agent est calculé dans son propre try : si un seul pose problème (donnée d'un mois
+    // importé incomplète, par exemple), on affiche « — » pour lui et le tableau reste lisible pour
+    // tous les autres. Avant, une seule erreur vidait tout le tableau et donnait l'impression que
+    // l'argent avait disparu.
     const simRows = await Promise.all(rankings.map(async r=>{
       const pay = getAgentPay(r.agent);
-      const [monthContracts, monthStats] = await Promise.all([
-        monthlyRealizedContracts(r.agent, simYear, simMonth),
-        monthlyStats(r.agent, simYear, simMonth)
-      ]);
-      const daySal = calculateDailySalary(r.agent, r.realized, monthContracts, simYear, simMonth);
-      const assiduiteAcquise = isAssiduiteAcquise(monthStats);
-      const monthRes = await estimateSalaryMonthReal(r.agent, simYear, simMonth, assiduiteAcquise);
-      const supervisorBonusSim = isSupervisor(r.agent) ? (supervisionBonusSimMap.dh[r.agent] || 0) : 0;
-      const monthTotalSim = (monthRes ? monthRes.total : 0) + supervisorBonusSim;
-      return { r, pay, daySal, monthRes, supervisorBonusSim, monthTotalSim };
+      try{
+        const [monthContracts, monthStats] = await Promise.all([
+          monthlyRealizedContracts(r.agent, simYear, simMonth),
+          monthlyStats(r.agent, simYear, simMonth)
+        ]);
+        const daySal = calculateDailySalary(r.agent, r.realized, monthContracts, simYear, simMonth);
+        const assiduiteAcquise = isAssiduiteAcquise(monthStats);
+        const monthRes = await estimateSalaryMonthReal(r.agent, simYear, simMonth, assiduiteAcquise);
+        const supervisorBonusSim = isSupervisor(r.agent) ? (supervisionBonusSimMap.dh[r.agent] || 0) : 0;
+        const monthTotalSim = (monthRes ? monthRes.total : 0) + supervisorBonusSim;
+        return { r, pay, daySal, monthRes, supervisorBonusSim, monthTotalSim };
+      }catch(e){
+        console.error('Simulation salaire —', r.agent, e);
+        return { r, pay, daySal: 0, monthRes: null, supervisorBonusSim: 0, monthTotalSim: 0, failed: true };
+      }
     }));
     simRows.forEach(({ r, pay, daySal, monthRes, supervisorBonusSim, monthTotalSim })=>{
       const statusTag = pay.isIndep ? ' 🧑‍💼' : (pay.noObjectif ? ` <span style="color:var(--amber);">(${getNoObjectifLabel(r.agent)})</span>` : '');
@@ -16551,7 +16602,7 @@ function applyPrivacyMode(){
   const btn = document.getElementById('privacyToggleBtn');
   if(btn){
     btn.classList.toggle('on', on);
-    btn.textContent = on ? '🙈 Chiffres masqués' : '👁️ Masquer mes chiffres';
+    btn.textContent = on ? '🙈 Chiffres masqués — cliquer pour afficher' : '👁️ Masquer mes chiffres';
   }
 }
 function togglePrivacyMode(){
