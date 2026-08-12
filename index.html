@@ -370,10 +370,19 @@
   .salary-table td, .salary-table th{ text-align:center; }
   .salary-table td:first-child, .salary-table th:first-child{ text-align:left; }
   .salary-table input{
-    width:100%; max-width:90px; padding:6px 8px; border-radius:6px; border:1px solid var(--border);
+    width:100%; min-width:64px; max-width:112px; padding:6px 4px; border-radius:6px; border:1px solid var(--border);
     background:var(--panel); color:var(--text); font-size:12.5px; text-align:center;
   }
-  .salary-table input.wide{ max-width:140px; text-align:left; }
+  /* BUG CORRIGÉ : les flèches +/- natives du navigateur (type=number) mangeaient une bonne partie de la
+     largeur déjà réduite de ces cellules — au-delà de 2 chiffres, le texte tapé (ex: "500") se retrouvait
+     en partie caché derrière les flèches ou coupé par la cellule, ne laissant voir que le "5". Les flèches
+     sont retirées (elles n'apportent rien pour saisir un montant en DH ou un nombre de contrats) et la
+     colonne est élargie. */
+  .salary-table input::-webkit-outer-spin-button, .salary-table input::-webkit-inner-spin-button{
+    -webkit-appearance:none; margin:0;
+  }
+  .salary-table input[type=number]{ -moz-appearance:textfield; }
+  .salary-table input.wide{ max-width:150px; text-align:left; }
   .pay-agent-row td{ vertical-align:middle; }
   .webhook-setup{ background:var(--panel2); border:1px solid var(--border); border-radius:12px; padding:18px; margin-top:12px; }
   .webhook-setup ol{ margin:10px 0 0 18px; padding:0; font-size:13px; color:var(--muted); line-height:1.7; }
@@ -828,12 +837,12 @@ function tryDeviceGateAdmin(){
             <div style="font-size:30px; line-height:1;">🚀</div>
             <div>
               <div style="font-size:16px; font-weight:900; color:var(--text);">Ton objectif perso pour ce mois</div>
-              <div style="font-size:13px; color:var(--muted); margin-top:2px;">En plus du mini demandé par l'admin — vise ce que tu veux, personne ne t'y oblige. Une 2e barre suit ta progression.</div>
+              <div id="arenaDesiredObjSub" style="font-size:13px; color:var(--muted); margin-top:2px;">En plus du mini demandé par l'admin — vise ce que tu veux, personne ne t'y oblige. Une 2e barre suit ta progression. Une fois validé, il se verrouille jusqu'au mois prochain.</div>
             </div>
           </div>
           <div class="arena-objectif-form" style="margin-top:18px;">
             <input type="number" id="arenaDesiredObjInput" min="0" max="999" placeholder="Ex: 45" style="width:110px; font-size:26px; padding:14px; border:2px solid rgba(61,139,253,0.4);">
-            <button class="arena-btn" onclick="saveArenaDesiredObjectif()" style="background:var(--accent); color:white; font-size:16px; padding:16px 30px;">✅ Valider mon objectif du mois</button>
+            <button id="arenaDesiredObjBtn" class="arena-btn" onclick="saveArenaDesiredObjectif()" style="background:var(--accent); color:white; font-size:16px; padding:16px 30px;">✅ Valider mon objectif du mois</button>
           </div>
         </div>
 
@@ -1074,7 +1083,7 @@ function tryDeviceGateAdmin(){
           <div id="todaySnapshot"></div>
 
           <div class="section-title">⏱️ Temps de pause — en direct</div>
-          <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut + bonus mérité, réglable), suivis séparément pour chaque agent. Se met à jour tout seul.</div>
+          <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut + bonus mérité, réglable), suivis séparément pour chaque agent. Se met à jour tout seul. Un dépassement (⚠️) affiche directement de combien de minutes — retenu sur le salaire au prorata de la minute, et peut aussi compter comme un retard équivalent dans le compteur prime d'assiduité (3 petits dépassements sous le seuil réglé dans Réglages, ou 1 seul au-delà — voir Réglages → Horaires).</div>
           <div id="pauseTotalsToday"></div>
 
           <div class="section-title">📜 Historique des pauses</div>
@@ -1973,6 +1982,16 @@ function tryDeviceGateAdmin(){
             <div class="section-sub" style="margin-top:6px;">En dehors du déjeuner, chaque agent a ce total de minutes à prendre quand il veut dans sa journée, en une ou plusieurs fois (avec un décompte en direct). Aucun horaire fixe pour cette pause-là.</div>
           </div>
 
+          <div style="margin-top:22px;">
+            <label style="margin-bottom:6px;">🚨 Seuil « gros » dépassement de pause = retard direct (minutes)</label>
+            <input type="number" id="cfgPauseOverrunRetardThreshold" min="1" step="1" style="max-width:140px;">
+            <div class="section-sub" style="margin-top:6px;">
+              Nouvelle règle de discipline : un dépassement de pause (planning ou pause libre) reste toujours retenu sur le salaire au prorata exact des minutes dépassées — ça ne change pas.
+              En plus de cette retenue : <b>3 dépassements en dessous de ce seuil</b> (par défaut 10 min) dans le mois comptent ensemble comme <b>1 retard équivalent</b> dans le compteur prime d'assiduité (0/1/3/5/6), <b>sans</b> la retenue fixe de 30 min qu'un vrai retard entraîne — seule la retenue au prorata des minutes dépassées s'applique.
+              Un dépassement <b>à partir de ce seuil</b> (ex : 10 min ou plus) compte lui directement comme <b>1 retard</b> dans le compteur, dès la 1ère fois, en plus de sa retenue au prorata.
+            </div>
+          </div>
+
           <label style="margin:22px 0 10px;">🎓 ADF — réglages de durée</label>
           <div class="settings-grid" style="margin-bottom:6px;">
             <div>
@@ -2074,7 +2093,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-10-r97';
+const APP_VERSION = '2026-08-12-r98';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2842,6 +2861,7 @@ async function loadConfig(){
   renderAgentChips();
   renderBreaksEditor();
   document.getElementById('cfgFreeBreakMinutes').value = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
+  document.getElementById('cfgPauseOverrunRetardThreshold').value = config.pauseOverrunRetardThresholdMin != null ? config.pauseOverrunRetardThresholdMin : 10;
   document.getElementById('cfgAdfGraceMinutes').value = config.adfGraceMinutes != null ? config.adfGraceMinutes : 2;
   document.getElementById('cfgAdfStuckHours').value = config.adfStuckHours != null ? config.adfStuckHours : 2;
   document.getElementById('cfgEcouteGraceMinutes').value = config.ecouteGraceMinutes != null ? config.ecouteGraceMinutes : 2;
@@ -3254,7 +3274,7 @@ function renderAgentChips(){
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat »" style="color:var(--amber);margin-right:2px;">🎯</button>
       <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
       ${noObj ? `<button onclick="editStatusLabel('${name.replace(/'/g,"\\'")}')" title="Renommer le libellé affiché (ex: Backoffice, Confirmé...)" style="color:var(--muted);margin-right:2px;">✏️</button>` : ''}
-      <button onclick="setAgentStartDate('${name.replace(/'/g,"\\'")}')" title="Date de début — les retards/absences/prime d'assiduité ne comptent jamais avant cette date (utile pour un nouvel agent)" style="color:#4a9891;margin-right:2px;">📅</button>
+      <button onclick="setAgentStartDate('${name.replace(/'/g,"\\'")}')" title="Date de début — les retards/absences/prime d'assiduité ne comptent jamais avant cette date. Si elle tombe en cours de mois, objectif mini/fixe/primes de ce mois-là sont automatiquement réduits au prorata des jours ouvrés restants (utile pour un nouvel agent)" style="color:#4a9891;margin-right:2px;">📅</button>
       <button onclick="setAgentPassword('${name.replace(/'/g,"\\'")}')" title="Définir/changer le mot de passe" style="margin-right:4px;">🔑</button>
       <button onclick="archiveAgent('${name.replace(/'/g,"\\'")}')" title="Il ne travaille plus ici : le retirer du quotidien (pointage, Arena, classements, paie) tout en gardant son historique complet et le rattachement de ses retours." style="margin-right:2px;">📦</button>
       <button onclick="removeAgent('${name.replace(/'/g,"\\'")}')" title="Suppression définitive — casse son historique. Préfère 📦 Archiver.">×</button>`;
@@ -3350,7 +3370,7 @@ function renderPointageStartPanel(){
 
 async function setAgentStartDate(name){
   const current = getAgentStartDate(name) || '';
-  const val = window.prompt(`Date de début de ${name} au format AAAA-MM-JJ (ex: 2026-08-06).\nAvant cette date, aucun retard/absence ne sera compté pour cet agent, et sa prime d'assiduité ne sera jamais affectée.\nLaisse vide pour retirer.`, current);
+  const val = window.prompt(`Date de début de ${name} au format AAAA-MM-JJ (ex: 2026-08-06).\nAvant cette date, aucun retard/absence ne sera compté pour cet agent, et sa prime d'assiduité ne sera jamais affectée.\nSi cette date tombe en cours d'un mois, l'objectif mini, le fixe, la prime fixe et la prime d'assiduité de ce mois-là sont automatiquement réduits au prorata des jours ouvrés qu'il lui reste à travailler.\nLaisse vide pour retirer.`, current);
   if(val === null) return;
   const trimmed = val.trim();
   if(!config.agentsStartDate) config.agentsStartDate = {};
@@ -3598,6 +3618,8 @@ async function saveConfig(){
   if(isNaN(config.breakStartToleranceMin) || config.breakStartToleranceMin < 0) config.breakStartToleranceMin = 15;
   config.freeBreakMinutes = parseInt(document.getElementById('cfgFreeBreakMinutes').value);
   if(isNaN(config.freeBreakMinutes) || config.freeBreakMinutes < 0) config.freeBreakMinutes = 35;
+  config.pauseOverrunRetardThresholdMin = parseInt(document.getElementById('cfgPauseOverrunRetardThreshold').value);
+  if(isNaN(config.pauseOverrunRetardThresholdMin) || config.pauseOverrunRetardThresholdMin < 1) config.pauseOverrunRetardThresholdMin = 10;
   config.adfGraceMinutes = parseInt(document.getElementById('cfgAdfGraceMinutes').value);
   if(isNaN(config.adfGraceMinutes) || config.adfGraceMinutes < 1) config.adfGraceMinutes = 2;
   config.adfStuckHours = parseFloat(document.getElementById('cfgAdfStuckHours').value);
@@ -5594,7 +5616,8 @@ async function monthlyStats(agent, year, month){
     prodBoardCache[dateStr] = board;
     return { dateStr, log, infr, board };
   }));
-  let retards = 0, pauseOver = 0, absences = 0, phoneYoutube = 0, objectif = 0, justifiedAbsenceCount = 0;
+  const pauseThreshold = config.pauseOverrunRetardThresholdMin != null ? config.pauseOverrunRetardThresholdMin : 10;
+  let retards = 0, pauseOver = 0, pauseOverSmall = 0, pauseOverBig = 0, absences = 0, phoneYoutube = 0, objectif = 0, justifiedAbsenceCount = 0;
   dayData.forEach(({dateStr, log, infr, board})=>{
     // Retard/pause/absence ne sont évalués QUE les jours ouvrés (règlement : horaires lundi-vendredi,
     // jours fériés français exclus) — un week-end ou un jour férié sans pointage n'est jamais une
@@ -5622,7 +5645,19 @@ async function monthlyStats(agent, year, month){
         const effectiveBonus = (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(dayRealizedForBonus);
         const ev = evaluateDay(log.events, dateStr, effectiveBonus);
         if(ev.lateMinutes > 0) retards++;
-        if(ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0) pauseOver++;
+        // 🆕 Discipline dépassements de pause : la retenue en DH reste toujours au prorata exact des
+        // minutes (voir monthlyDeductions, inchangé) — ce qui change ici, c'est SEULEMENT l'impact sur le
+        // compteur prime d'assiduité (retardsCumules). Sous le seuil réglé (pauseThreshold, 10min par
+        // défaut) : 3 dépassements dans le mois = l'équivalent d'1 retard <10min dans le compteur (voir
+        // pauseOverSmall plus bas, converti en équivalent après la boucle). À partir du seuil : compte
+        // directement comme 1 retard dans le compteur, dès la 1ère fois — pas besoin d'en cumuler 3.
+        const scheduledOverMinToday = ev.breakIssues.reduce((s,b)=> s + (b.over ? Math.max(0, (b.duration||0) - (b.expectedDuration||0)) : 0), 0);
+        const totalBreakOverMinToday = scheduledOverMinToday + (ev.freeBreakOverMin || 0);
+        if(totalBreakOverMinToday > 0){
+          pauseOver++;
+          if(totalBreakOverMinToday >= pauseThreshold) pauseOverBig++;
+          else pauseOverSmall++;
+        }
       } else if(isDayOverForMessage(dateStr)){
         // « Absent » = aucun pointage ET aucun contrat saisi ce jour-là (même définition que partout
         // ailleurs dans l'appli). Compte comme un retard pour l'escalade « 3e retard OU absence »
@@ -5638,12 +5673,20 @@ async function monthlyStats(agent, year, month){
       if(i.type==='objectif') objectif++;
     });
   });
-  // DEMANDE ADMIN : un dépassement de pause ne doit plus faire perdre la prime d'assiduité — seuls les
-  // retards à l'arrivée et les absences comptent désormais dans l'escalade 3e/5e/6e du règlement.
-  // pauseOver reste calculé et affiché partout (informatif), simplement exclu de retardsCumules.
-  const retardsCumules = retards + absences;
+  // Règlement interne — dépassements de pause : un dépassement de pause en DH reste toujours retenu au
+  // prorata (monthlyDeductions, inchangé). Côté compteur prime d'assiduité (retardsCumules) : les "gros"
+  // dépassements (≥ seuil, pauseOverBig) comptent chacun directement comme 1 retard, dès le 1er ; les
+  // "petits" dépassements (< seuil, pauseOverSmall) ne comptent que groupés par 3 (pauseOverEquivalent),
+  // comme l'équivalent d'1 retard <10min — sans jamais y ajouter la retenue fixe de 30min d'un vrai retard
+  // (déjà géré : la retenue pause reste toujours au prorata des minutes, jamais un forfait de 30min).
+  const pauseOverSmallGroups = Math.floor(pauseOverSmall / 3);
+  const pauseOverEquivalentRetards = pauseOverBig + pauseOverSmallGroups;
+  const retardsCumules = retards + absences + pauseOverEquivalentRetards;
   const total = retards + pauseOver + absences + phoneYoutube + objectif;
-  return { agent, retards, pauseOver, absences, justifiedAbsenceCount, retardsCumules, phoneYoutube, objectif, total };
+  return {
+    agent, retards, pauseOver, pauseOverSmall, pauseOverBig, pauseOverSmallGroups, pauseOverEquivalentRetards,
+    absences, justifiedAbsenceCount, retardsCumules, phoneYoutube, objectif, total
+  };
 }
 
 let _lastMonthlyStats = [];
@@ -5780,7 +5823,7 @@ async function renderExploMonthlySummary(agents, dateList){
 
     for(const agent of agentsSortedByRealized){
       const isIndep = isIndependant(agent);
-      const pay = getAgentPay(agent);
+      const pay = getAgentPay(agent, y, m);
       const noObj = pay.noObjectif;
       const { realized, desired } = monthAgentData[`${ym}::${agent}`];
       const mini = (isIndep || noObj) ? 0 : (pay.objectifMensuel || 0);
@@ -6517,7 +6560,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   const remainingDays = workingDaysRemainingFrom(dateStr);
   const monthlyByAgent = {};
   await Promise.all(allDayRows.map(async r=>{
-    const pay = getAgentPay(r.agent);
+    const pay = getAgentPay(r.agent, y, m);
     const [monthlyRealized, desired] = await Promise.all([
       monthlyRealizedContracts(r.agent, y, m),
       getMonthlyDesiredObjective(r.agent, y, m)
@@ -6820,12 +6863,15 @@ async function renderPauseTotalsToday(){
         ? `<span class="tag warn" style="animation: pulseWarn 1.6s infinite;">🍽️ En pause déjeuner — ${elapsedMin}min</span>`
         : `<span class="tag warn" style="animation: pulseWarn 1.6s infinite;">☕ En pause libre — ${elapsedMin}min</span>`;
     }
+    // 🆕 Dépassement affiché en minutes exactes (et plus juste un badge "pénalité" muet) — l'admin voit
+    // directement de combien l'agent a dépassé sa pause libre, sans avoir à recalculer freeMin - freeBudget lui-même.
+    const freeOverMin = freeOver ? (r.freeMin - r.freeBudget) : 0;
     html += `<tr>
       <td><b>${r.agent}</b></td>
       <td>${liveHtml}</td>
       <td>${r.lunchMin > 0 ? `${r.lunchMin} min` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${r.freeMin > 0 ? `<span class="${freeOver?'tag warn':''}">${r.freeMin} / ${r.freeBudget} min${r.freeBonus>0?' 🎁':''}</span>` : `<span style="color:var(--muted);">0 / ${r.freeBudget} min${r.freeBonus>0?' 🎁':''}</span>`}</td>
-      <td><b>${r.lunchMin + r.freeMin} min</b>${freeOver ? ' <span class="tag warn">⚠️ pénalité</span>' : ''}</td>
+      <td><b>${r.lunchMin + r.freeMin} min</b>${freeOver ? ` <span class="tag warn">⚠️ +${freeOverMin}min</span>` : ''}</td>
     </tr>`;
   });
   html += `<tr style="font-weight:800; border-top:2px solid var(--border);">
@@ -7363,7 +7409,7 @@ async function computeTotalPayrollMonth(year, month){
   const supervisionBonus = await supervisorMonthlyBonus(year, month);
   let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
   await Promise.all(config.agents.map(async agent=>{
-    const pay = getAgentPay(agent);
+    const pay = getAgentPay(agent, year, month);
     const monthStats = await monthlyStats(agent, year, month);
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const res = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
@@ -7439,7 +7485,7 @@ async function realizedContractsForDateRange(agent, fromDateStr, toDateStr){
   return total;
 }
 async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange){
-  const pay = getAgentPay(agent);
+  const pay = getAgentPay(agent, year, month);
   const monthStats = await monthlyStats(agent, year, month);
   const assiduiteAcquise = isAssiduiteAcquise(monthStats);
 
@@ -7730,7 +7776,7 @@ async function renderMonthComparison(targetId){
 // ============================================================
 async function computeMonthProjection(agent, year, month){
   if(isIndependant(agent)) return null;
-  const pay = getAgentPay(agent);
+  const pay = getAgentPay(agent, year, month);
   const mini = pay.noObjectif ? 0 : (pay.objectifMensuel || 0);
   if(mini <= 0) return null;
 
@@ -8010,7 +8056,7 @@ async function renderNearBonusPanel(){
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
   const results = await Promise.all(nonIndep.map(async agent=>{
-    const pay = getAgentPay(agent);
+    const pay = getAgentPay(agent, year, month);
     const mini = pay.objectifMensuel || 0;
     if(mini <= 0) return null;
     const realized = await monthlyRealizedContracts(agent, year, month);
@@ -8232,7 +8278,7 @@ async function exportMonthlyBilanCSV(){
   const supervisionBonusMap = await supervisorMonthlyBonus(year, month);
   const rows = await Promise.all(config.agents.map(async agent=>{
     const isIndep = isIndependant(agent);
-    const pay = getAgentPay(agent);
+    const pay = getAgentPay(agent, year, month);
     const [st, desiredObjective, monthStats] = await Promise.all([
       monthlyObjectifStatus(agent, year, month),
       getMonthlyDesiredObjective(agent, year, month),
@@ -9059,7 +9105,7 @@ async function buildDailyBriefingHtml(baseRows){
     prodBoardCache[dateStr] = todayBoard;
     base = await Promise.all(config.agents.map(async agent=>{
       const isIndep = isIndependant(agent);
-      const pay = getAgentPay(agent);
+      const pay = getAgentPay(agent, y, m);
       const todayProd = getAgentProd(todayBoard, agent);
       const [monthlyRealized, desired] = await Promise.all([
         monthlyRealizedContracts(agent, y, m),
@@ -9844,15 +9890,71 @@ function getProdConfig(){
   return config.prodConfig;
 }
 
-function getAgentPay(agent){
+// ============================================================
+// 🆕 PRORATA EMBAUCHE EN COURS DE MOIS
+// ============================================================
+// Un agent embauché en cours de mois n'a pas à supporter un objectif mini "plein mois" ni à toucher
+// un fixe/primes calculés comme s'il avait travaillé le mois entier : tout est réduit au prorata des
+// jours ouvrés qu'il lui restait à travailler à partir de sa date de début, sur le total de jours
+// ouvrés du mois. Un agent déjà présent avant le 1er du mois (ou sans date de début réglée) n'est
+// jamais concerné : facteur = 1, aucun changement de comportement pour lui.
+//
+// Jours ouvrés d'un mois (year, month), à partir de fromDateStr INCLUS. Si fromDateStr tombe avant le
+// mois, revient au total plein (workingDaysInMonth) ; si elle tombe après, renvoie 0.
+function workingDaysInMonthFrom(year, month, fromDateStr){
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const holidays = frenchHolidaysSet(year);
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+  const monthEndStr = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
+  let startDay;
+  if(fromDateStr.startsWith(monthPrefix)) startDay = parseInt(fromDateStr.slice(8,10), 10);
+  else if(fromDateStr < monthPrefix) startDay = 1;
+  else return 0; // fromDateStr après la fin du mois
+  if(fromDateStr > monthEndStr) return 0;
+  let count = 0;
+  for(let d=startDay; d<=daysInMonth; d++){
+    const dt = new Date(year, month-1, d);
+    const dow = dt.getDay();
+    if(dow===0 || dow===6) continue;
+    if(holidays.has(todayStr(dt))) continue;
+    count++;
+  }
+  return count;
+}
+
+// Facteur (0 à 1) à appliquer au fixe/primes/objectif mini d'un agent pour le mois (year, month), selon
+// sa date de début réglée (Réglages → Agents). 1 = mois plein (comportement inchangé), <1 = embauché en
+// cours de ce mois-là, 0 = pas encore arrivé ce mois-là.
+function proratedMonthFactor(agent, year, month){
+  const startDate = getAgentStartDate(agent);
+  if(!startDate) return 1;
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+  const monthStartStr = `${monthPrefix}01`;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthEndStr = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
+  if(startDate <= monthStartStr) return 1; // déjà présent avant/au début du mois : mois plein
+  if(startDate > monthEndStr) return 0; // pas encore arrivé du tout sur ce mois-là
+  const totalWD = workingDaysInMonth(year, month);
+  if(totalWD <= 0) return 1;
+  const remainingWD = workingDaysInMonthFrom(year, month, startDate);
+  return Math.max(0, Math.min(1, remainingWD / totalWD));
+}
+
+// getAgentPay(agent) seul (sans année/mois) renvoie toujours les valeurs BRUTES telles que réglées par
+// l'admin — utilisé par les écrans d'édition (tableau "Rémunération par agent") pour ne jamais afficher
+// un chiffre réduit à la place de ce que l'admin a réellement tapé. getAgentPay(agent, year, month)
+// renvoie la version PRORATÉE pour ce mois précis si l'agent a été embauché en cours de route — c'est
+// cette version qu'utilisent tous les calculs de salaire/objectif/commission d'un mois donné.
+function getAgentPay(agent, year, month){
   const pc = getProdConfig();
   const d = pc.defaults;
   const c = pc.agentPay[agent] || {};
   const num = (v, def)=> (v !== '' && v != null && !isNaN(v)) ? Number(v) : def;
+  let pay;
   if(isIndependant(agent)){
     // Indépendant : pas d'objectif (verrouillé à 0), mais fixe / prime assiduité / prime fixe mensuelle
     // et DH/contrat restent réglables individuellement par l'admin, en plus du paiement dès le 1er contrat.
-    return {
+    pay = {
       baseSalary: num(c.baseSalary, 0),
       perContract: num(c.perContract, d.perContract ?? 500),
       perContractBeforeObjectif: 0,
@@ -9868,31 +9970,55 @@ function getAgentPay(agent){
       isIndep: true,
       isSupervisor: isSupervisor(agent)
     };
+  } else {
+    pay = {
+      baseSalary: num(c.baseSalary, d.baseSalary ?? 0),
+      perContract: num(c.perContract, d.perContract ?? 0),
+      // Réglable par agent, 0 par défaut : ce que rapporte CHAQUE contrat AVANT d'atteindre le mini
+      // obligatoire (objectifMensuel). À 0 (par défaut), ces contrats ne rapportent rien en DH/contrat —
+      // seulement couverts par le fixe — et cette ligne n'apparaît nulle part dans le détail de l'agent.
+      // Si l'admin règle un montant ici, il apparaît alors clairement dans le détail. "perContract" reste
+      // le taux appliqué à chaque contrat APRÈS le mini obligatoire (comportement inchangé pour ce taux-là).
+      perContractBeforeObjectif: num(c.perContractBeforeObjectif, d.perContractBeforeObjectif ?? 0),
+      primeAssiduite: num(c.primeAssiduite, d.primeAssiduite ?? 0),
+      // « Sans objectif » : hybride salarié — pointage et retards suivis normalement, prime d'assiduité
+      // réelle, mais aucun quota mensuel obligatoire : payé au contrat dès le 1er, comme un indépendant,
+      // sans pour autant être classé indépendant (toujours compté dans le total d'équipe, badgé différemment).
+      objectifMensuel: hasNoObjectif(agent) ? 0 : num(c.objectifMensuel, d.objectifMensuel ?? 0),
+      primeObjectifJour: num(c.primeObjectifJour, d.primeObjectifJour ?? 0),
+      primeExtraContrat: num(c.primeExtraContrat, d.primeExtraContrat ?? 0),
+      primeFixeMensuelle: num(c.primeFixeMensuelle, d.primeFixeMensuelle ?? 0),
+      supervisorPrimePerContract: num(c.supervisorPrimePerContract, d.supervisorPrimePerContract ?? 0),
+      // 💸 Coût d'UN retour (impayé client) pour cet agent, AVANT division ÷3 / ÷2 / 1:1.
+      returnCost: num(c.returnCost, d.returnCost ?? 0),
+      isIndep: false,
+      noObjectif: hasNoObjectif(agent),
+      isSupervisor: isSupervisor(agent)
+    };
   }
-  return {
-    baseSalary: num(c.baseSalary, d.baseSalary ?? 0),
-    perContract: num(c.perContract, d.perContract ?? 0),
-    // Réglable par agent, 0 par défaut : ce que rapporte CHAQUE contrat AVANT d'atteindre le mini
-    // obligatoire (objectifMensuel). À 0 (par défaut), ces contrats ne rapportent rien en DH/contrat —
-    // seulement couverts par le fixe — et cette ligne n'apparaît nulle part dans le détail de l'agent.
-    // Si l'admin règle un montant ici, il apparaît alors clairement dans le détail. "perContract" reste
-    // le taux appliqué à chaque contrat APRÈS le mini obligatoire (comportement inchangé pour ce taux-là).
-    perContractBeforeObjectif: num(c.perContractBeforeObjectif, d.perContractBeforeObjectif ?? 0),
-    primeAssiduite: num(c.primeAssiduite, d.primeAssiduite ?? 0),
-    // « Sans objectif » : hybride salarié — pointage et retards suivis normalement, prime d'assiduité
-    // réelle, mais aucun quota mensuel obligatoire : payé au contrat dès le 1er, comme un indépendant,
-    // sans pour autant être classé indépendant (toujours compté dans le total d'équipe, badgé différemment).
-    objectifMensuel: hasNoObjectif(agent) ? 0 : num(c.objectifMensuel, d.objectifMensuel ?? 0),
-    primeObjectifJour: num(c.primeObjectifJour, d.primeObjectifJour ?? 0),
-    primeExtraContrat: num(c.primeExtraContrat, d.primeExtraContrat ?? 0),
-    primeFixeMensuelle: num(c.primeFixeMensuelle, d.primeFixeMensuelle ?? 0),
-    supervisorPrimePerContract: num(c.supervisorPrimePerContract, d.supervisorPrimePerContract ?? 0),
-    // 💸 Coût d'UN retour (impayé client) pour cet agent, AVANT division ÷3 / ÷2 / 1:1.
-    returnCost: num(c.returnCost, d.returnCost ?? 0),
-    isIndep: false,
-    noObjectif: hasNoObjectif(agent),
-    isSupervisor: isSupervisor(agent)
-  };
+  if(year != null && month != null){
+    const factor = proratedMonthFactor(agent, year, month);
+    pay.prorationFactor = factor;
+    if(factor < 1){
+      pay.baseSalary = Math.round(pay.baseSalary * factor);
+      pay.primeFixeMensuelle = Math.round(pay.primeFixeMensuelle * factor);
+      pay.primeAssiduite = Math.round(pay.primeAssiduite * factor);
+      if(pay.objectifMensuel > 0) pay.objectifMensuel = Math.max(1, Math.round(pay.objectifMensuel * factor));
+    }
+  }
+  return pay;
+}
+
+// Objectif mensuel MINI déjà réduit au prorata (embauche en cours de mois), sans toucher au reste du
+// pay. Pratique dans les fonctions qui ont besoin de garder un `pay` BRUT (ex: calcul d'un taux
+// journalier, qui doit rester basé sur le fixe plein divisé par le nombre de jours ouvrés du mois en
+// entier — cf. calculateDailySalary/calculateWeeklySalary/estimateSalary) tout en appliquant quand même
+// le prorata au SEUIL de palier (contrats avant/après objectif).
+function effectiveObjectifMensuel(agent, year, month){
+  const pay = getAgentPay(agent);
+  if(!pay.objectifMensuel || pay.objectifMensuel <= 0) return 0;
+  const factor = proratedMonthFactor(agent, year, month);
+  return factor >= 1 ? pay.objectifMensuel : Math.max(1, Math.round(pay.objectifMensuel * factor));
 }
 
 // ============================================================
@@ -9944,8 +10070,11 @@ function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
   const m = month || (now.getMonth()+1);
   const daysMonth = workingDaysInMonth(y, m);
 
+  // Le taux journalier reste basé sur le fixe PLEIN divisé par le nombre de jours ouvrés du mois entier
+  // (constant, quelle que soit la date d'embauche — voir proratedMonthFactor) ; seul le SEUIL de palier
+  // (objectif mensuel) est réduit au prorata pour un agent embauché en cours de mois.
   const dailyBase = (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth;
-  const objectif = pay.objectifMensuel || 0;
+  const objectif = effectiveObjectifMensuel(agent, y, m);
   const isAtteint = objectif > 0 && monthContracts >= objectif;
 
   // Les contrats du jour ne rapportent le bonus extra que si l'objectif mensuel est atteint
@@ -9957,7 +10086,8 @@ function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
     extra = Math.round(ratio * totalExtra * pay.primeExtraContrat);
   }
 
-  const ce = contractEarnings(pay, monthContracts, dayContracts);
+  const payForTier = objectif === pay.objectifMensuel ? pay : { ...pay, objectifMensuel: objectif };
+  const ce = contractEarnings(payForTier, monthContracts, dayContracts);
   return Math.round(dailyBase + ce.total + extra);
 }
 
@@ -9976,7 +10106,7 @@ function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month
 
   const dailyBase = (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth;
   const daysWeek = daysElapsedOverride != null ? daysElapsedOverride : (pc.daysPerWeek || 5);
-  const objectif = pay.objectifMensuel || 0;
+  const objectif = effectiveObjectifMensuel(agent, y, m);
   const isAtteint = objectif > 0 && monthContracts >= objectif;
 
   let extra = 0;
@@ -9986,7 +10116,8 @@ function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month
     extra = Math.round(ratio * totalExtra * pay.primeExtraContrat);
   }
 
-  const ce = contractEarnings(pay, monthContracts, weekContracts);
+  const payForTier = objectif === pay.objectifMensuel ? pay : { ...pay, objectifMensuel: objectif };
+  const ce = contractEarnings(payForTier, monthContracts, weekContracts);
   return Math.round(dailyBase * daysWeek + ce.total + extra);
 }
 
@@ -10001,7 +10132,7 @@ function estimateSalary(agent, contracts, monthContracts, year, month){
   // Contexte mensuel : utilise la valeur transmise explicitement (sinon retombe sur le cache Cash du MÊME agent uniquement,
   // pour ne jamais mélanger les contrats d'un autre agent consulté précédemment dans l'onglet Cash)
   const mc = monthContracts != null ? monthContracts : (cashRealCache && cashRealCache.agent === agent ? cashRealCache.monthContracts : 0);
-  const objectif = pay.objectifMensuel || 0;
+  const objectif = effectiveObjectifMensuel(agent, y, m);
   const isAtteint = objectif > 0 && mc >= objectif;
 
   let extra = 0;
@@ -10011,7 +10142,8 @@ function estimateSalary(agent, contracts, monthContracts, year, month){
     extra = Math.round(ratio * totalExtra * pay.primeExtraContrat);
   }
 
-  const ce = contractEarnings(pay, mc, contracts);
+  const payForTier = objectif === pay.objectifMensuel ? pay : { ...pay, objectifMensuel: objectif };
+  const ce = contractEarnings(payForTier, mc, contracts);
   return Math.round(dailyBase + ce.total + extra);
 }
 
@@ -10095,7 +10227,7 @@ async function weekRealizedContracts(agent){
 // ses retours font passer sous son minimum perd sa prime d'objectif, c'est la règle du patron.
 // Sans ce paramètre, la fonction se comporte exactement comme avant (affichage Arena, classements).
 async function monthlyObjectifStatus(agent, year, month, realizedOverride){
-  const pay = getAgentPay(agent);
+  const pay = getAgentPay(agent, year, month);
   const realized = realizedOverride != null ? realizedOverride : await monthlyRealizedContracts(agent, year, month);
   if(pay.isIndep){
     return { agent, objectif: 0, realized, atteint: false, extraCount: 0, primeObjectif: 0, primeExtra: 0, pct: 100, remaining: 0, isIndep: true };
@@ -10220,12 +10352,14 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
           total += halfHourDeduction;
           items.push({ date: dateStr, label: `Retard ${ev.lateMinutes}min`, amount: Math.round(halfHourDeduction) });
         }
-        // DEMANDE ADMIN : le dépassement de pause (pauses fixes du planning — dont le déjeuner — ET pause
-        // libre) ne compte plus dans l'escalade de la prime d'assiduité (cf. monthlyStats), mais reste
-        // retenu sur le salaire, au prorata exact de la minute — même taux que la retenue de retard
-        // (quote-part fixe du jour ÷ minutes de travail). Les pauses du planning utilisent leur durée
-        // prévue à elles (ex: déjeuner 12h-13h = 60 min) ; la pause libre utilise son propre budget
-        // (35 min + bonus contrats gagnés ce jour-là) — les deux se cumulent dans une seule ligne.
+        // Le dépassement de pause (pauses fixes du planning — dont le déjeuner — ET pause libre) reste
+        // TOUJOURS retenu sur le salaire au prorata exact de la minute ici — même taux que la retenue de
+        // retard (quote-part fixe du jour ÷ minutes de travail), jamais le forfait fixe de 30min d'un vrai
+        // retard. Les pauses du planning utilisent leur durée prévue à elles (ex: déjeuner 12h-13h = 60
+        // min) ; la pause libre utilise son propre budget (35 min + bonus contrats gagnés ce jour-là) — les
+        // deux se cumulent dans une seule ligne. Son IMPACT SUR LE COMPTEUR prime d'assiduité (retardsCumules)
+        // est décidé séparément dans monthlyStats (règle de discipline : 3 petits dépassements < seuil = 1
+        // retard équivalent, 1 gros dépassement ≥ seuil = 1 retard équivalent dès le 1er) — jamais ici.
         const scheduledOverMin = ev.breakIssues.reduce((s,b)=> s + (b.over ? Math.max(0, (b.duration||0) - (b.expectedDuration||0)) : 0), 0);
         const totalBreakOverMin = scheduledOverMin + (ev.freeBreakOverMin || 0);
         if(totalBreakOverMin > 0){
@@ -10324,9 +10458,11 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
   const workMinutes = Math.max(60, toMinutes(config.end) - toMinutes(config.start));
   const minuteRate = workMinutes > 0 ? dailyFixedQuote / workMinutes : 0;
   const halfHourDeduction = minuteRate * 30;
-  // Le dépassement de pause ne compte plus dans l'escalade retard/absence (prime d'assiduité), mais reste
-  // une retenue en argent bien réelle (monthlyDeductions) — donc inclus ici dans "perdu ce mois", avec sa
-  // propre ligne distincte pour rester clair (ne pèse pas sur le compteur 0/1/3/5/6 ci-dessous).
+  // Le dépassement de pause reste toujours une retenue en argent au prorata de la minute (monthlyDeductions),
+  // donc inclus ici dans "perdu ce mois". Depuis la nouvelle règle de discipline, il peut EN PLUS peser sur
+  // le compteur 0/1/3/5/6 ci-dessous (voir monthlyStats → pauseOverEquivalentRetards, déjà inclus dans
+  // stats.retardsCumules / count) : 3 "petits" dépassements (< seuil) = 1 retard équivalent, un "gros"
+  // dépassement (≥ seuil) = 1 retard équivalent dès le 1er — jamais avec la retenue fixe de 30min en plus.
   const retardAbsenceLost = ded.items.filter(i=> /^(Retard|Absence|Mise à pied)/.test(i.label)).reduce((s,i)=> s + i.amount, 0);
   const pauseLost = ded.items.filter(i=> i.label.startsWith('Dépassement pause')).reduce((s,i)=> s + i.amount, 0);
   const primeAssiduitePerdue = count >= 3;
@@ -10374,14 +10510,19 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
   };
   const captionColor = tier.level>=5 ? 'var(--red)' : (tier.level>=3 ? 'var(--amber)' : (tier.level>=1 ? 'var(--muted)' : 'var(--green)'));
 
+  const pauseThresholdForDisplay = config.pauseOverrunRetardThresholdMin != null ? config.pauseOverrunRetardThresholdMin : 10;
   const detailRows = [
     ['Retard 1 à 10 min', `-${fmt(halfHourDeduction)} DH immédiat (30 min de salaire)`],
     ['Retard +10 min ou absence', `journée non payée (-${fmt(dailyFixedQuote)} DH), contrats du jour toujours payés`],
-    ["3e retard ou absence", `-${fmt(pay.primeAssiduite||0)} DH de prime d'assiduité (perdue pour tout le mois)`],
-    ["5e retard ou absence", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours ÷2 au lieu de ÷3 (hors CRM)`],
-    ["6e retard ou absence", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours 1:1 au lieu de ÷3 (hors CRM)`],
-    ["☕ Dépassement de pause (planning + pause libre)", `retenue au prorata de la minute — ne compte plus dans le compteur ci-dessus, mais reste retenu sur le salaire`]
+    ["3e retard ou absence (ou équivalent)", `-${fmt(pay.primeAssiduite||0)} DH de prime d'assiduité (perdue pour tout le mois)`],
+    ["5e retard ou absence (ou équivalent)", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours ÷2 au lieu de ÷3 (hors CRM)`],
+    ["6e retard ou absence (ou équivalent)", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours 1:1 au lieu de ÷3 (hors CRM)`],
+    [`☕ Dépassement de pause < ${pauseThresholdForDisplay}min (planning + pause libre)`, `retenue au prorata de la minute (jamais 30min forfaitaires) + 3 dépassements de ce type dans le mois = 1 retard équivalent dans le compteur ci-dessus`],
+    [`☕ Dépassement de pause ≥ ${pauseThresholdForDisplay}min`, `retenue au prorata de la minute + compte directement comme 1 retard équivalent dans le compteur, dès le 1er`]
   ];
+  if(stats.pauseOverEquivalentRetards > 0){
+    detailRows.push([`Dont retards "équivalents" via la pause ce mois`, `${stats.pauseOverEquivalentRetards} (${stats.pauseOverBig} gros dépassement${stats.pauseOverBig>1?'s':''} + ${stats.pauseOverSmallGroups} groupe${stats.pauseOverSmallGroups>1?'s':''} de 3 petits, sur ${stats.pauseOverSmall} au total)`]);
+  }
   if(stats.absences > 0){
     detailRows.push([`Dont absences pures ce mois`, `${stats.absences} (aucun pointage, aucun contrat saisi)`]);
   }
@@ -10409,7 +10550,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
         <div class="raa-hero-item">
           <div class="raa-hero-num" style="color:${captionColor};">${count}</div>
           <div class="raa-hero-lbl">retard${count>1?'s':''}/absence${count>1?'s':''}</div>
-          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''}${pauseLost>0 ? ` (-${fmt(pauseLost)} DH)` : ''} · ${stats.absences} absence${stats.absences>1?'s':''}${stats.justifiedAbsenceCount>0 ? ` · ${stats.justifiedAbsenceCount} absence${stats.justifiedAbsenceCount>1?'s':''} justifiée${stats.justifiedAbsenceCount>1?'s':''} (hors compteur)` : ''}</div>
+          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''}${pauseLost>0 ? ` (-${fmt(pauseLost)} DH)` : ''}${stats.pauseOverEquivalentRetards>0 ? ` → +${stats.pauseOverEquivalentRetards} équiv.` : ''} · ${stats.absences} absence${stats.absences>1?'s':''}${stats.justifiedAbsenceCount>0 ? ` · ${stats.justifiedAbsenceCount} absence${stats.justifiedAbsenceCount>1?'s':''} justifiée${stats.justifiedAbsenceCount>1?'s':''} (hors compteur)` : ''}</div>
         </div>
         <div class="raa-hero-sep"></div>
         <div class="raa-hero-item">
@@ -10494,7 +10635,7 @@ async function payableContractsBreakdown(agent, year, month){
 }
 
 async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
-  const pay = getAgentPay(agent);
+  const pay = getAgentPay(agent, year, month);
   const ded = await monthlyDeductions(agent, year, month);
   // Contrats réellement payés = validés − rétractés − retours convertis en contrats (voir ci-dessus).
   const br = await payableContractsBreakdown(agent, year, month);
@@ -10990,9 +11131,14 @@ async function saveArenaObjectif(){
 // peut fixer en début de mois le chiffre qu'il vise lui-même, en plus (ou à la place, pour les indépendants) du mini demandé par l'admin.
 async function saveArenaDesiredObjectif(){
   if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
+  const now = nowMA();
+  // 🔒 Filet de sécurité : une fois réglé pour ce mois-ci, seul l'admin peut le changer (voir
+  // adminSetDesiredObjective). Le bouton/champ sont normalement déjà désactivés côté agent (cf.
+  // renderArena) — ce contrôle empêche juste un contournement (ex: réactivé à la main dans le navigateur).
+  const alreadySet = await getMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
+  if(alreadySet > 0){ alert(`Ton objectif du mois est déjà réglé à ${alreadySet} et verrouillé jusqu'au mois prochain. Demande à l'admin s'il faut le changer.`); await renderArena(); return; }
   const val = parseInt(document.getElementById('arenaDesiredObjInput').value);
   if(isNaN(val) || val < 0){ alert('Entre un nombre valide.'); return; }
-  const now = nowMA();
   await saveMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1, val);
   showToast(`🎯 Objectif du mois enregistré : ${val} contrats`, 'ok');
   await renderArena();
@@ -11118,8 +11264,33 @@ async function renderArena(){
   desiredObjBoxEl.style.display = (currentArenaAgent && isMonthScope) ? 'block' : 'none';
   if(currentArenaAgent && isMonthScope){
     const desiredVal = await getMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
-    document.getElementById('arenaDesiredObjInput').value = desiredVal || '';
+    const desiredInputEl = document.getElementById('arenaDesiredObjInput');
+    const desiredBtnEl = document.getElementById('arenaDesiredObjBtn');
+    const desiredSubEl = document.getElementById('arenaDesiredObjSub');
+    desiredInputEl.value = desiredVal || '';
     desiredObjBoxEl.classList.toggle('pulse-obj-blue', !desiredVal);
+    // 🔒 Une fois choisi, l'objectif du mois se verrouille jusqu'au mois prochain — même principe que
+    // l'objectif du jour (qui se cache dès qu'il est réglé). L'admin, lui, garde toujours la main pour
+    // le modifier à tout moment (adminSetDesiredObjective, dans les tableaux Admin → Production).
+    if(desiredVal > 0){
+      desiredInputEl.disabled = true;
+      desiredInputEl.style.opacity = '0.6';
+      desiredInputEl.style.cursor = 'not-allowed';
+      desiredBtnEl.disabled = true;
+      desiredBtnEl.style.opacity = '0.5';
+      desiredBtnEl.style.cursor = 'not-allowed';
+      desiredBtnEl.textContent = '🔒 Objectif verrouillé';
+      desiredSubEl.innerHTML = `🔒 Objectif verrouillé à <b style="color:var(--text);">${desiredVal}</b> pour ce mois-ci — il se débloquera automatiquement le mois prochain. Besoin de le changer avant ? Demande à l'admin.`;
+    } else {
+      desiredInputEl.disabled = false;
+      desiredInputEl.style.opacity = '1';
+      desiredInputEl.style.cursor = 'auto';
+      desiredBtnEl.disabled = false;
+      desiredBtnEl.style.opacity = '1';
+      desiredBtnEl.style.cursor = 'pointer';
+      desiredBtnEl.textContent = '✅ Valider mon objectif du mois';
+      desiredSubEl.textContent = "En plus du mini demandé par l'admin — vise ce que tu veux, personne ne t'y oblige. Une 2e barre suit ta progression. Une fois validé, il se verrouille jusqu'au mois prochain.";
+    }
   } else {
     desiredObjBoxEl.classList.remove('pulse-obj-blue');
   }
@@ -11643,9 +11814,9 @@ function ensureTickerResampleLoop(){
 async function renderCash(){
   if(!currentCashAgent) return;
   const agent = currentCashAgent;
-  const pay = getAgentPay(agent);
-  const pc = getProdConfig();
   const now = nowMA();
+  const pay = getAgentPay(agent, now.getFullYear(), now.getMonth()+1);
+  const pc = getProdConfig();
   const dateStr = todayStr();
 
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
@@ -12114,7 +12285,7 @@ async function renderSupervision(){
   // à charger dès qu'il y avait plusieurs agents, puisque chaque agent déclenche une vingtaine de lectures.
   const rows = await Promise.all(config.agents.map(async agent=>{
     const isIndep = isIndependant(agent);
-    const pay = getAgentPay(agent);
+    const pay = getAgentPay(agent, now.getFullYear(), now.getMonth()+1);
     const dayProd = getAgentProd(dateBoard, agent);
     const dayRealized = dayProd.realized || 0;
     // Un indépendant peut lui aussi se fixer un défi du jour dans l'Arena (facultatif) — on ne le
@@ -12165,11 +12336,27 @@ async function renderSupervision(){
     const atteint = isIndep ? true : (monthObj_ > 0 && monthReal >= monthObj_);
     const desiredPct = desiredObj > 0 ? Math.round((monthReal/desiredObj)*100) : 0;
 
+    // 🆕 Pause du jour, pour que les superviseurs surveillent ça aussi (pas seulement l'admin) — même
+    // calcul que le widget admin "Temps de pause en direct", mais réutilise le `log` déjà lu ci-dessus
+    // (pas de lecture supplémentaire). Le mensuel (pauseOver/pauseOverEquivalentRetards) vient directement
+    // de monthStats, déjà calculé plus haut lui aussi.
+    let pauseTodayMin = 0, pauseTodayBudget = (config.freeBreakMinutes != null ? config.freeBreakMinutes : 35), pauseTodayOver = false;
+    if(!isIndep && log){
+      const bonusToday = (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(dayRealized);
+      pauseTodayBudget += bonusToday;
+      const { usedSec: freeSecToday } = freeBreakUsageToday(log.events, dateStr);
+      pauseTodayMin = Math.round(freeSecToday/60);
+      pauseTodayOver = pauseTodayMin > pauseTodayBudget;
+    }
+
     return {
       agent, isIndep, dayRealized, dayObjective, weekReal: weekData.total, weekObjective: weekObjective_,
       monthReal, monthObj: monthObj_, pctMonth: pctMonth_, atteint, salaryMonth: monthRes.total,
       statusLabel, statusCls, tier, retardsCumules: monthStats ? monthStats.retardsCumules : 0,
-      desiredObj, desiredPct
+      desiredObj, desiredPct,
+      pauseTodayMin, pauseTodayBudget, pauseTodayOver,
+      pauseOverCount: monthStats ? monthStats.pauseOver : 0,
+      pauseMonthEquiv: monthStats ? monthStats.pauseOverEquivalentRetards : 0
     };
   }));
 
@@ -12390,14 +12577,14 @@ async function renderSupervision(){
 
   let html = pressureHtml + dailyBriefingHtml + objBlockHtml + weeklyBriefingHtml + pressureExtraHtml + `
     <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
-    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour visé par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon.</div>
+    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour visé par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon. "☕ Pause" = pause libre prise aujourd'hui / budget (⚠️ si dépassée), avec en dessous le nombre d'équivalents retard accumulés ce mois via la pause (voir Réglages → Horaires pour le seuil).</div>
     <div style="overflow-x:auto;">
     <table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>💬 Conseil</th><th>Jour (réalisé/visé)</th><th>Semaine</th><th>Mois</th><th>%</th><th>📅 Projection</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
+      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>💬 Conseil</th><th>Jour (réalisé/visé)</th><th>Semaine</th><th>Mois</th><th>%</th><th>📅 Projection</th><th>☕ Pause</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
     </tr></thead><tbody>`;
 
   if(teamRows.length === 0){
-    html += `<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:16px;">Aucun agent salarié pour le moment.</td></tr>`;
+    html += `<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:16px;">Aucun agent salarié pour le moment.</td></tr>`;
   } else {
     const rowsHtml = await Promise.all(teamRows.map(async r=>{
       const isMe = r.agent === supervisor;
@@ -12409,6 +12596,14 @@ async function renderSupervision(){
       const projHtml = proj
         ? `<span class="tag ${proj.onTrack?'ok':'late'}" title="Rythme ${proj.pace}/jour, ${proj.remainingWorkingDays}j restants">${proj.onTrack?'✅':'⚠️'} ${proj.projected}</span>`
         : '<span style="color:var(--muted);">—</span>';
+      // 🆕 Pause du jour + info mensuelle, pour que les superviseurs surveillent ça aussi (pas seulement
+      // l'admin) — voir pauseTodayMin/pauseMonthEquiv calculés plus haut dans le builder de `rows`.
+      const pauseHtml = r.pauseTodayMin > 0
+        ? `<span class="tag ${r.pauseTodayOver?'warn':''}">${r.pauseTodayMin}/${r.pauseTodayBudget}min${r.pauseTodayOver?` ⚠️+${r.pauseTodayMin-r.pauseTodayBudget}`:''}</span>`
+        : '<span style="color:var(--muted);">—</span>';
+      const pauseMonthNote = r.pauseMonthEquiv > 0
+        ? `<div style="font-size:10.5px; color:var(--amber); margin-top:2px;">+${r.pauseMonthEquiv} équiv. retard</div>`
+        : (r.pauseOverCount > 0 ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${r.pauseOverCount} dépassement${r.pauseOverCount>1?'s':''} ce mois</div>` : '');
       return `<tr style="${rowStyle}">
         <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}</td>
         <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
@@ -12419,6 +12614,7 @@ async function renderSupervision(){
         <td><b>${r.monthReal}</b>/${r.monthObj||'—'}</td>
         <td class="lb-pct ${pctCls}">${r.monthObj>0 ? r.pctMonth+'%' : '—'}</td>
         <td>${projHtml}</td>
+        <td>${pauseHtml}${pauseMonthNote}</td>
         <td><span class="tag ${r.retardsCumules>=3?'late':(r.retardsCumules>=1?'warn':'ok')}">${r.tier ? r.tier.label : 'Aucun retard'}</span></td>
         <td><b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></td>
       </tr>`;
@@ -12428,11 +12624,13 @@ async function renderSupervision(){
 
   html += `</tbody>
     <tfoot><tr style="font-weight:800; border-top:2px solid var(--border);">
-      <td colspan="2">TOTAL ÉQUIPE</td>
+      <td colspan="4">TOTAL ÉQUIPE</td>
       <td>${totalDayReal}/${totalDayObj||'—'}</td>
       <td>${totalWeekReal}/${totalWeekObj||'—'}</td>
       <td>${totalMonthReal}/${totalMonthObj||'—'}</td>
       <td>${teamPct||0}%</td>
+      <td>—</td>
+      <td>—</td>
       <td>—</td>
       <td>${totalSalaryTeam.toLocaleString('fr-FR')} DH</td>
     </tr></tfoot>
@@ -12764,14 +12962,22 @@ async function renderMonthlyObjectif(){
     else if(noObj) totalBrutBackoffice += fullTotalWithSupervisor;
     else totalBrutTeam += fullTotalWithSupervisor;
 
+    // 🆕 Embauche en cours de mois : l'objectif mini (r.objectif) est déjà celui prorate (voir
+    // monthlyObjectifStatus → getAgentPay(agent, year, month)) — on affiche juste un repère visuel avec
+    // le chiffre plein réglé par l'admin, pour ne pas laisser croire à une erreur de saisie.
+    const rawMiniForRow = getAgentPay(r.agent).objectifMensuel || 0;
+    const proratedTag = (!isFreeRow && rawMiniForRow > 0 && r.objectif > 0 && r.objectif < rawMiniForRow)
+      ? ` <span class="tag" style="background:rgba(61,139,253,0.15); color:var(--accent);" title="Embauché en cours de mois : mini réduit au prorata des jours ouvrés restants (plein mois : ${rawMiniForRow})">prorata</span>`
+      : '';
+
     html += `<tr class="${rowClass}">
       <td style="font-weight:800;">${rankEmoji(r.rank, rows.length)}</td>
       <td><b>${r.agent}${indepTag}</b></td>
       <td><b>${r.realized}</b></td>
-      <td>${isFreeRow ? '∞' : (r.objectif > 0 ? r.objectif : '—')}</td>
+      <td>${isFreeRow ? '∞' : (r.objectif > 0 ? r.objectif : '—')}${proratedTag}</td>
       <td>
         <input type="number" min="0" step="1" value="${desiredObjAdmin || ''}" placeholder="—"
-          style="width:72px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);"
+          style="width:90px;padding:6px 4px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);text-align:center;"
           title="Objectif visé par l'agent — tu peux aussi le régler toi-même ici si besoin"
           onchange="adminSetDesiredObjective('${agentKeySafe}', ${year}, ${month}, this.value)">
       </td>
@@ -16299,8 +16505,9 @@ async function renderHistoryStats(){
     let estimatedPayroll = null;
     if(contracts && frozenPayroll == null){
       let sum = 0;
+      const [histYear, histMonth] = mv.split('-').map(Number);
       allKnownAgents().forEach(a=>{
-        const p = getAgentPay(a);
+        const p = getAgentPay(a, histYear, histMonth);
         const n = (prod.rows || []).filter(x => x.agent === a && !x.retracted).length;
         if(!n && !p.baseSalary) return;
         let brut = p.baseSalary + p.primeFixeMensuelle + p.primeAssiduite;  // assiduité acquise : aucun retard
