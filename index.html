@@ -7362,9 +7362,10 @@ async function renderBossRevenue(){
   // Détail par personne, trié du plus coûteux au moins coûteux (alphabétique si égalité, même convention
   // que partout ailleurs dans l'appli) — replié par défaut, pour garder la vue d'ensemble propre.
   const sortedDetails = [...(expense.details||[])].sort((a,b)=> b.total - a.total || a.agent.localeCompare(b.agent));
+  const [expYear, expMonth] = expense.toDateStr.split('-').slice(0,2).map(Number);
   const detailRows = sortedDetails.map(d=>{
     const catTag = d.isIndep ? ' <span class="tag independant">Indé</span>' : (d.noObjectif ? ` <span class="tag warn">${getNoObjectifLabelGeneric()}</span>` : '');
-    const payD = getAgentPay(d.agent);
+    const payD = getAgentPay(d.agent, expYear, expMonth);
     const fixedOnlyFull = Math.round((payD.baseSalary||0) + (payD.primeFixeMensuelle||0));
     const assiduiteFullAmt = Math.round(payD.primeAssiduite||0);
     const fixedTip = assiduiteFullAmt>0
@@ -12929,7 +12930,7 @@ async function renderMonthlyObjectif(){
   let totalBrutTeam = 0, totalBrutIndep = 0, totalBrutBackoffice = 0;
   let totalDesiredObjSum = 0, totalRealizedForDesiredSum = 0;
   for(const r of rows){
-    const pay = getAgentPay(r.agent);
+    const pay = getAgentPay(r.agent, year, month);
     const noObj = pay.noObjectif;
     const isFreeRow = r.isIndep || noObj;
     const pctCls = isFreeRow ? 'good' : (r.pct >= 100 ? 'good' : (r.pct >= 50 ? 'mid' : 'bad'));
@@ -13107,7 +13108,7 @@ async function renderProdAdmin(){
     // tous les autres. Avant, une seule erreur vidait tout le tableau et donnait l'impression que
     // l'argent avait disparu.
     const simRows = await Promise.all(rankings.map(async r=>{
-      const pay = getAgentPay(r.agent);
+      const pay = getAgentPay(r.agent, simYear, simMonth);
       try{
         const [monthContracts, monthStats] = await Promise.all([
           monthlyRealizedContracts(r.agent, simYear, simMonth),
