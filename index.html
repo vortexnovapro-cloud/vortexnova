@@ -1420,10 +1420,11 @@ function tryDeviceGateAdmin(){
             <span id="retractAdminCount" style="font-size:12.5px;color:var(--muted);"></span>
           </div>
           <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-top:10px; border-top:1px solid var(--border);">
-            <label style="margin:0; font-size:12.5px; color:var(--muted);" for="retractAdminExact">Ou fixer directement le nombre exact :</label>
+            <label style="margin:0; font-size:12.5px; color:var(--muted);" for="retractAdminExact">Ou fixer directement le nombre exact (si aucun contrat importé ci-dessous) :</label>
             <input type="number" id="retractAdminExact" min="0" step="1" placeholder="0" style="max-width:90px;">
             <button onclick="setExactRetraction()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:white;font-weight:700;cursor:pointer;font-size:13px;">✅ Valider</button>
           </div>
+          <div id="retractAdminContractsList" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);"></div>
         </div>
 
         <div class="settings-box">
@@ -2948,6 +2949,7 @@ function populateRetractAdminAgentSelect(){
   const monthEl = document.getElementById('retractAdminMonth');
   if(monthEl && !monthEl.value) monthEl.value = todayStr().slice(0,7);
   renderRetractAdminCount();
+  renderRetractAdminContracts();
 }
 async function renderRetractAdminCount(){
   const agent = document.getElementById('retractAdminAgent')?.value;
@@ -2968,6 +2970,120 @@ async function renderRetractAdminCount(){
   const exactEl = document.getElementById('retractAdminExact');
   if(exactEl && document.activeElement !== exactEl) exactEl.value = count;
 }
+
+// Liste des contrats de l'agent/mois choisis, avec un bouton par contrat pour marquer/démarquer une
+// rétractation — au lieu de cliquer +1 « à l'aveugle », l'admin sélectionne le contrat exact concerné.
+// Détecte aussi les cas où le compteur de paie (getMonthlyRetractCount) ne correspond plus au nombre
+// de contrats marqués « rétracté » dans ce tableau, et propose une correction en un clic.
+async function renderRetractAdminContracts(){
+  const container = document.getElementById('retractAdminContractsList');
+  if(!container) return;
+  const agent = document.getElementById('retractAdminAgent')?.value;
+  const monthVal = document.getElementById('retractAdminMonth')?.value || todayStr().slice(0,7);
+  if(!agent || !monthVal){ container.innerHTML = ''; return; }
+  container.innerHTML = '<div class="empty">⏳ Chargement des contrats…</div>';
+
+  const [y, m] = monthVal.split('-').map(Number);
+  const [data, retractCount] = await Promise.all([
+    getBillingProd(monthVal),
+    getMonthlyRetractCount(agent, y, m)
+  ]);
+  const rows = (data.rows || []).filter(r => r.agent === agent);
+  const markedCount = rows.filter(r => r.retracted).length;
+
+  let html = '';
+
+  // 🔍 Vérification de cohérence : le compteur qui sert à la paie doit correspondre au nombre de
+  // contrats marqués « rétracté » ci-dessous. S'ils divergent, on le signale explicitement plutôt que
+  // de laisser un chiffre faux passer inaperçu jusqu'à la paie.
+  if(rows.length && retractCount !== markedCount){
+    html += `<div style="padding:12px 15px; border-radius:9px; background:rgba(217,164,65,0.14); border:1px solid rgba(217,164,65,0.55); font-size:13px; margin-bottom:14px; line-height:1.6;">
+      ⚠️ <b>Incohérence détectée pour ${escapeHtml(agent)} — ${billingMonthLabel(monthVal)}</b><br>
+      Le compteur qui sert à calculer la paie indique <b>${retractCount}</b> rétractation${retractCount>1?'s':''}, mais <b>${markedCount}</b> contrat${markedCount>1?'s':''} ${markedCount>1?'sont':'est'} marqué${markedCount>1?'s':''} « rétracté » dans la liste ci-dessous.<br>
+      <span style="color:var(--muted);">Ça arrive si une rétractation a été enregistrée avant l'import du contrat, ou si le bouton +/-1 a été utilisé sans marquer le contrat correspondant.</span><br>
+      <button onclick="fixRetractMismatch('${agent.replace(/'/g,"\\'")}','${monthVal}', ${markedCount})" style="margin-top:8px; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:white; font-weight:700; cursor:pointer; font-size:12.5px;">✅ Corriger : fixer le compteur à ${markedCount} (comme la liste ci-dessous)</button>
+    </div>`;
+  }
+
+  if(!rows.length){
+    html += `<div class="empty" style="margin:6px 0 4px;">Aucun contrat importé pour ${escapeHtml(agent)} sur ${billingMonthLabel(monthVal)} — utilise le champ « nombre exact » ci-dessus en attendant l'import du backoffice.</div>`;
+    container.innerHTML = html;
+    return;
+  }
+
+  html += `<input type="text" id="retractAdminSearch" placeholder="🔎 Filtrer : n° de contrat, nom du client, téléphone…" oninput="filterRetractAdminRows()"
+    style="width:100%; margin:4px 0 10px; padding:9px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); box-sizing:border-box;">`;
+
+  html += '<div style="overflow-x:auto; max-height:360px; overflow-y:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th><th>Téléphone</th><th>N° contrat</th><th>Rétracté</th></tr></thead><tbody id="retractAdminRowsBody">';
+  rows.forEach((r, i) => {
+    const key = r.numContrat || r.reference || '';
+    const red = r.retracted ? ' style="color:var(--red); text-decoration:line-through; opacity:0.85;"' : '';
+    const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.telephone, r.produit, r.datePropre || r.date].join(' '));
+    html += `<tr${red} data-search="${hay}">
+      <td>${i + 1}</td>
+      <td>${escapeHtml(r.datePropre || r.date)}</td>
+      <td>${escapeHtml(r.produit)}</td>
+      <td>${escapeHtml(r.nom)}</td>
+      <td>${escapeHtml(r.telephone)}</td>
+      <td>${escapeHtml(key)}</td>
+      <td><button onclick="toggleRetractAdminRow('${monthVal}','${agent.replace(/'/g,"\\'")}','${String(key).replace(/'/g,"\\'")}')"
+        style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  container.innerHTML = html;
+}
+
+function filterRetractAdminRows(){
+  const q = billingNormKey(document.getElementById('retractAdminSearch')?.value || '');
+  document.querySelectorAll('#retractAdminRowsBody tr').forEach(tr => {
+    tr.style.display = (!q || (tr.getAttribute('data-search') || '').includes(q)) ? '' : 'none';
+  });
+}
+
+// Marque/démarque le contrat exact sélectionné — même logique que toggleBillingRetracted (tableau de
+// Facturation) : le flag sur la ligne ET le compteur de paie bougent ensemble, du même pas, en même
+// temps. C'est ce qui évite la divergence entre les deux.
+async function toggleRetractAdminRow(monthVal, agent, numContrat){
+  const data = await getBillingProd(monthVal);
+  const row = (data.rows || []).find(r => (r.numContrat || r.reference) === numContrat && r.agent === agent);
+  if(!row) return;
+  row.retracted = !row.retracted;
+  await billingSave(billingProdKey(monthVal), data);
+
+  const [y, m] = monthVal.split('-').map(Number);
+  const current = await getMonthlyRetractCount(agent, y, m);
+  const next = Math.max(0, current + (row.retracted ? 1 : -1));
+  await saveMonthlyRetractCount(agent, y, m, next);
+  logAudit('Admin', row.retracted ? 'Contrat marqué rétracté (via Réglages)' : 'Rétractation annulée (via Réglages)', `${agent} — contrat ${numContrat} — compteur du mois : ${next}`);
+
+  billingInvalidate();
+  clearRenderCaches();
+  await renderRetractAdminCount();
+  await renderRetractAdminContracts();
+  renderAllMonthly();
+  renderMonthlyObjectif();
+  if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
+  if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
+  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
+  if(document.getElementById('billingAgentSheet')) renderBillingAgentSheet();
+}
+
+// Corrige l'incohérence signalée : force le compteur de paie à correspondre exactement au nombre de
+// contrats marqués « rétracté » dans la liste (même logique que syncBillingRetractCount, mais ciblée
+// sur l'agent/mois affichés ici plutôt que sur le mois entier de l'onglet Facturation).
+async function fixRetractMismatch(agent, monthVal, markedCount){
+  if(!confirm(`Fixer le compteur de rétractations de ${agent} (${billingMonthLabel(monthVal)}) à ${markedCount}, pour qu'il corresponde exactement aux contrats marqués dans la liste ?`)) return;
+  const [y, m] = monthVal.split('-').map(Number);
+  await saveMonthlyRetractCount(agent, y, m, markedCount);
+  logAudit('Admin', 'Compteur de rétractations corrigé (incohérence détectée)', `${agent} — ${monthVal} — fixé à ${markedCount}`);
+  await renderRetractAdminCount();
+  await renderRetractAdminContracts();
+  renderAllMonthly();
+  renderMonthlyObjectif();
+}
+
 async function setExactRetraction(){
   const agent = document.getElementById('retractAdminAgent')?.value;
   const monthVal = document.getElementById('retractAdminMonth')?.value || todayStr().slice(0,7);
@@ -2985,6 +3101,7 @@ async function setExactRetraction(){
   await saveMonthlyRetractCount(agent, year, month, nextCount);
   logAudit('Admin', `Rétraction fixée à ${nextCount} — ${agent} (${monthVal})`, `avant: ${current}`);
   await renderRetractAdminCount();
+  await renderRetractAdminContracts();
   renderAllMonthly();
   renderMonthlyObjectif();
   if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
@@ -3003,6 +3120,7 @@ async function adminAdjustRetraction(delta){
   await saveMonthlyRetractCount(agent, year, month, nextCount);
   logAudit('Admin', `Rétraction ${delta>0?'ajoutée':'retirée'} — ${agent} (${monthVal})`, `compteur: ${nextCount}`);
   await renderRetractAdminCount();
+  await renderRetractAdminContracts();
   renderAllMonthly();
   renderMonthlyObjectif();
   if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
@@ -3010,7 +3128,7 @@ async function adminAdjustRetraction(delta){
   if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
 }
 document.addEventListener('change', function(e){
-  if(e.target && (e.target.id === 'retractAdminAgent' || e.target.id === 'retractAdminMonth')) renderRetractAdminCount();
+  if(e.target && (e.target.id === 'retractAdminAgent' || e.target.id === 'retractAdminMonth')){ renderRetractAdminCount(); renderRetractAdminContracts(); }
 });
 
 function populateRaaAgentSelect(){
