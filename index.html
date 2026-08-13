@@ -1809,6 +1809,15 @@ function tryDeviceGateAdmin(){
           <div id="integrityPanel" style="margin-top:12px;"></div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(155,89,182,0.45);">
+          <label>🏷️ Contrôle impayé / rétractation</label>
+          <div class="section-sub">Différent du contrôle d'intégrité ci-dessus : celui-ci ne regarde pas la production, il relit le <b>texte brut</b> de chaque retour importé (conservé tel quel depuis ton fichier de facturation) et le compare à <b>tes mots-clés actuels</b>. Il repère trois choses : un impayé dont le texte ressemble maintenant à une rétractation, un retour encore compté dans le diviseur alors que son contrat d'origine est <b>déjà</b> marqué rétracté (l'agent perdrait le contrat deux fois), et un même contrat présent en double dans les retours. <b>Limite honnête</b> : ça ne marche que dans un sens — une rétractation déjà marquée ne garde pas le texte qui a mené à cette décision, donc ce contrôle ne peut pas la revérifier, seulement repérer un impayé qui ressemble à une rétractation.</div>
+          <div class="admin-toolbar" style="margin-top:12px;">
+            <button onclick="runReturnKindAudit()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--independant);background:rgba(155,89,182,0.14);color:var(--independant);font-weight:700;cursor:pointer;" title="Balaie 24 mois de retours déjà importés et compare le texte brut de chacun à tes mots-clés actuels. Ne modifie rien : c'est un diagnostic, tant que tu n'as pas choisi puis appliqué une correction.">🏷️ Lancer le contrôle</button>
+          </div>
+          <div id="returnKindAuditPanel" style="margin-top:12px;"></div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(217,164,65,0.4);">
           <label>🔎 Contrats à vérifier</label>
           <div class="section-sub">Les contrats dont une donnée semble anormale : date dans le futur (faute de frappe sur l'année), numéro de contrat inhabituel, email ou téléphone illisible. Le CRM les a enregistrés tels quels — il n'a pas voulu deviner. <b>Une date dans le futur est le cas le plus coûteux</b> : le contrat reste invisible dans les tableaux jusqu'au mois venu, donc jamais payé, sans que personne s'en aperçoive.</div>
@@ -16851,7 +16860,8 @@ async function searchContractGlobal(){
     let etat = '—', action = '';
     const key = String(r.numContrat || r.reference || '').replace(/'/g, "\\'");
     if(isRet){
-      etat = r.dismissed ? '<span style="color:var(--muted);">écarté</span>'
+      etat = r.reclassifiedAsRetraction ? '<span style="color:var(--independant);">🏷️ reclassé en rétractation</span>'
+           : r.dismissed ? '<span style="color:var(--muted);">écarté</span>'
            : (r.agent ? '<span style="color:var(--red);">retour imputé à ' + escapeHtml(r.agent) + '</span>'
                       : '<span style="color:var(--amber);">à trancher</span>');
       action = `<span style="font-size:12px; color:var(--muted);">Se règle dans « Retours à trancher »</span>`;
@@ -17389,6 +17399,286 @@ async function applyAllIntegrityFixes(){
   await runIntegrityCheck();
   renderBillingImportSummary();
   renderBillingAgentSheet();
+}
+
+// ============================================================
+// 🏷️ CONTRÔLE IMPAYÉ / RÉTRACTATION — le texte brut face à tes mots-clés ACTUELS
+// ============================================================
+// Différent du contrôle d'intégrité ci-dessus, qui ne regarde QUE la production (billingProd) et
+// jamais les retours. Celui-ci relit billingReturns : le texte brut du statut (row.motif) est
+// conservé tel quel depuis le fichier de facturation pour chaque ligne « impayé », donc on peut le
+// recomparer à billingReturnKind() n'importe quand — y compris après avoir élargi la liste de
+// mots-clés — sans jamais avoir besoin de réimporter le fichier d'origine.
+//
+// ⚠️ LIMITE HONNÊTE, affichée aussi dans l'interface : ça ne marche que dans UN sens. Une ligne
+// rétractée ne garde que `retracted: true` sur son contrat d'origine (billingProd) — jamais le texte
+// brut qui a mené à cette décision, il n'est simplement jamais stocké là. On ne peut donc PAS vérifier
+// si une rétractation a été marquée par erreur ; seulement si un impayé ressemble maintenant, mots-clés
+// actuels à l'appui, à une rétractation.
+//
+// TROIS CHOSES DIFFÉRENTES REPÉRÉES, JAMAIS CORRIGÉES SANS TON CHOIX :
+//   A) reclassement   — le texte brut d'un impayé correspond maintenant à « rétractation »
+//   B) double retenue — un retour compte ENCORE dans le diviseur alors que son contrat d'origine est
+//      DÉJÀ marqué rétracté ailleurs (recherche, tableau nominatif…) : l'agent perdrait le contrat deux
+//      fois. Ce cas n'a rien à voir avec les mots-clés — il peut arriver même sans jamais y toucher —
+//      mais il coûte cher et personne d'autre ne le détecte.
+//   C) doublon        — le même contrat apparaît plus d'une fois dans les retours (même mois ou mois
+//      différents). L'import normal l'empêche à la source (cf. billingAnalyzeReturns), ce contrôle sert
+//      donc surtout à couvrir un historique importé avant cette protection, ou une donnée modifiée à la
+//      main.
+let lastReturnKindAudit = null;
+let returnKindAuditFixes = {};   // id d'anomalie → correction choisie
+
+async function runReturnKindAudit(){
+  const el = document.getElementById('returnKindAuditPanel');
+  if(!el) return;
+  el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Relecture des retours importés (24 derniers mois)…</div>';
+  returnKindAuditFixes = {};
+
+  const now = nowMA();
+  const months = [];
+  for(let i = -2; i < 24; i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
+  }
+
+  // Retours ET production chargés ensemble : il faut la production pour savoir si le contrat
+  // d'origine d'un retour est déjà marqué rétracté (cas B), sans redemander mois par mois.
+  const [retStores, prodStores] = await Promise.all([
+    Promise.all(months.map(mv => getBillingReturns(mv))),
+    Promise.all(months.map(mv => getBillingProd(mv)))
+  ]);
+
+  const prodByKey = {};
+  months.forEach((mv, mi)=>{
+    (prodStores[mi].rows || []).forEach(r=>{
+      billingRowKeys(r).forEach(k => { if(!prodByKey[k]) prodByKey[k] = { mv, r }; });
+    });
+  });
+  const findOrigin = row=>{
+    if(row.originMonth){
+      const mi = months.indexOf(row.originMonth);
+      if(mi >= 0){
+        const found = (prodStores[mi].rows || []).find(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)));
+        if(found) return { mv: row.originMonth, r: found };
+      }
+    }
+    const k = billingRowKeys(row).find(k => prodByKey[k]);
+    return k ? prodByKey[k] : null;
+  };
+
+  const reclass = [], conflict = [], duplicates = [];
+  const keySeen = {};
+  let totalRows = 0;
+
+  months.forEach((mv, mi)=>{
+    const rows = retStores[mi].rows || [];
+    rows.forEach((row, i)=>{
+      // Un retour déjà écarté (dismissed) n'est déjà plus facturé à personne : rien à revérifier.
+      if(row.dismissed) return;
+      totalRows++;
+
+      const origin = findOrigin(row);
+      const base = {
+        mv, i,
+        nom: row.nom || '—',
+        num: row.numContrat || row.reference || '—',
+        agent: row.agent || row.agentRaw || '—',
+        motif: row.motif || '',
+        originMonth: row.originMonth || (origin ? origin.mv : '')
+      };
+
+      // Priorité au cas B : s'il est déjà rétracté à l'origine, le reclassement (A) n'a plus de sens,
+      // la seule action utile est d'écarter cette ligne des retours.
+      if(origin && origin.r.retracted){
+        conflict.push(base);
+      } else if(billingReturnKind(row) === 'retracted'){
+        reclass.push({ ...base, originFound: !!origin, originMv: origin ? origin.mv : null });
+      }
+
+      // Doublon : une seule ligne signalée par paire, même si le contrat porte deux identifiants
+      // (numéro ET référence) qui matcheraient chacun séparément.
+      const keys = billingRowKeys(row);
+      const matchedKey = keys.find(k => keySeen[k]);
+      if(matchedKey){
+        duplicates.push({ k: matchedKey, a: keySeen[matchedKey], b: { mv, i, nom: row.nom, num: row.numContrat || row.reference } });
+      } else {
+        keys.forEach(k => { if(!keySeen[k]) keySeen[k] = { mv, i, nom: row.nom, num: row.numContrat || row.reference }; });
+      }
+    });
+  });
+
+  lastReturnKindAudit = { reclass, conflict, duplicates, totalRows };
+  renderReturnKindAuditResult();
+}
+
+function renderReturnKindAuditResult(){
+  const el = document.getElementById('returnKindAuditPanel');
+  if(!el || !lastReturnKindAudit) return;
+  const { reclass, conflict, duplicates, totalRows } = lastReturnKindAudit;
+  const total = reclass.length + conflict.length + duplicates.length;
+
+  if(!totalRows){
+    el.innerHTML = `<div class="empty" style="padding:12px;">Aucun retour importé sur les 24 derniers mois — rien à contrôler pour l'instant.</div>`;
+    return;
+  }
+  if(!total){
+    el.innerHTML = `<div style="padding:13px 15px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.4); font-weight:700; color:var(--green);">
+      ✅ ${totalRows} retour${totalRows>1?'s':''} vérifié${totalRows>1?'s':''} — rien à signaler avec tes mots-clés actuels.
+    </div>`;
+    return;
+  }
+
+  const nbChoisis = Object.keys(returnKindAuditFixes).filter(k => returnKindAuditFixes[k] && returnKindAuditFixes[k] !== 'skip').length;
+  let html = `<div style="padding:13px 15px; border-radius:10px; background:rgba(229,90,90,0.13); border:1px solid rgba(229,90,90,0.45); margin-bottom:12px;">
+    <div style="font-weight:800; color:var(--red);">⚠️ ${total} ligne${total>1?'s':''} à regarder sur ${totalRows} retour${totalRows>1?'s':''} vérifiés</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:5px;">Rien n'est modifié tant que tu n'as pas choisi puis cliqué sur « Appliquer ».</div>
+    <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <button onclick="applyReturnKindAuditFixes()" ${nbChoisis ? '' : 'disabled'} style="padding:11px 20px; border-radius:9px; border:none;
+        background:${nbChoisis ? 'var(--accent)' : 'var(--panel2)'}; color:${nbChoisis ? 'white' : 'var(--muted)'};
+        font-weight:800; cursor:${nbChoisis ? 'pointer' : 'not-allowed'};">✅ Appliquer ${nbChoisis || ''} correction${nbChoisis>1?'s':''}</button>
+      <button onclick="returnKindAuditFixes={}; renderReturnKindAuditResult();" style="padding:11px 16px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer;">Tout décocher</button>
+    </div>
+  </div>`;
+
+  const searchBtn = num => `<button onclick="document.getElementById('globalSearchInput').value='${escapeHtml(String(num)).replace(/'/g,"\\'")}'; searchContractGlobal(); document.getElementById('globalSearchInput').scrollIntoView({behavior:'smooth', block:'center'});" title="Vérifier ce contrat dans « Trouver un contrat » avant de décider." style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:11px;">🔎</button>`;
+
+  const radio = (id, value, label, title)=>{
+    const on = returnKindAuditFixes[id] === value;
+    return `<label title="${title || ''}" style="display:inline-flex; align-items:center; gap:5px; margin-right:8px; cursor:pointer; font-size:12px;
+      padding:4px 9px; border-radius:7px; border:1px solid ${on ? 'var(--green)' : 'var(--border)'};
+      background:${on ? 'rgba(52,183,116,0.14)' : 'transparent'}; color:${on ? 'var(--green)' : 'var(--muted)'}; font-weight:${on ? '800' : '600'};">
+      <input type="radio" name="${id}" ${on ? 'checked' : ''} onchange="returnKindAuditFixes['${id}']='${value}'; renderReturnKindAuditResult();" style="width:auto; margin:0;">${label}</label>`;
+  };
+
+  if(reclass.length){
+    html += `<div style="margin-bottom:14px;"><b style="color:var(--amber);">🏷️ ${reclass.length} impayé${reclass.length>1?'s':''} qui ressemble${reclass.length>1?'':'nt'} à une rétractation</b>
+      <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">Le texte brut lu dans le fichier correspond à tes mots-clés actuels de rétractation. Reclasser marque le contrat rétracté sur son mois d'origine (retiré 1 pour 1) et écarte cette ligne du diviseur.</div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Mois retenu</th><th>Contrat</th><th>Client</th><th>Agent</th><th>Texte brut lu</th><th>Action</th></tr></thead><tbody>
+      ${reclass.map((d, i)=>{
+        const id = `reclass_${i}`;
+        return `<tr>
+          <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(d.mv))}</td>
+          <td>${escapeHtml(d.num)}${d.originMonth ? `<div style="font-size:11px; color:var(--muted);">signé ${escapeHtml(billingMonthLabel(d.originMonth))}</div>` : ''}</td>
+          <td>${escapeHtml(d.nom)}</td>
+          <td>${escapeHtml(d.agent)}</td>
+          <td style="font-size:12px; color:var(--muted); max-width:220px;">${d.motif ? escapeHtml(d.motif) : '<i>vide</i>'}</td>
+          <td style="white-space:nowrap;">
+            ${d.originFound
+              ? radio(id, 'reclasser', 'reclasser en rétractation', "Marque le contrat rétracté sur son mois d'origine, écarte cette ligne du diviseur, recalcule le compteur de l'agent.")
+              : '<span style="color:var(--red); font-size:11.5px;">contrat d\'origine introuvable<br>→ importe sa production d\'abord</span>'}
+            ${radio(id, 'skip', 'laisser tel quel', 'Le mot-clé matche mais ce cas précis reste un impayé (faux positif) — tu le confirmes.')}
+            ${searchBtn(d.num)}
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  if(conflict.length){
+    html += `<div style="margin-bottom:14px;"><b style="color:var(--red);">⚠️ ${conflict.length} contrat${conflict.length>1?'s':''} retenu${conflict.length>1?'s':''} deux fois</b>
+      <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">Ce retour compte encore dans le diviseur alors que son contrat d'origine est DÉJÀ marqué rétracté ailleurs — l'agent perd le contrat deux fois. Sans rapport avec les mots-clés : ça peut venir d'une rétractation marquée après coup.</div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Mois retenu</th><th>Contrat</th><th>Client</th><th>Agent</th><th>Action</th></tr></thead><tbody>
+      ${conflict.map((d, i)=>{
+        const id = `conflict_${i}`;
+        return `<tr>
+          <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(d.mv))}</td><td>${escapeHtml(d.num)}</td>
+          <td>${escapeHtml(d.nom)}</td><td>${escapeHtml(d.agent)}</td>
+          <td style="white-space:nowrap;">${radio(id, 'ecarter', 'écarter ce retour', "N'est plus facturé à personne — reste visible dans l'historique.")}${radio(id, 'skip', 'laisser tel quel')}${searchBtn(d.num)}</td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  if(duplicates.length){
+    html += `<div style="margin-bottom:10px;"><b style="color:var(--amber);">👯 ${duplicates.length} contrat${duplicates.length>1?'s':''} en double dans les retours</b>
+      <div style="font-size:12.5px; color:var(--muted); margin:5px 0 9px;">Le même contrat apparaît plus d'une fois comme impayé — l'agent serait pénalisé deux fois. Choisis l'occurrence à garder ; l'autre est écartée (pas supprimée, elle reste visible dans l'historique).</div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Contrat</th><th>Client</th><th>Occurrence 1</th><th>Occurrence 2</th><th>Garder</th></tr></thead><tbody>
+      ${duplicates.map((d, i)=>{
+        const id = `dup_${i}`;
+        return `<tr>
+          <td>${escapeHtml(d.b.num || d.k)}</td><td>${escapeHtml(d.b.nom || '?')}</td>
+          <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(d.a.mv))}</td><td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(d.b.mv))}</td>
+          <td style="white-space:nowrap;">
+            ${radio(id, 'a', billingMonthLabel(d.a.mv), `Garder l'occurrence de ${billingMonthLabel(d.a.mv)}, écarter celle de ${billingMonthLabel(d.b.mv)}`)}
+            ${radio(id, 'b', billingMonthLabel(d.b.mv), `Garder l'occurrence de ${billingMonthLabel(d.b.mv)}, écarter celle de ${billingMonthLabel(d.a.mv)}`)}
+            ${radio(id, 'skip', 'ne rien faire')}
+            ${searchBtn(d.b.num || d.k)}
+          </td></tr>`;
+      }).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+async function applyReturnKindAuditFixes(){
+  if(!lastReturnKindAudit) return;
+  const { reclass, conflict, duplicates } = lastReturnKindAudit;
+  const actions = [];
+  reclass.forEach((d, i)=>{ if(returnKindAuditFixes[`reclass_${i}`] === 'reclasser' && d.originFound) actions.push({ t:'reclass', d }); });
+  conflict.forEach((d, i)=>{ if(returnKindAuditFixes[`conflict_${i}`] === 'ecarter') actions.push({ t:'ecarter', d }); });
+  duplicates.forEach((d, i)=>{ const c = returnKindAuditFixes[`dup_${i}`]; if(c === 'a' || c === 'b') actions.push({ t:'dup', drop: c === 'a' ? d.b : d.a }); });
+  if(!actions.length) return;
+  if(!confirm(`Appliquer ${actions.length} correction${actions.length>1?'s':''} ?\n\nTout est enregistré d'un seul coup, puis le contrôle est relancé pour vérifier qu'il ne reste rien.`)) return;
+
+  const el = document.getElementById('returnKindAuditPanel');
+  if(el) el.innerHTML = `<div class="empty" style="padding:12px;">⏳ Application de ${actions.length} correction(s)…</div>`;
+
+  // Écritures groupées par mois, un seul chargement + une seule sauvegarde par store touché — même
+  // logique que applyAllIntegrityFixes, pour ne pas multiplier les allers-retours.
+  const retTouched = {}, prodTouched = {};
+  const getRet = async mv => (retTouched[mv] = retTouched[mv] || await getBillingReturns(mv));
+  const getProd = async mv => (prodTouched[mv] = prodTouched[mv] || await getBillingProd(mv));
+  const retractToFix = {};   // `${mv}|${agent}` → true, compteur à recalculer à la fin
+
+  for(const a of actions){
+    if(a.t === 'reclass'){
+      const retStore = await getRet(a.d.mv);
+      const row = (retStore.rows || [])[a.d.i];
+      if(!row || row.dismissed) continue;
+      const prodStore = await getProd(a.d.originMv);
+      const originRow = (prodStore.rows || []).find(r => billingRowKeys(r).some(k => billingRowKeys(row).includes(k)));
+      if(!originRow) continue; // contrat introuvable entre-temps (ex: supprimé) : on ne force rien
+      if(!originRow.retracted){
+        originRow.retracted = true;
+        if(!originRow.agent && row.agent) originRow.agent = row.agent;
+      }
+      row.dismissed = true;
+      // Marqueur additif, propre à ce contrôle : ne change le comportement d'aucun autre écran (qui ne
+      // lit que `dismissed`), sert seulement à garder la trace de POURQUOI cette ligne a été écartée.
+      row.reclassifiedAsRetraction = true;
+      row.reclassifiedAt = new Date().toISOString();
+      if(originRow.agent) retractToFix[`${a.d.originMv}|${originRow.agent}`] = true;
+    } else if(a.t === 'ecarter'){
+      const retStore = await getRet(a.d.mv);
+      const row = (retStore.rows || [])[a.d.i];
+      if(row && !row.dismissed){ row.dismissed = true; row.dismissReason = 'deja_retracte_a_origine'; }
+    } else if(a.t === 'dup'){
+      const retStore = await getRet(a.drop.mv);
+      const row = (retStore.rows || [])[a.drop.i];
+      if(row && !row.dismissed){ row.dismissed = true; row.dismissReason = 'doublon_retours'; }
+    }
+  }
+
+  for(const mv of Object.keys(retTouched)) await billingSave(billingRetKey(mv), retTouched[mv]);
+  for(const mv of Object.keys(prodTouched)) await billingSave(billingProdKey(mv), prodTouched[mv]);
+  for(const ck of Object.keys(retractToFix)){
+    const [mv, agent] = ck.split('|');
+    const [yy, mm] = mv.split('-').map(Number);
+    const store = prodTouched[mv] || await getBillingProd(mv);
+    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    await saveMonthlyRetractCount(agent, yy, mm, exact);
+  }
+
+  logAudit('Admin', 'Contrôle impayé/rétractation — corrections appliquées', `${actions.length} ligne(s)`);
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  await runReturnKindAudit();
+  renderBillingAgentSheet();
+  renderBillingImportSummary();
+  renderUnmatchedReturnsPanel();
 }
 
 // ------------------------------------------------------------
