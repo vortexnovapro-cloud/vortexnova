@@ -4,11 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pointage — VortexNova</title>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- PERF : les 4 scripts Firebase sont en "defer" — le navigateur les télécharge en tâche de fond SANS
+     mettre en pause l'affichage du reste de la page (avant, ils bloquaient le rendu jusqu'à leur
+     téléchargement complet, ce qui ralentissait beaucoup le premier affichage sur mobile/réseau lent).
+     Le code d'initialisation Firebase plus bas dans la page attend maintenant explicitement
+     "DOMContentLoaded" (voir bloc "🔒 SÉCURITÉ" dans le script principal) pour garantir que ces scripts
+     sont bien chargés avant de les utiliser — même ordre d'exécution qu'avant, juste plus tôt affiché.
+     html2canvas a été retiré d'ici : il n'est utilisé que pour l'export d'image (function
+     ensureHtml2Canvas), qui le charge déjà tout seul à la demande — le charger ici pour TOUT le monde,
+     à chaque visite, alors que la plupart des sessions ne l'utilisent jamais, ne servait qu'à ralentir
+     le chargement initial pour rien. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -581,6 +590,45 @@
   cursor:pointer; font-size:13px; font-weight:700; color:var(--muted); display:inline-flex;
   align-items:center; gap:7px; }
 .privacy-btn.on { border-color:#c9a870; color:#c9a870; background:rgba(184,147,90,0.12); }
+
+/* ============================================================
+   📱 OPTIMISATION SMARTPHONE
+   ============================================================
+   La sécurité ne change pas : le "device gate" plus bas (isSmallDevice()) continue de bloquer tout
+   accès depuis un petit écran/mobile tant que le mot de passe admin n'a pas été saisi — seul l'admin
+   peut passer. Ce bloc ne fait que rendre l'appli agréable à utiliser UNE FOIS que l'admin est passé
+   ce gate, sur son propre téléphone. La plupart des grilles utilisaient déjà "auto-fit"/"auto-fill"
+   (donc déjà responsives) — ce bloc cible surtout ce qui restait figé en colonnes fixes. */
+@media(max-width:640px){
+  header{ padding:14px 16px; gap:8px; }
+  header h1{ font-size:17px; }
+  main{ padding:18px 12px 40px; }
+  .card{ padding:16px; }
+  .settings-box{ padding:16px; }
+  .clock{ font-size:32px; }
+  .tab-btn{ padding:7px 12px; font-size:12.5px; }
+  /* Empêche Safari iOS de zoomer automatiquement sur un champ dont le texte fait moins de 16px — la
+     cause la plus fréquente de "l'écran qui saute" quand on touche un champ sur téléphone. */
+  input, select, textarea{ font-size:16px !important; }
+  /* Filet de sécurité pour un éventuel tableau non enveloppé dans un conteneur "overflow-x:auto" :
+     défilement horizontal plutôt qu'un tableau écrasé/illisible ou qui déborde de l'écran. */
+  main table{ display:block; max-width:100%; overflow-x:auto; }
+  /* Grilles à colonnes fixes (non "auto-fit") : elles ne se réorganisaient pas toutes seules sur un
+     petit écran. On les empile en 1 colonne — moins joli que la maquette desktop, mais tout redevient
+     lisible sans avoir à zoomer/scroller latéralement. Le sélecteur par attribut cible directement les
+     endroits qui utilisent encore un style en dur plutôt qu'une classe. */
+  .btn-grid,
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns:repeat(3,1fr)"],
+  [style*="grid-template-columns: 44px 1fr 130px"],
+  [style*="grid-template-columns:1fr 130px 40px"],
+  [style*="grid-template-columns:1fr 110px 110px"],
+  [style*="grid-template-columns: 1fr 110px 110px 36px"],
+  [style*="grid-template-columns:1fr 110px 110px 40px"]{
+    grid-template-columns: 1fr !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -704,6 +752,7 @@ function tryDeviceGateAdmin(){
 </header>
 
 <div id="inactivityWarnBanner" onclick="confirmPresenceFromAlert()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; text-align:center; background: var(--red-bg); color: var(--red); padding:14px 16px; font-size:15px; font-weight:800; animation: pulseWarn 1s infinite; cursor:pointer; box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
+<div id="adminInactivityWarnBanner" onclick="confirmAdminPresenceFromAlert()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; text-align:center; background: var(--red-bg); color: var(--red); padding:14px 16px; font-size:15px; font-weight:800; animation: pulseWarn 1s infinite; cursor:pointer; box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
 
 <div id="appUpdateBanner" onclick="forceAppUpdate()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9998; background:#b0262b; box-shadow:0 6px 26px rgba(0,0,0,0.6); border-bottom:2px solid rgba(255,255,255,0.3); cursor:pointer;">
   <div style="max-width:920px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:16px; flex-wrap:wrap; padding:16px 20px;">
@@ -1665,9 +1714,37 @@ function tryDeviceGateAdmin(){
           <div class="section-sub" style="line-height:1.7;">
             1. Le backoffice valide les contrats → Telegram → Pabbly → ton Sheet de suivi du mois.<br>
             2. Fin de mois : tu exportes ce Sheet en CSV et tu l'importes ici (<b>Production du mois</b>). Chaque contrat est rattaché à son agent.<br>
-            3. Tu reçois ton tableau de facturation avec les <b>retours</b> (impayés) d'une période <b>21 → 20</b> décalée d'environ 2 mois. Tu l'importes ici (<b>Retours</b>) en choisissant le <b>mois de paie sur lequel tu veux les imputer</b>.<br>
+            3. Tu reçois ton tableau de facturation avec les <b>retours</b> (impayés) d'une période <b>21 → 20</b>. Tu l'importes ici (<b>Retours</b>) : <b>tout le fichier</b> est imputé sur le <b>mois de paie que tu choisis</b> à l'import — jamais réparti automatiquement contrat par contrat. Le CRM vérifie juste, à titre indicatif, que la date de signature de chaque contrat retrouvé correspond au décalage réglé ci-dessous (« ⏱️ Décalage de facturation des retours », 2 mois par défaut) ; en cas d'écart il te le signale (« à vérifier ») mais ne change jamais le mois tout seul.<br>
             4. Chaque agent a son tableau : sa prod du mois, ses <span style="color:var(--red); font-weight:700;">contrats rétractés en rouge</span>, ses retours en dessous, et son <b>salaire net réel</b> = fixe + primes + contrats − retards/absences − rétractés − retours (÷3, ÷2 ou 1:1).<br>
-            <span style="opacity:0.8;">Exemple : fin mars tu reçois les retours du 21/12 → 20/01. Tu les imputes sur <b>mars</b>. L'agent est payé vers le 7 avril sur sa prod de mars, moins ces retours et moins ses rétractations de mars.</span>
+            <span style="opacity:0.8;">Exemple : un fichier de retours du 21 avril au 20 mai que tu imputes sur juillet reste <b>entièrement</b> sur juillet (reçu vers le 7 août), même si un contrat dedans a été signé un peu avant ou après cette période. Une rétractation, elle, reste sur <b>son</b> mois de signature (sauf détection automatique de « retard », voir plus bas).</span>
+          </div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(122,167,217,0.45);">
+          <label>⏱️ Décalage de facturation des retours</label>
+          <div class="section-sub">Un <b>impayé</b> sur un contrat signé un mois donné est normalement répercuté sur la prod et la paie <b>N mois plus tard</b> — chez toi, signature en janvier → paie de mars (reçue vers le 7 avril). Ce réglage sert uniquement à <b>vérifier</b> chaque ligne dont le contrat d'origine est retrouvé (signature + N mois comparé au mois de paie choisi) et à te signaler un écart éventuel — il ne change <b>jamais</b> tout seul le mois de paie : c'est toujours celui que tu choisis à l'import qui s'applique à tout le fichier. Les <b>rétractations</b> ne sont pas concernées : elles restent sur leur mois de signature (colonne juste en dessous).</div>
+          <div class="settings-grid" style="margin-top:14px;">
+            <div>
+              <label>Décalage — en mois</label>
+              <input type="number" id="cfgReturnMonthOffset" min="0" max="6" step="1" placeholder="2" title="Nombre de mois entre la signature d'un contrat et le mois de paie où son éventuel impayé est répercuté. 2 par défaut (ta convention actuelle).">
+            </div>
+          </div>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button onclick="saveReturnMonthOffsetConfig()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer le décalage</button>
+            <div class="save-note" id="returnMonthOffsetSaveNote"></div>
+          </div>
+
+          <label style="margin:22px 0 8px;">⏰ Rétractations « en retard » — jour de paye</label>
+          <div class="section-sub">Une <b>rétractation</b> reste en 1 pour 1 sur le mois où le contrat a été <b>signé</b> — sauf si ce contrat a été signé en toute fin de mois et que la rétractation n'est connue qu'après coup, une fois la paye de ce mois déjà partie. Dans ce cas, le CRM bascule <b>automatiquement</b> la rétractation sur le mois en cours (toujours en 1 pour 1, jamais divisée), pour ne pas rouvrir une paye déjà versée. Règle ici le jour du mois <b>suivant</b> à partir duquel une paye est considérée partie — chez toi, vers le 7. Tu peux toujours corriger une ligne à la main dans l'aperçu d'import si le calcul automatique ne convient pas à un cas précis.</div>
+          <div class="settings-grid" style="margin-top:14px;">
+            <div>
+              <label>Jour de paye (mois suivant)</label>
+              <input type="number" id="cfgPayrollCutoffDay" min="1" max="28" step="1" placeholder="7" title="Jour du mois SUIVANT à partir duquel la paye du mois d'origine est considérée déjà envoyée. 7 par défaut.">
+            </div>
+          </div>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button onclick="savePayrollCutoffDayConfig()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer le jour de paye</button>
+            <div class="save-note" id="payrollCutoffDaySaveNote"></div>
           </div>
         </div>
 
@@ -1970,6 +2047,10 @@ function tryDeviceGateAdmin(){
               <input type="number" id="cfgInactivity" min="1">
             </div>
             <div>
+              <label>🔒 Verrouillage auto panneau Admin si inactif (minutes)</label>
+              <input type="number" id="cfgAdminInactivity" min="1" max="180" title="Si le panneau Admin reste ouvert sans aucune activité (souris/clavier) pendant ce délai, il se reverrouille tout seul (retour à l'écran mot de passe) — même mécanisme d'alertes que la déconnexion agent ci-dessous. Recommandé surtout si tu l'utilises depuis ton téléphone. 15 min par défaut.">
+            </div>
+            <div>
               <label>1ère alerte avant délogage (secondes)</label>
               <input type="number" id="cfgInactivityWarn1" min="5">
             </div>
@@ -1990,7 +2071,7 @@ function tryDeviceGateAdmin(){
               <input type="text" id="cfgNewPassword" placeholder="laisser vide = inchangé">
             </div>
           </div>
-          <div class="section-sub" style="margin-top:-10px;">💡 Les 3 alertes (son + notification + titre d'onglet clignotant) se déclenchent avant la déconnexion automatique, dans l'ordre indiqué. Elles doivent être inférieures au délai de déconnexion ci-dessus (par défaut : 30s, 10s, 5s avant).</div>
+          <div class="section-sub" style="margin-top:-10px;">💡 Les 3 alertes (son + notification + titre d'onglet clignotant) se déclenchent avant la déconnexion automatique, dans l'ordre indiqué. Elles doivent être inférieures au délai de déconnexion ci-dessus (par défaut : 30s, 10s, 5s avant). Le même système de 3 alertes protège aussi le <b>panneau Admin</b> (délai réglable juste au-dessus) — pratique quand il reste ouvert sur un téléphone posé sur un bureau.</div>
           <div class="section-sub" style="margin:-10px 0 18px;">Ces deux tolérances s'appliquent uniquement à l'<b>heure de début</b> d'une pause (déjeuner pour la première, les autres pauses de la journée pour la seconde) — utile pour un agent en appel téléphonique qui ne peut pas décrocher pile à l'heure prévue. La <b>durée</b> de la pause, elle, reste stricte : aucun dépassement toléré, quelle que soit l'heure de début. Le <b>retard à l'arrivée</b> n'a lui aucune tolérance (règlement interne : dès la 1ère minute, sans exception) — ces réglages n'ont donc aucun effet dessus.</div>
 
           <label style="margin-bottom:10px;">🍽️ Déjeuner (horaire fixe)</label>
@@ -2115,7 +2196,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-12-r98';
+const APP_VERSION = '2026-08-13-r99';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2153,6 +2234,7 @@ let config = {
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
   inactivityTimeoutMin: 5,
+  adminInactivityTimeoutMin: 15,
   inactivityWarnSeconds: [30, 10, 5],
   breakStartToleranceMin: 15,
   prodConfig: {
@@ -2451,6 +2533,136 @@ function resetInactivityTimer(){
   clearInactivityWarnings();
 }
 
+// ---- INACTIVITÉ ADMIN (verrouillage automatique du panneau Admin) ----
+// Même mécanique que le verrouillage agent ci-dessus (3 alertes qui s'empilent — son + notification
+// système + bannière + titre d'onglet — puis verrouillage si aucune n'est confirmée), mais appliquée
+// au panneau Admin plutôt qu'au pointage d'un agent. Utile surtout depuis qu'il peut être ouvert sur
+// un téléphone : un panneau Admin resté ouvert sans surveillance est le vrai risque, pas l'appareil
+// en lui-même. Se déclenche partout (mobile ou PC) dès que le panneau Admin est ouvert.
+let adminLastActivityAt = Date.now();
+let adminInactivityWarnState = { thirty:false, ten:false, five:false };
+let adminInactivityTitleFlashTimer = null;
+const ADMIN_INACTIVITY_TIMEOUT_MIN_DEFAULT = 15;
+
+function getAdminInactivityTimeoutMin(){
+  const v = Number(config.adminInactivityTimeoutMin);
+  return (v && v > 0) ? v : ADMIN_INACTIVITY_TIMEOUT_MIN_DEFAULT;
+}
+// Enregistré par le bouton "Enregistrer" général des Réglages (voir saveConfig()), au même endroit
+// que le réglage "Déconnexion auto si inactif" des agents, juste au-dessus dans le même formulaire.
+
+function isAdminPanelOpen(){
+  const panel = document.getElementById('adminPanel');
+  return !!(panel && panel.style.display === 'block');
+}
+
+function clearAdminInactivityWarnings(){
+  adminInactivityWarnState = { thirty:false, ten:false, five:false };
+  if(adminInactivityTitleFlashTimer){ clearInterval(adminInactivityTitleFlashTimer); adminInactivityTitleFlashTimer = null; }
+  document.title = inactivityDocOriginalTitle;
+  const banner = document.getElementById('adminInactivityWarnBanner');
+  if(banner) banner.style.display = 'none';
+}
+
+function registerAdminActivity(){
+  if(!isAdminPanelOpen()) return;
+  const hadWarning = adminInactivityWarnState.thirty || adminInactivityWarnState.ten || adminInactivityWarnState.five;
+  adminLastActivityAt = Date.now();
+  if(hadWarning) clearAdminInactivityWarnings();
+}
+// Uniquement mouvement de souris et frappe clavier, comme pour le pointage agent — un clic isolé ou
+// un scroll ne suffisent pas à eux seuls à prouver une présence active devant l'écran.
+['mousemove','keydown'].forEach(evt=>{
+  document.addEventListener(evt, registerAdminActivity, { passive:true });
+});
+
+function confirmAdminPresenceFromAlert(){
+  window.focus();
+  registerAdminActivity();
+}
+
+function showAdminInactivityWarning(secondsLeft, level){
+  const banner = document.getElementById('adminInactivityWarnBanner');
+  playInactivityBeep(level);
+  const isTop = level >= 2;
+  const title = level === 1 ? 'TOUJOURS LÀ ?'
+    : level === 2 ? 'PANNEAU ADMIN — AUCUNE RÉPONSE'
+    : 'DERNIER AVERTISSEMENT AVANT VERROUILLAGE';
+  const bodyText = level === 1 ? `Si OUI, clique ICI. (verrouillage dans ${secondsLeft}s)`
+    : level === 2 ? `LE PANNEAU ADMIN VA SE VERROUILLER. Clique ICI pour rester connecté. (${secondsLeft}s)`
+    : `Clique ICI VITE. (${secondsLeft}s)`;
+
+  // requireInteraction + renotify + tag unique à chaque appel : les 3 alertes s'empilent (comme pour
+  // le pointage agent) plutôt que de silencieusement remplacer la précédente sans se faire remarquer.
+  flashDocTitleAdmin(`${isTop?'🔴':'⚠️'} ${title} (${secondsLeft}s)`);
+
+  if(banner){
+    banner.textContent = `${title} ! ${bodyText}`;
+    banner.style.background = isTop ? 'var(--red-bg)' : 'var(--amber-bg)';
+    banner.style.color = isTop ? 'var(--red)' : 'var(--amber)';
+    banner.style.display = 'block';
+  }
+
+  if('Notification' in window && Notification.permission === 'granted'){
+    try{
+      const notif = new Notification(title, {
+        body: bodyText,
+        tag: 'vortexnova-admin-inactivity-' + Date.now() + '-' + level,
+        icon: getInactivityIcon(isTop ? '#e5484d' : '#e5a83d'),
+        requireInteraction: true,
+        renotify: true
+      });
+      notif.onclick = ()=>{ confirmAdminPresenceFromAlert(); notif.close(); };
+    }catch(e){}
+  }
+}
+
+function flashDocTitleAdmin(msg){
+  if(adminInactivityTitleFlashTimer) clearInterval(adminInactivityTitleFlashTimer);
+  let on = false;
+  adminInactivityTitleFlashTimer = setInterval(()=>{
+    document.title = on ? inactivityDocOriginalTitle : msg;
+    on = !on;
+  }, 800);
+}
+
+async function triggerAdminInactivityLockout(){
+  if(!isAdminPanelOpen()) return;
+  clearAdminInactivityWarnings();
+  document.getElementById('adminPanel').style.display = 'none';
+  document.getElementById('adminGate').style.display = 'block';
+  const pwField = document.getElementById('adminPwInput');
+  if(pwField) pwField.value = '';
+  try{ await logAudit('Admin', 'Verrouillage automatique du panneau Admin pour inactivité', `${getAdminInactivityTimeoutMin()} min sans activité`); }catch(e){}
+}
+
+function tickAdminInactivityWatcher(){
+  if(!isAdminPanelOpen()){
+    // Panneau fermé : le chrono reste "à zéro" en permanence, pour repartir sur un délai complet dès
+    // la prochaine ouverture (pas de verrouillage-surprise instantané basé sur une ancienne session).
+    adminLastActivityAt = Date.now();
+    if(adminInactivityWarnState.thirty || adminInactivityWarnState.ten || adminInactivityWarnState.five) clearAdminInactivityWarnings();
+    return;
+  }
+  const timeoutMs = getAdminInactivityTimeoutMin() * 60 * 1000;
+  const remainingMs = timeoutMs - (Date.now() - adminLastActivityAt);
+  const warnSecs = (config.inactivityWarnSeconds && config.inactivityWarnSeconds.length===3) ? config.inactivityWarnSeconds : [30,10,5];
+
+  if(remainingMs <= 0){
+    if(!adminInactivityWarnState.five){
+      adminInactivityWarnState.thirty = true; adminInactivityWarnState.ten = true; adminInactivityWarnState.five = true;
+      showAdminInactivityWarning(warnSecs[2], 3);
+      adminLastActivityAt = Date.now() - (timeoutMs - warnSecs[2]*1000);
+      return;
+    }
+    triggerAdminInactivityLockout();
+    return;
+  }
+  if(remainingMs <= warnSecs[0]*1000 && !adminInactivityWarnState.thirty){ adminInactivityWarnState.thirty = true; showAdminInactivityWarning(warnSecs[0], 1); }
+  if(remainingMs <= warnSecs[1]*1000 && !adminInactivityWarnState.ten){ adminInactivityWarnState.ten = true; showAdminInactivityWarning(warnSecs[1], 2); }
+  if(remainingMs <= warnSecs[2]*1000 && !adminInactivityWarnState.five){ adminInactivityWarnState.five = true; showAdminInactivityWarning(warnSecs[2], 3); }
+}
+
 const INFR_TYPES = {
   phone_youtube: { label: 'Téléphone / YouTube', sanction: '-30min salaire' },
   objectif: { label: 'Objectif non atteint', sanction: '-500 DH' },
@@ -2522,6 +2734,13 @@ let firebaseReady = false;
 // lire/écrire quoi que ce soit, pour rester compatible avec des règles Firestore qui exigent désormais
 // un utilisateur authentifié (cf. section SÉCURITÉ plus bas).
 let firebaseAuthReady = Promise.resolve();
+// PERF : les scripts Firebase sont chargés en "defer" (voir <head>) pour ne plus bloquer l'affichage de
+// la page — du coup, l'objet global "firebase" n'existe pas encore tant que le HTML est en cours
+// d'analyse. On attend "DOMContentLoaded" (qui se déclenche juste après l'exécution des scripts
+// "defer", dans l'ordre) avant d'y toucher. bootApp() (tout en bas du fichier) attend de toute façon
+// déjà "firebaseAuthReady" avant de charger quoi que ce soit, donc le comportement au démarrage — et
+// l'ordre exact des opérations — reste identique à avant, juste sans bloquer le premier rendu.
+document.addEventListener('DOMContentLoaded', function(){
 try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "REMPLACE_MOI"){
     firebase.initializeApp(firebaseConfig);
@@ -2555,6 +2774,8 @@ try{
     });
   }
 }catch(e){ console.error('Firebase init error:', e); }
+bootApp();
+});
 
 async function storageGet(key){
   if(!firebaseReady) return null;
@@ -2870,6 +3091,7 @@ async function loadConfig(){
   document.getElementById('cfgTolerance').value = config.tolerance;
   if(!config.inactivityTimeoutMin) config.inactivityTimeoutMin = 5;
   document.getElementById('cfgInactivity').value = config.inactivityTimeoutMin;
+  document.getElementById('cfgAdminInactivity').value = getAdminInactivityTimeoutMin();
   if(!config.inactivityWarnSeconds || !Array.isArray(config.inactivityWarnSeconds)) config.inactivityWarnSeconds = [30, 10, 5];
   document.getElementById('cfgInactivityWarn1').value = config.inactivityWarnSeconds[0];
   document.getElementById('cfgInactivityWarn2').value = config.inactivityWarnSeconds[1];
@@ -3010,19 +3232,26 @@ async function renderRetractAdminContracts(){
     getMonthlyRetractCount(agent, y, m)
   ]);
   const rows = (data.rows || []).filter(r => r.agent === agent);
+  // `markedCount` = ce qui est visible dans LA LISTE ci-dessous (contrats de ce mois marqués rétracté).
+  // `exactCount` = ce qui compte VRAIMENT pour la paie de ce mois : pareil, PLUS les rétractations « en
+  // retard » redirigées ici depuis un mois précédent (invisibles dans cette liste, mais bien réelles —
+  // voir resolveRetractPayMonth). C'est exactCount qu'il faut comparer au compteur de paie, sinon
+  // chaque retard légitime ressortirait à tort comme une incohérence à corriger.
   const markedCount = rows.filter(r => r.retracted).length;
+  const exactCount = await computeExactRetractCount(agent, y, m);
+  const borrowed = exactCount - markedCount;
 
   let html = '';
 
-  // 🔍 Vérification de cohérence : le compteur qui sert à la paie doit correspondre au nombre de
-  // contrats marqués « rétracté » ci-dessous. S'ils divergent, on le signale explicitement plutôt que
+  // 🔍 Vérification de cohérence : le compteur qui sert à la paie doit correspondre au décompte réel
+  // (liste de ce mois + retards redirigés ici). S'ils divergent, on le signale explicitement plutôt que
   // de laisser un chiffre faux passer inaperçu jusqu'à la paie.
-  if(rows.length && retractCount !== markedCount){
+  if(rows.length && retractCount !== exactCount){
     html += `<div style="padding:12px 15px; border-radius:9px; background:rgba(217,164,65,0.14); border:1px solid rgba(217,164,65,0.55); font-size:13px; margin-bottom:14px; line-height:1.6;">
       ⚠️ <b>Incohérence détectée pour ${escapeHtml(agent)} — ${billingMonthLabel(monthVal)}</b><br>
-      Le compteur qui sert à calculer la paie indique <b>${retractCount}</b> rétractation${retractCount>1?'s':''}, mais <b>${markedCount}</b> contrat${markedCount>1?'s':''} ${markedCount>1?'sont':'est'} marqué${markedCount>1?'s':''} « rétracté » dans la liste ci-dessous.<br>
+      Le compteur qui sert à calculer la paie indique <b>${retractCount}</b> rétractation${retractCount>1?'s':''}, mais <b>${exactCount}</b> ${exactCount>1?'sont réellement dues':'est réellement due'} (<b>${markedCount}</b> marqué${markedCount>1?'s':''} « rétracté » dans la liste ci-dessous${borrowed ? ` + <b>${borrowed}</b> retard${borrowed>1?'s':''} redirigé${borrowed>1?'s':''} ici depuis un mois précédent` : ''}).<br>
       <span style="color:var(--muted);">Ça arrive si une rétractation a été enregistrée avant l'import du contrat, ou si le bouton +/-1 a été utilisé sans marquer le contrat correspondant.</span><br>
-      <button onclick="fixRetractMismatch('${agent.replace(/'/g,"\\'")}','${monthVal}', ${markedCount})" style="margin-top:8px; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:white; font-weight:700; cursor:pointer; font-size:12.5px;">✅ Corriger : fixer le compteur à ${markedCount} (comme la liste ci-dessous)</button>
+      <button onclick="fixRetractMismatch('${agent.replace(/'/g,"\\'")}','${monthVal}', ${exactCount})" style="margin-top:8px; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:white; font-weight:700; cursor:pointer; font-size:12.5px;">✅ Corriger : fixer le compteur à ${exactCount}</button>
     </div>`;
   }
 
@@ -3094,11 +3323,11 @@ async function toggleRetractAdminRow(monthVal, agent, numContrat){
 // Corrige l'incohérence signalée : force le compteur de paie à correspondre exactement au nombre de
 // contrats marqués « rétracté » dans la liste (même logique que syncBillingRetractCount, mais ciblée
 // sur l'agent/mois affichés ici plutôt que sur le mois entier de l'onglet Facturation).
-async function fixRetractMismatch(agent, monthVal, markedCount){
-  if(!confirm(`Fixer le compteur de rétractations de ${agent} (${billingMonthLabel(monthVal)}) à ${markedCount}, pour qu'il corresponde exactement aux contrats marqués dans la liste ?`)) return;
+async function fixRetractMismatch(agent, monthVal, exactCount){
+  if(!confirm(`Fixer le compteur de rétractations de ${agent} (${billingMonthLabel(monthVal)}) à ${exactCount}, pour qu'il corresponde au décompte réel (liste du mois + éventuels retards redirigés) ?`)) return;
   const [y, m] = monthVal.split('-').map(Number);
-  await saveMonthlyRetractCount(agent, y, m, markedCount);
-  logAudit('Admin', 'Compteur de rétractations corrigé (incohérence détectée)', `${agent} — ${monthVal} — fixé à ${markedCount}`);
+  await saveMonthlyRetractCount(agent, y, m, exactCount);
+  logAudit('Admin', 'Compteur de rétractations corrigé (incohérence détectée)', `${agent} — ${monthVal} — fixé à ${exactCount}`);
   await renderRetractAdminCount();
   await renderRetractAdminContracts();
   renderAllMonthly();
@@ -3360,6 +3589,10 @@ function tryAdminLogin(){
   if(val === config.adminPassword){
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminPanel').style.display = 'block';
+    // Chrono de verrouillage auto pour inactivité : repart à zéro à chaque nouvelle connexion au
+    // panneau Admin (voir tickAdminInactivityWatcher / triggerAdminInactivityLockout plus haut).
+    adminLastActivityAt = Date.now();
+    clearAdminInactivityWarnings();
     logAudit('Admin', 'Connexion au panneau Admin', '');
     checkMonthRollover();
     checkWeeklyBriefingReminder();
@@ -3735,6 +3968,7 @@ async function saveConfig(){
   config.end = document.getElementById('cfgEnd').value || config.end;
   config.tolerance = parseInt(document.getElementById('cfgTolerance').value) || 0;
   config.inactivityTimeoutMin = parseInt(document.getElementById('cfgInactivity').value) || 5;
+  config.adminInactivityTimeoutMin = Math.max(1, Math.min(180, parseInt(document.getElementById('cfgAdminInactivity').value) || ADMIN_INACTIVITY_TIMEOUT_MIN_DEFAULT));
 
   let w1 = parseInt(document.getElementById('cfgInactivityWarn1').value);
   let w2 = parseInt(document.getElementById('cfgInactivityWarn2').value);
@@ -4094,6 +4328,74 @@ async function saveMonthlyRetractCount(agent, year, month, count){
   await storageSet(key, String(val));
   retractCache[`${year}-${month}:${agent}`] = val;
   return val;
+}
+
+// ------------------------------------------------------------
+// ⏰ RÉTRACTATIONS « EN RETARD » — mois de signature ≠ mois de paie décompté
+// ------------------------------------------------------------
+// Règle du terrain : une rétractation est TOUJOURS 1 pour 1 (jamais divisée), et retenue par défaut sur
+// la paie du mois où le contrat a été SIGNÉ (loi des 14 jours → quasi toujours le même mois). Mais un
+// contrat signé en toute fin de mois peut se rétracter après que la paie de ce mois est déjà partie
+// (chez toi, vers le 7 du mois suivant) : dans ce cas précis, la rétractation doit peser sur la paie du
+// mois EN COURS au moment où tu l'apprends, pas rouvrir une paie déjà envoyée.
+// `row.retractPayMonth` porte cette distinction sur le contrat lui-même : absent ou égal au mois du
+// contrat → cas normal (rien ne change). Différent → rétractation « en retard », décomptée ailleurs.
+const PAYROLL_CUTOFF_DAY_DEFAULT = 7;
+function getPayrollCutoffDay(){
+  const n = Number(config.payrollCutoffDay);
+  return Number.isFinite(n) && n >= 1 && n <= 28 ? n : PAYROLL_CUTOFF_DAY_DEFAULT;
+}
+async function savePayrollCutoffDayConfig(){
+  const raw = document.getElementById('cfgPayrollCutoffDay')?.value;
+  const n = Number(raw);
+  config.payrollCutoffDay = Number.isFinite(n) && n >= 1 && n <= 28 ? n : PAYROLL_CUTOFF_DAY_DEFAULT;
+  await saveConfigSilent();
+  logAudit('Admin', 'Jour de paye (mois suivant) modifié', `jour ${config.payrollCutoffDay}`);
+  const note = document.getElementById('payrollCutoffDaySaveNote');
+  if(note){ note.textContent = 'Enregistré ✓'; setTimeout(()=> note.textContent = '', 2000); }
+}
+// La paie d'un mois donné est considérée "déjà partie" dès qu'on a dépassé le jour de paye réglé
+// ci-dessus, DU MOIS SUIVANT. Ex : paie de janvier envoyée le 7 février → à partir du 8 février, on
+// considère que rouvrir janvier reviendrait à corriger une paie déjà versée.
+function isPayrollClosedFor(monthVal){
+  const [y, m] = String(monthVal).split('-').map(Number);
+  const cutoff = new Date(y, m, getPayrollCutoffDay()); // m (non -1) = déjà le mois suivant
+  return nowMA() >= cutoff;
+}
+// Le mois de paie « en cours » à utiliser pour une rétractation en retard : celui d'aujourd'hui.
+function currentPayMonthGuess(){
+  const n = nowMA();
+  return billingMonthVal(n.getFullYear(), n.getMonth() + 1);
+}
+// Détermine le mois de paie sur lequel UNE rétractation doit peser, au moment où on la traite :
+// priorité au choix manuel de l'admin (forceMonth, menu « cibler un mois » de l'aperçu d'import),
+// sinon détection automatique du retard via isPayrollClosedFor(), sinon le mois de signature lui-même.
+function resolveRetractPayMonth(signatureMonth, forceMonth){
+  if(forceMonth) return forceMonth;
+  return isPayrollClosedFor(signatureMonth) ? currentPayMonthGuess() : signatureMonth;
+}
+// Compte les rétractations qui pèsent VRAIMENT sur la paie de (agent, année, mois) — remplace le calcul
+// « nombre de contrats retracted=true dans LA PRODUCTION de ce mois », qui ratait les rétractations en
+// retard redirigées depuis un mois précédent. Deux sources additionnées :
+//  1) les rétractations DU mois lui-même, non redirigées ailleurs (cas normal, l'écrasante majorité) ;
+//  2) les rétractations D'UN AUTRE mois (jusqu'à 2 mois avant — largement au-delà des 14 jours légaux)
+//     mais explicitement redirigées SUR ce mois via retractPayMonth (cas « en retard »).
+// Centralisé ici pour que TOUS les recalculs du CRM (import, contrôle, Arena, admin…) comptent pareil —
+// avant, chacun refaisait son propre filtre sur la production du seul mois courant, ce qui aurait
+// silencieusement annulé toute redirection au premier recalcul venu.
+async function computeExactRetractCount(agent, year, month){
+  if(!agent) return 0;
+  const mv = billingMonthVal(year, month);
+  const own = await getBillingProd(mv);
+  let count = (own.rows || []).filter(r => r.agent === agent && r.retracted && (!r.retractPayMonth || r.retractPayMonth === mv)).length;
+  const [y, m] = mv.split('-').map(Number);
+  for(let back = 1; back <= 2; back++){
+    const d = new Date(y, m - 1 - back, 1);
+    const pastMv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+    const past = await getBillingProd(pastMv);
+    count += (past.rows || []).filter(r => r.agent === agent && r.retracted && r.retractPayMonth === mv).length;
+  }
+  return count;
 }
 
 // Objectif personnel du mois : chaque agent (indépendant inclus) peut viser plus haut (ou juste fixer un cap)
@@ -13302,6 +13604,7 @@ let adfPollCounter = 0;
 function tickMain(){
   document.getElementById('liveClock').textContent = nowTimeStr();
   tickInactivityWatcher();
+  tickAdminInactivityWatcher();
   tickFreeBreak();
   tickADFTimer();
   // On ne relit le statut ADF depuis la base que toutes les 4 secondes environ (pas besoin de la
@@ -13925,12 +14228,14 @@ async function fixContractMonth(fromMv, key, toMv){
   await billingSave(billingProdKey(fromMv), from);
   await billingSave(billingProdKey(toMv), to);
 
-  // Une rétractation suit toujours son contrat : les compteurs des deux mois sont recalculés.
+  // Une rétractation suit toujours son contrat : les compteurs des deux mois sont recalculés — et,
+  // si elle avait été redirigée sur un mois de paie « en retard » (retractPayMonth), ce mois-là aussi.
   if(row.retracted && row.agent){
-    for(const mv of [fromMv, toMv]){
-      const st = await getBillingProd(mv);
+    const monthsToRecalc = new Set([fromMv, toMv]);
+    if(row.retractPayMonth) monthsToRecalc.add(row.retractPayMonth);
+    for(const mv of monthsToRecalc){
       const [yy, mm] = mv.split('-').map(Number);
-      const exact = (st.rows || []).filter(r => r.agent === row.agent && r.retracted).length;
+      const exact = await computeExactRetractCount(row.agent, yy, mm);
       await saveMonthlyRetractCount(row.agent, yy, mm, exact);
     }
   }
@@ -14077,8 +14382,7 @@ async function applyAllAnomalyFixes(){
     const [mv, agent] = ck.split('|');
     if(!agent) continue;
     const [yy, mm] = mv.split('-').map(Number);
-    const st = stores[mv] || await getBillingProd(mv);
-    const exact = (st.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    const exact = await computeExactRetractCount(agent, yy, mm);
     await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
 
@@ -14671,6 +14975,37 @@ function billingReturnKind(row){
 }
 
 // ------------------------------------------------------------
+// ⏱️ DÉCALAGE DE FACTURATION DES RETOURS — configurable, PAS codé en dur
+// ------------------------------------------------------------
+// Ta règle : un CONTRAT signé en janvier, s'il part en impayé, est répercuté sur la prod et la paie de
+// MARS (signature + 2 mois), reçue vers le 7 avril. Les RÉTRACTATIONS, elles, restent sur leur mois de
+// SIGNATURE (le client se rétracte sous 14 jours, donc quasi toujours le même mois — voir plus bas).
+// Avant, ce décalage de « 2 mois » ne servait qu'à pré-remplir la période affichée à l'écran : le mois
+// de paie réellement proposé pour chaque impayé venait de la date de statut du fichier de facturation,
+// une donnée bien moins fiable que la date de signature du contrat lui-même (déjà dans ta Production).
+// Il pilote maintenant directement le calcul, et reste modifiable ici si ta convention change.
+const RETURN_MONTH_OFFSET_DEFAULT = 2;
+function getReturnMonthOffset(){
+  const n = Number(config.returnMonthOffset);
+  return Number.isFinite(n) && n >= 0 && n <= 6 ? n : RETURN_MONTH_OFFSET_DEFAULT;
+}
+async function saveReturnMonthOffsetConfig(){
+  const raw = document.getElementById('cfgReturnMonthOffset')?.value;
+  const n = Number(raw);
+  config.returnMonthOffset = Number.isFinite(n) && n >= 0 && n <= 6 ? n : RETURN_MONTH_OFFSET_DEFAULT;
+  await saveConfigSilent();
+  logAudit('Admin', 'Décalage de facturation des retours modifié', `${config.returnMonthOffset} mois`);
+  const note = document.getElementById('returnMonthOffsetSaveNote');
+  if(note){ note.textContent = 'Enregistré ✓'; setTimeout(()=> note.textContent = '', 2000); }
+}
+// Ajoute n mois à un "mois de paie" (format AAAA-MM), en gérant le changement d'année tout seul.
+function addMonthsToMonthVal(monthVal, n){
+  const [y, m] = String(monthVal).split('-').map(Number);
+  const d = new Date(y, (m - 1) + Number(n || 0), 1);
+  return billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+}
+
+// ------------------------------------------------------------
 // 🏷️ ADMIN — mots-clés de classement retract/impayé, éditables sans toucher au code
 // ------------------------------------------------------------
 function renderReturnKeywordsPanel(){
@@ -14801,9 +15136,17 @@ async function billingAnalyzeReturns(text, monthVal){
 
   const items = [];
   const seenInFile = new Set();
+  // ═══ FIABILITÉ : AUCUNE LIGNE NE DOIT DISPARAÎTRE SANS EXPLICATION ═══
+  // Avant, une ligne sans agent NI nom NI numéro NI référence sortait de la boucle en silence : elle
+  // n'apparaissait ni dans les compteurs de l'aperçu, ni dans les doublons, nulle part. Résultat : le
+  // nombre de lignes affiché ne correspondait plus jamais au nombre réel de lignes du fichier, et rien
+  // ne le signalait — exactement le genre d'écart (« il en manque un ») qu'on ne repère qu'en comptant
+  // à la main. On compte désormais ces lignes et on les affiche dans le rapport, pour que les totaux
+  // de l'aperçu se recoupent toujours avec la taille du fichier importé.
+  let unreadable = 0;
   parsed.rows.forEach(raw=>{
     const r = billingMapRow(raw);
-    if(!r.agent && !r.nom && !r.numContrat && !r.reference) return;
+    if(!r.agent && !r.nom && !r.numContrat && !r.reference){ unreadable++; return; }
     const keys = billingRowKeys(r);
 
     // Doublon à l'intérieur même du fichier
@@ -14829,15 +15172,43 @@ async function billingAnalyzeReturns(text, monthVal){
 
     const isoStatus = parseContractDate(r.statusDate, dateOrder);
     const isoCreated = parseContractDate(r.datePropre || r.date, dateOrder);
-    let month, monthSource;
-    if(isoStatus){ month = isoStatus.slice(0,7); monthSource = 'date de statut'; }
-    else if(isoCreated){ month = isoCreated.slice(0,7); monthSource = 'date du contrat'; }
-    else { month = monthVal; monthSource = 'mois choisi (aucune date lisible)'; }
-
     const kind = billingReturnKind(r);
+    const offset = getReturnMonthOffset();
+    let month, monthSource;
+    // Un impayé dont le contrat est retrouvé, mais dont la signature + décalage tombe sur un AUTRE
+    // mois que celui choisi à l'import — signal à vérifier, jamais une raison de changer le mois tout
+    // seul (voir plus bas : TOUT le fichier reste sur le mois choisi, par défaut).
+    let monthMismatch = false;
+    if(kind === 'retracted'){
+      // Une rétractation marque le contrat sur SON mois de signature (le client se rétracte sous 14
+      // jours, donc quasi toujours le même mois) — jamais de décalage ici. Le mois affiché n'est
+      // qu'indicatif : le rattachement réel se fait en recherchant le contrat dans ta Production
+      // (confirmReturnsImport), et reste modifiable ligne par ligne dans l'aperçu (cf. « Cibler un
+      // mois ») pour les cas particuliers — ex. contrat signé le dernier jour ouvré du mois, dont la
+      // rétractation n'est connue que le mois suivant.
+      if(found){ month = found.month; monthSource = 'mois de signature (contrat retrouvé)'; }
+      else if(isoCreated){ month = isoCreated.slice(0,7); monthSource = 'date du contrat'; }
+      else { month = monthVal; monthSource = 'mois choisi (aucune date lisible)'; }
+    } else {
+      // Un impayé va, PAR DÉFAUT, sur LE mois de paie choisi à l'import (« Imputer sur le mois de
+      // paie ») — TOUT le fichier suit ce même mois, quelle que soit la date exacte de chaque contrat
+      // à l'intérieur de la période couverte : un fichier qui chevauche deux mois de signature (ex.
+      // 21/04 → 20/05) reste donc entièrement sur le mois que tu as choisi, il ne se répartit JAMAIS
+      // contrat par contrat. Le décalage réglé dans « ⏱️ Décalage de facturation des retours » ne sert
+      // qu'à VÉRIFIER la cohérence quand le contrat est retrouvé, jamais à décider du mois lui-même.
+      month = monthVal;
+      monthSource = 'mois choisi à l\'import';
+      if(found && addMonthsToMonthVal(found.month, offset) !== monthVal) monthMismatch = true;
+    }
+
+    // La confiance sur l'AGENT ne dépend que d'une chose : le contrat d'origine a-t-il été retrouvé
+    // dans ta Production ? Pour un impayé, on vérifie AUSSI que la signature + décalage retombe bien
+    // sur le mois choisi — sinon c'est peut-être le mauvais mois de paie qui a été sélectionné à
+    // l'import, ou un contrat qui n'a rien à faire dans ce fichier.
     let confidence = 'sur';
     if(!agent) confidence = 'impossible';
-    else if(agentSource !== 'contrat retrouvé' || monthSource !== 'date de statut') confidence = 'verifier';
+    else if(!found) confidence = 'verifier';
+    else if(kind !== 'retracted' && monthMismatch) confidence = 'verifier';
 
     // Dire QUOI vérifier, et comment le régler — plutôt qu'un libellé technique que personne ne peut
     // interpréter. Chaque message se termine par l'action concrète qui fait disparaître le doute.
@@ -14847,10 +15218,19 @@ async function billingAnalyzeReturns(text, monthVal){
     } else if(agentSource !== 'contrat retrouvé'){
       aVerifier.push(`Agent déduit du nom écrit dans le fichier, pas du contrat : celui-ci n'est pas encore dans le CRM. → importe la production du mois où il a été signé, l'agent sera alors certain.`);
     }
-    if(!isoStatus){
+    if(kind !== 'retracted'){
+      if(found && monthMismatch){
+        const expected = addMonthsToMonthVal(found.month, offset);
+        aVerifier.push(`Signé en ${billingMonthLabel(found.month)} : avec un décalage de ${offset} mois, ce contrat tomberait plutôt sur la paie de ${billingMonthLabel(expected)} que sur ${billingMonthLabel(monthVal)} (le mois choisi à l'import). Vérifie que c'est bien voulu, ou corrige le mois de paie choisi en haut du formulaire d'import.`);
+      } else if(!found && isoCreated){
+        aVerifier.push(`Contrat non retrouvé dans ta production : la date lue dans le fichier suggère une signature en ${billingMonthLabel(isoCreated.slice(0,7))}. Importe la production de ce mois pour confirmer que ${billingMonthLabel(monthVal)} est bien le bon mois de paie.`);
+      } else if(!found){
+        aVerifier.push(`Contrat non retrouvé dans ta production, aucune date lisible dans le fichier → impossible de confirmer que ce retour correspond bien à ${billingMonthLabel(monthVal)}. Importe la production concernée si possible.`);
+      }
+    } else if(!found){
       aVerifier.push(isoCreated
-        ? "Pas de date de passage en impayé → mois déduit de la date du contrat. Vérifie que le mois de paie te paraît juste."
-        : "Aucune date lisible → mois de paie choisi par défaut. Corrige-le si besoin.");
+        ? "Contrat non retrouvé dans ta production : mois déduit de la date du contrat lue dans le fichier. Vérifie que ce mois te paraît juste, ou choisis-le toi-même ci-contre."
+        : "Contrat non retrouvé et aucune date lisible → mois de paie choisi par défaut. Choisis le mois de signature toi-même ci-contre si tu le connais.");
     }
 
     items.push({
@@ -14860,7 +15240,7 @@ async function billingAnalyzeReturns(text, monthVal){
       skip: !!(dupInFile || dupMonth)
     });
   });
-  return { items, monthVal, headers: parsed.headers, dateOrder };
+  return { items, monthVal, headers: parsed.headers, dateOrder, totalRows: parsed.rows.length, unreadable };
 }
 
 async function analyzeReturnsFromPaste(){
@@ -14900,9 +15280,12 @@ function renderReturnsPreview(){
   const nRetract = actifs.filter(x => x.kind === 'retracted').length;
 
   const moisTouches = [...new Set(actifs.map(x => x.month))].sort();
+  const totalRows = pendingReturnsImport.totalRows || (items.length + (pendingReturnsImport.unreadable || 0));
+  const unreadable = pendingReturnsImport.unreadable || 0;
 
   let html = `<div style="padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
     <div style="font-weight:800; font-size:15px; margin-bottom:8px;">🔍 Aperçu — rien n'est encore enregistré</div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">📄 <b>${totalRows} ligne${totalRows>1?'s':''}</b> lue${totalRows>1?'s':''} dans le fichier = ${nSur} sûr${nSur>1?'s':''} + ${nVerif} à vérifier + ${nImpo} à trancher + ${nDup} doublon${nDup>1?'s':''}${unreadable ? ` + ${unreadable} illisible${unreadable>1?'s':''}` : ''}. Recompte : si ce total ne correspond pas à ce que tu attendais, le détail est juste en dessous.</div>
     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:10px;">
       <div><div style="font-size:22px; font-weight:800; color:var(--green);">${nSur}</div><div style="font-size:12px; color:var(--muted);">sûrs — contrat retrouvé</div></div>
       <div><div style="font-size:22px; font-weight:800; color:var(--amber);">${nVerif}</div><div style="font-size:12px; color:var(--muted);">à vérifier</div></div>
@@ -14915,6 +15298,22 @@ function renderReturnsPreview(){
       <br>🗓️ Dates lues au format <b>${pendingReturnsImport.dateOrder === 'mdy' ? 'américain (mois/jour) — détecté automatiquement' : 'français (jour/mois)'}</b>. Vérifie que les mois ci-dessous te paraissent justes.
       <br>Corrige ce que tu veux dans le tableau ci-dessous, puis valide. Tu peux aussi écarter une ligne.
     </div>
+    ${unreadable ? `<div style="margin-top:12px; padding:10px 12px; border-radius:9px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4);">
+      <div style="font-weight:800; color:var(--red); font-size:12.5px;">🚨 ${unreadable} ligne${unreadable>1?'s':''} du fichier n'${unreadable>1?'ont':'a'} pas pu être lue${unreadable>1?'s':''} du tout</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px; line-height:1.5;">Aucun agent, nom, numéro NI référence de contrat n'a été trouvé sur ${unreadable>1?'ces lignes':'cette ligne'} — probablement une ligne vide, un en-tête recopié, ou des colonnes trop décalées pour être reconnues. ${unreadable>1?'Absentes':'Absente'} de la liste ci-dessous : c'est ${unreadable>1?'la cause la plus probable':'une cause possible'} d'un écart entre ce que tu attendais et ce qui a été importé. Ouvre le fichier source et vérifie ${unreadable>1?'ces lignes':'cette ligne'} à l'œil.</div>
+    </div>` : ''}
+    ${nDup ? `<div style="margin-top:12px; padding:10px 12px; border-radius:9px; background:rgba(122,167,217,0.10); border:1px solid rgba(122,167,217,0.35);">
+      <div style="font-weight:800; color:#7aa7d9; font-size:12.5px; margin-bottom:6px;">🔁 ${nDup} doublon${nDup>1?'s':''} ignoré${nDup>1?'s':''} — déjà enregistré${nDup>1?'s':''} ailleurs</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px; line-height:1.5;">${nDup>1?'Ces lignes correspondent':'Cette ligne correspond'} à ${nDup>1?'des contrats':'un contrat'} déjà retenu${nDup>1?'s':''} une fois (même contrat retrouvé sur un autre mois, ou répété plus loin dans ce fichier) — ${nDup>1?'elles ne sont':"elle n'est"} pas réenregistrée${nDup>1?'s':''} pour ne pas compter deux fois le même retour. Si l'ancien enregistrement s'est trompé de mois ou d'agent, clique dessus pour l'ouvrir dans « Trouver un contrat » et le corriger directement.</div>
+      <div style="display:flex; flex-wrap:wrap; gap:6px;">
+        ${items.filter(x=>x.skip).slice(0,20).map(x=>{
+          const k = String(x.r.numContrat || x.r.reference || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+          const label = `${x.r.nom || x.r.numContrat || x.r.reference || '?'} — ${x.duplicate}`;
+          return k ? `<button onclick="jumpToContractSearch('${k}')" title="Ouvrir ce contrat dans « Trouver un contrat » pour vérifier ou corriger l'ancien enregistrement" style="padding:5px 10px; border-radius:7px; border:1px solid rgba(122,167,217,0.5); background:rgba(122,167,217,0.12); color:#7aa7d9; font-weight:700; cursor:pointer; font-size:11.5px;">🔍 ${escapeHtml(label)}</button>` : `<span style="font-size:11.5px; color:var(--muted);">${escapeHtml(label)}</span>`;
+        }).join('')}
+        ${nDup>20 ? `<span style="font-size:11.5px; color:var(--muted); align-self:center;">… et ${nDup-20} autre${nDup-20>1?'s':''}</span>` : ''}
+      </div>
+    </div>` : ''}
     <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
       <button onclick="confirmReturnsImport()" style="padding:11px 20px;border-radius:9px;border:none;background:var(--accent);color:white;font-weight:800;cursor:pointer;">✅ Valider et enregistrer</button>
       <button onclick="pendingReturnsImport=null; document.getElementById('billingRetReport').innerHTML='';" style="padding:11px 18px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--muted);font-weight:700;cursor:pointer;">Annuler</button>
@@ -14962,7 +15361,8 @@ function renderReturnsPreview(){
     if(x.skip && returnsPreviewFilter !== 'tous') return;
     affichees++;
     if(x.skip){
-      html += `<tr style="opacity:0.45;"><td>⏭️</td><td>—</td><td>${escapeHtml(x.r.nom || '—')}</td><td>${escapeHtml(x.r.numContrat || x.r.reference || '—')}</td><td colspan="4" style="color:var(--muted);">Doublon ${escapeHtml(x.duplicate)} — ignoré</td></tr>`;
+      const kSkip = String(x.r.numContrat || x.r.reference || '').replace(/'/g, "\\'");
+      html += `<tr style="opacity:0.7;"><td>⏭️</td><td>—</td><td>${escapeHtml(x.r.nom || '—')}</td><td>${escapeHtml(x.r.numContrat || x.r.reference || '—')}</td><td colspan="3" style="color:var(--muted);">Doublon ${escapeHtml(x.duplicate)} — ignoré</td><td>${kSkip ? `<button onclick="jumpToContractSearch('${kSkip}')" title="Ouvrir ce contrat dans « Trouver un contrat » pour vérifier ou corriger l'ancien enregistrement" style="padding:4px 9px; border-radius:6px; border:1px solid rgba(122,167,217,0.5); background:transparent; color:#7aa7d9; cursor:pointer; font-size:11.5px;">🔍 Voir</button>` : ''}</td></tr>`;
       return;
     }
     const badge = x.confidence === 'sur' ? '<span style="color:var(--green); font-weight:800;">✅ sûr</span>'
@@ -14977,11 +15377,22 @@ function renderReturnsPreview(){
         <option value="">— aucun —</option>
         ${allKnownAgents().map(a=>`<option value="${escapeHtml(a)}"${a === x.agent ? ' selected' : ''}>${escapeHtml(a)}${isArchivedAgent(a) ? ' (ancien)' : ''}</option>`).join('')}
       </select></td>
-      <td>${x.kind === 'retracted' ? '<span style="font-size:12px; color:var(--muted);">mois du contrat</span>'
+      <td>${x.kind === 'retracted'
+        ? `<select onchange="pendingReturnsImport.items[${i}].forceMonth=this.value||null;" title="Par défaut : 1 pour 1 sur le mois de signature du contrat, sauf si la paie de ce mois est déjà partie (retard détecté automatiquement) — dans ce cas le CRM bascule tout seul sur le mois en cours. Choisis un mois précis ici pour forcer toi-même sur quel mois de PAIE cette rétractation doit peser." style="min-width:170px;">
+             <option value="">🔍 auto (signature, ou retard détecté)</option>
+             ${monthOptions(x.forceMonth || '')}
+           </select>`
         : `<select onchange="pendingReturnsImport.items[${i}].month=this.value" style="min-width:130px;">${monthOptions(x.month)}</select>`}</td>
       <td style="font-size:11.5px; color:${x.confidence === 'sur' ? 'var(--muted)' : 'var(--amber)'}; max-width:340px; line-height:1.5;">${
         x.confidence === 'sur'
-          ? 'Contrat retrouvé dans ta production et date de statut lisible — rien à vérifier.'
+          ? (x.kind === 'retracted'
+              ? (()=>{
+                  const payMonth = resolveRetractPayMonth(x.originMonth, x.forceMonth);
+                  return payMonth === x.originMonth
+                    ? `Contrat retrouvé, signé en ${escapeHtml(billingMonthLabel(x.originMonth))} — rétractation en 1 pour 1 sur ce même mois, rien à vérifier.`
+                    : `Contrat signé en ${escapeHtml(billingMonthLabel(x.originMonth))}, mais paie déjà partie${x.forceMonth ? ' (mois ciblé à la main)' : ' (retard détecté automatiquement)'} → rétractation en 1 pour 1 sur ${escapeHtml(billingMonthLabel(payMonth))} à la place.`;
+                })()
+              : `Contrat retrouvé dans ta production — agent et mois de paie calculés automatiquement (signature + décalage), rien à vérifier.`)
           : (x.aVerifier && x.aVerifier.length ? x.aVerifier.map(escapeHtml).join('<br>• ') : escapeHtml(x.agentSource || ''))
       }</td>
       <td><button onclick="pendingReturnsImport.items[${i}].skip=true; renderReturnsPreview();" title="Écarter cette ligne : elle ne sera retenue à personne." style="padding:4px 9px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:11.5px;">écarter</button></td>
@@ -15016,12 +15427,24 @@ async function confirmReturnsImport(){
       if(!row) continue;
       done = true;
       if(!row.retracted){
+        // Première application : le mois de PAIE décompté (retractPayMonth) est fixé maintenant, une
+        // fois pour toutes — signature (mv), sauf mois ciblé à la main (x.forceMonth) ou retard détecté
+        // automatiquement (paie de mv déjà partie, voir isPayrollClosedFor). On ne le RECALCULE plus
+        // jamais après coup : sinon la même ligne réimportée plus tard changerait de mois de paie
+        // simplement parce que la date du jour a avancé, ce qui romprait une paie déjà versée.
         row.retracted = true;
+        row.retractPayMonth = resolveRetractPayMonth(mv, x.forceMonth);
         if(!row.agent && x.agent) row.agent = x.agent;
         await billingSave(billingProdKey(mv), store);
         retractApplied++;
+      } else if(x.forceMonth && row.retractPayMonth !== x.forceMonth){
+        // Déjà rétractée (réimport), mais l'admin cible explicitement un autre mois de paie cette
+        // fois-ci — correction volontaire, on la respecte.
+        row.retractPayMonth = x.forceMonth;
+        await billingSave(billingProdKey(mv), store);
       }
       touched[`${mv}|${row.agent || x.agent}`] = true;
+      if(row.retractPayMonth) touched[`${row.retractPayMonth}|${row.agent || x.agent}`] = true;
     }
     if(!done){
       retractNotFound++;
@@ -15035,6 +15458,7 @@ async function confirmReturnsImport(){
         nom: x.r.nom || '',
         agent: x.agent || x.r.agent || '',
         statusDate: x.r.statusDate || x.r.date || '',
+        forceMonth: x.forceMonth || null,
         addedAt: new Date().toISOString()
       });
     }
@@ -15054,8 +15478,7 @@ async function confirmReturnsImport(){
     const [mv, agent] = ck.split('|');
     if(!agent || agent === 'undefined') continue;
     const [yy, mm] = mv.split('-').map(Number);
-    const store = await getBillingProd(mv);
-    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    const exact = await computeExactRetractCount(agent, yy, mm);
     const before = await getMonthlyRetractCount(agent, yy, mm);
     if(before !== exact){ await saveMonthlyRetractCount(agent, yy, mm, exact); recalced.push(`${agent} ${mv} : ${before} → ${exact}`); }
   }
@@ -15198,11 +15621,16 @@ async function retryPendingRetractions(){
       done = true;
       if(!row.retracted){
         row.retracted = true;
+        row.retractPayMonth = resolveRetractPayMonth(mv, x.forceMonth);
         if(!row.agent && x.agent) row.agent = x.agent;
         await billingSave(billingProdKey(mv), store);
         applied++;
+      } else if(x.forceMonth && row.retractPayMonth !== x.forceMonth){
+        row.retractPayMonth = x.forceMonth;
+        await billingSave(billingProdKey(mv), store);
       }
       touched[`${mv}|${row.agent || x.agent}`] = true;
+      if(row.retractPayMonth) touched[`${row.retractPayMonth}|${row.agent || x.agent}`] = true;
     }
     if(!done){
       // Toujours pas trouvé par numéro/référence exacts → on tente le nom du client. On ne propose
@@ -15224,8 +15652,7 @@ async function retryPendingRetractions(){
     const [mv, agent] = ck.split('|');
     if(!agent || agent === 'undefined') continue;
     const [yy, mm] = mv.split('-').map(Number);
-    const store = await getBillingProd(mv);
-    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    const exact = await computeExactRetractCount(agent, yy, mm);
     await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
   await savePendingRetractions(stillPending);
@@ -15259,14 +15686,22 @@ async function confirmSuggestedRetraction(i){
   }
   if(!row.retracted){
     row.retracted = true;
+    row.retractPayMonth = resolveRetractPayMonth(mv, it.forceMonth);
     if(!row.agent && it.agent) row.agent = it.agent;
+    await billingSave(billingProdKey(mv), store);
+  } else if(it.forceMonth && row.retractPayMonth !== it.forceMonth){
+    row.retractPayMonth = it.forceMonth;
     await billingSave(billingProdKey(mv), store);
   }
   const agent = row.agent || it.agent;
   if(agent){
-    const [yy, mm] = mv.split('-').map(Number);
-    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
-    await saveMonthlyRetractCount(agent, yy, mm, exact);
+    const monthsToRecalc = new Set([mv]);
+    if(row.retractPayMonth) monthsToRecalc.add(row.retractPayMonth);
+    for(const m of monthsToRecalc){
+      const [yy, mm] = m.split('-').map(Number);
+      const exact = await computeExactRetractCount(agent, yy, mm);
+      await saveMonthlyRetractCount(agent, yy, mm, exact);
+    }
   }
   items.splice(i, 1);
   await savePendingRetractions(items);
@@ -15319,14 +15754,22 @@ async function resolvePendingRetractionManually(i){
   }
   if(!row.retracted){
     row.retracted = true;
+    row.retractPayMonth = resolveRetractPayMonth(mv, it.forceMonth);
     if(!row.agent && it.agent) row.agent = it.agent;
+    await billingSave(billingProdKey(mv), store);
+  } else if(it.forceMonth && row.retractPayMonth !== it.forceMonth){
+    row.retractPayMonth = it.forceMonth;
     await billingSave(billingProdKey(mv), store);
   }
   const agent = row.agent || it.agent;
   if(agent){
-    const [yy, mm] = mv.split('-').map(Number);
-    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
-    await saveMonthlyRetractCount(agent, yy, mm, exact);
+    const monthsToRecalc = new Set([mv]);
+    if(row.retractPayMonth) monthsToRecalc.add(row.retractPayMonth);
+    for(const m of monthsToRecalc){
+      const [yy, mm] = m.split('-').map(Number);
+      const exact = await computeExactRetractCount(agent, yy, mm);
+      await saveMonthlyRetractCount(agent, yy, mm, exact);
+    }
   }
   items.splice(i, 1);
   await savePendingRetractions(items);
@@ -15513,14 +15956,19 @@ function initBillingDefaults(){
     const d = getProdConfig().defaults || {};
     costEl.value = d.returnCost != null ? d.returnCost : '';
   }
-  // Période de retours proposée par défaut : la fenêtre 21→20 décalée de 2 mois, ta convention
-  // (ex : paie de mars → retours du 21/12 au 20/01). Modifiable à la main si besoin.
+  const offsetEl = document.getElementById('cfgReturnMonthOffset');
+  if(offsetEl && offsetEl.value === '') offsetEl.value = getReturnMonthOffset();
+  const cutoffEl = document.getElementById('cfgPayrollCutoffDay');
+  if(cutoffEl && cutoffEl.value === '') cutoffEl.value = getPayrollCutoffDay();
+  // Période de retours proposée par défaut : la fenêtre 21→20 décalée du nombre de mois réglé
+  // ci-dessus (ex : décalage 2 → paie de mars → retours du 21/12 au 20/01). Modifiable à la main.
   const from = document.getElementById('billingRetFrom');
   const to = document.getElementById('billingRetTo');
   if(from && to && !from.value && !to.value){
+    const offset = getReturnMonthOffset();
     const [y, m] = cur.split('-').map(Number);
-    const start = new Date(y, m - 1 - 3, 21);
-    const end = new Date(y, m - 1 - 2, 20);
+    const start = new Date(y, m - 1 - (offset + 1), 21);
+    const end = new Date(y, m - 1 - offset, 20);
     from.value = todayStr(start);
     to.value = todayStr(end);
   }
@@ -15682,9 +16130,10 @@ async function syncBillingRetractCount(){
   const agent = document.getElementById('billingAgentSelect')?.value;
   if(!monthVal || !agent) return;
   const [y, m] = monthVal.split('-').map(Number);
-  const data = await getBillingProd(monthVal);
-  const flagged = (data.rows || []).filter(r => r.agent === agent && r.retracted).length;
-  if(!confirm(`Fixer le compteur de rétractations de ${agent} pour ${monthVal} à ${flagged} (nombre de contrats marqués rétractés dans le tableau) ?`)) return;
+  // computeExactRetractCount (pas un simple filtre sur ce mois) : compte aussi les rétractations « en
+  // retard » redirigées ICI depuis un mois précédent, sans quoi ce recalage les effacerait par erreur.
+  const flagged = await computeExactRetractCount(agent, y, m);
+  if(!confirm(`Fixer le compteur de rétractations de ${agent} pour ${monthVal} à ${flagged} (nombre de contrats marqués rétractés dans le tableau, retards inclus) ?`)) return;
   await saveMonthlyRetractCount(agent, y, m, flagged);
   logAudit('Admin', 'Compteur de rétractations recalé', `${agent} — ${monthVal} — ${flagged}`);
   renderBillingAgentSheet();
@@ -17251,7 +17700,43 @@ async function searchContractGlobal(){
            : r.dismissed ? '<span style="color:var(--muted);">écarté</span>'
            : (r.agent ? '<span style="color:var(--red);">retour imputé à ' + escapeHtml(r.agent) + '</span>'
                       : '<span style="color:var(--amber);">à trancher</span>');
-      action = `<span style="font-size:12px; color:var(--muted);">Se règle dans « Retours à trancher »</span>`;
+      // Corriger sans quitter la recherche : changer l'agent, déplacer vers un autre mois de paie,
+      // écarter, ou supprimer. AVANT, cette colonne ne faisait que RENVOYER vers « Retours à trancher »
+      // — un panneau qui ne liste QUE les retours SANS agent : un retour déjà imputé (le cas le plus
+      // fréquent ici) n'y apparaît jamais, ce texte ne menait donc littéralement nulle part. C'est
+      // exactement le point mort qui empêchait de corriger un contrat retrouvé par la recherche.
+      const formId = `retfix_${idx}`;
+      const agentSelId = `${formId}_agent`;
+      const monthSelId = `${formId}_month`;
+      const monthOpts = (()=>{
+        const now2 = nowMA(); let out = '';
+        for(let i = -1; i < 24; i++){
+          const d = new Date(now2.getFullYear(), now2.getMonth() - i, 1);
+          const mvv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+          out += `<option value="${mvv}"${mvv === mv ? ' selected' : ''}>${billingMonthLabel(mvv)}</option>`;
+        }
+        return out;
+      })();
+      action = `<button onclick="var f=document.getElementById('${formId}'); f.style.display = f.style.display==='none' ? 'flex' : 'none';"
+        title="Corriger ce retour sans quitter la recherche : agent, mois de paie, écarter ou supprimer."
+        style="padding:5px 10px; border-radius:7px; border:1px solid var(--accent); background:rgba(86,128,171,0.14); color:var(--accent); font-weight:700; cursor:pointer; font-size:12px;">✏️ Corriger</button>
+        <div id="${formId}" style="display:none; flex-direction:column; gap:6px; margin-top:8px; min-width:205px;">
+          <div style="display:flex; gap:4px;">
+            <select id="${agentSelId}" style="flex:1; font-size:11.5px; padding:3px 5px;">
+              <option value="">— agent —</option>
+              ${allKnownAgents().map(a=> `<option value="${escapeHtml(a)}"${a === r.agent ? ' selected' : ''}>${escapeHtml(a)}${isArchivedAgent(a) ? ' (ancien)' : ''}</option>`).join('')}
+            </select>
+            <button onclick="assignReturnToAgentByKey('${mv}', '${key}', document.getElementById('${agentSelId}').value)" title="Rattacher ce retour à l'agent choisi" style="padding:3px 8px; border-radius:6px; border:1px solid var(--green); background:rgba(52,183,116,0.14); color:var(--green); font-weight:700; cursor:pointer; font-size:11.5px;">✔️</button>
+          </div>
+          <div style="display:flex; gap:4px;">
+            <select id="${monthSelId}" style="flex:1; font-size:11.5px; padding:3px 5px;">${monthOpts}</select>
+            <button onclick="moveReturnToMonth('${mv}', '${key}', document.getElementById('${monthSelId}').value)" title="Déplacer ce retour vers le mois de paie choisi — utile quand un import précédent s'est trompé de mois." style="padding:3px 8px; border-radius:6px; border:1px solid #7aa7d9; background:rgba(86,128,171,0.14); color:#7aa7d9; font-weight:700; cursor:pointer; font-size:11.5px; white-space:nowrap;">📅 Déplacer</button>
+          </div>
+          <div style="display:flex; gap:4px;">
+            <button onclick="dismissReturnByKey('${mv}', '${key}')" title="Ne concerne personne : ce retour ne sera facturé à personne" style="flex:1; padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer; font-size:11.5px;">Écarter</button>
+            <button onclick="deleteReturnByKey('${mv}', '${key}')" title="Supprimer définitivement ce retour" style="padding:4px 8px; border-radius:6px; border:1px solid rgba(229,90,90,0.5); background:transparent; color:var(--red); font-weight:700; cursor:pointer; font-size:11.5px;">🗑️</button>
+          </div>
+        </div>`;
     } else {
       etat = r.retracted ? '<span style="color:var(--red);">rétracté</span>' : '<span style="color:var(--green);">actif</span>';
       // Agir sans quitter la recherche : marquer/annuler la rétractation du contrat trouvé, où qu'il soit.
@@ -17293,9 +17778,15 @@ async function deleteContractFromMonth(monthVal, key, silent){
   store.rows.splice(idx, 1);
   await billingSave(billingProdKey(monthVal), store);
   if(row.retracted && row.agent){
-    const [yy, mm] = monthVal.split('-').map(Number);
-    const exact = (store.rows || []).filter(r => r.agent === row.agent && r.retracted).length;
-    await saveMonthlyRetractCount(row.agent, yy, mm, exact);
+    // Si cette rétractation avait été redirigée sur un autre mois de paie (retard), recale aussi CE
+    // mois-là — sinon il resterait compté un cran trop haut après suppression du contrat.
+    const monthsToRecalc = new Set([monthVal]);
+    if(row.retractPayMonth) monthsToRecalc.add(row.retractPayMonth);
+    for(const mv of monthsToRecalc){
+      const [yy, mm] = mv.split('-').map(Number);
+      const exact = await computeExactRetractCount(row.agent, yy, mm);
+      await saveMonthlyRetractCount(row.agent, yy, mm, exact);
+    }
   }
   logAudit('Admin', 'Contrat supprimé', `${row.numContrat || key} — ${monthVal} — ${row.agent || 'sans agent'}`);
   billingContractIndexCache = null;
@@ -17533,8 +18024,7 @@ async function applyAllFlagFixes(){
     const [mv, agent] = ck.split('|');
     if(!agent) continue;
     const [yy, mm] = mv.split('-').map(Number);
-    const st = stores[mv] || await getBillingProd(mv);
-    const exact = (st.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    const exact = await computeExactRetractCount(agent, yy, mm);
     await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
 
@@ -17614,14 +18104,22 @@ async function runIntegrityCheck(){
     });
   });
 
-  // Compteurs de rétractations : toutes les lectures lancées d'un bloc.
+  // Compteurs de rétractations : toutes les lectures lancées d'un bloc. `marked` reproduit ici la même
+  // logique que computeExactRetractCount (rétractations du mois + rétractations « en retard »
+  // redirigées depuis les 2 mois précédents), en réutilisant les mois déjà chargés en mémoire ci-dessus
+  // — sinon une rétractation en retard, parfaitement normale, ressortirait comme un faux écart.
   const agents = allKnownAgents();
   const checks = [];
   months.forEach((mv, mi)=>{
     const rows = stores[mi].rows || [];
     const [yy, mm] = mv.split('-').map(Number);
     agents.forEach(agent=>{
-      const marked = rows.filter(r => r.agent === agent && r.retracted).length;
+      let marked = rows.filter(r => r.agent === agent && r.retracted && (!r.retractPayMonth || r.retractPayMonth === mv)).length;
+      for(let back = 1; back <= 2; back++){
+        const pastStore = stores[mi + back];
+        if(!pastStore) continue;
+        marked += (pastStore.rows || []).filter(r => r.agent === agent && r.retracted && r.retractPayMonth === mv).length;
+      }
       checks.push(getMonthlyRetractCount(agent, yy, mm).then(counter=>{
         if(marked !== counter && (marked || counter)) retractMismatch.push({ mv, agent, marked, counter });
       }));
@@ -17773,8 +18271,7 @@ async function applyAllIntegrityFixes(){
     const [mv, agent] = ck.split('|');
     if(!agent) continue;
     const [yy, mm] = mv.split('-').map(Number);
-    const store = touchedStores[mv] || await getBillingProd(mv);
-    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    const exact = await computeExactRetractCount(agent, yy, mm);
     await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
 
@@ -18029,6 +18526,7 @@ async function applyReturnKindAuditFixes(){
       if(!originRow) continue; // contrat introuvable entre-temps (ex: supprimé) : on ne force rien
       if(!originRow.retracted){
         originRow.retracted = true;
+        originRow.retractPayMonth = resolveRetractPayMonth(a.d.originMv, null);
         if(!originRow.agent && row.agent) originRow.agent = row.agent;
       }
       row.dismissed = true;
@@ -18036,7 +18534,10 @@ async function applyReturnKindAuditFixes(){
       // lit que `dismissed`), sert seulement à garder la trace de POURQUOI cette ligne a été écartée.
       row.reclassifiedAsRetraction = true;
       row.reclassifiedAt = new Date().toISOString();
-      if(originRow.agent) retractToFix[`${a.d.originMv}|${originRow.agent}`] = true;
+      if(originRow.agent){
+        retractToFix[`${a.d.originMv}|${originRow.agent}`] = true;
+        if(originRow.retractPayMonth) retractToFix[`${originRow.retractPayMonth}|${originRow.agent}`] = true;
+      }
     } else if(a.t === 'ecarter'){
       const retStore = await getRet(a.d.mv);
       const row = (retStore.rows || [])[a.d.i];
@@ -18052,9 +18553,9 @@ async function applyReturnKindAuditFixes(){
   for(const mv of Object.keys(prodTouched)) await billingSave(billingProdKey(mv), prodTouched[mv]);
   for(const ck of Object.keys(retractToFix)){
     const [mv, agent] = ck.split('|');
+    if(!agent) continue;
     const [yy, mm] = mv.split('-').map(Number);
-    const store = prodTouched[mv] || await getBillingProd(mv);
-    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    const exact = await computeExactRetractCount(agent, yy, mm);
     await saveMonthlyRetractCount(agent, yy, mm, exact);
   }
 
@@ -18157,6 +18658,111 @@ async function dismissReturn(monthVal, index){
   billingInvalidate();
   renderUnmatchedReturnsPanel();
   renderBillingAgentSheet();
+}
+
+// ------------------------------------------------------------
+// ✏️ CORRIGER UN RETOUR DEPUIS N'IMPORTE OÙ (recherche globale, aperçu d'import…)
+// ------------------------------------------------------------
+// Les fonctions ci-dessus (assignReturnToAgent, dismissReturn) travaillent par INDEX dans le tableau
+// du mois affiché dans « Retours à trancher » — ça suppose qu'on est déjà sur le bon mois et qu'on a
+// la bonne ligne sous les yeux. Depuis la recherche globale, on n'a que la clé du contrat (numéro ou
+// référence) et le mois où le retour a été rangé : ces variantes-ci retrouvent la ligne par sa CLÉ,
+// pour pouvoir la corriger en un clic depuis n'importe quel écran, sans changer de mois affiché.
+function findReturnIndexByKey(rows, key){
+  const k = String(key == null ? '' : key).trim().toLowerCase();
+  if(!k) return -1;
+  return (rows || []).findIndex(r => billingRowKeys(r).includes(k));
+}
+
+async function assignReturnToAgentByKey(monthVal, key, agentName){
+  if(!agentName){ alert('Choisis d\'abord un agent dans la liste.'); return; }
+  const data = await getBillingReturns(monthVal);
+  const idx = findReturnIndexByKey(data.rows, key);
+  if(idx < 0){ alert('Retour introuvable — il a peut-être été modifié depuis. Relance la recherche.'); return; }
+  const row = data.rows[idx];
+  row.agent = agentName;
+  row.dismissed = false;
+  row.matchedVia = 'décision manuelle (recherche)';
+  await billingSave(billingRetKey(monthVal), data);
+  logAudit('Admin', 'Retour rattaché manuellement (via recherche)', `${monthVal} — contrat ${row.numContrat || row.reference || '?'} → ${agentName}`);
+  billingInvalidate();
+  clearRenderCaches();
+  await searchContractGlobal();
+  renderUnmatchedReturnsPanel();
+  renderBillingAgentSheet();
+  renderAdminIndepReturnTable();
+}
+
+async function dismissReturnByKey(monthVal, key){
+  const data = await getBillingReturns(monthVal);
+  const idx = findReturnIndexByKey(data.rows, key);
+  if(idx < 0){ alert('Retour introuvable — il a peut-être été modifié depuis. Relance la recherche.'); return; }
+  const row = data.rows[idx];
+  if(!confirm(`Écarter ce retour (contrat ${row.numContrat || row.reference || '?'}) ?\n\nIl ne sera retenu à aucun agent. Il reste visible dans l'historique du mois.`)) return;
+  row.dismissed = true;
+  row.agent = '';
+  await billingSave(billingRetKey(monthVal), data);
+  logAudit('Admin', 'Retour écarté (via recherche)', `${monthVal} — contrat ${row.numContrat || row.reference || '?'} — ne concerne personne`);
+  billingInvalidate();
+  clearRenderCaches();
+  await searchContractGlobal();
+  renderUnmatchedReturnsPanel();
+  renderBillingAgentSheet();
+}
+
+async function deleteReturnByKey(monthVal, key){
+  const data = await getBillingReturns(monthVal);
+  const idx = findReturnIndexByKey(data.rows, key);
+  if(idx < 0){ alert('Retour introuvable — il a peut-être déjà été supprimé.'); return; }
+  const row = data.rows[idx];
+  if(!confirm(`Supprimer définitivement ce retour ?\n\n${row.nom || '?'} — n° ${row.numContrat || row.reference || key}\nAgent : ${row.agent || '—'}\nMois de paie : ${billingMonthLabel(monthVal)}\n\nIl disparaîtra du comptage. Si le retour concerne bien ce contrat mais le mauvais mois, préfère « 📅 Déplacer » plutôt que de le supprimer.`)) return;
+  data.rows.splice(idx, 1);
+  await billingSave(billingRetKey(monthVal), data);
+  logAudit('Admin', 'Retour supprimé (via recherche)', `${monthVal} — contrat ${row.numContrat || row.reference || key} — ${row.agent || 'sans agent'}`);
+  billingInvalidate();
+  clearRenderCaches();
+  await searchContractGlobal();
+  renderUnmatchedReturnsPanel();
+  renderBillingAgentSheet();
+}
+
+// Déplace un retour DÉJÀ enregistré vers un autre mois de paie. Sert quand un import précédent l'a
+// rangé au mauvais mois (le fichier de facturation ne donne pas toujours une date de statut fiable —
+// voir billingAnalyzeReturns) : plutôt que de le supprimer et le réimporter à la main, on le glisse
+// directement d'un mois à l'autre, agent et motif conservés. Un doublon éventuel déjà présent dans le
+// mois cible (même contrat) est remplacé par cette version, jamais dupliqué.
+async function moveReturnToMonth(fromMonth, key, toMonth){
+  if(!toMonth || toMonth === fromMonth) return;
+  const from = await getBillingReturns(fromMonth);
+  const idx = findReturnIndexByKey(from.rows, key);
+  if(idx < 0){ alert('Retour introuvable — il a peut-être été modifié depuis. Relance la recherche.'); return; }
+  const row = from.rows[idx];
+  if(!confirm(`Déplacer ce retour vers ${billingMonthLabel(toMonth)} ?\n\n${row.nom || '?'} — n° ${row.numContrat || row.reference || key}\nAgent : ${row.agent || '—'}\nActuellement rangé sur : ${billingMonthLabel(fromMonth)}`)) return;
+  from.rows.splice(idx, 1);
+  await billingSave(billingRetKey(fromMonth), from);
+  const to = await getBillingReturns(toMonth);
+  to.rows = to.rows || [];
+  const rowKeys = billingRowKeys(row);
+  to.rows = to.rows.filter(r => !billingRowKeys(r).some(k => rowKeys.includes(k)));
+  to.rows.push(row);
+  await billingSave(billingRetKey(toMonth), to);
+  logAudit('Admin', 'Retour déplacé de mois (via recherche)', `${row.numContrat || row.reference || key} — ${billingMonthLabel(fromMonth)} → ${billingMonthLabel(toMonth)}`);
+  billingInvalidate();
+  clearRenderCaches();
+  await searchContractGlobal();
+  renderUnmatchedReturnsPanel();
+  renderBillingAgentSheet();
+}
+
+// Bascule vers « Trouver un contrat », y colle une clé, et lance la recherche — permet de sauter en un
+// clic depuis un aperçu d'import (doublon repéré) ou tout autre écran directement sur le contrat
+// concerné, sans avoir à retaper son numéro à la main.
+function jumpToContractSearch(query){
+  const input = document.getElementById('globalSearchInput');
+  if(!input) return;
+  input.value = query;
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  searchContractGlobal();
 }
 
 // ------------------------------------------------------------
@@ -18453,13 +19059,17 @@ async function saveReturnCostPerAgent(){
 }
 
 
-(async function bootApp(){
+// Appelée depuis le bloc DOMContentLoaded plus haut (juste après l'init Firebase), plutôt
+// qu'auto-exécutée ici — l'ordre réel (init Firebase → bootApp) ne change pas, seul le déclencheur
+// change (DOMContentLoaded au lieu de "fin du script"), pour ne pas dépendre du chargement bloquant
+// des scripts Firebase (voir <head> et le bloc "PERF" juste avant l'init Firebase, plus haut).
+async function bootApp(){
   await firebaseAuthReady;
   loadConfig();
   updateSyncIndicator();
   applyPrivacyMode();
   resetPasswordFieldsMasked();
-})();
+}
 </script>
 
 </body>
