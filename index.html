@@ -1770,6 +1770,12 @@ function tryDeviceGateAdmin(){
           <div id="billingRetReport" style="margin-top:14px;"></div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
+          <label>⏳ Rétractations en attente</label>
+          <div class="section-sub">Une rétractation importée qui n'a pas trouvé son contrat d'origine dans ta Production (mois pas encore importé) atterrit ici <b>au lieu d'être perdue</b>. Importe la Production du mois où le contrat a été signé, puis clique « Réessayer » — ou rattache-la toi-même à un mois précis si tu sais où elle se trouve.</div>
+          <div id="pendingRetractionsPanel" style="margin-top:12px;"></div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(52,183,116,0.35);">
           <label>📐 Barème des retours — indépendants</label>
           <div class="section-sub">Les indépendants ne pointent pas : ni retard, ni absence, donc le barème du règlement salarié (÷3 → ÷2 au 5<sup>e</sup> retard → 1:1 au 6<sup>e</sup>) ne peut pas s'appliquer à eux. Leur barème dépend de leur <b>volume de contrats du mois</b> — plus ils produisent, moins un retour leur coûte. Ils voient exactement ce tableau depuis leur Arena et leur Cash, avec leur palier du moment mis en évidence.</div>
@@ -1816,6 +1822,12 @@ function tryDeviceGateAdmin(){
             <button onclick="runReturnKindAudit()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--independant);background:rgba(155,89,182,0.14);color:var(--independant);font-weight:700;cursor:pointer;" title="Balaie 24 mois de retours déjà importés et compare le texte brut de chacun à tes mots-clés actuels. Ne modifie rien : c'est un diagnostic, tant que tu n'as pas choisi puis appliqué une correction.">🏷️ Lancer le contrôle</button>
           </div>
           <div id="returnKindAuditPanel" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(155,89,182,0.45);">
+          <label>🏷️ Mots-clés de classement (rétractation / impayé)</label>
+          <div class="section-sub">C'est cette liste que <b>🏷️ Contrôle impayé / rétractation</b> ci-dessus utilise pour lire le texte de chaque retour. Si le fichier de facturation change un jour de formulation (ex. un nouveau statut que tu ne reconnais pas), ajoute le mot-clé ici — pas besoin de toucher au code. Le premier mot-clé qui correspond dans le texte du statut gagne ; « rétractation » est vérifié en premier. Les mots-clés sont comparés sans accents, sans majuscules et sans espaces (ex. "Rétractation client" matche "retract").</div>
+          <div id="returnKeywordsPanel" style="margin-top:12px;"></div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(217,164,65,0.4);">
@@ -3287,9 +3299,11 @@ function showAdminSub(sub){
     renderBackofficeInboxPanel();
     renderPaySourcePanel();
     renderReturnCostPerAgent();
+    renderReturnKeywordsPanel();
     renderAdminIndepReturnTable();
     renderPointageStartPanel();
     renderUnmatchedReturnsPanel();
+    renderPendingRetractionsPanel();
     renderAgentAliasPanel();
     renderBillingImportSummary();
     renderBillingAgentSheet();
@@ -13472,6 +13486,7 @@ function billingProdKey(monthVal){ return `billingProd:${monthVal}`; }
 function billingRetKey(monthVal){ return `billingReturns:${monthVal}`; }
 function billingRatioKey(monthVal){ return `billingRatio:${monthVal}`; }
 function billingPayslipKey(monthVal){ return `billingPayslip:${monthVal}`; }
+const PENDING_RETRACT_KEY = 'billingPendingRetractions';
 
 function billingMonthVal(year, month){ return `${year}-${String(month).padStart(2,'0')}`; }
 
@@ -13498,6 +13513,22 @@ async function getBillingProd(monthVal){ return await billingLoad(billingProdKey
 async function getBillingReturns(monthVal){ return await billingLoad(billingRetKey(monthVal), { month: monthVal, rows: [], importedAt: null, periodFrom: null, periodTo: null }); }
 async function getBillingRatios(monthVal){ return await billingLoad(billingRatioKey(monthVal), {}); }
 async function getBillingPayslips(monthVal){ return await billingLoad(billingPayslipKey(monthVal), null); }
+
+// ------------------------------------------------------------
+// ⏳ RÉTRACTATIONS EN ATTENTE — le contrat d'origine n'était pas encore importé côté Production
+// ------------------------------------------------------------
+// Une ligne « rétractation » du fichier de facturation ne se stocke jamais telle quelle : elle sert
+// UNIQUEMENT à marquer `retracted: true` sur le contrat d'origine, retrouvé dans billingProd par numéro/
+// référence. Si ce contrat n'est pas encore importé (mois ancien pas encore rentré dans le CRM), il n'y
+// a rien à marquer — mais avant, la ligne était simplement jetée : seul un compteur ("X introuvables")
+// apparaissait dans le message de fin d'import, sans aucun moyen de savoir lesquelles ni de les rattraper
+// plus tard. Elles atterrissent maintenant ici, en attendant que la Production du bon mois soit importée.
+async function getPendingRetractions(){
+  return await billingLoad(PENDING_RETRACT_KEY, { items: [] });
+}
+async function savePendingRetractions(items){
+  await billingSave(PENDING_RETRACT_KEY, { items });
+}
 
 // ------------------------------------------------------------
 // 📄 LECTURE CSV
@@ -14614,12 +14645,107 @@ function importBillingProdFromPaste(){
 // Les confondre coûterait cher dans les deux sens : traiter un rétracté comme un retour reviendrait à
 // ne retenir qu'un tiers de ce qu'il faut, et l'inverse à retenir trois fois trop.
 // On lit donc le statut de chaque ligne et on l'oriente vers le bon traitement.
+// Mots-clés par défaut — utilisés tant que l'admin n'a rien personnalisé dans Réglages, et comme base
+// pour le bouton « restaurer les valeurs par défaut ». Ne jamais muter ce tableau directement : passer
+// par getReturnKeywords(), qui travaille sur config.returnKeywords (persisté, modifiable depuis l'admin).
+const DEFAULT_RETURN_KEYWORDS = {
+  retracted: ['retract', 'renonc', 'annul'],
+  unpaid: ['unpaid', 'impay', 'noncompliant', 'rejet']
+};
+function getReturnKeywords(){
+  if(!config.returnKeywords || !Array.isArray(config.returnKeywords.retracted) || !Array.isArray(config.returnKeywords.unpaid)){
+    config.returnKeywords = {
+      retracted: [...DEFAULT_RETURN_KEYWORDS.retracted],
+      unpaid: [...DEFAULT_RETURN_KEYWORDS.unpaid]
+    };
+  }
+  return config.returnKeywords;
+}
 function billingReturnKind(row){
   const st = billingNormKey(row.motif || '');
   if(!st) return 'unpaid';
-  if(st.includes('retract') || st.includes('retract') || st.includes('renonc') || st.includes('annul')) return 'retracted';
-  if(st.includes('unpaid') || st.includes('impay') || st.includes('noncompliant') || st.includes('rejet')) return 'unpaid';
+  const kw = getReturnKeywords();
+  if(kw.retracted.some(w => w && st.includes(w))) return 'retracted';
+  if(kw.unpaid.some(w => w && st.includes(w))) return 'unpaid';
   return 'unpaid'; // par défaut : traité comme un impayé, le cas de loin le plus fréquent
+}
+
+// ------------------------------------------------------------
+// 🏷️ ADMIN — mots-clés de classement retract/impayé, éditables sans toucher au code
+// ------------------------------------------------------------
+function renderReturnKeywordsPanel(){
+  const el = document.getElementById('returnKeywordsPanel');
+  if(!el) return;
+  const kw = getReturnKeywords();
+
+  const chips = (kind, color) => (kw[kind].length
+    ? kw[kind].map(w => `
+      <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:16px;background:${color}22;border:1px solid ${color}66;color:${color};font-size:12.5px;font-weight:700;margin:3px 6px 3px 0;">
+        ${escapeHtml(w)}
+        <button onclick="removeReturnKeyword('${kind}','${w}')" title="Retirer ce mot-clé" style="background:none;border:none;color:${color};cursor:pointer;font-weight:900;line-height:1;padding:0;font-size:14px;">×</button>
+      </span>`).join('')
+    : '<span style="color:var(--muted);font-size:12.5px;">Aucun mot-clé — plus rien ne sera reconnu automatiquement dans cette catégorie.</span>');
+
+  el.innerHTML = `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:800; color:var(--red); margin-bottom:8px; font-size:13px;">🔻 Déclenchent « rétractation »</div>
+      <div>${chips('retracted', 'var(--red)')}</div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <input type="text" id="newRetractKeyword" placeholder="ex : désistement, retour client…" style="flex:1; min-width:180px; max-width:280px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addReturnKeyword('retracted');}">
+        <button onclick="addReturnKeyword('retracted')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--red);background:rgba(229,72,77,0.14);color:var(--red);font-weight:700;cursor:pointer;font-size:12.5px;">+ Ajouter</button>
+      </div>
+    </div>
+    <div>
+      <div style="font-weight:800; color:var(--amber); margin-bottom:8px; font-size:13px;">🧾 Déclenchent « impayé »</div>
+      <div>${chips('unpaid', 'var(--amber)')}</div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <input type="text" id="newUnpaidKeyword" placeholder="ex : nsf, refusé, sans provision…" style="flex:1; min-width:180px; max-width:280px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addReturnKeyword('unpaid');}">
+        <button onclick="addReturnKeyword('unpaid')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--amber);background:rgba(229,168,61,0.14);color:var(--amber);font-weight:700;cursor:pointer;font-size:12.5px;">+ Ajouter</button>
+      </div>
+    </div>
+    <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <button onclick="resetReturnKeywordsDefault()" style="padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-weight:700;cursor:pointer;font-size:12px;">↩️ Restaurer les mots-clés par défaut</button>
+      <span style="font-size:11.5px; color:var(--muted);">Un changement ici ne modifie aucun retour déjà importé — relance ensuite 🏷️ Contrôle impayé / rétractation ci-dessus pour repérer ceux à reclasser.</span>
+    </div>`;
+}
+
+async function addReturnKeyword(kind){
+  const inputId = kind === 'retracted' ? 'newRetractKeyword' : 'newUnpaidKeyword';
+  const input = document.getElementById(inputId);
+  const raw = (input?.value || '').trim();
+  if(!raw) return;
+  const norm = billingNormKey(raw);
+  if(!norm){ if(input) input.value = ''; return; }
+  const kw = getReturnKeywords();
+  if(kw[kind].includes(norm)){
+    showToast('Ce mot-clé existe déjà dans cette catégorie.', 'warn', 3000);
+    if(input) input.value = '';
+    return;
+  }
+  kw[kind].push(norm);
+  await saveConfigSilent();
+  logAudit('Admin', `Mot-clé de classement ajouté (${kind === 'retracted' ? 'rétractation' : 'impayé'})`, norm);
+  if(input) input.value = '';
+  renderReturnKeywordsPanel();
+}
+
+async function removeReturnKeyword(kind, word){
+  const kw = getReturnKeywords();
+  kw[kind] = kw[kind].filter(w => w !== word);
+  await saveConfigSilent();
+  logAudit('Admin', `Mot-clé de classement retiré (${kind === 'retracted' ? 'rétractation' : 'impayé'})`, word);
+  renderReturnKeywordsPanel();
+}
+
+async function resetReturnKeywordsDefault(){
+  if(!confirm('Restaurer les mots-clés par défaut ? Tes ajouts et suppressions personnalisés dans cette liste seront perdus.')) return;
+  config.returnKeywords = {
+    retracted: [...DEFAULT_RETURN_KEYWORDS.retracted],
+    unpaid: [...DEFAULT_RETURN_KEYWORDS.unpaid]
+  };
+  await saveConfigSilent();
+  logAudit('Admin', 'Mots-clés de classement réinitialisés aux valeurs par défaut', '');
+  renderReturnKeywordsPanel();
 }
 
 // ============================================================
@@ -14879,6 +15005,7 @@ async function confirmReturnsImport(){
   // ---- Rétractations : marquer le contrat dans SON mois, puis recaler le compteur ----
   let retractApplied = 0, retractNotFound = 0;
   const touched = {};
+  const stillPending = [];
   for(const x of items.filter(i => i.kind === 'retracted')){
     let done = false;
     for(let i = 0; i < 24 && !done; i++){
@@ -14896,7 +15023,30 @@ async function confirmReturnsImport(){
       }
       touched[`${mv}|${row.agent || x.agent}`] = true;
     }
-    if(!done) retractNotFound++;
+    if(!done){
+      retractNotFound++;
+      // Avant : cette ligne était simplement perdue (seul un compteur en gardait la trace). Maintenant,
+      // elle est mise de côté — dès que le mois d'origine sera importé côté Production, un clic sur
+      // « Réessayer » (panneau ⏳ Rétractations en attente) la retrouvera et l'appliquera, sans avoir
+      // besoin de réimporter tout le fichier de facturation.
+      stillPending.push({
+        keys: x.keys,
+        num: x.r.numContrat || x.r.reference || '',
+        nom: x.r.nom || '',
+        agent: x.agent || x.r.agent || '',
+        statusDate: x.r.statusDate || x.r.date || '',
+        addedAt: new Date().toISOString()
+      });
+    }
+  }
+  if(stillPending.length){
+    const existingPending = await getPendingRetractions();
+    const seenKeys = new Set();
+    (existingPending.items || []).forEach(p => (p.keys||[]).forEach(k=>seenKeys.add(k)));
+    const merged = (existingPending.items || []).concat(
+      stillPending.filter(p => !p.keys.some(k => seenKeys.has(k)))
+    );
+    await savePendingRetractions(merged);
   }
   // Compteurs recalculés (jamais incrémentés) : idempotent, aucun double comptage possible.
   const recalced = [];
@@ -14943,13 +15093,250 @@ async function confirmReturnsImport(){
         📉 Impayés répartis sur : <b>${mois.map(m=>escapeHtml(billingMonthLabel(m))).join(' · ') || '—'}</b>
         ${recalced.length ? `<br>🔄 Compteurs recalés : <span style="color:var(--muted);">${recalced.slice(0,8).map(escapeHtml).join(' · ')}</span>` : ''}
       </div>
-      <div style="font-size:12px; color:var(--muted); margin-top:9px;">${retractNotFound ? "Les contrats introuvables sont ceux dont le mois de signature n'a pas encore été importé. Importe-le, puis relance cet import : les doublons seront ignorés automatiquement." : "Vérifie le tableau d'un agent avant de figer quoi que ce soit." }</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:9px;">${retractNotFound ? "Les contrats introuvables sont ceux dont le mois de signature n'a pas encore été importé — ils sont conservés dans « ⏳ Rétractations en attente » ci-dessous, rien n'est perdu. Importe la Production du bon mois, puis clique « Réessayer » là-bas." : "Vérifie le tableau d'un agent avant de figer quoi que ce soit." }</div>
     </div>`;
   }
   renderBillingImportSummary();
   renderBillingAgentSheet();
   renderUnmatchedReturnsPanel();
+  renderPendingRetractionsPanel();
   renderHistoryStats();
+}
+
+// ------------------------------------------------------------
+// ⏳ RÉTRACTATIONS EN ATTENTE — panneau admin (contrat d'origine pas encore importé)
+// ------------------------------------------------------------
+async function renderPendingRetractionsPanel(){
+  const el = document.getElementById('pendingRetractionsPanel');
+  if(!el) return;
+  const data = await getPendingRetractions();
+  const items = data.items || [];
+  if(!items.length){
+    el.innerHTML = '<div class="empty" style="padding:12px;">Aucune rétractation en attente — tout ce qui a été importé a trouvé son contrat d\'origine.</div>';
+    return;
+  }
+  const monthOptions = ()=>{
+    const now = nowMA(); let out = '<option value="">— choisir le mois de signature —</option>';
+    for(let i = -1; i < 36; i++){
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+      out += `<option value="${mv}">${billingMonthLabel(mv)}</option>`;
+    }
+    return out;
+  };
+  let html = `<div style="margin-bottom:10px; font-size:12.5px; color:var(--muted);">
+    <b>${items.length}</b> rétractation${items.length>1?'s':''} en attente — le contrat d'origine n'a pas pu être relié automatiquement (numéro/référence écrits différemment entre les deux fichiers, ou mois pas encore importé). Clique « 🔁 Chercher les correspondances » : le CRM propose lui-même un contrat probable en comparant les noms de clients — tu n'as qu'à confirmer ou refuser.
+  </div>
+  <div class="admin-toolbar" style="margin-bottom:12px;">
+    <button onclick="retryPendingRetractions()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:rgba(61,139,253,0.14);color:var(--accent);font-weight:700;cursor:pointer;font-size:13px;">🔁 Chercher les correspondances</button>
+  </div>
+  <div style="overflow-x:auto; max-height:420px; overflow-y:auto;"><table class="salary-table"><thead><tr><th>Contrat lu</th><th>Client</th><th>Agent</th><th>En attente depuis</th><th>Proposition / rattachement</th><th></th></tr></thead><tbody>
+  ${items.map((it, i)=>{
+    const sugg = it.suggestion;
+    return `<tr>
+    <td>${escapeHtml(it.num || '—')}</td>
+    <td>${escapeHtml(it.nom || '—')}</td>
+    <td>${escapeHtml(it.agent || '—')}</td>
+    <td style="font-size:12px; color:var(--muted); white-space:nowrap;">${it.addedAt ? new Date(it.addedAt).toLocaleDateString('fr-FR') : '—'}</td>
+    <td style="white-space:nowrap;">
+      ${sugg ? `
+        <div style="padding:8px 10px; border-radius:8px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.4); margin-bottom:6px; font-size:12px;">
+          Probablement : contrat <b>${escapeHtml(sugg.num || '—')}</b> signé <b>${escapeHtml(billingMonthLabel(sugg.mv))}</b> — même nom client.
+        </div>
+        <button onclick="confirmSuggestedRetraction(${i})" style="padding:6px 12px; border-radius:7px; border:1px solid var(--green); background:rgba(52,183,116,0.16); color:var(--green); font-weight:700; cursor:pointer; font-size:12px; margin-right:6px;">✅ Oui, c'est lui</button>
+        <button onclick="dismissSuggestedRetraction(${i})" style="padding:6px 12px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer; font-size:12px;">❌ Non</button>
+      ` : `
+        <select id="pendingRetractMonth_${i}" style="min-width:150px;">${monthOptions()}</select>
+        <button onclick="resolvePendingRetractionManually(${i})" style="padding:5px 10px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer; font-size:11.5px;" title="Cherche le contrat dans le mois choisi — par numéro exact, sinon par nom du client.">Rattacher</button>
+      `}
+    </td>
+    <td><button onclick="document.getElementById('globalSearchInput').value='${escapeHtml(String(it.num||it.nom||'')).replace(/'/g,"\\'")}'; searchContractGlobal(); document.getElementById('globalSearchInput').scrollIntoView({behavior:'smooth', block:'center'});" title="Vérifier ce contrat dans « Trouver un contrat »" style="padding:5px 9px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:11px;">🔎</button></td>
+  </tr>`;
+  }).join('')}
+  </tbody></table></div>`;
+  el.innerHTML = html;
+}
+
+// Cherche, pour un nom de client donné, tous les contrats non-rétractés qui portent exactement ce nom
+// (comparé sans accents/majuscules/espaces) sur une longue période. Utilisé quand le numéro/référence ne
+// matche pas — le nom du client est le seul point commun fiable qui reste entre les deux fichiers.
+async function findRetractionNameCandidates(nom, monthsBack){
+  const target = billingNormKey(nom || '');
+  if(!target) return [];
+  const now = nowMA();
+  const out = [];
+  for(let i = -1; i < (monthsBack || 36); i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+    const store = await getBillingProd(mv);
+    (store.rows || []).forEach(r=>{
+      if(r.retracted) return;
+      if(billingNormKey(r.nom || '') === target) out.push({ mv, row: r });
+    });
+  }
+  return out;
+}
+
+async function retryPendingRetractions(){
+  const data = await getPendingRetractions();
+  const items = data.items || [];
+  if(!items.length) return;
+  const el = document.getElementById('pendingRetractionsPanel');
+  if(el) el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Recherche des correspondances en cours…</div>';
+
+  let applied = 0, suggested = 0;
+  const stillPending = [];
+  const touched = {};
+  for(const x of items){
+    let done = false;
+    for(let i = 0; i < 24 && !done; i++){
+      const dd = new Date(nowMA().getFullYear(), nowMA().getMonth() - i, 1);
+      const mv = billingMonthVal(dd.getFullYear(), dd.getMonth() + 1);
+      const store = await getBillingProd(mv);
+      const row = (store.rows || []).find(r => billingRowKeys(r).some(k => (x.keys||[]).includes(k)));
+      if(!row) continue;
+      done = true;
+      if(!row.retracted){
+        row.retracted = true;
+        if(!row.agent && x.agent) row.agent = x.agent;
+        await billingSave(billingProdKey(mv), store);
+        applied++;
+      }
+      touched[`${mv}|${row.agent || x.agent}`] = true;
+    }
+    if(!done){
+      // Toujours pas trouvé par numéro/référence exacts → on tente le nom du client. On ne propose
+      // JAMAIS automatiquement si plusieurs contrats portent le même nom : trop risqué de retenir le
+      // mauvais contrat au mauvais agent. Une seule correspondance sans ambiguïté → proposée, à confirmer.
+      const candidates = await findRetractionNameCandidates(x.nom, 36);
+      if(candidates.length === 1){
+        const { mv, row } = candidates[0];
+        const key = billingRowKeys(row)[0] || '';
+        x.suggestion = { mv, key, num: row.numContrat || row.reference || '' };
+        suggested++;
+      } else {
+        delete x.suggestion;
+      }
+      stillPending.push(x);
+    }
+  }
+  for(const ck of Object.keys(touched)){
+    const [mv, agent] = ck.split('|');
+    if(!agent || agent === 'undefined') continue;
+    const [yy, mm] = mv.split('-').map(Number);
+    const store = await getBillingProd(mv);
+    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    await saveMonthlyRetractCount(agent, yy, mm, exact);
+  }
+  await savePendingRetractions(stillPending);
+  logAudit('Admin', 'Rétractations en attente — recherche de correspondances', `${applied} appliquée(s) directement, ${suggested} proposition(s) par nom, ${stillPending.length} encore en attente`);
+  billingInvalidate();
+  clearRenderCaches();
+  const msg = applied || suggested
+    ? `✅ ${applied ? `${applied} appliquée${applied>1?'s':''} directement` : ''}${applied && suggested ? ' — ' : ''}${suggested ? `${suggested} proposition${suggested>1?'s':''} à confirmer ci-dessous` : ''}`
+    : "Toujours aucune correspondance, même par nom — importe la Production du bon mois si ce n'est pas déjà fait.";
+  showToast(msg, (applied || suggested) ? 'ok' : 'warn', 5500);
+  renderPendingRetractionsPanel();
+  renderBillingAgentSheet();
+  renderBillingImportSummary();
+}
+
+// Un clic pour valider la proposition faite par nom : applique la rétractation sur le contrat suggéré.
+async function confirmSuggestedRetraction(i){
+  const data = await getPendingRetractions();
+  const items = data.items || [];
+  const it = items[i];
+  if(!it || !it.suggestion) return;
+  const { mv, key } = it.suggestion;
+  const store = await getBillingProd(mv);
+  const row = (store.rows || []).find(r => billingRowKeys(r).includes(key));
+  if(!row){
+    alert("Ce contrat a changé entre-temps (supprimé ou déjà rétracté ailleurs) — relance « Chercher les correspondances ».");
+    items[i].suggestion = null;
+    await savePendingRetractions(items);
+    renderPendingRetractionsPanel();
+    return;
+  }
+  if(!row.retracted){
+    row.retracted = true;
+    if(!row.agent && it.agent) row.agent = it.agent;
+    await billingSave(billingProdKey(mv), store);
+  }
+  const agent = row.agent || it.agent;
+  if(agent){
+    const [yy, mm] = mv.split('-').map(Number);
+    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    await saveMonthlyRetractCount(agent, yy, mm, exact);
+  }
+  items.splice(i, 1);
+  await savePendingRetractions(items);
+  logAudit('Admin', 'Rétractation en attente confirmée (correspondance par nom)', `${it.num || it.nom || '?'} — ${billingMonthLabel(mv)}`);
+  billingInvalidate();
+  clearRenderCaches();
+  showToast('✅ Rétractation rattachée.', 'ok', 3500);
+  renderPendingRetractionsPanel();
+  renderBillingAgentSheet();
+  renderBillingImportSummary();
+}
+
+// Refuse la proposition : elle retombe en attente d'un rattachement manuel, la proposition ne revient
+// pas toute seule au prochain « Chercher les correspondances » (mêmes candidats, même résultat).
+async function dismissSuggestedRetraction(i){
+  const data = await getPendingRetractions();
+  const items = data.items || [];
+  if(!items[i]) return;
+  items[i].suggestion = null;
+  items[i].suggestionRejected = true;
+  await savePendingRetractions(items);
+  renderPendingRetractionsPanel();
+}
+
+// Rattachement manuel : d'abord le numéro/référence exact dans le mois choisi ; si rien ne matche, on
+// retente par nom du client dans ce même mois (une seule correspondance sans ambiguïté, confirmée avant
+// application). Utile quand le format diffère entre le fichier de facturation et la Production, mais que
+// l'admin sait sur quel mois chercher.
+async function resolvePendingRetractionManually(i){
+  const data = await getPendingRetractions();
+  const items = data.items || [];
+  const it = items[i];
+  if(!it) return;
+  const mv = document.getElementById(`pendingRetractMonth_${i}`)?.value;
+  if(!mv){ alert('Choisis d\'abord le mois de signature du contrat.'); return; }
+  const store = await getBillingProd(mv);
+  let row = (store.rows || []).find(r => billingRowKeys(r).some(k => (it.keys||[]).includes(k)));
+  if(!row){
+    const sameNameRows = (store.rows || []).filter(r => !r.retracted && billingNormKey(r.nom || '') === billingNormKey(it.nom || '') && billingNormKey(it.nom || ''));
+    if(sameNameRows.length === 1){
+      row = sameNameRows[0];
+      if(!confirm(`Aucun numéro identique, mais un seul contrat de ${billingMonthLabel(mv)} porte le même nom client (${row.nom} — contrat ${row.numContrat || row.reference || '?'}).\n\nLe marquer rétracté ?`)) return;
+    } else if(sameNameRows.length > 1){
+      alert(`Plusieurs contrats de ${billingMonthLabel(mv)} portent ce nom — impossible de deviner lequel. Utilise 🔎 « Trouver un contrat » pour le repérer et le rétracter directement depuis là.`);
+      return;
+    } else {
+      alert(`Aucun contrat correspondant trouvé dans la Production de ${billingMonthLabel(mv)} (ni par numéro, ni par nom). Vérifie que ce mois est bien importé, ou choisis un autre mois.`);
+      return;
+    }
+  }
+  if(!row.retracted){
+    row.retracted = true;
+    if(!row.agent && it.agent) row.agent = it.agent;
+    await billingSave(billingProdKey(mv), store);
+  }
+  const agent = row.agent || it.agent;
+  if(agent){
+    const [yy, mm] = mv.split('-').map(Number);
+    const exact = (store.rows || []).filter(r => r.agent === agent && r.retracted).length;
+    await saveMonthlyRetractCount(agent, yy, mm, exact);
+  }
+  items.splice(i, 1);
+  await savePendingRetractions(items);
+  logAudit('Admin', 'Rétractation en attente rattachée manuellement', `${it.num || it.nom || '?'} — ${billingMonthLabel(mv)}`);
+  billingInvalidate();
+  clearRenderCaches();
+  showToast('✅ Rétractation rattachée.', 'ok', 3500);
+  renderPendingRetractionsPanel();
+  renderBillingAgentSheet();
+  renderBillingImportSummary();
 }
 
 let billingContractIndexCache = null;
