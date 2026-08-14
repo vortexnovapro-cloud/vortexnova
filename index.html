@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r100';
+const APP_VERSION = '2026-08-14-r101';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -12717,16 +12717,22 @@ async function renderCash(){
 
 // Classement "argent réel" partagé entre le hero (rang affiché) et la liste du classement, pour que
 // les deux soient toujours parfaitement cohérents (même calcul, même total, même ordre).
+// ⚠️ Utilise EXACTEMENT le même moteur que le hero Cash "Ton salaire brut réel, maintenant"
+// (computeAgentRealTimeSalary, fixe au prorata des jours ouvrés déjà écoulés) — avant, ce classement
+// utilisait estimateSalaryMonthReal (fixe en entier, comme si le mois était déjà terminé), ce qui
+// affichait un montant différent de celui du haut de la page pour la même personne. Les deux montrent
+// maintenant toujours le même chiffre.
 async function computeSalaryLeaderboard(){
   const now = nowMA();
-  const supervisionBonusLb = await supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1);
+  const totalWorkingDaysThisMonth = workingDaysInMonth(now.getFullYear(), now.getMonth()+1);
+  const elapsedWorkingDaysThisMonth = workingDaysElapsedInMonth();
+  const prorataThisMonth = totalWorkingDaysThisMonth>0 ? Math.min(1, elapsedWorkingDaysThisMonth/totalWorkingDaysThisMonth) : 0;
+  const firstOfMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const dateRange = { from: firstOfMonthStr, to: todayStr() };
   const rows = await Promise.all(config.agents.map(async ag=>{
     const isIndep = isIndependant(ag);
-    const monthStats = await monthlyStats(ag, now.getFullYear(), now.getMonth()+1);
-    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
-    const res = await estimateSalaryMonthReal(ag, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
-    const supervisorBonus = isSupervisor(ag) ? (supervisionBonusLb.dh[ag] || 0) : 0;
-    return { agent: ag, total: res.total + supervisorBonus, contracts: res.status.realized, isIndep };
+    const rt = await computeAgentRealTimeSalary(ag, now.getFullYear(), now.getMonth()+1, prorataThisMonth, dateRange);
+    return { agent: ag, total: rt.total, contracts: rt.contractsRealized, isIndep };
   }));
   rows.sort((a,b)=> b.total !== a.total ? b.total - a.total : a.agent.localeCompare(b.agent));
   rows.forEach((r,i)=> r.rank = i+1);
