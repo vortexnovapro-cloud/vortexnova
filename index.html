@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r101';
+const APP_VERSION = '2026-08-14-r102';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3637,7 +3637,7 @@ function renderAgentChips(){
     const inProbation = isInProbation(name);
     const term = getAgentTermination(name);
 
-    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🎧🎓 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
+    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
       <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
       ${!isSup ? `<button onclick="toggleADFTrainer('${name.replace(/'/g,"\\'")}')" title="Basculer « formateur ADF »" style="color:#4a9891;margin-right:2px;">🎓</button>` : ''}
       <button onclick="toggleEcouteAutorisee('${name.replace(/'/g,"\\'")}')" title="Basculer l'autorisation d'être écouté (écoute)" style="color:var(--accent);margin-right:2px;${ecouteBtnStyle}">🎧</button>
@@ -3646,7 +3646,7 @@ function renderAgentChips(){
       <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
       ${noObj ? `<button onclick="editStatusLabel('${name.replace(/'/g,"\\'")}')" title="Renommer le libellé affiché (ex: Backoffice, Confirmé...)" style="color:var(--muted);margin-right:2px;">✏️</button>` : ''}
       <button onclick="setAgentStartDate('${name.replace(/'/g,"\\'")}')" title="Date de début — les retards/absences/prime d'assiduité ne comptent jamais avant cette date. Si elle tombe en cours de mois, objectif mini/fixe/primes de ce mois-là sont automatiquement réduits au prorata des jours ouvrés restants (utile pour un nouvel agent)" style="color:#4a9891;margin-right:2px;">📅</button>
-      <button onclick="setAgentTraining('${name.replace(/'/g,"\\'")}')" title="Formation écoute nouveau arrivant : 0 objectif pendant N jours, réglable, s'arrête toute seule" style="color:#3d8bfd;margin-right:2px;">🎧🎓</button>
+      <button onclick="setAgentTraining('${name.replace(/'/g,"\\'")}')" title="Formation écoute nouveau arrivant : 0 objectif pendant N jours, réglable, s'arrête toute seule (icône distincte de 🎧 Écoute autorisée et 🎓 Formateur ADF, qui sont deux autres réglages)" style="color:#3d8bfd;margin-right:2px;">🌱</button>
       <button onclick="setAgentProbation('${name.replace(/'/g,"\\'")}')" title="Période d'essai : affiche un rappel « zéro tolérance retard/absence » pendant N jours, réglable, disparaît tout seul" style="color:var(--red);margin-right:2px;">⏳</button>
       <button onclick="setAgentPassword('${name.replace(/'/g,"\\'")}')" title="Définir/changer le mot de passe" style="margin-right:4px;">🔑</button>
       <button onclick="terminateAgent('${name.replace(/'/g,"\\'")}')" title="Licencier : enregistre son dernier jour travaillé et calcule automatiquement son solde de tout compte (prorata) sur la paye du mois concerné." style="color:var(--muted);margin-right:2px;">🚪</button>
@@ -3660,7 +3660,7 @@ function hasNoObjectif(agent){
   return !!(config.agentsNoObjectif && config.agentsNoObjectif[agent] === true);
 }
 
-// « Sans objectif » effectif = statut permanent (🎯) OU formation écoute en cours (🎧🎓, auto-expirante).
+// « Sans objectif » effectif = statut permanent (🎯) OU formation écoute en cours (🌱, auto-expirante).
 // Utilisé PARTOUT où le statut « sans objectif » compte pour la paie (getAgentPay) — un seul endroit à
 // modifier, tout le reste de l'appli (déjà câblé sur pay.noObjectif / hasNoObjectif) suit automatiquement.
 function effectiveNoObjectif(agent){
@@ -3712,6 +3712,27 @@ function disciplineFrom(agent){
   return perso || global;
 }
 
+// Convertit une date tapée à la main dans une des deux boîtes de dialogue (arrivée, départ) vers le
+// format ISO (AAAA-MM-JJ) attendu par tous les calculs de prorata. Avant, seul le format ISO strict
+// était accepté : quelqu'un qui tape naturellement 14/08/2026 (habitude française) se voyait juste
+// rejeté par une alerte, sans que la date soit enregistrée — et rien n'indiquait que RIEN n'avait été
+// sauvegardé si l'alerte était refermée trop vite. On accepte maintenant aussi JJ/MM/AAAA et JJ-MM-AAAA
+// en plus de AAAA-MM-JJ, convertis silencieusement vers l'ISO. Renvoie null si vraiment illisible.
+function parseAdminDateInput(raw){
+  const trimmed = (raw || '').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const m = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m){
+    const day = m[1].padStart(2, '0'), month = m[2].padStart(2, '0'), year = m[3];
+    // Sécurité : rejette une date qui n'existe pas (32/13/2026) plutôt que de l'accepter telle quelle.
+    const d = new Date(`${year}-${month}-${day}T00:00:00`);
+    if(d.getFullYear() == year && (d.getMonth()+1) == Number(month) && d.getDate() == Number(day)){
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return null;
+}
+
 // ============================================================
 // 🚪 LICENCIEMENT / DÉPART — solde de tout compte
 // ============================================================
@@ -3747,12 +3768,12 @@ async function terminateAgent(name){
   const term = getAgentTermination(name);
   const current = term ? term.lastDay : '';
   const val = window.prompt(
-    `Dernier jour travaillé de ${name}, au format AAAA-MM-JJ.\n\n` +
+    `Dernier jour travaillé de ${name} (JJ/MM/AAAA ou AAAA-MM-JJ, ex: 14/08/2026).\n\n` +
     `À partir du lendemain : plus aucun retard/absence compté, plus attendu au pointage, sorti des classements et de l'Arena.\n` +
     `Son salaire du mois de départ est automatiquement réduit au prorata des jours ouvrés réellement travaillés (comme une arrivée en cours de mois, mais à l'envers) — c'est son solde de tout compte, à retrouver dans son tableau habituel (Admin → Facturation & Paie) et à payer avec la paye normale du mois.\n\n` +
     `⚠️ Ceci calcule uniquement le salaire/primes/commissions au prorata — pas d'indemnité de licenciement, de préavis ni de congés payés (à ajouter toi-même en prime manuelle si dus). Vérifie le solde légal complet avec ton comptable.\n\n` +
     `Laisse vide pour annuler un licenciement déjà enregistré.`,
-    current);
+    current ? current.split('-').reverse().join('/') : '');
   if(val === null) return;
   const trimmed = val.trim();
   if(!config.agentsTerminated) config.agentsTerminated = {};
@@ -3761,19 +3782,21 @@ async function terminateAgent(name){
     delete config.agentsTerminated[name];
     await saveConfigSilent();
     logAudit('Admin', `Licenciement annulé : ${name}`, '');
-  } else if(!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)){
-    alert('Format invalide. Utilise AAAA-MM-JJ, par exemple 2026-08-06.');
-    return;
   } else {
-    const startDate = getAgentStartDate(name);
-    if(startDate && trimmed < startDate){
-      alert(`Le dernier jour (${trimmed}) est avant sa date d'arrivée (${startDate}). Corrige l'une des deux dates.`);
+    const iso = parseAdminDateInput(trimmed);
+    if(!iso){
+      alert(`Date illisible : « ${trimmed} ». Utilise JJ/MM/AAAA (ex: 14/08/2026) ou AAAA-MM-JJ. Rien n'a été enregistré — recommence.`);
       return;
     }
-    if(!confirm(`Confirmer le départ de ${name}, dernier jour travaillé le ${trimmed.split('-').reverse().join('/')} ?\n\nSon solde de tout compte (prorata du mois de départ) sera calculé automatiquement. Il reste dans les écrans de paie de ce mois-ci — archive-le (📦) une fois le solde payé pour qu'il sorte définitivement des mois suivants.`)) return;
-    config.agentsTerminated[name] = { lastDay: trimmed, terminatedAt: new Date().toISOString() };
+    const startDate = getAgentStartDate(name);
+    if(startDate && iso < startDate){
+      alert(`Le dernier jour (${iso.split('-').reverse().join('/')}) est avant sa date d'arrivée (${startDate.split('-').reverse().join('/')}). Corrige l'une des deux dates. Rien n'a été enregistré.`);
+      return;
+    }
+    if(!confirm(`Confirmer le départ de ${name}, dernier jour travaillé le ${iso.split('-').reverse().join('/')} ?\n\nSon solde de tout compte (prorata du mois de départ) sera calculé automatiquement. Il reste dans les écrans de paie de ce mois-ci — archive-le (📦) une fois le solde payé pour qu'il sorte définitivement des mois suivants.`)) return;
+    config.agentsTerminated[name] = { lastDay: iso, terminatedAt: new Date().toISOString() };
     await saveConfigSilent();
-    logAudit('Admin', `Licenciement enregistré : ${name}`, `dernier jour ${trimmed}`);
+    logAudit('Admin', `Licenciement enregistré : ${name}`, `dernier jour ${iso}`);
   }
   billingInvalidate();
   clearRenderCaches();
@@ -3782,7 +3805,7 @@ async function terminateAgent(name){
 }
 
 // ============================================================
-// 🎧🎓 FORMATION ÉCOUTE NOUVEAU ARRIVANT — 0 objectif pendant N jours
+// 🌱 FORMATION ÉCOUTE NOUVEAU ARRIVANT — 0 objectif pendant N jours
 // ============================================================
 // Statut temporaire et auto-expirant (contrairement à « sans objectif » 🎯 qui est permanent) : pendant
 // les N jours choisis, l'agent n'a aucun quota obligatoire — comme hasNoObjectif, dont il réutilise tout
@@ -3934,17 +3957,19 @@ function renderPointageStartPanel(){
 
 async function setAgentStartDate(name){
   const current = getAgentStartDate(name) || '';
-  const val = window.prompt(`Date de début de ${name} au format AAAA-MM-JJ (ex: 2026-08-06).\nAvant cette date, aucun retard/absence ne sera compté pour cet agent, et sa prime d'assiduité ne sera jamais affectée.\nSi cette date tombe en cours d'un mois, l'objectif mini, le fixe, la prime fixe et la prime d'assiduité de ce mois-là sont automatiquement réduits au prorata des jours ouvrés qu'il lui reste à travailler.\nLaisse vide pour retirer.`, current);
+  const val = window.prompt(`Date de début de ${name} (JJ/MM/AAAA ou AAAA-MM-JJ, ex: 06/08/2026).\nAvant cette date, aucun retard/absence ne sera compté pour cet agent, et sa prime d'assiduité ne sera jamais affectée.\nSi cette date tombe en cours d'un mois, l'objectif mini, le fixe, la prime fixe et la prime d'assiduité de ce mois-là sont automatiquement réduits au prorata des jours ouvrés qu'il lui reste à travailler.\nLaisse vide pour retirer.`, current ? current.split('-').reverse().join('/') : '');
   if(val === null) return;
   const trimmed = val.trim();
   if(!config.agentsStartDate) config.agentsStartDate = {};
   if(trimmed === ''){
     delete config.agentsStartDate[name];
-  } else if(!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)){
-    alert('Format invalide. Utilise AAAA-MM-JJ, par exemple 2026-08-06.');
-    return;
   } else {
-    config.agentsStartDate[name] = trimmed;
+    const iso = parseAdminDateInput(trimmed);
+    if(!iso){
+      alert(`Date illisible : « ${trimmed} ». Utilise JJ/MM/AAAA (ex: 06/08/2026) ou AAAA-MM-JJ. Rien n'a été enregistré — recommence.`);
+      return;
+    }
+    config.agentsStartDate[name] = iso;
   }
   await saveConfigSilent();
   renderAgentChips();
