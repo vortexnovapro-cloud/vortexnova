@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r103';
+const APP_VERSION = '2026-08-14-r105';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2206,6 +2206,13 @@ function compareAppVersions(v1, v2){
   if(p1.date !== p2.date) return p1.date < p2.date ? -1 : 1;
   return p1.rev - p2.rev;
 }
+
+// Dernier config connu comme étant EXACTEMENT celui du serveur (juste après le chargement initial, ou
+// juste après un save réussi). Sert de référence pour la fusion 3-voies dans saveConfigSilent() — voir
+// juste avant cette fonction pour le pourquoi (évite qu'un onglet resté ouvert avec une version plus
+// ancienne en mémoire n'efface silencieusement un changement fait entre-temps par un autre onglet/appareil,
+// ex: un licenciement enregistré ailleurs qui disparaît quand un réglage sans rapport est sauvé ici).
+let CONFIG_BASELINE = null;
 
 let config = {
   agents: [],
@@ -3052,6 +3059,9 @@ async function loadConfig(){
     if(res && res.value){
       const loaded = JSON.parse(res.value);
       config = Object.assign({}, config, loaded);
+      // Référence pour la fusion 3-voies au prochain save (voir CONFIG_BASELINE / saveConfigSilent) —
+      // capturée ICI, avant toute migration ci-dessous qui va elle-même modifier `config` en mémoire.
+      CONFIG_BASELINE = JSON.parse(JSON.stringify(config));
       if(!config.agentsIndep) config.agentsIndep = {};
       if(!config.agentsSupervisor) config.agentsSupervisor = {};
       if(!config.agentsNoObjectif) config.agentsNoObjectif = {};
@@ -3128,8 +3138,78 @@ async function loadConfig(){
   loadProdConfigUI();
   checkAppVersionStatus();
 }
+// ⚠️ CORRECTIF ANTI-ÉCRASEMENT — champs « par agent » de config (licenciement, archivage, date
+// d'embauche, indépendant, superviseur, sans-objectif, etc.). `config` est UN SEUL gros objet sauvé
+// intégralement à chaque save : si un onglet reste ouvert avec une version en mémoire chargée AVANT
+// qu'un changement soit fait ailleurs (autre onglet, autre appareil), le moindre save déclenché dans cet
+// onglet-là (même pour un réglage totalement sans rapport) réécrase tout le document et efface
+// silencieusement le changement fait entre-temps ailleurs — ex: un licenciement enregistré sur un
+// appareil disparaît parce qu'un autre onglet, resté ouvert avec l'ancienne version, sauve après coup un
+// réglage horaire. C'est exactement le genre de bug qui fait qu'un agent licencié réapparaît « actif »
+// (paie non proratée) sans qu'aucune action ne l'ait explicitement annulé.
+//
+// Fusion à 3 voies avant CHAQUE écriture, sur les champs concernés : on compare la valeur BASELINE
+// (dernier état confirmé serveur, capturé au chargement / au save précédent) à MINE (config en mémoire
+// dans cet onglet) et à THEIRS (ce qui est actuellement sur le serveur, relu juste avant d'écrire) —
+// par CLÉ (nom d'agent) pour les dictionnaires, par ÉLÉMENT pour les tableaux :
+//   - si MINE diffère de BASELINE pour cette clé → on l'a changée nous-même depuis le dernier sync → la
+//     nôtre gagne (y compris une suppression).
+//   - sinon si THEIRS diffère de BASELINE → quelqu'un d'autre l'a changée entre-temps, pas nous → la
+//     sienne gagne.
+//   - sinon → personne n'a touché cette clé → inchangé.
+// Résultat : deux onglets peuvent modifier deux agents DIFFÉRENTS en parallèle sans que l'un efface le
+// travail de l'autre. Seule une vraie modification concurrente de LA MÊME clé peut encore se
+// « perdre » (cas rare, et c'est alors la dernière écriture qui gagne, comme avant ce correctif).
+const CONFIG_MERGE_DICT_FIELDS = ['agentsTerminated','agentsIndep','agentsSupervisor','agentsNoObjectif',
+  'agentsStatusLabel','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate'];
+const CONFIG_MERGE_ARRAY_FIELDS = ['archivedAgents'];
+
+function mergeConfigDictField(baseline, mine, theirs){
+  baseline = baseline || {}; mine = mine || {}; theirs = theirs || {};
+  const keys = new Set([...Object.keys(baseline), ...Object.keys(mine), ...Object.keys(theirs)]);
+  const out = {};
+  keys.forEach(k=>{
+    const bStr = JSON.stringify(baseline[k] ?? null);
+    const mStr = JSON.stringify(mine[k] ?? null);
+    const tStr = JSON.stringify(theirs[k] ?? null);
+    let val;
+    if(mStr !== bStr) val = mine[k];        // modifié ici depuis le dernier sync → priorité
+    else if(tStr !== bStr) val = theirs[k]; // modifié ailleurs, pas ici → on prend la leur
+    else val = mine[k];                     // ni l'un ni l'autre n'a changé
+    if(val !== undefined && val !== null) out[k] = val;
+  });
+  return out;
+}
+
+function mergeConfigArrayField(baseline, mine, theirs){
+  const bSet = new Set(baseline||[]), mSet = new Set(mine||[]), tSet = new Set(theirs||[]);
+  const all = new Set([...bSet, ...mSet, ...tSet]);
+  const out = [];
+  all.forEach(item=>{
+    const inBaseline = bSet.has(item), inMine = mSet.has(item), inTheirs = tSet.has(item);
+    if(!inBaseline){ if(inMine || inTheirs) out.push(item); }      // ajouté par l'un des deux côtés
+    else { if(inMine && inTheirs) out.push(item); }                // gardé seulement si NI l'un ni l'autre ne l'a retiré
+  });
+  return out;
+}
+
 async function saveConfigSilent(){
+  try{
+    if(CONFIG_BASELINE){
+      const res = await storageGet('config');
+      if(res && res.value){
+        const remote = JSON.parse(res.value);
+        CONFIG_MERGE_DICT_FIELDS.forEach(f=>{
+          config[f] = mergeConfigDictField(CONFIG_BASELINE[f], config[f], remote[f]);
+        });
+        CONFIG_MERGE_ARRAY_FIELDS.forEach(f=>{
+          config[f] = mergeConfigArrayField(CONFIG_BASELINE[f], config[f], remote[f]);
+        });
+      }
+    }
+  }catch(e){ console.error('saveConfigSilent: fusion anti-écrasement', e); }
   await storageSet('config', JSON.stringify(config));
+  CONFIG_BASELINE = JSON.parse(JSON.stringify(config));
 }
 
 function populateAgentSelect(){
@@ -16571,9 +16651,16 @@ async function billingComputeAgent(agent, monthVal){
   let salary = salaryBase, displayPay = pay;
   const now = nowMA();
   const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth() + 1);
+  // 🔎 Toujours calculé (même hors mois en cours) — sert uniquement à l'affichage du petit repère
+  // « Statut licenciement/embauche pris en compte » sous le tableau, pour que ce que le CRM sait
+  // réellement de cet agent (licencié ou non, depuis quand) soit visible d'un coup d'œil sur l'écran
+  // lui-même, sans avoir besoin d'ouvrir la console développeur.
+  const terminationInfo = getAgentTermination(agent);
+  const startDateInfo = getAgentStartDate(agent);
+  const monthBoundaryFactor = proratedMonthFactor(agent, year, month);
+  const asOfTodayFactorDebug = isCurrentMonth ? proratedMonthFactorAsOfToday(agent, year, month) : null;
   if(isCurrentMonth){
-    const monthBoundaryFactor = proratedMonthFactor(agent, year, month);
-    const asOfTodayFactor = proratedMonthFactorAsOfToday(agent, year, month);
+    const asOfTodayFactor = asOfTodayFactorDebug;
     const ratio = monthBoundaryFactor > 0 ? Math.min(1, asOfTodayFactor / monthBoundaryFactor) : 0;
     const fixedFull = pay.baseSalary + pay.primeFixeMensuelle + (assiduiteAcquise !== false ? pay.primeAssiduite : 0);
     const fixedAsOfToday = Math.round(fixedFull * ratio);
@@ -16586,6 +16673,22 @@ async function billingComputeAgent(agent, monthVal){
     };
   }
 
+  // 📊 PRIME DE SUPERVISION — MANQUANTE ICI JUSQU'ICI. Ce tableau (estimateSalaryMonthReal) n'a jamais
+  // inclus la prime de supervision, contrairement à Mon argent (Cash) et au classement, qui l'ajoutent
+  // tous les deux. Résultat pour un superviseur : le total affiché ici était toujours inférieur à celui
+  // de Cash, d'un montant pouvant être important (contrats de toute l'équipe encadrée). Corrigé avec le
+  // même calcul que partout ailleurs (supervisorMonthlyBonus) — jamais deux moteurs différents pour la
+  // même prime.
+  let supervisorBonusAmt = 0, supervisorBonusContracts = 0;
+  if(isSupervisor(agent)){
+    const supBonusMap = await supervisorMonthlyBonus(year, month);
+    supervisorBonusAmt = supBonusMap.dh[agent] || 0;
+    supervisorBonusContracts = supBonusMap.contracts[agent] || 0;
+  }
+  if(supervisorBonusAmt){
+    salary = { ...salary, brut: salary.brut + supervisorBonusAmt, total: salary.total + supervisorBonusAmt, supervisorBonus: supervisorBonusAmt, supervisorBonusContracts };
+  }
+
   return {
     agent, monthVal, year, month, pay: displayPay, stats, assiduiteAcquise, paySource,
     importedTotal: rows.length,
@@ -16596,7 +16699,8 @@ async function billingComputeAgent(agent, monthVal){
     rows, validRows, retractedRows,
     returns: ret,
     salary,
-    imported: !!prodData.importedAt
+    imported: !!prodData.importedAt,
+    terminationInfo, startDateInfo, monthBoundaryFactor, asOfTodayFactor: asOfTodayFactorDebug, isCurrentMonth
   };
 }
 
@@ -16653,6 +16757,23 @@ function billingAgentSheetHTML(d, forImage){
 
   html += `<div style="font-size:20px; font-weight:800; margin-bottom:4px;">${escapeHtml(title)}</div>
     <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">${d.pay.isIndep ? '🧑‍💼 Indépendant' : (d.pay.noObjectif ? '🎯 Sans objectif' : '📋 Salarié')}${d.pay.isSupervisor ? ' · 📊 Superviseur' : ''}</div>`;
+
+  // 🔎 Repère visible directement sur l'écran — ce que le CRM sait RÉELLEMENT de cet agent en ce moment
+  // (licenciement/embauche pris en compte, et facteur de prorata qui en résulte pour ce mois précis).
+  // But : rendre ce statut vérifiable d'un coup d'œil, sans avoir besoin d'ouvrir la console développeur.
+  if(!forImage){
+    const pct = f => `${Math.round(f*100)}%`;
+    const termTxt = d.terminationInfo
+      ? `🚪 Licencié — dernier jour travaillé : <b>${d.terminationInfo.lastDay.split('-').reverse().join('/')}</b>`
+      : `🚪 Aucun licenciement enregistré pour cet agent`;
+    const startTxt = d.startDateInfo ? ` · 📅 Embauché le ${d.startDateInfo.split('-').reverse().join('/')}` : '';
+    const factorTxt = d.monthBoundaryFactor < 1
+      ? ` · prorata du mois : <b>${pct(d.monthBoundaryFactor)}</b>${d.isCurrentMonth ? ` (dont ${pct(d.asOfTodayFactor)} déjà couru à ce jour)` : ''}`
+      : ` · mois complet (100%)`;
+    html += `<div style="margin-bottom:14px; padding:8px 12px; border-radius:8px; background:var(--panel2); border:1px dashed var(--border); font-size:12px; color:var(--muted);">
+      ${termTxt}${startTxt}${factorTxt}
+    </div>`;
+  }
 
   // --- Bandeau chiffres clés
   const cards = [
@@ -16787,18 +16908,20 @@ function billingAgentSheetHTML(d, forImage){
   if(d.pay.primeFixeMensuelle) line('Prime fixe mensuelle', d.pay.primeFixeMensuelle, { plus: true });
   line(`Prime d'assiduité${d.assiduiteAcquise ? '' : ' — perdue (3e retard/absence)'}`, d.assiduiteAcquise ? d.pay.primeAssiduite : 0, { plus: true, color: d.assiduiteAcquise ? 'var(--green)' : 'var(--muted)' });
   const st = d.salary.status || {};
+  const supBonus = d.salary.supervisorBonus || 0;
   if(!st.isIndep){
-    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0)), { plus: true });
+    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0) - supBonus), { plus: true });
     if(st.primeObjectif) line('Prime objectif atteint', st.primeObjectif, { plus: true, color: 'var(--green)' });
     if(st.primeExtra) line(`Bonus ${st.extraCount} contrat${st.extraCount>1?'s':''} au-delà de l'objectif`, st.primeExtra, { plus: true, color: 'var(--green)' });
   } else {
-    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0), { plus: true });
+    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0) - supBonus, { plus: true });
   }
   (d.salary.manualPrimes || []).forEach(p => {
     const amt = p.type === 'occurrences' ? (Number(p.amount) || 0) * (Number(p.count) || 1) : (Number(p.amount) || 0);
     const applied = p.type !== 'conditional' || (st.realized || 0) >= (Number(p.targetObjective) || 0);
     if(applied) line(`🎁 ${escapeHtml(p.label || 'Prime')}`, amt, { plus: true, color: 'var(--gold)' });
   });
+  if(supBonus) line(`📊 Prime supervision (${d.salary.supervisorBonusContracts || 0} contrats équipe)`, supBonus, { plus: true, color: 'var(--gold)' });
   line('SALAIRE BRUT', d.salary.brut, { bold: true, top: true });
 
   // Retenues, regroupées par nature pour rester lisible (le détail jour par jour reste dans le CSV)
