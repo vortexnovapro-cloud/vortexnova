@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r105';
+const APP_VERSION = '2026-08-14-r107';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -8318,9 +8318,35 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   ]);
   const clockedInToday = todayLog && todayLog.events && todayLog.events.length > 0;
   const totalWorkingDaysMonth = workingDaysInMonth(year, month);
-  const effectiveProrata = (todayIncludedInRange && !clockedInToday && totalWorkingDaysMonth > 0)
-    ? Math.max(0, prorata - (1/totalWorkingDaysMonth))
-    : prorata;
+
+  // ⚠️ CORRECTIF DOUBLE-PRORATA — pay.baseSalary / pay.primeFixeMensuelle / pay.primeAssiduite (ci-dessus)
+  // sont DÉJÀ réduits par getAgentPay() au facteur de la fenêtre du mois (embauche/licenciement en cours
+  // de mois — proratedMonthFactor). Multiplier ENCORE par `prorata` (jours écoulés / jours du mois ENTIER,
+  // calculé par l'appelant SANS connaître l'embauche/licenciement) appliquait la même réduction UNE
+  // DEUXIÈME fois pour un agent embauché ou licencié en cours de mois — le fixe affiché finissait environ
+  // au CARRÉ du bon facteur (largement sous-évalué) au lieu d'une seule fois. Cas réel : un agent licencié
+  // après 9 jours ouvrés sur 21 (43%), 3500 DH de fixe réglé → 1500 DH correct (43% une fois, comme dans
+  // « Facturation & Paie », qui n'applique le facteur qu'UNE fois) — mais ce calcul-ci redonnait 643 DH
+  // (43% × 43% ≈ 18,7%), un écart énorme et incompréhensible entre les deux écrans pour le même agent.
+  //
+  // Correctif : on exprime la réduction restant à appliquer comme un RATIO par rapport au facteur DÉJÀ
+  // intégré dans `pay` (proratedMonthFactor), au lieu de réutiliser `prorata` brut tel quel :
+  //   raw × factorDéjàAppliqué × (asOf / factorDéjàAppliqué) = raw × asOf  →  un seul facteur effectif.
+  // Pour un agent à temps plein sur tout le mois (factorDéjàAppliqué=1), ce ratio = asOf = comportement
+  // strictement inchangé. `asOf` est plafonné à dateRange.to (pas forcément aujourd'hui — une fenêtre
+  // personnalisée comme « Dépenses temps réel » peut porter sur une autre période), avec le même
+  // ajustement « pas encore pointé aujourd'hui » qu'avant, seulement s'il s'agit bien d'aujourd'hui ET que
+  // ce jour est encore dans la fenêtre active de cet agent (pas déjà licencié avant, pas pas-encore-arrivé).
+  const monthBoundaryFactorRTS = proratedMonthFactor(agent, year, month);
+  const termForRTS = getAgentTermination(agent);
+  const startForRTS = getAgentStartDate(agent);
+  const todayStillOpenForAgent = (!startForRTS || startForRTS <= todayStr()) && (!termForRTS || !termForRTS.lastDay || termForRTS.lastDay >= todayStr());
+  let asOfFactorRTS = proratedMonthFactorAsOf(agent, year, month, (dateRange && dateRange.to) ? dateRange.to : todayStr());
+  if(todayIncludedInRange && !clockedInToday && todayStillOpenForAgent && totalWorkingDaysMonth > 0){
+    asOfFactorRTS = Math.max(0, asOfFactorRTS - (1/totalWorkingDaysMonth));
+  }
+  const effectiveProrata = monthBoundaryFactorRTS > 0 ? Math.min(1, asOfFactorRTS / monthBoundaryFactorRTS) : 0;
+
   const fixedFull = (pay.baseSalary||0) + (pay.primeFixeMensuelle||0) + (assiduiteAcquise ? (pay.primeAssiduite||0) : 0);
   // BUG CORRIGÉ : décomposé en 2 (base+primeFixe / primeAssiduite) avec le MÊME effectiveProrata que le
   // total plus bas — la carte "Ton salaire du mois, en détail" (Cash) recalculait ces 2 lignes de son
@@ -10860,18 +10886,22 @@ function proratedMonthFactor(agent, year, month){
 // Utilisée UNIQUEMENT par billingComputeAgent pour l'affichage du tableau Admin du mois en cours — ne
 // jamais l'utiliser à la place de proratedMonthFactor dans un calcul qui doit rester valable même une
 // fois le mois terminé (ça figerait le salaire à sa valeur d'"aujourd'hui" pour toujours).
-function proratedMonthFactorAsOfToday(agent, year, month){
+// Version générale de proratedMonthFactorAsOfToday : plafonne à une date "asOfDateStr" quelconque au lieu
+// d'aujourd'hui forcément — nécessaire pour computeAgentRealTimeSalary, qui peut recevoir une fenêtre
+// personnalisée (ex: "Dépenses temps réel" avec une plage de dates choisie par l'admin, pas forcément
+// jusqu'à aujourd'hui). proratedMonthFactorAsOfToday(agent,year,month) reste dispo comme raccourci pour
+// le cas standard (asOfDateStr = aujourd'hui).
+function proratedMonthFactorAsOf(agent, year, month, asOfDateStr){
   const startDate = getAgentStartDate(agent);
   const term = getAgentTermination(agent);
   const lastDay = term ? term.lastDay : null;
-  const today = todayStr();
   const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
   const monthStartStr = `${monthPrefix}01`;
   const daysInMonth = new Date(year, month, 0).getDate();
   const monthEndStr = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
   const effectiveStart = (startDate && startDate > monthStartStr) ? startDate : monthStartStr;
   let effectiveEnd = (lastDay && lastDay < monthEndStr) ? lastDay : monthEndStr;
-  if(today < effectiveEnd) effectiveEnd = today; // le seul ajout par rapport à proratedMonthFactor
+  if(asOfDateStr < effectiveEnd) effectiveEnd = asOfDateStr; // le seul ajout par rapport à proratedMonthFactor
   if(effectiveStart > monthEndStr) return 0;
   if(lastDay && lastDay < monthStartStr) return 0;
   if(effectiveStart > effectiveEnd) return 0;
@@ -10882,6 +10912,9 @@ function proratedMonthFactorAsOfToday(agent, year, month){
   const fullMonthWD = totalWD;
   const workedWD = fromStart - (fullMonthWD - fromZeroToEnd);
   return Math.max(0, Math.min(1, workedWD / totalWD));
+}
+function proratedMonthFactorAsOfToday(agent, year, month){
+  return proratedMonthFactorAsOf(agent, year, month, todayStr());
 }
 
 // getAgentPay(agent) seul (sans année/mois) renvoie toujours les valeurs BRUTES telles que réglées par
@@ -16659,8 +16692,31 @@ async function billingComputeAgent(agent, monthVal){
   const startDateInfo = getAgentStartDate(agent);
   const monthBoundaryFactor = proratedMonthFactor(agent, year, month);
   const asOfTodayFactorDebug = isCurrentMonth ? proratedMonthFactorAsOfToday(agent, year, month) : null;
+  // 🔬 Trace numérique de chaque étape — capturée AVANT toute réduction pour repérer immédiatement à quel
+  // endroit précis un montant cesse d'être réduit, sans avoir besoin de la console développeur.
+  const debugTrace = {
+    payBaseSalaryAfterMonthFactor: pay.baseSalary,
+    payPrimeFixeAfterMonthFactor: pay.primeFixeMensuelle,
+    salaryBaseBrutBeforeRatio: salaryBase.brut,
+    salaryBaseTotalBeforeRatio: salaryBase.total
+  };
   if(isCurrentMonth){
-    const asOfTodayFactor = asOfTodayFactorDebug;
+    let asOfTodayFactor = asOfTodayFactorDebug;
+    // Parité avec Cash (Mon argent) : la part du jour même n'est comptée que si l'agent a déjà pointé
+    // aujourd'hui — sinon ce tableau afficherait une avance sur une journée pas encore travaillée, ce qui
+    // créait un écart résiduel avec le chiffre « temps réel » de Cash pour le même agent au même instant
+    // (Cash retient déjà cet ajustement depuis longtemps, ce tableau ne le faisait pas).
+    if(!pay.isIndep && isWorkingDay(todayStr())){
+      const term2 = getAgentTermination(agent);
+      const start2 = getAgentStartDate(agent);
+      const todayStillOpen = (!start2 || start2 <= todayStr()) && (!term2 || !term2.lastDay || term2.lastDay >= todayStr());
+      const totalWD2 = workingDaysInMonth(year, month);
+      if(todayStillOpen && totalWD2 > 0){
+        const todayLog = await getDayLog(agent, todayStr());
+        const clockedInToday = todayLog && todayLog.events && todayLog.events.length > 0;
+        if(!clockedInToday) asOfTodayFactor = Math.max(0, asOfTodayFactor - (1/totalWD2));
+      }
+    }
     const ratio = monthBoundaryFactor > 0 ? Math.min(1, asOfTodayFactor / monthBoundaryFactor) : 0;
     const fixedFull = pay.baseSalary + pay.primeFixeMensuelle + (assiduiteAcquise !== false ? pay.primeAssiduite : 0);
     const fixedAsOfToday = Math.round(fixedFull * ratio);
@@ -16700,7 +16756,8 @@ async function billingComputeAgent(agent, monthVal){
     returns: ret,
     salary,
     imported: !!prodData.importedAt,
-    terminationInfo, startDateInfo, monthBoundaryFactor, asOfTodayFactor: asOfTodayFactorDebug, isCurrentMonth
+    terminationInfo, startDateInfo, monthBoundaryFactor, asOfTodayFactor: asOfTodayFactorDebug, isCurrentMonth,
+    debugTrace, rawPayBaseSalary: getAgentPay(agent).baseSalary
   };
 }
 
@@ -16770,8 +16827,14 @@ function billingAgentSheetHTML(d, forImage){
     const factorTxt = d.monthBoundaryFactor < 1
       ? ` · prorata du mois : <b>${pct(d.monthBoundaryFactor)}</b>${d.isCurrentMonth ? ` (dont ${pct(d.asOfTodayFactor)} déjà couru à ce jour)` : ''}`
       : ` · mois complet (100%)`;
+    // 🔬 Trace numérique — visible uniquement si le prorata devrait s'appliquer (facteur < 100%), pour
+    // repérer d'un coup d'œil à QUEL endroit précis un montant cesse d'être réduit, sans console.
+    const traceTxt = d.monthBoundaryFactor < 1 ? `<br>🔬 fixe réglé (brut, sans prorata) : ${d.rawPayBaseSalary} DH →
+      après prorata mois (getAgentPay) : ${d.debugTrace.payBaseSalaryAfterMonthFactor} DH →
+      brut du tableau AVANT le correctif « à ce jour » : ${d.debugTrace.salaryBaseBrutBeforeRatio} DH →
+      <b>brut final affiché : ${Math.round(d.salary.brut)} DH</b>` : '';
     html += `<div style="margin-bottom:14px; padding:8px 12px; border-radius:8px; background:var(--panel2); border:1px dashed var(--border); font-size:12px; color:var(--muted);">
-      ${termTxt}${startTxt}${factorTxt}
+      ${termTxt}${startTxt}${factorTxt}${traceTxt}
     </div>`;
   }
 
