@@ -784,6 +784,7 @@ function tryDeviceGateAdmin(){
       <div class="clock" id="liveClock">--:--:--</div>
       <div class="schedule-detail" id="scheduleDetail"></div>
       <div id="pointageGreeting" style="display:none;"></div>
+      <div id="probationBanner" style="display:none; text-align:center; background: var(--red-bg); color: var(--red); border-radius:10px; padding:10px 14px; font-size:13px; font-weight:700; margin-bottom:18px;"></div>
       <div id="inactivityReturnMsg" style="display:none; text-align:center; background: var(--amber-bg); color: var(--amber); border-radius:10px; padding:10px 14px; font-size:13.5px; font-weight:600; margin-bottom:18px;"></div>
       <div class="status-line" id="statusLine"></div>
 
@@ -865,11 +866,6 @@ function tryDeviceGateAdmin(){
           </div>
         </div>
 
-        <div class="arena-actions" id="arenaActions" style="display:none;">
-          <button class="arena-btn arena-btn-plus" onclick="incrementRealized()">+1 contrat ✍️</button>
-          <button class="arena-btn arena-btn-set" onclick="decrementRealized()" title="Corriger une erreur de clic">-1 correction</button>
-        </div>
-
         <div class="arena-actions" id="arenaRetractBox" style="display:none; margin-top:10px; flex-wrap:wrap; justify-content:center; align-items:center;">
           <span id="arenaRetractCount" style="font-size:13.5px; font-weight:700; padding:8px 14px; border-radius:20px; display:inline-block;"></span>
         </div>
@@ -921,10 +917,6 @@ function tryDeviceGateAdmin(){
 
         <div class="cash-hero" id="cashHero"></div>
 
-        <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin:-8px 0 6px;">
-          <button class="arena-btn arena-btn-plus" onclick="cashAddContract(1)">+1 contrat ✍️</button>
-          <button class="arena-btn arena-btn-set" onclick="cashAddContract(-1)" title="Corriger une erreur de clic">-1 correction</button>
-        </div>
         <div id="cashRetractCount" style="text-align:center; font-size:13.5px; font-weight:700; padding:8px 14px; border-radius:20px; margin:10px auto 20px; width:fit-content;"></div>
 
         <div id="cashBackofficePanel" style="margin:0 0 22px;"></div>
@@ -2196,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-13-r99';
+const APP_VERSION = '2026-08-14-r100';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3639,18 +3631,26 @@ function renderAgentChips(){
     const startDate = getAgentStartDate(name);
     const isEcoutable = isEcouteAutorisee(name);
     const ecouteBtnStyle = isEcoutable ? 'background:rgba(61,139,253,0.25);border-radius:4px;' : '';
+    const training = getAgentTraining(name);
+    const inTraining = isInTraining(name);
+    const probation = getAgentProbation(name);
+    const inProbation = isInProbation(name);
+    const term = getAgentTermination(name);
 
-    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}</span>
-      <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>      
+    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🎧🎓 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
+      <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
       ${!isSup ? `<button onclick="toggleADFTrainer('${name.replace(/'/g,"\\'")}')" title="Basculer « formateur ADF »" style="color:#4a9891;margin-right:2px;">🎓</button>` : ''}
       <button onclick="toggleEcouteAutorisee('${name.replace(/'/g,"\\'")}')" title="Basculer l'autorisation d'être écouté (écoute)" style="color:var(--accent);margin-right:2px;${ecouteBtnStyle}">🎧</button>
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
-      <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat »" style="color:var(--amber);margin-right:2px;">🎯</button>
+      <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat » (permanent)" style="color:var(--amber);margin-right:2px;">🎯</button>
       <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
       ${noObj ? `<button onclick="editStatusLabel('${name.replace(/'/g,"\\'")}')" title="Renommer le libellé affiché (ex: Backoffice, Confirmé...)" style="color:var(--muted);margin-right:2px;">✏️</button>` : ''}
       <button onclick="setAgentStartDate('${name.replace(/'/g,"\\'")}')" title="Date de début — les retards/absences/prime d'assiduité ne comptent jamais avant cette date. Si elle tombe en cours de mois, objectif mini/fixe/primes de ce mois-là sont automatiquement réduits au prorata des jours ouvrés restants (utile pour un nouvel agent)" style="color:#4a9891;margin-right:2px;">📅</button>
+      <button onclick="setAgentTraining('${name.replace(/'/g,"\\'")}')" title="Formation écoute nouveau arrivant : 0 objectif pendant N jours, réglable, s'arrête toute seule" style="color:#3d8bfd;margin-right:2px;">🎧🎓</button>
+      <button onclick="setAgentProbation('${name.replace(/'/g,"\\'")}')" title="Période d'essai : affiche un rappel « zéro tolérance retard/absence » pendant N jours, réglable, disparaît tout seul" style="color:var(--red);margin-right:2px;">⏳</button>
       <button onclick="setAgentPassword('${name.replace(/'/g,"\\'")}')" title="Définir/changer le mot de passe" style="margin-right:4px;">🔑</button>
-      <button onclick="archiveAgent('${name.replace(/'/g,"\\'")}')" title="Il ne travaille plus ici : le retirer du quotidien (pointage, Arena, classements, paie) tout en gardant son historique complet et le rattachement de ses retours." style="margin-right:2px;">📦</button>
+      <button onclick="terminateAgent('${name.replace(/'/g,"\\'")}')" title="Licencier : enregistre son dernier jour travaillé et calcule automatiquement son solde de tout compte (prorata) sur la paye du mois concerné." style="color:var(--muted);margin-right:2px;">🚪</button>
+      <button onclick="archiveAgent('${name.replace(/'/g,"\\'")}')" title="Il ne travaille plus ici : le retirer du quotidien (pointage, Arena, classements, paie) tout en gardant son historique complet et le rattachement de ses retours. Utilise-le une fois le solde de tout compte d'un licenciement payé." style="margin-right:2px;">📦</button>
       <button onclick="removeAgent('${name.replace(/'/g,"\\'")}')" title="Suppression définitive — casse son historique. Préfère 📦 Archiver.">×</button>`;
     list.appendChild(chip);
   });
@@ -3658,6 +3658,13 @@ function renderAgentChips(){
 
 function hasNoObjectif(agent){
   return !!(config.agentsNoObjectif && config.agentsNoObjectif[agent] === true);
+}
+
+// « Sans objectif » effectif = statut permanent (🎯) OU formation écoute en cours (🎧🎓, auto-expirante).
+// Utilisé PARTOUT où le statut « sans objectif » compte pour la paie (getAgentPay) — un seul endroit à
+// modifier, tout le reste de l'appli (déjà câblé sur pay.noObjectif / hasNoObjectif) suit automatiquement.
+function effectiveNoObjectif(agent){
+  return hasNoObjectif(agent) || isInTraining(agent);
 }
 
 // Date de début d'un agent : les jours AVANT cette date sont totalement exclus du calcul des
@@ -3703,6 +3710,189 @@ function disciplineFrom(agent){
   const global = getPointageStartDate();
   if(perso && global) return perso > global ? perso : global;
   return perso || global;
+}
+
+// ============================================================
+// 🚪 LICENCIEMENT / DÉPART — solde de tout compte
+// ============================================================
+// Symétrique de la date de début : le dernier jour réellement travaillé d'un agent qui a quitté
+// l'équipe. Rangé à part de « archivé » (📦) — un agent licencié reste dans config.agents (donc dans
+// les calculs de paie du mois) tant que l'admin n'a pas archivé à la main une fois le solde payé, pour
+// que son dernier mois (prorata compris) continue d'apparaître normalement dans tous les écrans/exports
+// de paie. Avant son premier jour ET après son dernier jour, aucun retard/absence n'est jamais compté
+// (disciplineFrom / disciplineUntil), et sa paie du mois de départ est réduite au prorata des jours
+// ouvrés réellement travaillés (proratedMonthFactor).
+//
+// ⚠️ Ce que le CRM calcule = salaire fixe + primes + commissions au prorata des jours travaillés ce
+// mois-là, exactement comme pour une arrivée en cours de mois mais à l'envers. Ça ne calcule PAS
+// d'éventuelle indemnité de licenciement, de préavis, ou de solde de congés payés — ces montants
+// dépendent du contrat et du motif de départ, et sont à ajouter à la main (prime manuelle) si dus.
+// Vérifie toujours avec ton comptable/conseil juridique pour le solde de tout compte légal complet.
+function getAgentTermination(agent){
+  return (config.agentsTerminated && config.agentsTerminated[agent]) || null;
+}
+
+// Date à partir de laquelle un agent licencié ne doit plus jamais être compté (retard, absence, jour
+// attendu) — le jour même du départ compte normalement (il a pu travailler une partie de la journée),
+// c'est le lendemain qui devient hors-jeu. Symétrique de disciplineFrom (borne basse).
+function disciplineUntil(agent){
+  const term = getAgentTermination(agent);
+  if(!term || !term.lastDay) return null;
+  const d = new Date(term.lastDay + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  return todayStr(d);
+}
+
+async function terminateAgent(name){
+  const term = getAgentTermination(name);
+  const current = term ? term.lastDay : '';
+  const val = window.prompt(
+    `Dernier jour travaillé de ${name}, au format AAAA-MM-JJ.\n\n` +
+    `À partir du lendemain : plus aucun retard/absence compté, plus attendu au pointage, sorti des classements et de l'Arena.\n` +
+    `Son salaire du mois de départ est automatiquement réduit au prorata des jours ouvrés réellement travaillés (comme une arrivée en cours de mois, mais à l'envers) — c'est son solde de tout compte, à retrouver dans son tableau habituel (Admin → Facturation & Paie) et à payer avec la paye normale du mois.\n\n` +
+    `⚠️ Ceci calcule uniquement le salaire/primes/commissions au prorata — pas d'indemnité de licenciement, de préavis ni de congés payés (à ajouter toi-même en prime manuelle si dus). Vérifie le solde légal complet avec ton comptable.\n\n` +
+    `Laisse vide pour annuler un licenciement déjà enregistré.`,
+    current);
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(!config.agentsTerminated) config.agentsTerminated = {};
+  if(trimmed === ''){
+    if(term && !confirm(`Annuler le licenciement enregistré de ${name} ?`)) return;
+    delete config.agentsTerminated[name];
+    await saveConfigSilent();
+    logAudit('Admin', `Licenciement annulé : ${name}`, '');
+  } else if(!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)){
+    alert('Format invalide. Utilise AAAA-MM-JJ, par exemple 2026-08-06.');
+    return;
+  } else {
+    const startDate = getAgentStartDate(name);
+    if(startDate && trimmed < startDate){
+      alert(`Le dernier jour (${trimmed}) est avant sa date d'arrivée (${startDate}). Corrige l'une des deux dates.`);
+      return;
+    }
+    if(!confirm(`Confirmer le départ de ${name}, dernier jour travaillé le ${trimmed.split('-').reverse().join('/')} ?\n\nSon solde de tout compte (prorata du mois de départ) sera calculé automatiquement. Il reste dans les écrans de paie de ce mois-ci — archive-le (📦) une fois le solde payé pour qu'il sorte définitivement des mois suivants.`)) return;
+    config.agentsTerminated[name] = { lastDay: trimmed, terminatedAt: new Date().toISOString() };
+    await saveConfigSilent();
+    logAudit('Admin', `Licenciement enregistré : ${name}`, `dernier jour ${trimmed}`);
+  }
+  billingInvalidate();
+  clearRenderCaches();
+  renderAgentChips();
+  renderBillingAgentSheet();
+}
+
+// ============================================================
+// 🎧🎓 FORMATION ÉCOUTE NOUVEAU ARRIVANT — 0 objectif pendant N jours
+// ============================================================
+// Statut temporaire et auto-expirant (contrairement à « sans objectif » 🎯 qui est permanent) : pendant
+// les N jours choisis, l'agent n'a aucun quota obligatoire — comme hasNoObjectif, dont il réutilise tout
+// le comportement (voir getAgentPay : noObjectif devient vrai si hasNoObjectif() OU isInTraining()).
+// Par défaut la formation démarre à la date d'arrivée de l'agent si elle est réglée, sinon aujourd'hui.
+function getAgentTraining(agent){
+  return (config.agentsTraining && config.agentsTraining[agent]) || null;
+}
+
+function trainingEndDate(agent){
+  const t = getAgentTraining(agent);
+  if(!t) return null;
+  const d = new Date(t.startDate + 'T00:00:00');
+  d.setDate(d.getDate() + (t.days - 1));
+  return todayStr(d);
+}
+
+function isInTraining(agent, dateStr){
+  const t = getAgentTraining(agent);
+  if(!t) return false;
+  const ds = dateStr || todayStr();
+  return ds >= t.startDate && ds <= trainingEndDate(agent);
+}
+
+async function setAgentTraining(name){
+  const t = getAgentTraining(name);
+  const current = t ? String(t.days) : '';
+  const val = window.prompt(
+    `Formation écoute pour ${name} : nombre de jours (0 objectif obligatoire pendant cette période, comme un statut « sans objectif » mais qui s'arrête tout seul).\n\n` +
+    `Démarre à sa date d'arrivée si elle est réglée (Réglages → 📅), sinon aujourd'hui.\n\n` +
+    `Laisse vide pour retirer.`,
+    current);
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(!config.agentsTraining) config.agentsTraining = {};
+  if(trimmed === ''){
+    delete config.agentsTraining[name];
+    await saveConfigSilent();
+    logAudit('Admin', `Formation écoute retirée : ${name}`, '');
+  } else {
+    const days = parseInt(trimmed, 10);
+    if(isNaN(days) || days < 1 || days > 90){ alert('Entre un nombre de jours entre 1 et 90.'); return; }
+    const startDate = getAgentStartDate(name) || todayStr();
+    config.agentsTraining[name] = { startDate, days };
+    await saveConfigSilent();
+    logAudit('Admin', `Formation écoute réglée : ${name}`, `${days} jour(s) à partir du ${startDate}`);
+  }
+  billingInvalidate();
+  clearRenderCaches();
+  renderAgentChips();
+  renderAgentPayTable();
+}
+
+// ============================================================
+// ⏳ PÉRIODE D'ESSAI — zéro tolérance retard/absence, rappel auto-expirant
+// ============================================================
+// Durée choisie manuellement par agent (comme la formation écoute, mais un statut distinct : un
+// nouvel arrivant peut avoir une formation de quelques jours ET une période d'essai plus longue en
+// parallèle). Ceci affiche un rappel bien visible côté agent (sa propre carte Pointage) et côté admin
+// (fiche agent) tant que la période court — il disparaît tout seul à l'échéance, sans action requise.
+// ⚠️ Ceci N'ALTÈRE PAS le barème de sanction retard/absence du règlement intérieur (paliers 1er/3e/5e/
+// 6e plus haut) : ce barème reste le même pendant la période d'essai. Si tu veux qu'un seul retard/
+// absence déclenche une sanction plus dure pendant l'essai, dis-le précisément et on l'ajoutera — pour
+// l'instant ceci reste un rappel de politique, pas une règle de calcul de paie.
+function getAgentProbation(agent){
+  return (config.agentsProbation && config.agentsProbation[agent]) || null;
+}
+
+function probationEndDate(agent){
+  const p = getAgentProbation(agent);
+  if(!p) return null;
+  const d = new Date(p.startDate + 'T00:00:00');
+  d.setDate(d.getDate() + (p.days - 1));
+  return todayStr(d);
+}
+
+function isInProbation(agent, dateStr){
+  const p = getAgentProbation(agent);
+  if(!p) return false;
+  const ds = dateStr || todayStr();
+  return ds >= p.startDate && ds <= probationEndDate(agent);
+}
+
+async function setAgentProbation(name){
+  const p = getAgentProbation(name);
+  const current = p ? String(p.days) : '';
+  const val = window.prompt(
+    `Période d'essai pour ${name} : nombre de jours.\n\n` +
+    `Pendant cette période, un rappel « zéro tolérance retard/absence » s'affiche sur sa carte Pointage et dans sa fiche Admin — il disparaît tout seul à la fin de la période, sans rien à faire.\n\n` +
+    `Démarre à sa date d'arrivée si elle est réglée (Réglages → 📅), sinon aujourd'hui.\n\n` +
+    `Laisse vide pour retirer.`,
+    current);
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(!config.agentsProbation) config.agentsProbation = {};
+  if(trimmed === ''){
+    delete config.agentsProbation[name];
+    await saveConfigSilent();
+    logAudit('Admin', `Période d'essai retirée : ${name}`, '');
+  } else {
+    const days = parseInt(trimmed, 10);
+    if(isNaN(days) || days < 1 || days > 365){ alert('Entre un nombre de jours entre 1 et 365.'); return; }
+    const startDate = getAgentStartDate(name) || todayStr();
+    config.agentsProbation[name] = { startDate, days };
+    await saveConfigSilent();
+    logAudit('Admin', `Période d'essai réglée : ${name}`, `${days} jour(s) à partir du ${startDate}`);
+  }
+  billingInvalidate();
+  clearRenderCaches();
+  renderAgentChips();
 }
 
 async function setPointageStartDate(){
@@ -4161,6 +4351,20 @@ async function onAgentChange(){
   refreshFreeBreakUI();
   refreshADFStatus();
   renderPointageGreeting();
+  renderProbationBanner();
+}
+
+// Rappel « zéro tolérance retard/absence » pendant la période d'essai (voir setAgentProbation) —
+// visible pour TOUS les agents concernés, indépendants inclus (contrairement au message d'accueil
+// ci-dessus qui ne s'affiche pas pour eux). Disparaît tout seul dès que la période est terminée : rien
+// à faire côté admin, il suffit que la date du jour dépasse probationEndDate(agent).
+function renderProbationBanner(){
+  const box = document.getElementById('probationBanner');
+  if(!box) return;
+  if(!currentAgent || !isInProbation(currentAgent)){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  const end = probationEndDate(currentAgent);
+  box.innerHTML = `⏳ Période d'essai jusqu'au ${end.split('-').reverse().join('/')} — aucun retard ni absence toléré pendant cette période.`;
+  box.style.display = 'block';
 }
 
 // ============================================================
@@ -5557,7 +5761,8 @@ async function refreshAgentButtons(){
   const lunchAlreadyTaken = extractBreakPairs(log.events).some(p => p.end); // une pause déjeuner déjà bouclée aujourd'hui
   if(last === null || last === 'out'){
     if(last === 'out'){
-      statusText = 'Journée terminée. À demain !';
+      // "À demain" n'a aucun sens un vendredi (ça tomberait un samedi) — voir calendarizeRelativeDays.
+      statusText = calendarizeRelativeDays('Journée terminée. À demain !', dateStr);
     } else {
       btnIn.disabled = false; btnIn.classList.add('ready');
       statusText = "Tu n'as pas encore pointé aujourd'hui.";
@@ -6047,9 +6252,12 @@ async function monthlyStats(agent, year, month){
   // premier jour réel sont exclus ici, pas juste "justifiés" — ils n'existent tout simplement pas pour
   // le calcul (pas d'absence, pas de retard, aucun impact sur la prime d'assiduité).
   // Discipline : ni retard ni absence avant l'arrivée de l'agent NI avant la mise en service du
-  // pointage (voir disciplineFrom). Les contrats, eux, comptent toujours.
+  // pointage (voir disciplineFrom) — ni après son départ le cas échéant (voir disciplineUntil).
+  // Les contrats, eux, comptent toujours.
   const agentStartDate = disciplineFrom(agent);
+  const agentEndDate = disciplineUntil(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
+  if(agentEndDate) dateStrs = dateStrs.filter(ds => ds < agentEndDate);
   const dayData = await Promise.all(dateStrs.map(async dateStr=>{
     const [log, infr, board] = await Promise.all([
       getDayLog(agent, dateStr),
@@ -6694,6 +6902,49 @@ function isDayOverForMessage(refDateStr){
   return toMinutes(nowTimeStr()) >= toMinutes(config.end);
 }
 
+// ============================================================
+// 📅 "DEMAIN"/"HIER" ADAPTÉS AU CALENDRIER — jamais un jour chômé
+// ============================================================
+// Un commentaire généré un vendredi ne doit jamais dire « à demain » (ça tomberait un samedi, jour non
+// travaillé) — ni un lundi dire « hier tu as fait X » (ça viserait un dimanche, ou un jour férié). On
+// calcule le vrai prochain/dernier jour OUVRÉ et on substitue le mot dans le texte déjà rédigé : les
+// dizaines de phrases existantes (bilans, encouragements, conseils) n'ont pas besoin d'être réécrites
+// une par une — ce correctif s'applique à toutes d'un coup, au même endroit où chaque bloc assemble son
+// texte final (voir calendarizeRelativeDays, appelé juste avant chaque retour de message).
+function nextWorkingDayLabel(dateStr){
+  const ref = new Date((dateStr || todayStr()) + 'T00:00:00');
+  const d = new Date(ref);
+  d.setDate(d.getDate() + 1);
+  let steps = 0;
+  while(!isWorkingDay(todayStr(d)) && steps < 14){ d.setDate(d.getDate() + 1); steps++; }
+  const diffDays = Math.round((d - ref) / 86400000);
+  return diffDays <= 1 ? 'demain' : d.toLocaleDateString('fr-FR', { weekday: 'long' });
+}
+
+function lastWorkingDayLabel(dateStr){
+  const ref = new Date((dateStr || todayStr()) + 'T00:00:00');
+  const d = new Date(ref);
+  d.setDate(d.getDate() - 1);
+  let steps = 0;
+  while(!isWorkingDay(todayStr(d)) && steps < 14){ d.setDate(d.getDate() - 1); steps++; }
+  const diffDays = Math.round((ref - d) / 86400000);
+  return diffDays <= 1 ? 'hier' : d.toLocaleDateString('fr-FR', { weekday: 'long' });
+}
+
+// Remplace "demain"/"hier" par le bon jour ouvré dans un texte déjà rédigé, en respectant la casse
+// (Demain en début de phrase → Lundi, jamais lundi). Sans effet si le mot littéral reste correct.
+function calendarizeRelativeDays(text, dateStr){
+  if(!text) return text;
+  const tomorrow = nextWorkingDayLabel(dateStr);
+  const yesterday = lastWorkingDayLabel(dateStr);
+  const applyCase = (match, replacement) => (match[0] === match[0].toUpperCase())
+    ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+    : replacement;
+  return text
+    .replace(/\bdemain\b/g, m => applyCase(m, tomorrow))
+    .replace(/\bhier\b/g, m => applyCase(m, yesterday));
+}
+
 function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRealized, seed, refDateStr){
   if(totalTarget <= 0) return '';
   const pct = Math.round((totalRealized/totalTarget)*100);
@@ -6706,7 +6957,7 @@ function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRe
     ? `<div style="font-size:11px; color:var(--independant); margin-top:8px;">dont ${indepRealized} fait${indepRealized>1?'s':''} par les indépendants</div>`
     : '';
   const isBilan = isDayOverForMessage(refDateStr);
-  const message = pickTeamPctMessage(pct, seed || 'default', isBilan);
+  const message = calendarizeRelativeDays(pickTeamPctMessage(pct, seed || 'default', isBilan), refDateStr);
   return `<div style="width:246px; margin:0 auto 20px; padding:22px 18px 18px; border-radius:22px; background:linear-gradient(165deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid ${pct>=100?'rgba(52,183,116,0.45)':'var(--border)'}; box-shadow:0 10px 28px rgba(0,0,0,0.35); text-align:center;">
     <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px; font-weight:700;">🎯 Total équipe${isBilan ? ' · Bilan' : ''}</div>
     <div style="position:relative; width:152px; height:152px; margin:16px auto 10px; border-radius:50%; background:conic-gradient(${color} ${ringPct}%, rgba(255,255,255,0.07) 0);">
@@ -7112,7 +7363,12 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
 
   const dayOverDayMap = {};
   await Promise.all(combinedDayRows.map(async r=>{
-    const yesterdayRealized = yesterdayBoard ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
+    // Pas de "vs hier" si l'agent n'était pas encore arrivé la veille (date de début) : un 0 d'avant son
+    // premier jour n'est pas une vraie baseline, comparer dessus n'a aucun sens ("hier tu étais à 0"
+    // alors qu'il n'était tout simplement pas encore là).
+    const agentStart = disciplineFrom(r.agent);
+    const yesterdayCountsForAgent = !agentStart || (yesterdayDate && yesterdayDate >= agentStart);
+    const yesterdayRealized = (yesterdayBoard && yesterdayCountsForAgent) ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
     const mo = monthlyByAgent[r.agent] || {};
     dayOverDayMap[r.agent] = await dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison, dateStr, {
       rank: (allRankByAgent[r.agent] || {}).rank,
@@ -9015,7 +9271,14 @@ function supervisorNudge(agentName){
 // teinte plus soutenue réservée aux situations vraiment critiques. L'objectif visé (bonus, jamais
 // obligatoire) passe par une famille sarcelle/bleu/violet/vieux rose — jamais rouge — pour rester
 // motivant sans jamais ressembler à une alerte.
+// Fine enveloppe : calcule les lignes normalement (personalDailyCommentRaw, inchangée), puis corrige
+// "demain"/"hier" au bon jour ouvré avant de renvoyer — voir calendarizeRelativeDays plus haut.
 function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed){
+  const lines = personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed);
+  if(!lines) return lines;
+  return lines.map(l => ({ ...l, text: calendarizeRelativeDays(l.text, refDayForSeed) }));
+}
+function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed){
   const n = firstName(agentName);
   const fmtNum = x => (Math.round(x*10)/10).toLocaleString('fr-FR');
   const mk = (emoji, text, color, bg, critical) => ({ text: `${emoji} ${text}`, color, bg, critical: !!critical });
@@ -9300,7 +9563,14 @@ async function countZeroDaysThisMonthSoFar(agentName, refDateStr){
 // comparer "0 aujourd'hui vs hier" à la prise de poste n'a aucun sens, la journée vient de commencer.
 // zeroCount = combientième 0 du mois c'est pour cet agent (1er/2e/3e+) — module la sévérité du ton.
 // newAgent = agent en poste depuis moins d'un mois — toujours plus indulgent, quel que soit zeroCount.
+// Fine enveloppe : voir personalDailyComment plus haut, même principe (calendarizeRelativeDays sur le
+// résultat de la version _Raw, inchangée).
 async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr, ctx){
+  const result = await dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr, ctx);
+  if(!result) return result;
+  return { ...result, text: calendarizeRelativeDays(result.text, refDateStr) };
+}
+async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr, ctx){
   if(yesterdayRealized == null) return null;
   if(todayRealized === 0 && (nowHour == null || nowHour < 11)) return null;
   const c = ctx || {};
@@ -9866,6 +10136,50 @@ const NEW_AGENT_WEEKLY_TIPS = [
   "Valorise chaque contrat signé, même un seul — à ce stade, la régularité compte plus que le volume."
 ];
 
+// ============================================================
+// 📈 PROGRESSION SEMAINE PAR SEMAINE D'UN NOUVEL ARRIVANT (1er mois)
+// ============================================================
+// Palier attendu, semaine après semaine depuis l'arrivée — pas un objectif obligatoire au sens paie
+// (voir formation écoute / noObjectif pour ça), juste le repère utilisé pour calibrer le ton du conseil
+// hebdomadaire : encourageant tant que c'est en ligne, on tire la sonnette d'alarme seulement à partir
+// de la 3e semaine si le minimum n'est toujours pas là (les 2 premières semaines restent indulgentes,
+// personne ne juge un début d'apprentissage).
+//   Semaine 1 : 7 minimum.
+//   Semaine 2 : entre 10 et 15, 10 minimum.
+//   Semaine 3 et 4 : 10 minimum — en dessous, on tire la sonnette d'alarme.
+const NEW_AGENT_WEEK_THRESHOLDS = [
+  { week: 1, min: 7,  target: 7 },
+  { week: 2, min: 10, target: 15 },
+  { week: 3, min: 10, target: 10 },
+  { week: 4, min: 10, target: 10 }
+];
+
+// Numéro de semaine d'ancienneté (1 à 4+) à partir du nombre de jours calendaires écoulés depuis
+// l'arrivée — semaine 1 = jours 0 à 6, semaine 2 = jours 7 à 13, etc. Retourne null si daysSinceStart
+// est inconnu (date de début non réglée).
+function newAgentWeekNumber(daysSinceStart){
+  if(daysSinceStart == null) return null;
+  return Math.min(5, Math.floor(daysSinceStart / 7) + 1);
+}
+
+// Évalue la semaine d'un nouvel arrivant face au palier attendu — jamais de comparaison à l'équipe,
+// uniquement à son propre stade d'ancienneté. alarm=true seulement à partir de la 3e semaine sous le
+// minimum : les 2 premières semaines restent toujours indulgentes, quel que soit le chiffre.
+function newAgentWeekProgress(weekRealized, weekNumber){
+  const tier = NEW_AGENT_WEEK_THRESHOLDS.find(t => t.week === weekNumber);
+  if(!tier) return null; // 5e semaine et au-delà : sort du régime "nouvel arrivant"
+  if(weekRealized >= tier.target){
+    return { text: `✅ ${weekRealized}/${tier.target} — objectif de la ${tier.week}ᵉ semaine atteint, très bon rythme pour un début.`, alarm: false, ok: true };
+  }
+  if(weekRealized >= tier.min){
+    return { text: `🙂 ${weekRealized} contrat${weekRealized>1?'s':''} — le minimum de la ${tier.week}ᵉ semaine (${tier.min}) est là, vise ${tier.target} pour la suite.`, alarm: false, ok: true };
+  }
+  if(tier.week <= 2){
+    return { text: `🌱 ${weekRealized} contrat${weekRealized>1?'s':''} cette semaine — sous le repère de ${tier.min} pour une ${tier.week}ᵉ semaine, mais on démarre à peine : accompagne-le sans pression.`, alarm: false, ok: false };
+  }
+  return { text: `🚨 ${weekRealized} contrat${weekRealized>1?'s':''} cette semaine — sous le minimum attendu à ce stade (${tier.min} en ${tier.week}ᵉ semaine). Ça ne peut plus passer inaperçu : un point s'impose cette semaine.`, alarm: true, ok: false };
+}
+
 // Calcule uniquement le total de contrats réalisés par agent pour LA SEMAINE dont le lundi est passé en
 // paramètre — volontairement léger (pas de lecture des logs de pointage/retards/absences, juste les
 // tableaux de production), utilisé pour comparer la semaine affichée à celle d'avant. Retourne null s'il
@@ -9889,7 +10203,9 @@ async function weekRealizedTotalsForMonday(monday, limitDays){
   const totals = {};
   config.agents.forEach(agent=>{
     const agentStartDate = disciplineFrom(agent);
-    const agentDates = agentStartDate ? wDates.filter(ds=>ds>=agentStartDate) : wDates;
+    const agentEndDate = disciplineUntil(agent);
+    let agentDates = agentStartDate ? wDates.filter(ds=>ds>=agentStartDate) : wDates;
+    if(agentEndDate) agentDates = agentDates.filter(ds=>ds<agentEndDate);
     totals[agent] = agentDates.reduce((s,d)=> s + (getAgentProd(boards[d], agent).realized || 0), 0);
   });
   return { weekDates: wDates, totals, daysUsed: wDates.length };
@@ -9951,7 +10267,9 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     // (pas d'absence, pas de retard) — sinon un nouvel arrivant apparaît à tort "absent" ici pour des
     // jours où il n'était même pas encore censé travailler, alors que Conformité du mois l'exclut déjà.
     const agentStartDate = disciplineFrom(agent);
-    const agentWorkingDates = agentStartDate ? workingDates.filter(ds => ds >= agentStartDate) : workingDates;
+    const agentEndDate = disciplineUntil(agent);
+    let agentWorkingDates = agentStartDate ? workingDates.filter(ds => ds >= agentStartDate) : workingDates;
+    if(agentEndDate) agentWorkingDates = agentWorkingDates.filter(ds => ds < agentEndDate);
     await Promise.all(agentWorkingDates.map(async d=>{
       const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
       weekRealized += realized;
@@ -10211,10 +10529,15 @@ async function buildWeeklyBriefingHtml(mondayOverride){
       const refDate = workingDates[workingDates.length-1];
       const daysSinceStart = start ? Math.max(0, Math.round((new Date(refDate+'T00:00:00') - new Date(start+'T00:00:00')) / 86400000)) : null;
       const tip = seedPick(NEW_AGENT_WEEKLY_TIPS, `${r.agent}|${weekDates[0]}`);
-      return `<div style="flex:1; min-width:240px; padding:16px; border-radius:14px; background:rgba(79,157,120,0.08); border:1px solid rgba(79,157,120,0.28); font-family:'Inter',sans-serif;">
+      const weekNum = newAgentWeekNumber(daysSinceStart);
+      const progress = weekNum != null ? newAgentWeekProgress(r.weekRealized, weekNum) : null;
+      const cardBg = progress && progress.alarm ? 'rgba(168,58,63,0.12)' : 'rgba(79,157,120,0.08)';
+      const cardBorder = progress && progress.alarm ? 'rgba(168,58,63,0.45)' : 'rgba(79,157,120,0.28)';
+      return `<div style="flex:1; min-width:240px; padding:16px; border-radius:14px; background:${cardBg}; border:1px solid ${cardBorder}; font-family:'Inter',sans-serif;">
         <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${r.agent}</div>
-        <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">${daysSinceStart != null ? `Depuis ${daysSinceStart} jour${daysSinceStart>1?'s':''}` : 'Date de début non réglée dans Réglages'}${r.zeroDays>=1 ? ` · ${r.zeroDays} jour${r.zeroDays>1?'s':''} à 0 (normal en phase d'apprentissage)` : ''}</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">${daysSinceStart != null ? `Depuis ${daysSinceStart} jour${daysSinceStart>1?'s':''}${weekNum ? ` · ${weekNum}ᵉ semaine` : ''}` : 'Date de début non réglée dans Réglages'}${r.zeroDays>=1 ? ` · ${r.zeroDays} jour${r.zeroDays>1?'s':''} à 0 (normal en phase d'apprentissage)` : ''}</div>
         <div style="font-size:20px; font-weight:800; margin-bottom:8px;">${r.weekRealized} <span style="font-size:12px; color:var(--muted); font-weight:500;">contrat${r.weekRealized>1?'s':''} cette semaine</span></div>
+        ${progress ? `<div style="font-size:12.5px; ${progress.alarm ? 'color:var(--red); font-weight:700;' : 'color:var(--text);'} line-height:1.5; margin-bottom:6px;">${progress.text}</div>` : ''}
         <div style="font-size:12.5px; color:var(--text); line-height:1.5;">💡 ${tip}</div>
       </div>`;
     }).join('');
@@ -10366,22 +10689,60 @@ function workingDaysInMonthFrom(year, month, fromDateStr){
   return count;
 }
 
+// Symétrique de workingDaysInMonthFrom : jours ouvrés du 1er du mois JUSQU'À (inclus) une date donnée —
+// sert au prorata de fin de contrat (solde de tout compte), l'opération inverse d'une arrivée en cours
+// de mois.
+function workingDaysInMonthUntil(year, month, untilDateStr){
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const holidays = frenchHolidaysSet(year);
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+  const monthEndStr = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
+  let endDay;
+  if(untilDateStr.startsWith(monthPrefix)) endDay = parseInt(untilDateStr.slice(8,10), 10);
+  else if(untilDateStr > monthEndStr) endDay = daysInMonth;
+  else return 0; // untilDateStr avant le début du mois
+  let count = 0;
+  for(let d=1; d<=endDay; d++){
+    const dt = new Date(year, month-1, d);
+    const dow = dt.getDay();
+    if(dow===0 || dow===6) continue;
+    if(holidays.has(todayStr(dt))) continue;
+    count++;
+  }
+  return count;
+}
+
 // Facteur (0 à 1) à appliquer au fixe/primes/objectif mini d'un agent pour le mois (year, month), selon
-// sa date de début réglée (Réglages → Agents). 1 = mois plein (comportement inchangé), <1 = embauché en
-// cours de ce mois-là, 0 = pas encore arrivé ce mois-là.
+// sa date de début (Réglages → Agents) ET sa date de licenciement le cas échéant (voir terminateAgent) —
+// 1 = mois plein (comportement inchangé), <1 = arrivé et/ou parti en cours de ce mois-là, 0 = pas encore
+// arrivé, ou déjà parti avant le début, sur ce mois-là.
 function proratedMonthFactor(agent, year, month){
   const startDate = getAgentStartDate(agent);
-  if(!startDate) return 1;
+  const term = getAgentTermination(agent);
+  const lastDay = term ? term.lastDay : null;
+  if(!startDate && !lastDay) return 1;
   const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
   const monthStartStr = `${monthPrefix}01`;
   const daysInMonth = new Date(year, month, 0).getDate();
   const monthEndStr = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
-  if(startDate <= monthStartStr) return 1; // déjà présent avant/au début du mois : mois plein
-  if(startDate > monthEndStr) return 0; // pas encore arrivé du tout sur ce mois-là
+  // Bornes effectives sur CE mois : au plus tôt le 1er (ou la date d'arrivée si plus tardive), au plus
+  // tard le dernier jour (ou le dernier jour travaillé si le licenciement tombe ce mois-ci ou avant).
+  const effectiveStart = (startDate && startDate > monthStartStr) ? startDate : monthStartStr;
+  const effectiveEnd = (lastDay && lastDay < monthEndStr) ? lastDay : monthEndStr;
+  if(effectiveStart > monthEndStr) return 0; // pas encore arrivé du tout sur ce mois-là
+  if(lastDay && lastDay < monthStartStr) return 0; // déjà parti avant le début de ce mois-là
+  if(effectiveStart > effectiveEnd) return 0;
   const totalWD = workingDaysInMonth(year, month);
   if(totalWD <= 0) return 1;
-  const remainingWD = workingDaysInMonthFrom(year, month, startDate);
-  return Math.max(0, Math.min(1, remainingWD / totalWD));
+  if(effectiveStart <= monthStartStr && effectiveEnd >= monthEndStr) return 1; // mois plein, aucune borne active
+  const fromStart = workingDaysInMonthFrom(year, month, effectiveStart);
+  const fromZeroToEnd = workingDaysInMonthUntil(year, month, effectiveEnd);
+  const fullMonthWD = totalWD;
+  // Jours ouvrés dans l'intersection [effectiveStart, effectiveEnd] = (jours jusqu'à la fin du mois
+  // depuis effectiveStart) - (jours après effectiveEnd jusqu'à la fin du mois) = fromStart -
+  // (fullMonthWD - fromZeroToEnd).
+  const workedWD = fromStart - (fullMonthWD - fromZeroToEnd);
+  return Math.max(0, Math.min(1, workedWD / totalWD));
 }
 
 // getAgentPay(agent) seul (sans année/mois) renvoie toujours les valeurs BRUTES telles que réglées par
@@ -10428,7 +10789,7 @@ function getAgentPay(agent, year, month){
       // « Sans objectif » : hybride salarié — pointage et retards suivis normalement, prime d'assiduité
       // réelle, mais aucun quota mensuel obligatoire : payé au contrat dès le 1er, comme un indépendant,
       // sans pour autant être classé indépendant (toujours compté dans le total d'équipe, badgé différemment).
-      objectifMensuel: hasNoObjectif(agent) ? 0 : num(c.objectifMensuel, d.objectifMensuel ?? 0),
+      objectifMensuel: effectiveNoObjectif(agent) ? 0 : num(c.objectifMensuel, d.objectifMensuel ?? 0),
       primeObjectifJour: num(c.primeObjectifJour, d.primeObjectifJour ?? 0),
       primeExtraContrat: num(c.primeExtraContrat, d.primeExtraContrat ?? 0),
       primeFixeMensuelle: num(c.primeFixeMensuelle, d.primeFixeMensuelle ?? 0),
@@ -10436,7 +10797,7 @@ function getAgentPay(agent, year, month){
       // 💸 Coût d'UN retour (impayé client) pour cet agent, AVANT division ÷3 / ÷2 / 1:1.
       returnCost: num(c.returnCost, d.returnCost ?? 0),
       isIndep: false,
-      noObjectif: hasNoObjectif(agent),
+      noObjectif: effectiveNoObjectif(agent),
       isSupervisor: isSupervisor(agent)
     };
   }
@@ -10722,9 +11083,12 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   // Idem monthlyStats : avant la date de début réglée pour cet agent (nouvel arrivant en cours de
   // mois), aucun jour n'est examiné — ni retenue, ni retard, ni absence, ni impact sur l'assiduité.
   // Discipline : ni retard ni absence avant l'arrivée de l'agent NI avant la mise en service du
-  // pointage (voir disciplineFrom). Les contrats, eux, comptent toujours.
+  // pointage (voir disciplineFrom) — ni après son départ le cas échéant (voir disciplineUntil).
+  // Les contrats, eux, comptent toujours.
   const agentStartDate = disciplineFrom(agent);
+  const agentEndDate = disciplineUntil(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
+  if(agentEndDate) dateStrs = dateStrs.filter(ds => ds < agentEndDate);
 
   // (La mise en service du pointage est déjà prise en compte : disciplineFrom() ci-dessus retient la
   // plus tardive entre l'arrivée de l'agent et la date de mise en service. Un second filtrage ici
@@ -11589,40 +11953,10 @@ async function saveArenaDesiredObjectif(){
   if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
 }
 
-async function incrementRealized(){
-  if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const dateStr = todayStr();
-  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-  const p = getAgentProd(board, currentArenaAgent);
-  
-  // Seulement si jour ouvré, on exige un objectif
-  if(isWorkingDay(dateStr)) {
-    if(!p.objective && !isIndependant(currentArenaAgent) && arenaScope !== 'month'){
-      alert("Fixe d'abord ton objectif du jour !");
-      return;
-    }
-  }
-  // Si jour non ouvré, on ne bloque pas
-
-  p.realized = (p.realized || 0) + 1;
-  await saveProdBoard(dateStr, board);
-  await renderArena();
-  if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
-  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
-}
-
-async function decrementRealized(){
-  if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const dateStr = todayStr();
-  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-  const p = getAgentProd(board, currentArenaAgent);
-  if(!p.realized){ return; }
-  p.realized = Math.max(0, (p.realized || 0) - 1);
-  await saveProdBoard(dateStr, board);
-  await renderArena();
-  if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
-  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
-}
+// L'agent ne déclare plus lui-même son nombre de contrats réalisés (anciennement incrementRealized/
+// decrementRealized, boutons +1/-1) : le compteur "réalisé" du tableau de production est désormais
+// entièrement recalculé depuis les contrats validés par le backoffice (voir syncProdBoardRealizedForDates,
+// appelée automatiquement à chaque réception Pabbly et à chaque import CSV).
 
 // Déclaration en libre-service d'une rétractation (contrat résilié) ce mois-ci — pas une punition,
 // juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
@@ -11678,7 +12012,6 @@ async function renderArena(){
   const myRow = currentArenaAgent ? rankings.find(r=>r.agent === currentArenaAgent) : null;
 
   document.getElementById('arenaObjectifBox').style.display = 'none';
-  document.getElementById('arenaActions').style.display = 'none';
   document.getElementById('arenaRetractBox').style.display = currentArenaAgent ? 'flex' : 'none';
   if(currentArenaAgent){
     const netContracts = await monthlyRealizedContracts(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
@@ -11740,16 +12073,12 @@ async function renderArena(){
   }
   if(currentArenaAgent && !isMonthScope){
     // Un indépendant peut lui aussi fixer un objectif du jour (défi facultatif) : on affiche toujours le
-    // champ tant qu'il n'a rien réglé, mais le bouton +1 reste disponible pour lui sans y être obligé.
+    // champ tant qu'il n'a rien réglé. Le "réalisé" n'est plus saisi ici : il vient du backoffice.
     const p = getAgentProd(board, currentArenaAgent);
-    const isIndepAgent = isIndependant(currentArenaAgent);
     document.getElementById('arenaObjectifInput').value = p.objective || '';
     const objBoxEl = document.getElementById('arenaObjectifBox');
     objBoxEl.style.display = p.objective ? 'none' : 'block';
     objBoxEl.classList.toggle('pulse-obj-gold', !p.objective);
-    document.getElementById('arenaActions').style.display = (p.objective || isIndepAgent) ? 'flex' : 'none';
-  } else if(currentArenaAgent && isMonthScope){
-    document.getElementById('arenaActions').style.display = 'flex';
   }
 
   const hero = document.getElementById('arenaHero');
@@ -11929,27 +12258,8 @@ function triggerMoneyRain(){
   setTimeout(()=> layer.remove(), 4200);
 }
 
-async function cashAddContract(delta){
-  if(!currentCashAgent){ alert("Sélectionne ton nom d'abord."); return; }
-  const dateStr = todayStr();
-  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-  const p = getAgentProd(board, currentCashAgent);
-  
-  // On ne bloque que l'AJOUT (delta>0) et que si jour ouvré
-  if(delta > 0 && isWorkingDay(dateStr)) {
-    if(!p.objective && !isIndependant(currentCashAgent)){
-      alert("Fixe d'abord ton objectif du jour (depuis Arena) !");
-      return;
-    }
-  }
-  // Si delta négatif (correction) ou jour non ouvré, on laisse passer
-
-  p.realized = Math.max(0, (p.realized || 0) + delta);
-  await saveProdBoard(dateStr, board);
-  await renderCash();
-  if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
-  if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
-}
+// cashAddContract (boutons +1/-1 de l'onglet Cash) supprimée avec incrementRealized/decrementRealized :
+// même raison, l'agent ne fournit plus aucun chiffre de production, voir syncProdBoardRealizedForDates.
 async function onCashAgentChange(){
   const sel = document.getElementById('cashAgentSelect');
   const selected = sel.value;
@@ -14745,6 +15055,11 @@ async function importBillingProd(text, monthVal){
     const iso = parseContractDate(r.datePropre || r.date, dateOrder);
     const target = iso ? iso.slice(0, 7) : monthVal;
     if(!iso) undatedCount++;
+    // r.datePropre garde le texte d'origine (affiché tel quel dans les tableaux) — mais r.date lui-même
+    // est normalisé en ISO (AAAA-MM-JJ) comme pour les contrats reçus de Pabbly (voir ingest() dans
+    // syncBackofficeInbox), pour que le calcul jour par jour des contrats validés (backofficeRealizedForDate)
+    // puisse comparer les dates de façon fiable quelle que soit la source d'origine.
+    if(iso) r.date = iso;
 
     // Doublon À L'INTÉRIEUR du fichier : deux lignes strictement identiques, même numéro de contrat.
     // Ça arrive quand une ligne est recopiée par erreur dans le Sheet. Une seule est conservée — et
@@ -14852,6 +15167,15 @@ async function importBillingProd(text, monthVal){
     await billingSave(billingProdKey(mv), store);
     perMonthCount[mv] = rowsByMonth[mv].length;
     rowsTotal += rowsByMonth[mv].length;
+  }
+
+  // Le tableau de production du jour (celui que les agents consultent) est recalculé à partir des
+  // contrats backoffice qu'on vient de ranger — c'est désormais la SEULE source des "réalisés".
+  const touchedDatesImport = new Set();
+  Object.values(rowsByMonth).flat().forEach(r => { if(r.date) touchedDatesImport.add(r.date); });
+  if(touchedDatesImport.size){
+    try{ await syncProdBoardRealizedForDates([...touchedDatesImport]); }
+    catch(e){ console.warn('syncProdBoardRealizedForDates', e); }
   }
 
   const rows = Object.values(rowsByMonth).flat();
@@ -16124,7 +16448,8 @@ async function toggleBillingRetracted(numContrat){
 }
 
 // Recale le compteur de rétractations sur le nombre exact de contrats marqués rétractés dans le
-// tableau — utile si l'agent a cliqué +1 dans l'Arena en plus de ton marquage ici.
+// tableau — utile si un marquage manuel a fini par diverger du tableau (import corrigé, contrat
+// déplacé de mois, etc).
 async function syncBillingRetractCount(){
   const monthVal = document.getElementById('billingSheetMonth')?.value;
   const agent = document.getElementById('billingAgentSelect')?.value;
@@ -16148,14 +16473,12 @@ async function syncBillingRetractCount(){
 async function billingComputeAgent(agent, monthVal){
   const [year, month] = monthVal.split('-').map(Number);
   const pay = getAgentPay(agent);
-  const [prodData, stats, retract, ret, paySource, agentCounter] = await Promise.all([
+  const [prodData, stats, retract, ret, paySource] = await Promise.all([
     getBillingProd(monthVal),
     monthlyStats(agent, year, month),
     getMonthlyRetractCount(agent, year, month),
     billingReturnsDeduction(agent, year, month),
-    getPaySource(year, month),
-    // Ce que l'agent a compté LUI-MÊME avec son bouton +1, indépendamment de ce qui paie.
-    agentCounterMonthlyCount(agent, year, month)
+    getPaySource(year, month)
   ]);
   const rows = (prodData.rows || []).filter(r => r.agent === agent);
   const retractedRows = rows.filter(r => r.retracted);
@@ -16168,7 +16491,7 @@ async function billingComputeAgent(agent, monthVal){
   ]);
 
   return {
-    agent, monthVal, year, month, pay, stats, assiduiteAcquise, paySource, agentCounter,
+    agent, monthVal, year, month, pay, stats, assiduiteAcquise, paySource,
     importedTotal: rows.length,
     importedValid: validRows.length,
     retractedCount: retractedRows.length,
@@ -16226,7 +16549,7 @@ function billingAgentSheetHTML(d, forImage){
         <button class="link-btn" onclick="syncBillingRetractCount()"
           title="Fixe le compteur mensuel de rétractations de cet agent au nombre exact de contrats que tu as marqués « Rétracté » dans le tableau ci-dessous.">🔄 Aligner le compteur sur les contrats marqués rétractés</button>
         <span style="font-size:12px; color:var(--muted); flex:1; min-width:260px; line-height:1.5;">
-          Deux chiffres suivent les rétractations : celui que <b>l'agent</b> déclare depuis son Arena, et le nombre de contrats que <b>tu</b> as marqués « Rétracté » dans ce tableau. C'est le compteur de l'agent qui paie. Ce bouton force le compteur à valoir exactement ce que dit ce tableau — à utiliser quand les deux ont divergé.
+          Le compteur de rétractations qui paie est mis à jour automatiquement à chaque contrat que <b>tu</b> marques « Rétracté » dans ce tableau. Ce bouton le recale au besoin, si un import corrigé ou un contrat déplacé de mois l'a fait diverger.
         </span>
       </div>
     </div>`;
@@ -16238,10 +16561,7 @@ function billingAgentSheetHTML(d, forImage){
   // --- Bandeau chiffres clés
   const cards = [
     { lbl: 'Contrats backoffice', val: d.importedTotal ? d.importedValid : '—', sub: d.importedTotal ? `${d.importedTotal} importés − ${d.retractedCount} rétractés` : 'aucun import pour ce mois', color: 'var(--text)' },
-    { lbl: '✍️ Saisis par l\'agent', val: d.agentCounter != null ? d.agentCounter : '—',
-      sub: d.importedTotal ? (d.agentCounter - d.importedTotal === 0 ? 'identique au backoffice' : `${d.agentCounter - d.importedTotal > 0 ? '+' : ''}${d.agentCounter - d.importedTotal} vs backoffice`) : 'compteur Arena',
-      color: (d.importedTotal && d.agentCounter > d.importedTotal) ? 'var(--amber)' : 'var(--text)' },
-    { lbl: 'Contrats comptés (paie)', val: d.counterRealized, sub: `${d.paySource === 'backoffice' ? '🔒 backoffice validé' : '✍️ compteurs agents'} − ${d.retractCounter} rétractation${d.retractCounter>1?'s':''}`, color: 'var(--text)' },
+    { lbl: 'Contrats comptés (paie)', val: d.counterRealized, sub: `🔒 backoffice validé − ${d.retractCounter} rétractation${d.retractCounter>1?'s':''}`, color: 'var(--text)' },
     { lbl: 'Retours facturation', val: ret.count, sub: `${ret.divisor === 1 ? '1:1' : '÷'+ret.divisor} → ${d.salary.breakdown ? d.salary.breakdown.returnsDeducted : 0} contrat(s) en moins`, color: 'var(--red)' },
     { lbl: 'Salaire net réel', val: fmt(d.salary.total) + ' DH', sub: `brut ${fmt(d.salary.brut)} DH − retenues ${fmt(ded.total)} DH`, color: d.salary.total >= 0 ? 'var(--green)' : 'var(--red)' }
   ];
@@ -16348,8 +16668,7 @@ function billingAgentSheetHTML(d, forImage){
     html += `<div style="margin-bottom:14px; padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
       <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700; margin-bottom:10px;">① Combien de contrats sont payés</div>
       <table style="width:100%; border-collapse:collapse;">
-        ${d.agentCounter != null && d.importedTotal ? `<tr><td style="padding:4px 0; color:var(--muted);">✍️ Saisis par l'agent (compteur Arena)</td><td style="text-align:right; color:var(--muted);">${d.agentCounter}</td></tr>` : ''}
-        <tr><td style="padding:4px 0;">Contrats validés ce mois${d.paySource === 'backoffice' ? ' <span style="font-size:11px; color:var(--muted);">(backoffice)</span>' : ''}</td><td style="text-align:right; font-weight:700;">${br.validated}</td></tr>
+        <tr><td style="padding:4px 0;">Contrats validés ce mois <span style="font-size:11px; color:var(--muted);">(backoffice)</span></td><td style="text-align:right; font-weight:700;">${br.validated}</td></tr>
         <tr><td style="padding:4px 0; color:var(--red);">− Rétractés (1 pour 1)</td><td style="text-align:right; font-weight:700; color:var(--red);">−${br.retractions}</td></tr>
         <tr><td style="padding:4px 0; color:var(--red);">− Retours : ${br.returnsCount} ${br.returnsDivisor === 1 ? 'en 1:1' : '÷ '+br.returnsDivisor}${br.returnsCount ? ` = ${br.returnsDeducted} contrat${br.returnsDeducted>1?'s':''}` : ''}</td><td style="text-align:right; font-weight:700; color:var(--red);">−${br.returnsDeducted}</td></tr>
         <tr style="border-top:2px solid var(--border);"><td style="padding:7px 0; font-weight:800;">= Contrats payés</td><td style="text-align:right; font-weight:800; font-size:17px; color:var(--green);">${br.payable}</td></tr>
@@ -16869,6 +17188,8 @@ async function syncBackofficeInbox(opts){
 
     if(Object.keys(byMonth).length === 0){ backofficeLastResult = result; return result; }
 
+    const touchedDates = new Set();
+
     for(const monthVal of Object.keys(byMonth)){
       // ⏳ RETARDATAIRE : le backoffice peut valider plusieurs jours après la signature (week-end,
       // congés, jours fériés). La plupart du temps ça n'a aucune importance — le contrat est rangé à sa
@@ -16893,6 +17214,7 @@ async function syncBackofficeInbox(opts){
         if(keys.length && keys.some(k => seen.has(k))){ result.duplicates++; return; }
         keys.forEach(k => seen.add(k));
         store.rows.push(row);
+        if(row.date) touchedDates.add(row.date);
         result.imported++;
         // Mémorise DANS QUEL MOIS chaque contrat a été rangé. Indispensable à afficher : un contrat
         // daté du 02/02 arrive dans février, pas dans le mois courant — sans cette ligne, on cherche
@@ -16902,6 +17224,14 @@ async function syncBackofficeInbox(opts){
       store.importedAt = new Date().toISOString();
       store.month = monthVal;
       await billingSave(billingProdKey(monthVal), store);
+    }
+
+    // Le tableau de production du jour (celui que les agents consultent) est recalculé à partir des
+    // contrats backoffice qu'on vient de ranger — c'est désormais la SEULE source des "réalisés" :
+    // on ne prend plus aucun chiffre déclaré par l'agent lui-même.
+    if(touchedDates.size){
+      try{ await syncProdBoardRealizedForDates([...touchedDates]); }
+      catch(e){ console.warn('syncProdBoardRealizedForDates', e); }
     }
 
     // Boîte vidée : les documents rangés sont supprimés pour qu'elle reste légère et qu'aucun contrat
@@ -17093,63 +17423,52 @@ async function backofficeMonthHasData(year, month){
   return (data.rows || []).length > 0;
 }
 
-// ------------------------------------------------------------
-// 🔀 QUI PAIE : LE COMPTEUR DE L'AGENT OU LE BACKOFFICE
-// ------------------------------------------------------------
-// Choix retenu : le compteur +1 de l'agent pilote la paie PENDANT le mois (c'est lui qui fait vivre
-// l'Arena, les pauses bonus et les classements en temps réel), et le patron bascule sur le backoffice
-// d'un seul clic en fin de mois, une fois tous les contrats validés reçus. Le réglage est mémorisé
-// PAR MOIS : basculer mars n'a aucun effet sur avril, et un mois déjà payé ne rebouge jamais.
-function paySourceKey(monthVal){ return `billingPaySource:${monthVal}`; }
-
-async function getPaySource(year, month){
-  const monthVal = billingMonthVal(year, month);
-  // Réglage GÉNÉRAL (config.defaultPaySource) : c'est lui qui décide pour tous les mois sur lesquels
-  // tu n'as rien dit de particulier — et donc pour tous les calculs et toutes les simulations de
-  // l'application, partout. Un mois basculé à la main garde toujours le dessus sur ce réglage général.
-  const fallback = config.defaultPaySource === 'backoffice' ? 'backoffice' : 'agent';
-  const v = await billingLoad(paySourceKey(monthVal), fallback);
-  return v === 'backoffice' ? 'backoffice' : 'agent';
+// ============================================================
+// 📅 CONTRATS BACKOFFICE VALIDÉS, PAR JOUR PRÉCIS
+// ============================================================
+// Symétrique de backofficeMonthlyCount mais pour UN jour précis (r.date, normalisé en ISO aussi bien
+// pour les contrats reçus de Pabbly que pour un import CSV — voir importBillingProd/syncBackofficeInbox).
+// Sert à réalimenter le tableau de bord quotidien (Arena, Cash, briefings, badges) une fois que plus
+// aucune donnée n'est saisie par les agents eux-mêmes : voir syncProdBoardRealizedForDates ci-dessous.
+async function backofficeRealizedForDate(agent, dateStr){
+  const monthVal = dateStr.slice(0, 7);
+  const data = await getBillingProd(monthVal);
+  return (data.rows || []).filter(r => r.agent === agent && r.date === dateStr).length;
 }
 
-async function setDefaultPaySource(source){
-  const next = source === 'backoffice' ? 'backoffice' : 'agent';
-  if(!confirm(next === 'backoffice'
-    ? "Passer TOUS les calculs sur les contrats validés par le backoffice ?\n\nSalaires, primes, objectifs, classements, Arena, Cash, simulations : tout sera calculé sur le chiffre du backoffice, pour tous les mois où tu n'as pas décidé autrement.\n\n⚠️ En cours de mois, les contrats validés arrivent avec un peu de retard sur les +1 des agents : leurs compteurs peuvent donc paraître en baisse. C'est normal."
-    : "Repasser TOUS les calculs sur les compteurs saisis par les agents ?\n\nC'est le fonctionnement habituel en cours de mois : temps réel pour l'Arena, les pauses bonus et les classements.")) return;
-  config.defaultPaySource = next;
-  await saveConfigSilent();
-  logAudit('Admin', 'Source de paie générale changée', next === 'backoffice' ? 'contrats validés backoffice' : 'compteurs des agents');
-  billingInvalidate();
-  clearRenderCaches();
-  renderPaySourcePanel();
-  renderBillingAgentSheet();
-  renderAdminIndepReturnTable();
-}
-
-async function setPaySource(monthVal, source){
-  await billingSave(paySourceKey(monthVal), source === 'backoffice' ? 'backoffice' : 'agent');
-  logAudit('Admin', 'Source de paie changée', `${monthVal} → ${source === 'backoffice' ? 'contrats validés backoffice' : 'compteurs des agents'}`);
-  clearRenderCaches();
-}
-
-async function toggleMonthPaySource(){
-  const monthVal = document.getElementById('billingSheetMonth')?.value;
-  if(!monthVal) return;
-  const [y, m] = monthVal.split('-').map(Number);
-  const current = await getPaySource(y, m);
-  const next = current === 'backoffice' ? 'agent' : 'backoffice';
-  if(next === 'backoffice'){
-    const has = await backofficeMonthHasData(y, m);
-    if(!has){
-      alert(`Aucun contrat backoffice enregistré pour ${billingMonthLabel(monthVal)}.\n\nBasculer maintenant mettrait tous les agents à 0 contrat. Reçois d'abord les contrats (Pabbly) ou importe le CSV du backoffice.`);
-      return;
+// Recalcule et réécrit board.agents[agent].realized pour chaque date de dateStrs, à partir des contrats
+// backoffice validés ce jour-là (jamais des +1 des agents — ce bouton n'existe plus, voir Arena). Le
+// champ .objective (mini du jour) n'est jamais touché ici : seul .realized change. Appelée automatiquement
+// après chaque réception backoffice (Pabbly, RTDB) et chaque import CSV de production — c'est ce qui
+// permet à tous les écrans existants (classements, badges, briefings du jour et de la semaine) de
+// continuer à fonctionner sans qu'aucun ne lise plus jamais une saisie d'agent.
+async function syncProdBoardRealizedForDates(dateStrs){
+  const uniqueDates = [...new Set(dateStrs)].filter(Boolean);
+  for(const dateStr of uniqueDates){
+    const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+    if(!board.agents) board.agents = {};
+    let changed = false;
+    for(const agent of config.agents){
+      const count = await backofficeRealizedForDate(agent, dateStr);
+      if(!board.agents[agent]) board.agents[agent] = { objective: 0, realized: 0 };
+      if(board.agents[agent].realized !== count){ board.agents[agent].realized = count; changed = true; }
     }
-    if(!confirm(`Basculer la paie de ${billingMonthLabel(monthVal)} sur les contrats validés du backoffice ?\n\nÀ partir de maintenant, les salaires de ce mois sont calculés sur le chiffre du backoffice, plus sur les compteurs +1 des agents. Les agents verront le changement dans leur onglet Cash.\n\nTu peux revenir en arrière à tout moment.`)) return;
+    if(changed) await saveProdBoard(dateStr, board);
+    else prodBoardCache[dateStr] = board;
   }
-  await setPaySource(monthVal, next);
-  renderPaySourcePanel();
-  renderBillingAgentSheet();
+}
+
+// ------------------------------------------------------------
+// 🔒 SOURCE DE PAIE : LE BACKOFFICE, SANS EXCEPTION
+// ------------------------------------------------------------
+// Historique : ce bloc permettait de basculer entre le compteur +1 saisi par l'agent et le chiffre
+// validé par le backoffice, mois par mois. Ce choix n'existe plus — l'agent ne fournit plus AUCUNE
+// donnée de production (voir syncProdBoardRealizedForDates) : seul le backoffice compte, pour tous
+// les calculs, tous les mois, sans bascule possible. getPaySource() reste le point de passage unique
+// utilisé par tous les calculs de paie/objectifs/classements existants, pour ne rien avoir à changer
+// ailleurs dans le code.
+async function getPaySource(year, month){
+  return 'backoffice';
 }
 
 async function renderPaySourcePanel(){
@@ -17157,72 +17476,37 @@ async function renderPaySourcePanel(){
   if(!el) return;
   const monthVal = document.getElementById('billingSheetMonth')?.value || todayStr().slice(0, 7);
   const [y, m] = monthVal.split('-').map(Number);
-  const source = await getPaySource(y, m);
-  const isBo = source === 'backoffice';
 
-  // Comparatif agent par agent : le compteur qu'ils ont saisi eux-mêmes vs ce que le backoffice a validé.
   const agents = config.agents || [];
   const rows = [];
   for(const a of agents){
-    const [bo, counter, retr] = await Promise.all([
+    const [bo, retr] = await Promise.all([
       backofficeMonthlyCount(a, y, m),
-      agentCounterMonthlyCount(a, y, m),
       getMonthlyRetractCount(a, y, m)
     ]);
-    rows.push({ agent: a, bo, counter, retr, ecart: counter - bo });
+    rows.push({ agent: a, bo, retr });
   }
   const totalBo = rows.reduce((s, r) => s + r.bo, 0);
-  const totalCounter = rows.reduce((s, r) => s + r.counter, 0);
 
-  // Réglage général, au-dessus du réglage du mois : c'est lui qui pilote TOUS les calculs et toutes
-  // les simulations de l'app, sur tous les mois où l'admin n'a rien décidé de particulier.
-  const globalIsBo = config.defaultPaySource === 'backoffice';
-  let html = `<div style="padding:14px 16px; border-radius:12px; background:var(--panel2); border:1px solid ${globalIsBo ? 'rgba(52,183,116,0.4)' : 'var(--border)'}; margin-bottom:14px;">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;">
-      <div>
-        <div style="font-weight:800; font-size:15px;">⚙️ Réglage général — ${globalIsBo ? '🔒 tout est calculé sur le backoffice' : '✍️ tout est calculé sur les compteurs des agents'}</div>
-        <div style="font-size:12.5px; color:var(--muted); margin-top:4px; max-width:640px;">S'applique à <b>absolument tous les calculs</b> : salaires, primes, objectifs, classements, Arena, Cash, simulations, exports. Vaut pour tous les mois, sauf ceux que tu as basculés à la main ci-dessous.</div>
-      </div>
-      <button onclick="setDefaultPaySource('${globalIsBo ? 'agent' : 'backoffice'}')" style="padding:11px 18px; border-radius:9px; border:1px solid ${globalIsBo ? 'var(--border)' : 'var(--green)'}; background:${globalIsBo ? 'transparent' : 'rgba(52,183,116,0.14)'}; color:${globalIsBo ? 'var(--muted)' : 'var(--green)'}; font-weight:800; font-size:13px; cursor:pointer; white-space:nowrap;">
-        ${globalIsBo ? '↩️ Revenir aux compteurs agents' : '🔒 Tout passer sur le backoffice'}
-      </button>
-    </div>
-  </div>`;
-
-  html += `<div style="padding:14px 16px; border-radius:12px; background:${isBo ? 'rgba(52,183,116,0.10)' : 'var(--panel2)'}; border:1px solid ${isBo ? 'rgba(52,183,116,0.4)' : 'var(--border)'};">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;">
-      <div>
-        <div style="font-weight:800; font-size:15px;">${isBo ? '🔒 Le backoffice paie ce mois-ci' : '✍️ Les compteurs des agents paient ce mois-ci'}</div>
-        <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">${isBo
-          ? 'Les salaires de ce mois sont calculés sur les contrats validés par le backoffice. Le chiffre ne peut plus être modifié depuis le CRM.'
-          : 'Normal en cours de mois : les agents comptent eux-mêmes en temps réel. Bascule en fin de mois, une fois tous les contrats validés reçus.'}</div>
-      </div>
-      <button onclick="toggleMonthPaySource()" title="Change ce qui compte pour la paie de ce mois précis : les +1 saisis par les agents, ou les contrats validés par le backoffice. Les autres mois ne bougent pas." style="padding:11px 18px; border-radius:9px; border:1px solid ${isBo ? 'var(--border)' : 'var(--accent)'}; background:${isBo ? 'transparent' : 'var(--accent)'}; color:${isBo ? 'var(--muted)' : 'white'}; font-weight:800; font-size:13px; cursor:pointer; white-space:nowrap;">
-        ${isBo ? '↩️ Revenir aux compteurs des agents' : '🔒 Basculer sur le backoffice'}
-      </button>
-    </div>
+  let html = `<div style="padding:14px 16px; border-radius:12px; background:rgba(52,183,116,0.10); border:1px solid rgba(52,183,116,0.4); margin-bottom:14px;">
+    <div style="font-weight:800; font-size:15px;">🔒 Toutes les payes sont calculées sur les contrats validés par le backoffice</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:4px; max-width:640px;">Salaires, primes, objectifs, classements, Arena, Cash, simulations, exports : tout vient exclusivement des contrats validés par le backoffice (Pabbly ou import CSV). Les agents ne fournissent plus aucun chiffre de production — seuls leurs objectifs du jour et du mois restent saisis par eux.</div>
   </div>`;
 
   if(agents.length){
-    html += `<div style="overflow-x:auto; margin-top:14px;"><table class="salary-table"><thead><tr>
-      <th>Agent</th><th>✍️ Compteur agent</th><th>🔒 Validé backoffice</th><th>Écart</th><th>Rétractés</th><th>Payé sur</th>
+    html += `<div style="overflow-x:auto;"><table class="salary-table"><thead><tr>
+      <th>Agent</th><th>🔒 Validé backoffice</th><th>Rétractés</th><th>Payé sur</th>
     </tr></thead><tbody>`;
     rows.forEach(r=>{
-      const ecartColor = r.ecart === 0 ? 'var(--muted)' : (r.ecart > 0 ? 'var(--red)' : 'var(--amber)');
-      const ecartTxt = r.ecart === 0 ? '—' : (r.ecart > 0 ? `+${r.ecart}` : String(r.ecart));
-      const paid = isBo ? r.bo : r.counter;
       html += `<tr>
         <td><b>${escapeHtml(r.agent)}</b></td>
-        <td${isBo ? ' style="opacity:0.5;"' : ' style="font-weight:700;"'}>${r.counter}</td>
-        <td${isBo ? ' style="font-weight:700;"' : ' style="opacity:0.5;"'}>${r.bo}</td>
-        <td style="color:${ecartColor}; font-weight:700;">${ecartTxt}</td>
+        <td style="font-weight:700;">${r.bo}</td>
         <td>${r.retr || '—'}</td>
-        <td style="font-weight:800; color:var(--green);">${Math.max(0, paid - r.retr)}</td>
+        <td style="font-weight:800; color:var(--green);">${Math.max(0, r.bo - r.retr)}</td>
       </tr>`;
     });
-    html += `<tr style="border-top:2px solid var(--border);"><td><b>TOTAL</b></td><td><b>${totalCounter}</b></td><td><b>${totalBo}</b></td><td colspan="3"></td></tr>`;
+    html += `<tr style="border-top:2px solid var(--border);"><td><b>TOTAL</b></td><td><b>${totalBo}</b></td><td colspan="2"></td></tr>`;
     html += '</tbody></table></div>';
-    html += `<div style="font-size:12px; color:var(--muted); margin-top:8px;">Un écart positif (rouge) = l'agent a compté plus de contrats que le backoffice n'en a validés. C'est exactement ce que cette bascule sert à empêcher de payer.</div>`;
   }
   el.innerHTML = html;
 }
@@ -18936,73 +19220,24 @@ async function renderBackofficeAgentPanel(containerId, agent, year, month){
   if(!el) return;
   if(!agent){ el.innerHTML = ''; return; }
   try{
-    const [bo, counter, source] = await Promise.all([
-      backofficeMonthlyCount(agent, year, month),
-      agentCounterMonthlyCount(agent, year, month),
-      getPaySource(year, month)
-    ]);
+    const bo = await backofficeMonthlyCount(agent, year, month);
 
     // Tant qu'aucun contrat validé n'est arrivé pour le mois (début de mois, ou automatisation pas
     // encore branchée), on n'affiche rien plutôt qu'un « 0 validé » qui ferait paniquer tout le monde.
-    if(bo === 0 && source !== 'backoffice'){ el.innerHTML = ''; return; }
-
-    const isBo = source === 'backoffice';
-    const ecart = counter - bo;
-    let note, noteColor;
-    if(isBo){
-      note = "🔒 Ce mois est payé sur le chiffre du backoffice.";
-      noteColor = 'var(--green)';
-    } else if(ecart > 0){
-      note = `⚠️ ${ecart} contrat${ecart>1?'s':''} que tu as compté${ecart>1?'s':''} ne ${ecart>1?'sont':'est'} pas encore validé${ecart>1?'s':''} par le backoffice. C'est souvent un délai de traitement — si l'écart reste en fin de mois, parle-en.`;
-      noteColor = 'var(--amber)';
-    } else if(ecart < 0){
-      note = `${-ecart} contrat${-ecart>1?'s':''} validé${-ecart>1?'s':''} par le backoffice que tu n'as pas encore compté — pense à cliquer +1 pour que ton Arena soit à jour.`;
-      noteColor = 'var(--muted)';
-    } else {
-      note = '✅ Tout concorde : ton compteur et le backoffice disent la même chose.';
-      noteColor = 'var(--green)';
-    }
+    const now = nowMA();
+    const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
+    if(bo === 0 && isCurrentMonth){ el.innerHTML = ''; return; }
 
     el.innerHTML = `
-      <div style="max-width:520px; margin:0 auto; padding:14px 16px; border-radius:14px; background:var(--panel2); border:1px solid ${isBo ? 'rgba(52,183,116,0.4)' : 'var(--border)'};">
-        <div style="display:flex; gap:12px; text-align:center;">
-          <div style="flex:1;">
-            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">✍️ Comptés par toi</div>
-            <div style="font-size:26px; font-weight:800; margin-top:4px; color:${isBo ? 'var(--muted)' : 'var(--text)'};">${counter}</div>
-          </div>
-          <div style="width:1px; background:var(--border);"></div>
-          <div style="flex:1;">
-            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">🔒 Validés backoffice</div>
-            <div style="font-size:26px; font-weight:800; margin-top:4px; color:${isBo ? 'var(--green)' : 'var(--text)'};">${bo}</div>
-          </div>
-        </div>
-        <div style="font-size:12.5px; color:${noteColor}; margin-top:10px; text-align:center; line-height:1.5;">${note}</div>
-        <div style="font-size:11px; color:var(--muted); margin-top:7px; text-align:center;">Le chiffre du backoffice vient directement des contrats validés — personne ne peut le modifier ici, ni toi ni l'administration.</div>
+      <div style="max-width:400px; margin:0 auto; padding:14px 16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(52,183,116,0.4); text-align:center;">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">🔒 Contrats validés backoffice</div>
+        <div style="font-size:30px; font-weight:800; margin-top:4px; color:var(--green);">${bo}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:7px;">Le chiffre du backoffice vient directement des contrats validés — personne ne peut le modifier ici, ni toi ni l'administration.</div>
       </div>`;
   }catch(e){
     console.error('renderBackofficeAgentPanel:', e);
     el.innerHTML = '';
   }
-}
-
-// Total brut des compteurs +1 saisis par l'agent sur le mois (avant retrait des rétractations) —
-// extrait de monthlyRealizedContracts pour pouvoir comparer les deux sources sans les mélanger.
-async function agentCounterMonthlyCount(agent, year, month){
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const dateStrs = [];
-  for(let d = 1; d <= daysInMonth; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-  const boards = await Promise.all(dateStrs.map(async dateStr=>{
-    if(prodBoardCache[dateStr]) return prodBoardCache[dateStr];
-    const board = await getProdBoard(dateStr);
-    prodBoardCache[dateStr] = board;
-    return board;
-  }));
-  let total = 0;
-  boards.forEach(board=>{
-    const p = (board.agents && board.agents[agent]) || null;
-    if(p) total += (p.realized || 0);
-  });
-  return total;
 }
 
 // ------------------------------------------------------------
