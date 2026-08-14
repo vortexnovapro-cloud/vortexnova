@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r102';
+const APP_VERSION = '2026-08-14-r103';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -10770,6 +10770,40 @@ function proratedMonthFactor(agent, year, month){
   return Math.max(0, Math.min(1, workedWD / totalWD));
 }
 
+// Comme proratedMonthFactor, mais la fin de l'intervalle est EN PLUS plafonnée à aujourd'hui — jamais un
+// jour qui n'est pas encore arrivé. Sur un mois déjà clos (n'importe quel mois strictement avant celui-ci),
+// ce plafond ne change jamais rien (aujourd'hui est toujours après un mois déjà terminé) : la fonction
+// revient alors exactement à proratedMonthFactor. Elle ne change quelque chose que sur le mois EN COURS,
+// où elle donne "quelle part du mois est déjà réellement courue aujourd'hui" — c'est ce chiffre-là qui
+// sert à afficher un fixe/prime "déjà acquis maintenant" cohérent avec Mon argent (Cash), au lieu du
+// fixe plein mois utilisé pour un mois déjà terminé (calcul final de paie).
+// Utilisée UNIQUEMENT par billingComputeAgent pour l'affichage du tableau Admin du mois en cours — ne
+// jamais l'utiliser à la place de proratedMonthFactor dans un calcul qui doit rester valable même une
+// fois le mois terminé (ça figerait le salaire à sa valeur d'"aujourd'hui" pour toujours).
+function proratedMonthFactorAsOfToday(agent, year, month){
+  const startDate = getAgentStartDate(agent);
+  const term = getAgentTermination(agent);
+  const lastDay = term ? term.lastDay : null;
+  const today = todayStr();
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+  const monthStartStr = `${monthPrefix}01`;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthEndStr = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
+  const effectiveStart = (startDate && startDate > monthStartStr) ? startDate : monthStartStr;
+  let effectiveEnd = (lastDay && lastDay < monthEndStr) ? lastDay : monthEndStr;
+  if(today < effectiveEnd) effectiveEnd = today; // le seul ajout par rapport à proratedMonthFactor
+  if(effectiveStart > monthEndStr) return 0;
+  if(lastDay && lastDay < monthStartStr) return 0;
+  if(effectiveStart > effectiveEnd) return 0;
+  const totalWD = workingDaysInMonth(year, month);
+  if(totalWD <= 0) return 1;
+  const fromStart = workingDaysInMonthFrom(year, month, effectiveStart);
+  const fromZeroToEnd = workingDaysInMonthUntil(year, month, effectiveEnd);
+  const fullMonthWD = totalWD;
+  const workedWD = fromStart - (fullMonthWD - fromZeroToEnd);
+  return Math.max(0, Math.min(1, workedWD / totalWD));
+}
+
 // getAgentPay(agent) seul (sans année/mois) renvoie toujours les valeurs BRUTES telles que réglées par
 // l'admin — utilisé par les écrans d'édition (tableau "Rémunération par agent") pour ne jamais afficher
 // un chiffre réduit à la place de ce que l'admin a réellement tapé. getAgentPay(agent, year, month)
@@ -16503,7 +16537,12 @@ async function syncBillingRetractCount(){
 // retours de facturation → net réel.
 async function billingComputeAgent(agent, monthVal){
   const [year, month] = monthVal.split('-').map(Number);
-  const pay = getAgentPay(agent);
+  // ⚠️ getAgentPay(agent, year, month) — PAS getAgentPay(agent) seul. La version brute (sans mois)
+  // ignorait toute réduction embauche/licenciement en cours de mois : la ligne « Fixe mensuel » du détail
+  // affichait le plein montant réglé dans Réglages alors que le total au-dessus était déjà réduit —
+  // deux chiffres contradictoires dans le MÊME tableau pour le MÊME agent. Corrigé : les deux utilisent
+  // désormais la même base.
+  const pay = getAgentPay(agent, year, month);
   const [prodData, stats, retract, ret, paySource] = await Promise.all([
     getBillingProd(monthVal),
     monthlyStats(agent, year, month),
@@ -16516,13 +16555,39 @@ async function billingComputeAgent(agent, monthVal){
   const validRows = rows.filter(r => !r.retracted);
 
   const assiduiteAcquise = isAssiduiteAcquise(stats);
-  const [salary, counterRealized] = await Promise.all([
+  const [salaryBase, counterRealized] = await Promise.all([
     estimateSalaryMonthReal(agent, year, month, assiduiteAcquise),
     monthlyRealizedContracts(agent, year, month)
   ]);
 
+  // 🕐 MOIS EN COURS : le fixe (salaire de base + prime fixe + prime d'assiduité) n'est réellement acquis
+  // qu'au fil des jours ouvrés déjà passés — pas d'un coup dès le 1er du mois. estimateSalaryMonthReal
+  // calcule ce fixe comme si tout le mois (jusqu'à un éventuel licenciement) était déjà couru : correct
+  // une fois le mois terminé (c'est la paie finale), trompeur en cours de mois — ça affichait un montant
+  // bien plus gros que ce que l'agent a réellement en poche aujourd'hui dans Mon argent (Cash). On ne
+  // touche QU'AU FIXE ici : commissions, primes d'objectif, primes manuelles et retenues restent basées
+  // sur les contrats/évènements RÉELLEMENT survenus jusqu'ici — ce sont déjà des faits, pas une
+  // projection, ils n'ont besoin d'aucun prorata supplémentaire.
+  let salary = salaryBase, displayPay = pay;
+  const now = nowMA();
+  const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth() + 1);
+  if(isCurrentMonth){
+    const monthBoundaryFactor = proratedMonthFactor(agent, year, month);
+    const asOfTodayFactor = proratedMonthFactorAsOfToday(agent, year, month);
+    const ratio = monthBoundaryFactor > 0 ? Math.min(1, asOfTodayFactor / monthBoundaryFactor) : 0;
+    const fixedFull = pay.baseSalary + pay.primeFixeMensuelle + (assiduiteAcquise !== false ? pay.primeAssiduite : 0);
+    const fixedAsOfToday = Math.round(fixedFull * ratio);
+    salary = { ...salaryBase, brut: salaryBase.brut - fixedFull + fixedAsOfToday, total: salaryBase.total - fixedFull + fixedAsOfToday };
+    displayPay = {
+      ...pay,
+      baseSalary: Math.round(pay.baseSalary * ratio),
+      primeFixeMensuelle: Math.round(pay.primeFixeMensuelle * ratio),
+      primeAssiduite: Math.round(pay.primeAssiduite * ratio)
+    };
+  }
+
   return {
-    agent, monthVal, year, month, pay, stats, assiduiteAcquise, paySource,
+    agent, monthVal, year, month, pay: displayPay, stats, assiduiteAcquise, paySource,
     importedTotal: rows.length,
     importedValid: validRows.length,
     retractedCount: retractedRows.length,
