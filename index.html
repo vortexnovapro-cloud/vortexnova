@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r107';
+const APP_VERSION = '2026-08-14-r108';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -8620,7 +8620,22 @@ async function computeMonthProjection(agent, year, month){
   // écoulés par l'agent" — cette dernière formule ajoutait les jours d'AVANT l'arrivée d'un nouvel agent
   // aux jours restants (ex: agent arrivé le 15 sur un mois de 22j ouvrés, 5j écoulés pour lui → l'ancienne
   // formule donnait 22-5=17j restants au lieu des ~7j réels, gonflant artificiellement son temps disponible).
-  const remainingWorkingDays = isCurrentMonth ? workingDaysRemainingFrom(todayStr()) : 0;
+  //
+  // ⚠️ BUG CORRIGÉ — même défaut, symétrique, pour un DÉPART en cours de mois : un agent licencié se
+  // voyait attribuer les mêmes jours ouvrés restants que tout le monde (jusqu'à la fin du calendrier),
+  // alors qu'il ne va plus produire un seul contrat après son dernier jour travaillé — la projection le
+  // faisait donc apparaître « en bonne voie » en extrapolant son rythme sur des jours où il n'est plus là.
+  // On plafonne les jours restants à son dernier jour travaillé (0 s'il est déjà passé).
+  let remainingWorkingDays = isCurrentMonth ? workingDaysRemainingFrom(todayStr()) : 0;
+  if(isCurrentMonth){
+    const termProj = getAgentTermination(agent);
+    if(termProj && termProj.lastDay){
+      const [pYear, pMonth] = [year, month];
+      const monthEndStrProj = `${pYear}-${String(pMonth).padStart(2,'0')}-${String(new Date(pYear, pMonth, 0).getDate()).padStart(2,'0')}`;
+      const effectiveEndProj = termProj.lastDay < monthEndStrProj ? termProj.lastDay : monthEndStrProj;
+      remainingWorkingDays = Math.max(0, workingDaysInMonthUntil(pYear, pMonth, effectiveEndProj) - workingDaysInMonthUntil(pYear, pMonth, todayStr()));
+    }
+  }
 
   const pace = elapsedWorkingDays > 0 ? realized / elapsedWorkingDays : 0;
   const projected = Math.round(realized + pace * remainingWorkingDays);
