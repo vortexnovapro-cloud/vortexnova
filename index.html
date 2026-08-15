@@ -1091,16 +1091,16 @@ function tryDeviceGateAdmin(){
                 </div>
                 <div id="exploSingleWrap">
                   <label style="margin-bottom:4px;">Date</label>
-                  <input type="date" id="exploDate" onchange="renderExplorateur()">
+                  <input type="date" id="exploDate" onchange="renderExplorateur(true)">
                 </div>
                 <div id="exploRangeWrap" style="display:none; gap:10px; flex-wrap:wrap;">
                   <div>
                     <label style="margin-bottom:4px;">Du</label>
-                    <input type="date" id="exploDateFrom" onchange="renderExplorateur()">
+                    <input type="date" id="exploDateFrom" onchange="renderExplorateur(true)">
                   </div>
                   <div>
                     <label style="margin-bottom:4px;">Au</label>
-                    <input type="date" id="exploDateTo" onchange="renderExplorateur()">
+                    <input type="date" id="exploDateTo" onchange="renderExplorateur(true)">
                   </div>
                 </div>
               </div>
@@ -1209,11 +1209,11 @@ function tryDeviceGateAdmin(){
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
               <div>
                 <label style="margin-bottom:4px;">📅 Période (gains & dépenses) — depuis</label>
-                <input type="date" id="expenseDateFrom" onchange="renderBossRevenue()">
+                <input type="date" id="expenseDateFrom" onchange="renderBossRevenue(true)">
               </div>
               <div>
                 <label style="margin-bottom:4px;">jusqu'à</label>
-                <input type="date" id="expenseDateTo" onchange="renderBossRevenue()">
+                <input type="date" id="expenseDateTo" onchange="renderBossRevenue(true)">
               </div>
               <button type="button" onclick="setExpenseDateToday()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12px; cursor:pointer;">📅 Aujourd'hui</button>
               <button type="button" onclick="resetExpenseDateRange()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--muted); font-weight:700; font-size:12px; cursor:pointer;">↺ Depuis le 1er du mois à aujourd'hui</button>
@@ -1301,7 +1301,7 @@ function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:0;">
             <div>
               <label style="margin-bottom:4px;">Agent</label>
-              <select id="raaAgentSelect" onchange="renderRetardsAbsencesAdmin()">
+              <select id="raaAgentSelect" onchange="renderRetardsAbsencesAdmin(true)">
                 <option value="">— Choisis un agent —</option>
               </select>
             </div>
@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r108';
+const APP_VERSION = '2026-08-14-r109';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3464,15 +3464,15 @@ function populateRaaAgentSelect(){
     sel.appendChild(opt);
   });
   if(config.agents.includes(prevVal)) sel.value = prevVal;
-  renderRetardsAbsencesAdmin();
+  renderRetardsAbsencesAdmin(true);
 }
 
-async function renderRetardsAbsencesAdmin(){
+async function renderRetardsAbsencesAdmin(force){
   const agent = document.getElementById('raaAgentSelect')?.value || '';
   const monthVal = document.getElementById('monthSelect')?.value;
   const now = nowMA();
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
-  await renderRetardsAbsencesPanel('adminRetardsAbsencesPanel', agent, year, month);
+  await renderRetardsAbsencesPanel('adminRetardsAbsencesPanel', agent, year, month, force);
 }
 
 function populateArenaAgentSelect(){
@@ -3672,7 +3672,7 @@ function tryAdminLogin(){
     initExploDefaults();
     initObjSnapDefaults();
     renderAllMonthly();
-    renderExplorateur();
+    renderExplorateur(true);
     renderNotifStatusPanel();
     renderDailyBriefingSection('dailyBriefingAdmin');
     renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin');
@@ -6472,7 +6472,7 @@ function renderExploAgentChips(){
 function exploToggleAll(){
   exploSelectedAgents.clear();
   renderExploAgentChips();
-  renderExplorateur();
+  renderExplorateur(true);
 }
 
 function exploToggleAgent(agent){
@@ -6487,14 +6487,14 @@ function exploToggleAgent(agent){
   // Si tout le monde a été désélectionné un par un, on retombe sur "Tous" plutôt que d'afficher une liste vide.
   if(exploSelectedAgents.size === config.agents.length) exploSelectedAgents.clear();
   renderExploAgentChips();
-  renderExplorateur();
+  renderExplorateur(true);
 }
 
 function onExploModeChange(){
   const mode = document.getElementById('exploMode').value;
   document.getElementById('exploSingleWrap').style.display = mode === 'single' ? 'block' : 'flex';
   document.getElementById('exploRangeWrap').style.display = mode === 'range' ? 'flex' : 'none';
-  renderExplorateur();
+  renderExplorateur(true);
 }
 
 function initExploDefaults(){
@@ -6528,12 +6528,12 @@ function exploDateList(){
   return list;
 }
 
-async function renderExplorateur(){
+async function renderExplorateur(force){
   renderExploAgentChips();
   const agents = getExploSelectedAgents();
   const dateList = exploDateList();
   await renderExploMonthlySummary(agents, dateList);
-  await renderExploDailyDetail(agents, dateList);
+  await renderExploDailyDetail(agents, dateList, force);
 }
 
 async function renderExploMonthlySummary(agents, dateList){
@@ -6677,11 +6677,21 @@ async function renderExploMonthlySummary(agents, dateList){
   el.innerHTML = html;
 }
 
-async function renderExploDailyDetail(agents, dateList){
+let exploDailyDetailLastComputed = 0;
+let exploDailyDetailLastKey = null;
+async function renderExploDailyDetail(agents, dateList, force){
   const el = document.getElementById('exploDailyDetail');
   if(!el) return;
   if(dateList.length === 0 || agents.length === 0){ el.innerHTML = ''; return; }
-  el.innerHTML = '<div class="section-title">📅 Détail jour par jour</div><div class="empty">⏳ Chargement…</div>';
+  // Espacé (voir READ_TIME_REFRESH_MS) — se réécrivait entièrement toutes les 25s (cadence de l'auto-
+  // refresh général de Vue d'ensemble), pas le temps de lire un tableau qui peut être long. On force
+  // toujours le recalcul si les agents/dates choisis ont changé (sinon on afficherait l'ancienne sélection).
+  const key = `${agents.slice().sort().join(',')}::${dateList.join(',')}`;
+  const sameKey = key === exploDailyDetailLastKey;
+  if(!force && sameKey && (Date.now() - exploDailyDetailLastComputed) < READ_TIME_REFRESH_MS) return;
+  exploDailyDetailLastComputed = Date.now();
+  exploDailyDetailLastKey = key;
+  el.innerHTML = `<div style="display:flex; justify-content:flex-end;"><button onclick="renderExploDailyDetail(getExploSelectedAgents(), exploDateList(), true)" title="Recalculer maintenant" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button></div><div class="section-title">📅 Détail jour par jour</div><div class="empty">⏳ Chargement…</div>`;
 
   // Pré-charge tout en parallèle (chaque jour, chaque agent) au lieu d'un aller-retour Firestore à la
   // fois — sur une grande période avec plusieurs agents, ça change un temps de chargement de plusieurs
@@ -6698,7 +6708,8 @@ async function renderExploDailyDetail(agents, dateList){
     details[`${dateStr}::${agent}`] = { log, infr };
   }));
 
-  let html = `<div class="section-title">📅 Détail jour par jour${dateList.length>1?` (${dateList.length} jours)`:''}</div>
+  let html = `<div style="display:flex; justify-content:flex-end;"><button onclick="renderExploDailyDetail(getExploSelectedAgents(), exploDateList(), true)" title="Recalculer maintenant" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button></div>
+    <div class="section-title">📅 Détail jour par jour${dateList.length>1?` (${dateList.length} jours)`:''}</div>
     <div class="section-sub" style="margin-top:-6px;">Retard compté dès 1 minute. « Absent » = aucun pointage ET aucun contrat saisi ce jour-là. Inactivité = temps délogué (déconnexion auto), affiché à titre informatif uniquement, sans impact sur le salaire.</div>
     <div style="overflow-x:auto;"><table><thead><tr>
       <th>Date</th><th>Agent</th><th>Statut</th><th>Inactivité</th><th>Objectif jour</th><th>Réalisé jour</th><th>Infractions</th>
@@ -7579,14 +7590,20 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   container.innerHTML = html;
 }
 
-async function renderPauseTotalsToday(){
+let pauseTotalsLastComputed = 0;
+async function renderPauseTotalsToday(force){
   const container = document.getElementById('pauseTotalsToday');
   if(!container) return;
   const nonIndep = config.agents.filter(a => !isIndependant(a));
   if(nonIndep.length===0){
-    container.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>';
+    container.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; pauseTotalsLastComputed = Date.now();
     return;
   }
+  // Espacé (voir READ_TIME_REFRESH_MS) — relit le pointage de tous les agents à chaque tour, et
+  // réécrivait le tableau toutes les 25s (le cadence de l'auto-refresh général), pas le temps de le lire.
+  // Bouton "🔄 Actualiser" pour un point à jour immédiat quand on le veut vraiment.
+  if(!force && (Date.now() - pauseTotalsLastComputed) < READ_TIME_REFRESH_MS) return;
+  pauseTotalsLastComputed = Date.now();
   const dateStr = todayStr();
   const freeBudget = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
   // Jour non ouvré (week-end ou jour férié français) : personne n'est censé pointer, donc le statut "en
@@ -7640,7 +7657,8 @@ async function renderPauseTotalsToday(){
   });
 
   const nowMinNow = toMinutes(nowTimeStr().slice(0,5));
-  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>🔴 En direct</th><th>🍽️ Déjeuner</th><th>☕ Pause libre</th><th>Total pauses</th></tr></thead><tbody>';
+  let html = '<div style="display:flex; justify-content:flex-end; margin-bottom:6px;"><button onclick="renderPauseTotalsToday(true)" title="Recalculer maintenant" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button></div>';
+  html += '<div style="overflow-x:auto;"><table><thead><tr><th>Agent</th><th>🔴 En direct</th><th>🍽️ Déjeuner</th><th>☕ Pause libre</th><th>Total pauses</th></tr></thead><tbody>';
   let totalLunch = 0, totalFree = 0;
   rows.forEach(r=>{
     totalLunch += r.lunchMin; totalFree += r.freeMin;
@@ -8063,7 +8081,7 @@ function setExpenseDateToday(){
   const toEl = document.getElementById('expenseDateTo');
   if(fromEl) fromEl.value = todayStr();
   if(toEl) toEl.value = todayStr();
-  renderBossRevenue();
+  renderBossRevenue(true);
 }
 function resetExpenseDateRange(){
   const now = nowMA();
@@ -8072,7 +8090,7 @@ function resetExpenseDateRange(){
   const toEl = document.getElementById('expenseDateTo');
   if(fromEl) fromEl.value = firstOfMonth;
   if(toEl) toEl.value = todayStr();
-  renderBossRevenue();
+  renderBossRevenue(true);
 }
 function initExpenseDateDefaults(){
   const fromEl = document.getElementById('expenseDateFrom');
@@ -8088,7 +8106,9 @@ async function getTotalContractsForDateRange(fromDateStr, toDateStr){
   return totals.reduce((s,x)=> s+x, 0);
 }
 
-async function renderBossRevenue(){
+let bossRevenueLastComputed = 0;
+let bossRevenueLastRangeKey = null;
+async function renderBossRevenue(force){
   const el = document.getElementById('bossRevenuePanel');
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
@@ -8101,6 +8121,15 @@ async function renderBossRevenue(){
   let expenseFrom = document.getElementById('expenseDateFrom')?.value || todayStr();
   let expenseTo = document.getElementById('expenseDateTo')?.value || todayStr();
   if(expenseFrom > expenseTo){ [expenseFrom, expenseTo] = [expenseTo, expenseFrom]; } // sécurité si l'admin inverse les deux dates par erreur
+  // Calcul lourd (relit tous les agents), et le plus perturbant à lire de tous : réécrit 3 cartes + le
+  // détail agent par agent en dessous — voir HEAVY_FINANCIAL_REFRESH_MS. On force toujours le recalcul
+  // si la période choisie a changé (le contenu affiché serait sinon celui de l'ancienne période).
+  const rangeKey = `${expenseFrom}::${expenseTo}`;
+  const sameRange = rangeKey === bossRevenueLastRangeKey;
+  if(!force && sameRange && (Date.now() - bossRevenueLastComputed) < HEAVY_FINANCIAL_REFRESH_MS) return;
+  const detailWasOpen = document.getElementById('expenseDetailPanel')?.style.display === 'block';
+  bossRevenueLastComputed = Date.now();
+  bossRevenueLastRangeKey = rangeKey;
 
   const [periodTotal, expense] = await Promise.all([
     getTotalContractsForDateRange(expenseFrom, expenseTo),
@@ -8145,7 +8174,7 @@ async function renderBossRevenue(){
         const show = d.style.display==='none';
         d.style.display = show?'block':'none';
         this.textContent = show?'🔽 Masquer le détail':'🔍 Voir le détail';
-      " style="margin-top:12px; padding:7px 14px; border-radius:8px; border:1px solid var(--red); background:transparent; color:var(--red); font-weight:700; font-size:11.5px; cursor:pointer;">🔍 Voir le détail</button>
+      " style="margin-top:12px; padding:7px 14px; border-radius:8px; border:1px solid var(--red); background:transparent; color:var(--red); font-weight:700; font-size:11.5px; cursor:pointer;">${detailWasOpen?'🔽 Masquer le détail':'🔍 Voir le détail'}</button>
     </div>`;
 
   // Gains net = chiffre d'affaires de la période choisie moins les dépenses réelles (mêmes chiffres que
@@ -8195,8 +8224,11 @@ async function renderBossRevenue(){
       <td><b style="color:var(--red);">${expense.chargesProrated.toLocaleString('fr-FR')} DH</b></td>
     </tr>` : '';
 
-  el.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${expenseCard}${netCard}</div>
-    <div id="expenseDetailPanel" style="display:none; margin-top:14px; padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.25);">
+  el.innerHTML = `<div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+      <button onclick="renderBossRevenue(true)" title="Recalculer maintenant" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button>
+    </div>
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${expenseCard}${netCard}</div>
+    <div id="expenseDetailPanel" style="display:${detailWasOpen?'block':'none'}; margin-top:14px; padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.25);">
       <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.6;">Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.<br><span style="opacity:0.85;">💡 La prime d'assiduité (si acquise) suit la même règle : elle grandit chaque jour avec le fixe, sans jamais atteindre son plein montant avant la fin du mois — survole <b>ⓘ</b> dans l'en-tête pour le détail agent par agent.</span></div>
       <div style="overflow-x:auto;">
         <table class="salary-table">
@@ -8427,14 +8459,17 @@ async function computeRealTimeExpenseForRange(fromDateStr, toDateStr){
   };
 }
 
-// Calcul lourd (relit TOUS les agents sur TOUT le mois) — inutile de le refaire à chaque cycle de 25s
-// comme le reste de Vue d'ensemble, ça ne fait que clignoter "⏳ Calcul…" sans rien de neuf entre deux
-// cycles. Limité à une fois toutes les 90s, sauf changement de mois (là le contenu affiché serait faux
-// pour l'ancien mois, donc on force le recalcul immédiatement).
+// ⏱️ Fréquence des panneaux "lourds"/perturbants à lire s'ils se réécrivent trop souvent — l'auto-refresh
+// général de Vue d'ensemble tourne toutes les 25s (voir ADMIN_REFRESH_MS), mais certains calculs sont
+// coûteux (relisent tous les agents sur tout le mois) et surtout DÉRANGEANTS à cette cadence : ils
+// réécrivent tout le panneau (donc referment un détail qu'on avait ouvert) et font clignoter "⏳
+// Calcul…" sans rien de neuf entre deux cycles. On les espace davantage, et on donne un bouton
+// "🔄 Actualiser" à côté de chacun pour forcer un recalcul immédiat quand on le veut vraiment.
+const HEAVY_FINANCIAL_REFRESH_MS = 180000;  // 💰 Mon CA / 💸 Dépenses temps réel / 💼 Masse salariale / 🧾 Bilan net
+const READ_TIME_REFRESH_MS = 60000;         // ⏱️ Pauses en direct / ⏰ Retards-absences / 📅 Détail jour par jour
 let payrollSummaryLastComputed = 0;
 let payrollSummaryLastMonthKey = null;
-const PAYROLL_SUMMARY_MIN_INTERVAL_MS = 90000;
-async function renderPayrollSummary(){
+async function renderPayrollSummary(force){
   const el = document.getElementById('payrollSummaryPanel');
   if(!el) return;
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
@@ -8444,7 +8479,7 @@ async function renderPayrollSummary(){
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
   const monthKey = `${year}-${month}`;
   const sameMonth = monthKey === payrollSummaryLastMonthKey;
-  if(sameMonth && (Date.now() - payrollSummaryLastComputed) < PAYROLL_SUMMARY_MIN_INTERVAL_MS) return;
+  if(!force && sameMonth && (Date.now() - payrollSummaryLastComputed) < HEAVY_FINANCIAL_REFRESH_MS) return;
   payrollSummaryLastComputed = Date.now();
   payrollSummaryLastMonthKey = monthKey;
 
@@ -8452,6 +8487,7 @@ async function renderPayrollSummary(){
   const { totalTeam, totalIndep, totalBackoffice, grandTotal } = await computeTotalPayrollMonth(year, month);
   el.innerHTML = `
     <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid var(--border);">
+      <button onclick="renderPayrollSummary(true)" title="Recalculer maintenant" style="float:right; padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button>
       <div style="font-size:13px; color:var(--muted); margin-bottom:6px;">Total tout compris (salariés + backoffice + indépendants)</div>
       <div style="font-size:30px; font-weight:900; color:var(--green);">${Math.round(grandTotal).toLocaleString('fr-FR')} DH</div>
       <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:12px; font-size:13px; color:var(--muted);">
@@ -8468,7 +8504,9 @@ async function renderPayrollSummary(){
 // ============================================================
 // 🧾 BILAN NET DU MOIS — chiffre d'affaires - charges - masse salariale
 // ============================================================
-async function renderNetBalance(){
+let netBalanceLastComputed = 0;
+let netBalanceLastMonthKey = null;
+async function renderNetBalance(force){
   const el = document.getElementById('netBalancePanel');
   if(!el) return;
   const commission = config.bossCommissionPerContract || 0;
@@ -8477,11 +8515,19 @@ async function renderNetBalance(){
     return;
   }
   if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
-  el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
 
   const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+  // Même calcul lourd (relit tous les agents) que 💼 Masse salariale, même traitement : espacé, avec
+  // bouton "🔄 Actualiser" pour forcer un recalcul immédiat.
+  const monthKey = `${year}-${month}`;
+  const sameMonth = monthKey === netBalanceLastMonthKey;
+  if(!force && sameMonth && (Date.now() - netBalanceLastComputed) < HEAVY_FINANCIAL_REFRESH_MS) return;
+  netBalanceLastComputed = Date.now();
+  netBalanceLastMonthKey = monthKey;
+
+  el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
 
   const [monthContracts, payroll] = await Promise.all([
     getTotalContractsMonth(year, month),
@@ -8503,6 +8549,7 @@ async function renderNetBalance(){
 
   el.innerHTML = `
     <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid ${positive?'rgba(52,183,116,0.45)':'rgba(229,90,90,0.45)'};">
+      <button onclick="renderNetBalance(true)" title="Recalculer maintenant" style="float:right; padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button>
       <div style="font-size:13px; color:var(--muted); margin-bottom:6px;">Chiffre d'affaires − charges − masse salariale, ce mois</div>
       <div style="font-size:32px; font-weight:900; color:${positive?'var(--green)':'var(--red)'};">${positive?'+':''}${Math.round(net).toLocaleString('fr-FR')} DH</div>
       <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:14px; font-size:13px; color:var(--muted);">
@@ -9086,7 +9133,7 @@ async function renderAllMonthly(){
 // cet agent juste en dessous (même section, pas de changement d'onglet), sans repasser par le menu déroulant.
 function jumpToAgentRetardDetail(agent){
   const sel = document.getElementById('raaAgentSelect');
-  if(sel){ sel.value = agent; renderRetardsAbsencesAdmin(); }
+  if(sel){ sel.value = agent; renderRetardsAbsencesAdmin(true); }
   document.getElementById('adminRetardsAbsencesPanel')?.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
@@ -9976,7 +10023,16 @@ async function buildDailyBriefingHtml(baseRows){
     }));
   }
 
-  const rows = base.map(b=>{
+  const rows = base
+    // ⚠️ Un agent licencié ne doit plus recevoir de carte « conseil du matin » (rivalités à rattraper,
+    // rythme à tenir pour son objectif...) après son dernier jour travaillé — ces conseils n'ont plus
+    // aucun sens une fois parti, et donnaient l'impression trompeuse qu'il était toujours en poste. Il
+    // continue de recevoir sa carte normalement le jour même de son départ (il a pu travailler une
+    // partie de la journée), et reste visible dans le Bilan de la semaine (weeklyBriefing) pour qu'on
+    // puisse relire, a posteriori, pourquoi il a été licencié — seul CE panneau (conseil du matin) le
+    // masque, à partir du lendemain de son départ (voir disciplineUntil).
+    .filter(b => { const du = disciplineUntil(b.agent); return !du || dateStr < du; })
+    .map(b=>{
     const yesterdayDate = recentDates[0] || null;
     const yesterdayRealized = yesterdayDate ? (getAgentProd(boardsByDate[yesterdayDate], b.agent).realized || 0) : null;
     // historyFull garde objectif ET réalisé de chaque jour (pour calculer la série "jours sans finir à 0") ;
@@ -11435,11 +11491,25 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
 // monthlyStats/monthlyDeductions). Les paliers 5 et 6 (mise à pied, ratio de retours ÷2 puis 1:1) restent
 // des rappels textuels : la mise à pied se saisit manuellement (Admin → Corriger le pointage → Mise à
 // pied), et les retours sont suivis hors CRM (délai de 2 mois) — leur impact chiffré n'est donc qu'estimé.
-async function renderRetardsAbsencesPanel(containerId, agent, year, month){
+const raaPanelLastComputed = {};
+const raaPanelLastKey = {};
+async function renderRetardsAbsencesPanel(containerId, agent, year, month, force){
   const el = document.getElementById(containerId);
   if(!el) return;
   if(!agent){ el.innerHTML = '<div class="raa-empty">Sélectionne un agent.</div>'; return; }
   if(isIndependant(agent)){ el.innerHTML = "<div class=\"raa-empty\">🧑‍💼 Indépendant — pas de pointage, cette section ne s'applique pas.</div>"; return; }
+  // Espacé (voir READ_TIME_REFRESH_MS) — se réécrivait entièrement toutes les 25s (Admin) / 40s (agent),
+  // refermant systématiquement le détail du règlement s'il était ouvert, pas le temps de le lire. On
+  // force toujours le recalcul si l'agent/mois affiché a changé (sinon on afficherait le mauvais agent).
+  const key = `${agent}::${year}-${month}`;
+  const sameKey = key === raaPanelLastKey[containerId];
+  if(!force && sameKey && (Date.now() - (raaPanelLastComputed[containerId]||0)) < READ_TIME_REFRESH_MS) return;
+  // Le détail du règlement (bouton "Voir le détail") reste ouvert d'un rafraîchissement à l'autre s'il
+  // l'était déjà — sinon rouvrir la page dessus toutes les X secondes le refermerait sous les yeux de
+  // qui est en train de le lire.
+  const detailWasOpen = sameKey && document.getElementById(containerId + '-detail')?.style.display === 'block';
+  raaPanelLastComputed[containerId] = Date.now();
+  raaPanelLastKey[containerId] = key;
 
   const pay = getAgentPay(agent);
   const [stats, ded] = await Promise.all([
@@ -11541,6 +11611,9 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
 
   el.innerHTML = `
     <div class="raa-wrap">
+      <div style="display:flex; justify-content:flex-end; margin-bottom:-6px;">
+        <button onclick="renderRetardsAbsencesPanel('${containerId}','${agent.replace(/'/g,"\\'")}',${year},${month},true)" title="Recalculer maintenant" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button>
+      </div>
       <div class="raa-hero">
         <div class="raa-hero-item">
           <div class="raa-hero-num" style="color:${captionColor};">${count}</div>
@@ -11570,8 +11643,8 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month){
         const show = d.style.display==='none';
         d.style.display = show?'block':'none';
         this.textContent = show?'🔽 Masquer le détail':'📋 Voir le détail du règlement + les jours concernés';
-      ">📋 Voir le détail du règlement + les jours concernés</button>
-      <div class="raa-detail" id="${detailId}" style="display:none;">
+      ">${detailWasOpen?'🔽 Masquer le détail':'📋 Voir le détail du règlement + les jours concernés'}</button>
+      <div class="raa-detail" id="${detailId}" style="display:${detailWasOpen?'block':'none'};">
         ${detailHtml}
         <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin:14px 0 4px;">📅 Jours concernés ce mois-ci</div>
         ${eventsHtml}
@@ -13839,9 +13912,12 @@ async function saveProdConfig(){
   renderMonthlyObjectif();
   renderArena();
   renderSupervision();
-  renderBossRevenue();
-  renderPayrollSummary();
-  renderNetBalance();
+  // Un changement de réglages de paie doit se refléter immédiatement ici — jamais attendu derrière le
+  // délai anti-clignotement (voir HEAVY_FINANCIAL_REFRESH_MS), sinon l'admin verrait encore les anciens
+  // montants juste après avoir enregistré.
+  renderBossRevenue(true);
+  renderPayrollSummary(true);
+  renderNetBalance(true);
 }
 
 async function renderMonthlyObjectif(){
