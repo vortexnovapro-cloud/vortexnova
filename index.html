@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-20-r110';
+const APP_VERSION = '2026-08-20-r111';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -17647,7 +17647,7 @@ async function syncBackofficeInbox(opts){
   if(!firebaseReady) return null;
   backofficeSyncBusy = true;
 
-  const result = { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [], byMonthCount: {}, fixes: [], warnings: [], error: null, rtdbError: null };
+  const result = { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [], datesSuspectes: [], byMonthCount: {}, fixes: [], warnings: [], error: null, rtdbError: null };
   // Regroupé par mois de contrat avant écriture : un seul enregistrement par mois touché, au lieu
   // d'une écriture par contrat.
   const byMonth = {};
@@ -17666,6 +17666,22 @@ async function syncBackofficeInbox(opts){
     const who = r.nom || r.numContrat || r.agent || '?';
     if(r._fixes) r._fixes.forEach(f => result.fixes.push(`${who} — ${f}`));
     if(r._warnings) r._warnings.forEach(w => result.warnings.push(`${who} — ${w}`));
+    // ═══ DATE TROP LOIN D'AUJOURD'HUI = PRESQUE TOUJOURS UNE FAUTE DE FRAPPE ═══
+    // Cas réel : « FAIT LE 20/08/2025 » tapé à la place de 2026 dans le message Telegram. La date est
+    // parfaitement lisible, le contrat part donc sans broncher dans la production d'août 2025 — et le
+    // compteur du jour affiche 35 au lieu de 36, sans la moindre explication. Impossible à retrouver
+    // à l'œil sur 36 lignes toutes identiques. On range quand même le contrat à SA date (on ne devine
+    // jamais à la place du backoffice), mais on le SIGNALE pour que la correction prenne 5 secondes.
+    const ecartJours = Math.round((new Date(todayStr() + 'T00:00:00') - new Date(r.dateISO + 'T00:00:00')) / 86400000);
+    if(ecartJours > 10 || ecartJours < 0){
+      const [ay, am, ad] = r.dateISO.split('-');
+      const [ty, tm, td] = todayStr().split('-');
+      result.datesSuspectes.push({
+        num: r.numContrat || '', nom: r.nom || '', agent, date: r.dateISO, ecartJours,
+        // Même jour, même mois, année différente : le diagnostic est certain, on le dit tel quel.
+        anneeSeule: (am === tm && ad === td && ay !== ty), anneeLue: ay, anneeAttendue: ty
+      });
+    }
     const monthVal = r.dateISO.slice(0, 7);
     if(!byMonth[monthVal]) byMonth[monthVal] = [];
     byMonth[monthVal].push({
@@ -17793,6 +17809,59 @@ async function manualSyncBackoffice(){
   renderBillingAgentSheet();
 }
 
+// Ramène un contrat mal daté (faute de frappe sur l'année, le plus souvent) au jour d'aujourd'hui.
+// Le contrat est DÉPLACÉ : retiré du mois où sa date erronée l'avait envoyé, puis rangé dans le mois
+// courant avec la bonne date. Les deux mois concernés sont resynchronisés, donc les compteurs du jour
+// des agents se corrigent immédiatement — chez eux aussi, via le signal envoyé à tous les postes.
+async function corrigerDateContratVersAujourdhui(numContrat, ancienneDate, btn){
+  const T = todayStr();
+  const moisSrc = String(ancienneDate).slice(0, 7);
+  const moisDst = T.slice(0, 7);
+  if(!confirm(`Ramener le contrat n° ${numContrat} au ${T.split('-').reverse().join('/')} ?\n\nIl est actuellement enregistré au ${String(ancienneDate).split('-').reverse().join('/')}.\nIl comptera alors dans la production d'aujourd'hui.`)) return;
+  const original = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳…'; }
+  try{
+    const src = await getBillingProd(moisSrc);
+    const idx = (src.rows || []).findIndex(x => String(x.numContrat || '') === String(numContrat) && x.date === ancienneDate);
+    if(idx < 0){
+      showToast("⚠️ Contrat introuvable — il a peut-être déjà été corrigé.", 'warn', 6000);
+      return;
+    }
+    const row = src.rows[idx];
+    src.rows.splice(idx, 1);
+    row.date = T; row.datePropre = T; row._reviewed = true; delete row._warnings;
+    if(moisSrc === moisDst){
+      src.rows.push(row);
+      await billingSave(billingProdKey(moisSrc), src);
+    } else {
+      const dst = await getBillingProd(moisDst);
+      dst.rows = (dst.rows || []).concat([row]);
+      dst.month = moisDst;
+      await billingSave(billingProdKey(moisSrc), src);
+      await billingSave(billingProdKey(moisDst), dst);
+    }
+    billingContractIndexCache = null;
+    billingInvalidate();
+    // Les deux jours changent de compte : l'ancien perd le contrat, aujourd'hui le gagne.
+    await syncProdBoardRealizedForDates([ancienneDate, T]);
+    clearRenderCaches();
+    logAudit('Admin', 'Date de contrat corrigée', `n° ${numContrat} : ${ancienneDate} → ${T}`);
+    showToast(`✅ Contrat n° ${numContrat} ramené à aujourd'hui.`, 'ok', 5000);
+  }catch(e){
+    console.error('corrigerDateContratVersAujourdhui', e);
+    showToast("⚠️ Correction impossible — vérifie ta connexion.", 'warn', 6000);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = original; }
+    try{
+      if(backofficeLastResult && Array.isArray(backofficeLastResult.datesSuspectes)){
+        backofficeLastResult.datesSuspectes = backofficeLastResult.datesSuspectes.filter(s => String(s.num) !== String(numContrat));
+      }
+      await renderBackofficeInboxPanel(backofficeLastResult);
+      await renderBillingImportSummary();
+    }catch(e){}
+  }
+}
+
 async function renderBackofficeInboxPanel(lastResult){
   const el = document.getElementById('backofficeInboxPanel');
   if(!el) return;
@@ -17880,6 +17949,30 @@ async function renderBackofficeInboxPanel(lastResult){
         👉 <b>${pending} contrat${pending>1?'s':''} attend${pending>1?'ent':''} dans la boîte.</b> Clique sur « 📡 Relever maintenant » pour le${pending>1?'s':''} ranger.
       </div>` : ''}
     </div>`;
+
+  // 🚨 Dates suspectes — la faute de frappe qui fait « il me manque un contrat ».
+  const suspectes = (r && r.datesSuspectes) || [];
+  if(suspectes.length){
+    html += `<div style="margin-top:12px; padding:13px 15px; border-radius:10px; background:rgba(229,72,77,0.12); border:1px solid rgba(229,72,77,0.45);">
+      <div style="font-weight:800; color:var(--red);">🚨 ${suspectes.length} contrat${suspectes.length>1?'s':''} rangé${suspectes.length>1?'s':''} à une date très éloignée d'aujourd'hui</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:5px; line-height:1.6;">
+        ${suspectes.length>1?'Ils ont':'Il a'} bien été enregistré${suspectes.length>1?'s':''}, mais <b>pas sur aujourd'hui</b> — donc pas dans le compteur du jour.
+        C'est presque toujours une faute de frappe dans le « FAIT LE » du message Telegram. Corrige la date pour ${suspectes.length>1?'les':'le'} ramener au bon jour.
+      </div>
+      <div style="overflow-x:auto; margin-top:9px;"><table class="salary-table"><thead><tr><th>Contrat</th><th>Client</th><th>Agent</th><th>Date lue</th><th>Diagnostic</th><th></th></tr></thead><tbody>
+      ${suspectes.map(s=>`<tr>
+        <td><b>${escapeHtml(s.num || '—')}</b></td>
+        <td>${escapeHtml(s.nom || '—')}</td>
+        <td>${escapeHtml(s.agent || '—')}</td>
+        <td style="color:var(--red);"><b>${s.date.split('-').reverse().join('/')}</b></td>
+        <td style="font-size:12px;">${s.anneeSeule
+            ? `Année <b style="color:var(--red);">${escapeHtml(s.anneeLue)}</b> au lieu de <b style="color:var(--green);">${escapeHtml(s.anneeAttendue)}</b>`
+            : (s.ecartJours < 0 ? `Date dans le futur (dans ${Math.abs(s.ecartJours)} j)` : `${s.ecartJours} jours dans le passé`)}</td>
+        <td>${s.num ? `<button onclick="corrigerDateContratVersAujourdhui('${escapeHtml(s.num)}','${s.date}',this)" style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:transparent; color:var(--green); font-weight:700; font-size:11.5px; cursor:pointer;">→ Ramener à aujourd'hui</button>` : ''}</td>
+      </tr>`).join('')}
+      </tbody></table></div>
+    </div>`;
+  }
   }
 
   if(r && r.unresolvedAgent && r.unresolvedAgent.length){
