@@ -1916,7 +1916,7 @@ function tryDeviceGateAdmin(){
 
         <div class="settings-box">
           <label>📊 Ce qui est enregistré</label>
-          <div class="section-sub">Vue en direct sur la période de ton choix. Par défaut aujourd'hui — ce qui est arrivé pendant que tu regardais ailleurs.</div>
+          <div class="section-sub">Vue en direct sur la période de ton choix. Par défaut aujourd'hui — ce qui est arrivé pendant que tu regardais ailleurs. <b>Tout vient du backoffice</b> (Pabbly ou import de fichier) : les agents ne saisissent plus aucun contrat, seulement leurs objectifs.</div>
           <div class="admin-toolbar" style="margin-top:12px;">
             <select id="summaryPeriod" onchange="onSummaryPeriodChange()" title="Aujourd'hui, les 7 derniers jours, depuis le 1er du mois, ou une période que tu choisis.">
               <option value="today">Aujourd'hui</option>
@@ -2188,7 +2188,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-14-r109';
+const APP_VERSION = '2026-08-20-r110';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -16726,7 +16726,12 @@ async function renderBillingImportSummary(){
   const ret = { periodFrom: null, periodTo: null, importedAt: lastImport };
   const prodMonth = range.label;
 
-  // Les +1 saisis par les agents sur la même fenêtre, jour par jour, pour montrer l'écart.
+  // ⚠️ REFAIT — les agents ne saisissent PLUS aucun contrat (seulement leur objectif du jour et du
+  // mois). Les compteurs des tableaux du jour sont désormais RÉÉCRITS à partir des contrats validés
+  // par le backoffice (voir syncProdBoardRealizedForDates). Ce total ne compare donc plus deux
+  // sources indépendantes — il ne sert plus qu'à VÉRIFIER que ces tableaux sont bien à jour par
+  // rapport au backoffice. S'il diverge, c'est que la resynchronisation n'a pas eu lieu (import fait
+  // depuis un autre poste, coupure réseau…) : on le signale, avec le bouton pour la relancer.
   let agentTotal = 0;
   let agentDetail = { parAgent: {}, ignores: 0 };
   try{
@@ -16757,8 +16762,26 @@ async function renderBillingImportSummary(){
     });
     agentDetail = { parAgent, ignores };
   }catch(e){}
-  const ecart = agentTotal - prodRows.length;
-  const ecartColor = ecart === 0 ? 'var(--muted)' : (ecart > 0 ? 'var(--red)' : 'var(--amber)');
+  // ═══ CE QUI EST COMPTÉ POUR LA PAIE, ET CE QUI NE L'EST PAS ═══
+  // Les deux chiffres sont tirés de la MÊME liste (les contrats validés par le backoffice), donc leur
+  // somme fait toujours exactement le total affiché à gauche : plus aucun « écart » fantôme possible.
+  // Un contrat validé n'est compté pour personne dans exactement deux cas, et ce sont les deux seuls :
+  //   • son nom d'agent n'a pas été reconnu (faute de frappe, colonne décalée) → à rattacher ;
+  //   • il est au nom d'un agent archivé ou supprimé → normal s'il est vraiment parti.
+  const actifsSet = new Set(config.agents || []);
+  let comptesPaie = 0;
+  const parAgentBo = {};
+  const parAgentInactif = {};
+  prodRows.forEach(r=>{
+    if(!r.agent){ return; }                       // déjà compté dans prodOrphans
+    if(actifsSet.has(r.agent)){ comptesPaie++; parAgentBo[r.agent] = (parAgentBo[r.agent] || 0) + 1; }
+    else parAgentInactif[r.agent] = (parAgentInactif[r.agent] || 0) + 1;
+  });
+  const nbInactifs = Object.values(parAgentInactif).reduce((s,x)=> s+x, 0);
+  const nonComptes = prodOrphans + nbInactifs;
+  const nonComptesColor = nonComptes === 0 ? 'var(--green)' : (prodOrphans > 0 ? 'var(--red)' : 'var(--amber)');
+  // Contrôle d'intégrité : les tableaux du jour doivent refléter exactement le backoffice.
+  const boardsDesync = agentTotal !== comptesPaie;
 
   el.innerHTML = `
     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px;">
@@ -16768,17 +16791,17 @@ async function renderBillingImportSummary(){
         <div style="font-size:12.5px; color:var(--muted);">contrats validés${prodOrphans ? ` · <span style="color:var(--red);">${prodOrphans} non rattaché${prodOrphans>1?'s':''}</span>` : ''}</div>
         <div style="font-size:12px; color:var(--muted); margin-top:6px;">Dernier import : ${fmtDate(prod.importedAt)}</div>
       </div>
-      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);" title="Total des +1 que les agents ont saisis eux-mêmes dans leur Arena sur ce mois, toutes équipes confondues.">
-        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">✍️ Saisi par les agents</div>
-        <div style="font-size:26px; font-weight:800; margin-top:6px;">${agentTotal}</div>
-        <div style="font-size:12.5px; color:var(--muted);">compteurs Arena${agentDetail.ignores ? ` · <span title="Compteurs appartenant à des agents archivés ou supprimés : ils ne sont pas comptés ici, puisqu'ils ne sont plus payés." style="cursor:help;">${agentDetail.ignores} ignorés</span>` : ''}</div>
-        <div style="font-size:12px; color:var(--muted); margin-top:6px;" title="${escapeHtml(Object.keys(agentDetail.parAgent).sort((a,b)=>agentDetail.parAgent[b]-agentDetail.parAgent[a]).map(a=>`${a} : ${agentDetail.parAgent[a]}`).join(' · ') || 'aucun')}">Temps réel, avant validation${Object.keys(agentDetail.parAgent).length ? ' · <span style="cursor:help; text-decoration:underline dotted;">détail</span>' : ''}</div>
+      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);" title="Parmi les contrats validés ci-contre, ceux qui sont rattachés à un agent actuellement actif — donc ceux qui rapportent réellement à quelqu'un. Les agents ne saisissent plus aucun contrat : ce chiffre vient du backoffice, comme celui d'à côté.">
+        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">✅ Comptés pour la paie</div>
+        <div style="font-size:26px; font-weight:800; margin-top:6px; color:var(--green);">${comptesPaie}</div>
+        <div style="font-size:12.5px; color:var(--muted);">rattachés à un agent actif</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;" title="${escapeHtml(Object.keys(parAgentBo).sort((a,b)=>parAgentBo[b]-parAgentBo[a]).map(a=>`${a} : ${parAgentBo[a]}`).join(' · ') || 'aucun')}">${Object.keys(parAgentBo).length ? `${Object.keys(parAgentBo).length} agent${Object.keys(parAgentBo).length>1?'s':''} · <span style="cursor:help; text-decoration:underline dotted;">détail</span>` : '—'}</div>
       </div>
-      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid ${ecart === 0 ? 'var(--border)' : 'rgba(229,90,90,0.4)'};" title="Différence entre ce que les agents ont compté et ce que le backoffice a validé. Un écart positif signifie que des contrats comptés n'ont pas été validés — c'est exactement ce que la bascule sur le backoffice sert à ne pas payer.">
-        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">⚖️ Écart</div>
-        <div style="font-size:26px; font-weight:800; margin-top:6px; color:${ecartColor};">${ecart > 0 ? '+' : ''}${ecart}</div>
-        <div style="font-size:12.5px; color:var(--muted);">${ecart === 0 ? 'les deux concordent' : (ecart > 0 ? 'comptés mais pas validés' : 'validés mais pas comptés')}</div>
-        <div style="font-size:12px; color:var(--muted); margin-top:6px;">${ecart > 0 ? 'À surveiller avant de payer' : 'Rien d\'anormal'}</div>
+      <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid ${nonComptes === 0 ? 'var(--border)' : 'rgba(229,90,90,0.4)'};" title="Contrats bien validés par le backoffice mais qui ne rapportent à personne : soit le nom d'agent n'a pas été reconnu, soit il appartient à un agent archivé. Tant que ce chiffre n'est pas à 0, le total validé et le total payé ne peuvent pas coïncider.">
+        <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">⚠️ Non comptés</div>
+        <div style="font-size:26px; font-weight:800; margin-top:6px; color:${nonComptesColor};">${nonComptes}</div>
+        <div style="font-size:12.5px; color:var(--muted);">${nonComptes === 0 ? 'tout est rattaché' : [prodOrphans ? `${prodOrphans} nom${prodOrphans>1?'s':''} non reconnu${prodOrphans>1?'s':''}` : '', nbInactifs ? `${nbInactifs} agent${nbInactifs>1?'s':''} archivé${nbInactifs>1?'s':''}` : ''].filter(Boolean).join(' · ')}</div>
+        <div style="font-size:12px; color:${prodOrphans ? 'var(--red)' : 'var(--muted)'}; margin-top:6px;" title="${escapeHtml(Object.keys(parAgentInactif).sort().map(a=>`${a} : ${parAgentInactif[a]}`).join(' · ') || '')}">${prodOrphans ? '→ À rattacher dans « Contrats non rattachés »' : (nbInactifs ? 'Agents partis — normal' : 'Rien à corriger')}</div>
       </div>
       <div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid rgba(229,90,90,0.35);">
         <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">Retours des mois concernés</div>
@@ -16786,7 +16809,36 @@ async function renderBillingImportSummary(){
         <div style="font-size:12.5px; color:var(--muted);">${monthsInRange.map(m=>escapeHtml(billingMonthLabel(m))).join(', ')}${retOrphans ? ` · <span style="color:var(--red);">${retOrphans} à trancher</span>` : ''}</div>
         <div style="font-size:12px; color:var(--muted); margin-top:6px;">Dernier import : ${fmtDate(ret.importedAt)}</div>
       </div>
-    </div>`;
+    </div>
+    ${boardsDesync ? `<div style="margin-top:12px; padding:11px 14px; border-radius:10px; background:rgba(240,180,60,0.12); border:1px solid rgba(240,180,60,0.4); font-size:13px;">
+      🔄 <b>Les tableaux du jour ne reflètent pas encore le backoffice</b> — ils affichent ${agentTotal} contrat${agentTotal>1?'s':''} au lieu de ${comptesPaie}.
+      C'est ce que voient les agents dans l'Arena. Arrive quand un import a été fait depuis un autre poste ou qu'une écriture a échoué.
+      <button onclick="resyncProdBoardsForSummary(this)" style="margin-left:8px; padding:6px 12px; border-radius:8px; border:1px solid var(--amber); background:transparent; color:var(--amber); font-weight:700; font-size:12px; cursor:pointer;">Resynchroniser</button>
+    </div>` : ''}`;
+}
+
+// Recalcule les tableaux du jour (ce que voient les agents) à partir des contrats validés, sur la
+// période affichée dans « Ce qui est enregistré ». Volontairement manuel : c'est une réparation, pas
+// une routine — en marche normale, l'import et la réception Pabbly le font déjà tout seuls.
+async function resyncProdBoardsForSummary(btn){
+  const range = summaryPeriodRange();
+  if(!range) return;
+  const original = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ En cours…'; }
+  try{
+    const days = []; let cur = new Date(range.from + 'T00:00:00');
+    const end = new Date(range.to + 'T00:00:00'); let guard = 0;
+    while(cur <= end && guard < 400){ days.push(todayStr(cur)); cur.setDate(cur.getDate() + 1); guard++; }
+    await syncProdBoardRealizedForDates(days);   // envoie aussi le signal à tous les postes connectés
+    clearRenderCaches();
+    showToast('✅ Tableaux du jour resynchronisés — les agents voient les bons chiffres.', 'ok', 5000);
+  }catch(e){
+    console.error('resyncProdBoardsForSummary', e);
+    showToast("⚠️ Resynchronisation impossible — vérifie ta connexion.", 'warn', 6000);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = original; }
+    await renderBillingImportSummary();
+  }
 }
 
 // Marquage d'un contrat comme rétracté (rétractation légale 14 jours).
