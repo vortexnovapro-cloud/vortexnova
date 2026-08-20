@@ -8373,7 +8373,11 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   const termForRTS = getAgentTermination(agent);
   const startForRTS = getAgentStartDate(agent);
   const todayStillOpenForAgent = (!startForRTS || startForRTS <= todayStr()) && (!termForRTS || !termForRTS.lastDay || termForRTS.lastDay >= todayStr());
-  let asOfFactorRTS = proratedMonthFactorAsOf(agent, year, month, (dateRange && dateRange.to) ? dateRange.to : todayStr());
+  let asOfFactorRTS = proratedMonthFactorForRange(
+    agent, year, month,
+    (dateRange && dateRange.from) ? dateRange.from : `${year}-${String(month).padStart(2,'0')}-01`,
+    (dateRange && dateRange.to) ? dateRange.to : todayStr()
+  );
   if(todayIncludedInRange && !clockedInToday && todayStillOpenForAgent && totalWorkingDaysMonth > 0){
     asOfFactorRTS = Math.max(0, asOfFactorRTS - (1/totalWorkingDaysMonth));
   }
@@ -10988,6 +10992,38 @@ function proratedMonthFactorAsOfToday(agent, year, month){
   return proratedMonthFactorAsOf(agent, year, month, todayStr());
 }
 
+// ⚠️ BUG CORRIGÉ — « Dépenses (temps réel) » sur une fenêtre qui ne démarre PAS le 1er du mois.
+// proratedMonthFactorAsOf() ci-dessus part TOUJOURS du 1er du mois et ne regarde que la date de FIN :
+// c'est exactement ce qu'il faut pour un cumul « depuis le 1er », mais c'est FAUX dès que l'admin choisit
+// une autre fenêtre. Sur « Aujourd'hui » (20/08 → 20/08), il renvoyait 14/21 (du 1er au 20) au lieu de
+// 1/21 : le fixe d'UNE journée affichait le fixe de 14 JOURS. Les charges, elles, étaient bien divisées
+// par 21 — d'où une carte « Dépenses » gonflée d'environ 24 000 DH et un « Gains Net » catastrophique
+// alors que la journée était en réalité bénéficiaire.
+// Ici on intersecte la fenêtre active de l'agent ce mois-ci (embauche / licenciement) avec la fenêtre
+// RÉELLEMENT demandée [from, to], et on compte les jours ouvrés de cette intersection. Sur la fenêtre
+// standard (1er du mois → aujourd'hui) le résultat est identique à proratedMonthFactorAsOf : aucun autre
+// écran ne change de comportement.
+function proratedMonthFactorForRange(agent, year, month, fromDateStr, toDateStr){
+  const startDate = getAgentStartDate(agent);
+  const term = getAgentTermination(agent);
+  const lastDay = term ? term.lastDay : null;
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+  const monthStartStr = `${monthPrefix}01`;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthEndStr = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
+  // Fenêtre pendant laquelle l'agent est effectivement salarié ce mois-ci.
+  let s = (startDate && startDate > monthStartStr) ? startDate : monthStartStr;
+  let e = (lastDay && lastDay < monthEndStr) ? lastDay : monthEndStr;
+  // Intersection avec la fenêtre demandée par l'admin.
+  if(fromDateStr && fromDateStr > s) s = fromDateStr;
+  if(toDateStr && toDateStr < e) e = toDateStr;
+  if(s > e) return 0;
+  if(lastDay && lastDay < monthStartStr) return 0;
+  const totalWD = workingDaysInMonth(year, month);
+  if(totalWD <= 0) return 1;
+  return Math.max(0, Math.min(1, workingDaysInDateRange(s, e) / totalWD));
+}
+
 // getAgentPay(agent) seul (sans année/mois) renvoie toujours les valeurs BRUTES telles que réglées par
 // l'admin — utilisé par les écrans d'édition (tableau "Rémunération par agent") pour ne jamais afficher
 // un chiffre réduit à la place de ce que l'admin a réellement tapé. getAgentPay(agent, year, month)
@@ -11760,13 +11796,72 @@ function getAgentProd(board, agent){
   return board.agents[agent];
 }
 
+// ============================================================
+// 🔔 SIGNAL « LES CONTRATS ONT CHANGÉ » — mise à jour instantanée chez TOUT LE MONDE
+// ============================================================
+// Le listener prodBoard juste en dessous ne surveille QUE le tableau du jour affiché. Il suffisait tant
+// que les agents saisissaient eux-mêmes leurs contrats, mais plus depuis que tout vient du backoffice :
+//   • un import CSV qui contient des jours PASSÉS ne touche pas le tableau d'aujourd'hui → aucun
+//     signal n'arrivait chez les agents ;
+//   • et surtout, le compteur « contrats du mois » (celui de Cash / Mon argent) ne vient PAS du
+//     tableau du jour mais de billingProd, gardé en cache local (BILLING_CACHE). Même quand l'écran se
+//     redessinait, il réaffichait donc l'ANCIEN total du mois — jusqu'au tour d'auto-rafraîchissement
+//     suivant (40 s pour un agent), et seulement si l'onglet était au premier plan.
+//
+// On publie donc un minuscule marqueur horodaté (« pulse ») à chaque fois que des contrats backoffice
+// sont rangés — réception Pabbly comme import CSV. Tous les postes connectés y sont abonnés : ils vident
+// leur cache et se redessinent aussitôt. Volontairement quelques octets, PAS les contrats eux-mêmes :
+// pousser tout le mois (des centaines de lignes) vers chaque poste à chaque nouveau contrat coûterait
+// cher pour rien — chaque poste relit lui-même ce dont il a besoin.
+const PROD_PULSE_KEY = 'prodPulse';
+let prodPulseUnsub = null;
+let prodPulseLastSeen = null;
+
+async function bumpProdPulse(dates){
+  try{
+    await storageSet(PROD_PULSE_KEY, JSON.stringify({ at: Date.now(), dates: (dates || []).slice(0, 60) }));
+  }catch(e){ console.warn('bumpProdPulse', e); }
+}
+
+function subscribeProdPulse(){
+  if(!firebaseReady || !db) return;
+  if(prodPulseUnsub) return; // déjà branché : un seul abonnement suffit pour toute la session
+  prodPulseUnsub = db.collection('vortexnova').doc(PROD_PULSE_KEY).onSnapshot(async doc=>{
+    if(!doc.exists) return;
+    let payload = null;
+    try{ payload = JSON.parse(doc.data().value); }catch(e){ return; }
+    if(!payload || !payload.at) return;
+    // Tout premier snapshot à l'ouverture : on mémorise seulement. Sans ça, ouvrir Arena déclencherait
+    // un rafraîchissement complet immédiat alors que rien de neuf n'est arrivé.
+    if(prodPulseLastSeen === null){ prodPulseLastSeen = payload.at; return; }
+    if(payload.at === prodPulseLastSeen) return;
+    prodPulseLastSeen = payload.at;
+    if(userIsTypingInForm()) return; // ne jamais écraser une saisie en cours
+    // ⚠️ Indispensable : sans vider les caches, l'écran se redessinerait avec les anciens chiffres.
+    clearRenderCaches();
+    try{
+      if(document.getElementById('view-arena')?.classList.contains('active')) await renderArena();
+      if(document.getElementById('view-cash')?.classList.contains('active')) await renderCash();
+      if(document.getElementById('view-supervision')?.classList.contains('active')) await renderSupervision();
+      if(document.getElementById('admin-overview')?.classList.contains('active')) await renderObjectifSnapshot();
+      if(document.getElementById('admin-prod')?.classList.contains('active')){ await renderProdAdmin(); await renderMonthlyObjectif(); }
+    }catch(e){ console.warn('prodPulse render:', e); }
+  }, err=> console.error('prodPulse listener:', err));
+}
+
 function subscribeProdBoard(dateStr){
   if(!firebaseReady || !db) return;
   unsubscribeProdBoard();
+  subscribeProdPulse(); // volontairement JAMAIS coupé ensuite : un seul document minuscule, et ça permet
+                        // à l'écran admin d'être prévenu lui aussi sans abonnement supplémentaire.
   prodBoardUnsub = db.collection('vortexnova').doc(prodBoardKey(dateStr)).onSnapshot(doc=>{
     if(doc.exists && doc.data().value){
       try{ prodBoardCache[dateStr] = JSON.parse(doc.data().value); }catch(e){}
     }
+    // Les compteurs du MOIS viennent de billingProd (mis en cache) : on purge ce cache ici aussi, sinon
+    // le tableau du jour se met bien à jour mais « contrats du mois » reste figé à l'ancienne valeur.
+    if(typeof billingInvalidate === 'function') billingInvalidate();
+    billingContractIndexCache = null;
     renderArena();
     if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
     if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
@@ -17829,6 +17924,12 @@ async function syncProdBoardRealizedForDates(dateStrs){
     if(changed) await saveProdBoard(dateStr, board);
     else prodBoardCache[dateStr] = board;
   }
+  // Signal envoyé à tous les postes connectés (agents, superviseurs, admin) : « de nouveaux contrats
+  // viennent d'être rangés, videz vos caches et redessinez ». C'est ce qui fait que le compteur d'un
+  // agent bouge tout seul, en direct, dès que le backoffice valide un contrat ou qu'un CSV est importé —
+  // y compris pour des contrats datés d'un jour PASSÉ, que le listener du tableau du jour ne voyait pas.
+  // Placé ici parce que c'est le passage OBLIGÉ des deux chemins d'arrivée (Pabbly et import CSV).
+  if(uniqueDates.length) await bumpProdPulse(uniqueDates);
 }
 
 // ------------------------------------------------------------
