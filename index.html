@@ -695,6 +695,22 @@
   align-items:center; gap:7px; }
 .privacy-btn.on { border-color:#c9a870; color:#c9a870; background:rgba(184,147,90,0.12); }
 
+/* 🙈 SUPERVISION — masquer UNIQUEMENT ses montants perso (son salaire, sa prime de supervision),
+   pour pouvoir montrer son écran à l'équipe (objectifs, conseils, bilan…) sans dévoiler sa paie.
+   Différence volontaire avec le mode confidentiel du boss ci-dessus : ici RIEN ne se dévoile au
+   survol. L'écran est souvent projeté ou tourné vers quelqu'un, un coup de souris involontaire ne
+   doit jamais révéler le montant — il faut recliquer sur le bouton. */
+.sup-perso-hidden-note{ display:none; }
+#view-supervision.sup-masked .sup-perso-block{ display:none !important; }
+#view-supervision.sup-masked .sup-perso-hidden-note{
+  display:flex; align-items:center; justify-content:center; text-align:center; gap:8px;
+  font-size:13px; font-weight:700; color:#c9a870; padding:16px 18px;
+  border:1px dashed rgba(201,168,112,0.45); border-radius:12px; background:rgba(21,29,39,0.55);
+}
+.sup-perso-dots{ display:none; letter-spacing:2px; font-weight:800; color:var(--muted); }
+#view-supervision.sup-masked .sup-perso-val{ display:none; }
+#view-supervision.sup-masked .sup-perso-dots{ display:inline; }
+
 /* ============================================================
    📱 OPTIMISATION SMARTPHONE
    ============================================================
@@ -1103,7 +1119,11 @@ function tryDeviceGateAdmin(){
       </select>
 
       <div id="supervisionContent" style="display:none; margin-top:18px;">
-        <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">🔄 Actualisation automatique toutes les 35s — les chiffres restent à jour sans avoir à recharger la page.</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:10px;">
+          <div style="font-size:11px; color:var(--muted);">🔄 Actualisation automatique toutes les 35s — les chiffres restent à jour sans avoir à recharger la page.</div>
+          <button type="button" id="supPrivacyBtn" class="privacy-btn" onclick="toggleSupPrivacy()"
+                  title="Masque uniquement TES montants : ton salaire et ta prime de supervision. Les objectifs, les conseils, le bilan et les chiffres de l'équipe restent affichés — pratique quand tu montres ton écran à l'équipe. Le réglage reste actif sur cet appareil.">🙈 Masquer mon salaire &amp; ma prime</button>
+        </div>
 
         <div id="weeklyBriefingBannerSupervision" style="display:none; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; background:linear-gradient(135deg, rgba(184,147,90,0.26), rgba(184,147,90,0.12)); border:2px solid #c9a870; border-radius:16px; padding:22px 26px; margin-bottom:18px; animation: pulseWarn 2.4s infinite;">
           <div style="display:flex; align-items:center; gap:16px;">
@@ -1122,8 +1142,11 @@ function tryDeviceGateAdmin(){
 
         <div id="supervisionDetail"></div>
 
-        <div class="section-title" style="margin-top:32px;">💰 Salaire — toi & ta prime de supervision</div>
-        <div class="cash-period-grid" id="supervisionSalary"></div>
+        <div class="sup-perso-block">
+          <div class="section-title" style="margin-top:32px;">💰 Salaire — toi & ta prime de supervision</div>
+          <div class="cash-period-grid" id="supervisionSalary"></div>
+        </div>
+        <div class="sup-perso-hidden-note" style="margin-top:32px;">🙈 Ton salaire et ta prime de supervision sont masqués — clique « Afficher mon salaire &amp; ma prime » en haut de la page pour les revoir.</div>
 
         <div style="margin-top:24px; border-top:1px solid var(--border); padding-top:20px;">
           <div class="section-sub" style="margin-bottom:12px;">🔁 Mis à jour automatiquement à chaque contrat ajouté par un membre de l'équipe.</div>
@@ -2353,7 +2376,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-21-r113';
+const APP_VERSION = '2026-08-21-r114';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -13714,7 +13737,7 @@ async function renderSupervision(){
       <div class="supervision-progress"><div class="fill ${teamPct>=100?'over':(teamPct<50?'under':'')}" style="width:${Math.min(100,teamPct)}%;"></div></div>
       <div class="sub" style="margin-top:8px;font-size:11px;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}.</div>
     </div>
-    <div class="supervision-card">
+    <div class="supervision-card sup-perso-block">
       <div class="label">📊 Ta prime de supervision</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:6px 0 4px;">
         <div style="text-align:center;">
@@ -13734,6 +13757,7 @@ async function renderSupervision(){
       <div class="sub" style="margin-top:4px;font-size:11px;">Ne compte ni tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''}, ni ceux des autres superviseurs — le nombre de contrats affiché est toujours le vrai total de l'équipe, jamais doublé. Semaine = lundi à aujourd'hui.</div>
       ${myIneligibilityReason ? `<div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚫 Aujourd'hui, à cause du non-respect du règlement — ${myIneligibilityReason} — tu es à <b>0 DH/contrat</b> des agents de base. Ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}
     </div>
+    <div class="sup-perso-hidden-note">🙈 Ta prime de supervision est masquée — les chiffres d'équipe restent visibles.</div>
   `;
 
   // ---- Pression : agents en difficulté ----
@@ -13907,7 +13931,9 @@ async function renderSupervision(){
         <td>${projHtml}</td>
         <td>${pauseHtml}${pauseMonthNote}</td>
         <td><span class="tag ${r.retardsCumules>=3?'late':(r.retardsCumules>=1?'warn':'ok')}">${r.tier ? r.tier.label : 'Aucun retard'}</span></td>
-        <td><b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></td>
+        <td>${isMe
+              ? `<span class="sup-perso-val"><b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></span><span class="sup-perso-dots">••••• DH</span>`
+              : `<b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b>`}</td>
       </tr>`;
     }));
     html += rowsHtml.join('');
@@ -13943,7 +13969,9 @@ async function renderSupervision(){
         <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
         <td>${hasDefi ? `${r.dayRealized} / ${r.dayObjective}${defiHit ? ' ✅' : ''}` : '<span style="color:var(--muted);">Aucun défi fixé</span>'}</td>
         <td><b>${r.monthReal}</b></td>
-        <td><b style="color:var(--independant);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></td>
+        <td>${isMe
+              ? `<span class="sup-perso-val"><b style="color:var(--independant);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></span><span class="sup-perso-dots">••••• DH</span>`
+              : `<b style="color:var(--independant);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b>`}</td>
       </tr>`;
     }).join('') + `</tbody>
     <tfoot><tr style="font-weight:800; border-top:2px solid var(--border); color:var(--independant);">
@@ -14032,6 +14060,10 @@ async function renderSupervision(){
       <div class="cp-amount">${(myRow.salaryMonth + supervisorBonus).toLocaleString('fr-FR')} DH</div>
       <div class="cp-sub">Salaire personnel + prime de supervision</div>
     </div>` : '';
+
+  // Le tableau de bord vient d'être régénéré : on remet l'état du bouton « masquer mes montants »
+  // (la classe est sur la vue, elle survit au rendu — c'est juste le libellé du bouton qu'on resynchronise).
+  applySupPrivacy();
 }
 
 function loadProdConfigUI(){
@@ -18759,6 +18791,37 @@ function togglePrivacyMode(){
 }
 
 // ------------------------------------------------------------
+// 🙈 SUPERVISION — masquer SES montants perso pour montrer son écran
+// ------------------------------------------------------------
+// Cas d'usage réel : le superviseur veut afficher les objectifs, les conseils du matin ou le bilan
+// devant son équipe — mais pas sa propre paie ni sa prime. Un seul bouton en haut de la page masque
+// ces trois blocs (carte prime, section salaire du bas, sa ligne salaire dans le tableau) et laisse
+// tout le reste intact.
+//
+// Le masquage passe par une simple classe CSS posée sur la vue (jamais sur le HTML régénéré) : c'est
+// ce qui fait qu'il TIENT à travers l'auto-refresh de 35 s, alors qu'un masquage appliqué au contenu
+// serait effacé au premier rafraîchissement. Comme le mode confidentiel du boss, le réglage est gardé
+// sur CET appareil uniquement (localStorage) et survit au rechargement de la page.
+const SUP_PRIVACY_KEY = 'vn_supPrivateAmounts';
+function isSupPrivacyOn(){
+  try{ return localStorage.getItem(SUP_PRIVACY_KEY) === '1'; }catch(e){ return false; }
+}
+function applySupPrivacy(){
+  const on = isSupPrivacyOn();
+  const view = document.getElementById('view-supervision');
+  if(view) view.classList.toggle('sup-masked', on);
+  const btn = document.getElementById('supPrivacyBtn');
+  if(btn){
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? '👁️ Afficher mon salaire & ma prime' : '🙈 Masquer mon salaire & ma prime';
+  }
+}
+function toggleSupPrivacy(){
+  try{ localStorage.setItem(SUP_PRIVACY_KEY, isSupPrivacyOn() ? '0' : '1'); }catch(e){}
+  applySupPrivacy();
+}
+
+// ------------------------------------------------------------
 // 🔎 RECHERCHE — retrouver un contrat sans savoir où il est
 // ------------------------------------------------------------
 // Deux besoins différents, deux outils :
@@ -20157,6 +20220,7 @@ async function bootApp(){
   loadConfig();
   updateSyncIndicator();
   applyPrivacyMode();
+  applySupPrivacy();
   resetPasswordFieldsMasked();
 }
 
@@ -20184,10 +20248,14 @@ let assistSeenAnnounced = {};
 let assistBtnResetTimer = null;
 
 // ── Le chant des grillons ──────────────────────────────────────────────────
-// Un vrai grillon ne fait pas « bip » : il produit une salve de petits crissements très aigus,
-// répétée. On reproduit exactement ça — une porteuse aiguë hachée par une vibration rapide — puis on
-// augmente le volume ET la cadence au fil du temps : au début c'est un bruit de fond discret, au bout
-// d'une minute et demie c'est impossible à ignorer. Ça ne s'arrête JAMAIS tout seul.
+// Un vrai grillon ne fait pas « bip » : il produit une salve de petites impulsions très brèves,
+// quasi sinusoïdales, autour de 4,5 kHz, répétée. La version précédente hachait une porteuse avec une
+// vibration carrée très large (±850 Hz) : ça sonnait « synthé ». On reproduit maintenant le mécanisme
+// réel — impulsions courtes, timbre presque pur, légère descente de hauteur dans chaque impulsion, un
+// souffle filtré très serré pour le grain, et de petites variations aléatoires d'un chant à l'autre
+// (un grillon n'est pas un métronome).
+// Volume : il DÉMARRE déjà bien audible (plus question de rater les premières secondes) et continue de
+// monter, en volume comme en cadence, jusqu'à saturer l'attention en ~45 s. Ça ne s'arrête JAMAIS tout seul.
 let assistAlarmTimer = null, assistAlarmT0 = 0, assistMaster = null, assistNextAt = 0;
 
 function assistAudio(){
@@ -20198,25 +20266,61 @@ function assistAudio(){
   }catch(e){ return null; }
 }
 
+// Bruit blanc généré une seule fois puis réutilisé : c'est lui, filtré très serré autour de la note du
+// grillon, qui donne le petit « grattement » d'aile. Sans lui le son reste propre… donc électronique.
+let assistNoiseBuf = null;
+function assistNoise(ctx){
+  if(assistNoiseBuf && assistNoiseBuf.sampleRate === ctx.sampleRate) return assistNoiseBuf;
+  const len = Math.floor(ctx.sampleRate * 0.4);
+  const b = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  for(let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  assistNoiseBuf = b;
+  return b;
+}
+
 function assistCricketSong(ctx, t0, level){
   if(!assistMaster) return;
-  const CRIS = 4, DUREE = 0.032, PAUSE = 0.042;
+  // 4 ou 5 impulsions par chant (le vrai grillon varie), ~21 ms chacune, séparées de ~26 ms.
+  const CRIS = 4 + (Math.random() < 0.4 ? 1 : 0);
+  const DUREE = 0.021, PAUSE = 0.026;
+  const f0 = 4340 + Math.random() * 430;   // chaque chant est légèrement différent du précédent
   for(let c = 0; c < CRIS; c++){
     const t = t0 + c * (DUREE + PAUSE);
+    const fin = t + DUREE;
+    // La salve s'ouvre et se referme : la 1re et la dernière impulsion sont un peu moins fortes.
+    const vol = level * (c === 0 ? 0.7 : (c === CRIS - 1 ? 0.85 : 1));
+
+    // Porteuse quasi pure : c'est ça qui distingue un grillon d'un bip.
     const osc = ctx.createOscillator(), g = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(4250 + c * 90, t);
-    // La vibration rapide superposée à la porteuse : c'est elle qui donne le grain « grillon »
-    // plutôt qu'un sifflement électronique.
-    const vib = ctx.createOscillator(), vibG = ctx.createGain();
-    vib.type = 'square'; vib.frequency.setValueAtTime(190, t); vibG.gain.setValueAtTime(850, t);
-    vib.connect(vibG); vibG.connect(osc.frequency);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f0 * 1.012, t);
+    osc.frequency.linearRampToValueAtTime(f0 * 0.985, fin);   // la petite descente typique
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(level, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0006, t + DUREE);
+    g.gain.linearRampToValueAtTime(vol, t + 0.004);
+    g.gain.linearRampToValueAtTime(vol * 0.7, fin - 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, fin + 0.006);
     osc.connect(g); g.connect(assistMaster);
-    osc.start(t); osc.stop(t + DUREE + 0.02);
-    vib.start(t); vib.stop(t + DUREE + 0.02);
+    osc.start(t); osc.stop(fin + 0.03);
+
+    // Harmonique très discrète — le timbre réel n'est pas parfaitement pur non plus.
+    const h = ctx.createOscillator(), hg = ctx.createGain();
+    h.type = 'sine'; h.frequency.setValueAtTime(f0 * 2, t);
+    hg.gain.setValueAtTime(0.0001, t);
+    hg.gain.linearRampToValueAtTime(vol * 0.13, t + 0.004);
+    hg.gain.exponentialRampToValueAtTime(0.0001, fin + 0.004);
+    h.connect(hg); hg.connect(assistMaster);
+    h.start(t); h.stop(fin + 0.03);
+
+    // Grain d'aile : souffle filtré en bande très étroite sur la même note.
+    const n = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ng = ctx.createGain();
+    n.buffer = assistNoise(ctx); n.loop = true;
+    bp.type = 'bandpass'; bp.frequency.setValueAtTime(f0, t); bp.Q.value = 16;
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.linearRampToValueAtTime(vol * 0.28, t + 0.004);
+    ng.gain.exponentialRampToValueAtTime(0.0001, fin + 0.004);
+    n.connect(bp); bp.connect(ng); ng.connect(assistMaster);
+    n.start(t, Math.random() * 0.3); n.stop(fin + 0.03);
   }
 }
 
@@ -20224,10 +20328,12 @@ function assistStartAlarm(){
   if(assistAlarmTimer) return;
   const ctx = assistAudio(); if(!ctx) return;
   assistMaster = ctx.createGain();
-  assistMaster.gain.setValueAtTime(1, ctx.currentTime);
+  // 0,8 et non 1 : trois couches sonores se superposent par impulsion, on garde une marge pour que rien
+  // ne sature (un son saturé devient un grésillement, et perd justement son côté « vrai grillon »).
+  assistMaster.gain.setValueAtTime(0.8, ctx.currentTime);
   assistMaster.connect(ctx.destination);
   assistAlarmT0 = ctx.currentTime;
-  assistNextAt = ctx.currentTime + 0.15;
+  assistNextAt = ctx.currentTime + 0.08;   // premier chant quasi immédiat après le clic de l'agent
   // On programme le son 1,5 s à l'avance : c'est ce qui garantit un rythme parfaitement régulier,
   // même si l'ordinateur est occupé (un setInterval seul « bafouille » dès que la page travaille).
   assistAlarmTimer = setInterval(()=>{
@@ -20236,9 +20342,11 @@ function assistStartAlarm(){
     let garde = 0;
     while(assistNextAt < horizon && garde++ < 30){
       const ecoule = Math.max(0, c.currentTime - assistAlarmT0);
-      const monte = Math.min(1, ecoule / 90);           // pleine puissance atteinte en 1 min 30
-      assistCricketSong(c, assistNextAt, 0.05 + 0.80 * monte);
-      assistNextAt += 0.30 + (0.95 - 0.62 * monte);     // et le silence entre deux chants se resserre
+      const monte = Math.min(1, ecoule / 45);           // pleine puissance atteinte en 45 s
+      // Démarre à 0,32 (au lieu de 0,05 avant : ~6× plus fort dès la 1re seconde) et finit à 0,80.
+      assistCricketSong(c, assistNextAt, 0.32 + 0.48 * monte);
+      // Cadence : ~0,90 s entre deux chants au début, ~0,52 s à pleine alerte.
+      assistNextAt += 0.28 + (0.62 - 0.38 * monte);
     }
   }, 400);
 }
