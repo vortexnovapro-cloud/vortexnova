@@ -156,6 +156,14 @@
     transition: transform .15s ease;
   }
   .vn-assist__btn:hover{ transform:scale(1.04); }
+  /* Deuxième bouton, volontairement plus discret que « j'arrive » : refuser doit rester possible en un
+     clic, mais ne jamais être le geste réflexe sous la pression de l'alarme. */
+  .vn-assist__btn--pass{
+    margin-top:12px; padding:13px 30px; font-size:15px; font-weight:800;
+    background:transparent; color:#e8b45a; border:1.5px solid rgba(232,180,90,.55);
+    box-shadow:none;
+  }
+  .vn-assist__btn--pass:hover{ background:rgba(232,180,90,.12); }
   .vn-assist__hint{ margin-top:16px; font-size:13px; color:var(--muted); }
   .vn-assist__queue{ margin-top:20px; font-size:14px; color:var(--amber); font-weight:700; }
   @media (prefers-reduced-motion: reduce){
@@ -874,7 +882,8 @@ function tryDeviceGateAdmin(){
     <div class="vn-assist__meta" id="vnAssistMeta"></div>
     <div class="vn-assist__meta" id="vnAssistWait" style="margin-top:-18px; font-weight:700;"></div>
     <button class="vn-assist__btn" type="button" onclick="assistanceAcknowledge()">✅ J'ai vu — j'arrive</button>
-    <div class="vn-assist__hint">L'agent sera prévenu tout de suite que tu arrives.</div>
+    <button class="vn-assist__btn vn-assist__btn--pass" type="button" onclick="assistanceDecline()">🚫 Je ne suis pas disponible — passer à un autre</button>
+    <div class="vn-assist__hint">L'agent sera prévenu tout de suite que tu arrives.<br>Si tu ne peux pas y aller, passe la demande : elle sonnera immédiatement chez un autre assistant, et l'agent n'attendra pas pour rien.</div>
     <div class="vn-assist__queue" id="vnAssistQueue"></div>
   </div>
 </div>
@@ -2416,7 +2425,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-23-r117';
+const APP_VERSION = '2026-08-23-r118';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -21364,24 +21373,38 @@ function superviseursDeGarde(){
 }
 
 // Renvoie la liste des personnes qui doivent voir l'alerte, à cet instant précis.
-function assistanceDestinataires(){
-  const supsDispo = superviseursDeGarde().filter(estDisponible);
+// `req` est facultatif : quand il est fourni, on exclut ceux qui ont explicitement passé la main sur
+// CETTE demande-là (bouton « Je ne suis pas disponible » de l'alerte). Passer la main ne vaut que pour
+// la demande en cours — la personne reste dans le circuit pour les suivantes si elle redevient
+// disponible.
+function assistanceDestinataires(req){
+  const passes = (req && Array.isArray(req.declinedBy)) ? req.declinedBy : [];
+  const retenus = (liste)=> liste.filter(a => !passes.includes(a));
+  const supsDispo = retenus(superviseursDeGarde().filter(estDisponible));
   if(supsDispo.length) return { rideau: 'superviseur', liste: supsDispo };
-  const assistantsDispo = listAssistants().filter(estDisponible);
+  const assistantsDispo = retenus(listAssistants().filter(estDisponible));
   if(assistantsDispo.length) return { rideau: 'assistants', liste: assistantsDispo };
-  const tous = listAssistants();
-  return { rideau: 'dernier-recours', liste: tous };
+  const tous = retenus(listAssistants());
+  if(tous.length) return { rideau: 'dernier-recours', liste: tous };
+  // Tout le monde a passé la main : on ne réveille personne de force (l'alarme viendrait de repartir
+  // chez quelqu'un qui vient tout juste de dire non). L'agent, lui, est prévenu clairement côté bouton,
+  // et le panneau Admin continue de tout recevoir.
+  return { rideau: 'personne', liste: [] };
 }
 
-function assistanceAmITarget(){
+function assistanceAmITargetFor(req){
+  const moi = assistanceWhoAmI();
+  // J'ai déjà passé la main sur cette demande : elle ne doit plus jamais resonner chez moi.
+  if(req && moi && Array.isArray(req.declinedBy) && req.declinedBy.includes(moi)) return false;
   const adminOuvert = document.getElementById('adminPanel')?.style.display === 'block';
   if(adminOuvert) return true;
-  const moi = assistanceWhoAmI();
   if(!moi || !isAssistant(moi)) return false;
   // Quelqu'un déjà parti assister ne doit pas recevoir une deuxième alerte en pleine intervention.
   if(presenceAssistingGet()) return false;
-  return assistanceDestinataires().liste.includes(moi);
+  return assistanceDestinataires(req).liste.includes(moi);
 }
+// Conservé pour les appels sans demande précise (rendu du bouton, panneaux).
+function assistanceAmITarget(){ return assistanceAmITargetFor(null); }
 
 // ── Lecture / écriture de la liste des demandes ────────────────────────────
 function assistParse(raw){
@@ -21450,11 +21473,18 @@ function assistRenderButton(){
     lab.textContent = 'Demande envoyée…';
     // On dit à l'agent CHEZ QUI son appel sonne réellement, plutôt que de lui laisser croire que son
     // superviseur l'a forcément reçu alors qu'il est peut-être en pause ou déjà en intervention.
-    const dest = assistanceDestinataires();
-    btn.title = (dest.rideau === 'superviseur'
-      ? 'Ton superviseur est prévenu. '
-      : 'Ton superviseur n\'est pas disponible — ' + (dest.liste.length ? dest.liste.join(', ') + ' ' + (dest.liste.length>1?'sont prévenus':'est prévenu') : 'personne n\'est disponible pour l\'instant') + '. ')
-      + 'Clique à nouveau pour annuler ta demande.';
+    const dest = assistanceDestinataires(mien);
+    if(dest.rideau === 'personne'){
+      // Cas franc : tout le monde a passé la main. Mieux vaut le dire que de laisser l'agent attendre
+      // devant un bouton qui lui promet que quelqu'un arrive.
+      lab.textContent = 'Personne de dispo…';
+      btn.title = "Tous les assistants ont passé la main ou sont occupés. Va chercher quelqu'un de vive voix — ta demande reste enregistrée, et le panneau Admin la voit toujours.";
+    } else {
+      btn.title = (dest.rideau === 'superviseur'
+        ? 'Ton superviseur est prévenu. '
+        : (dest.liste.join(', ') + ' ' + (dest.liste.length>1?'sont prévenus':'est prévenu') + '. '))
+        + 'Clique à nouveau pour annuler ta demande.';
+    }
   } else {
     btn.classList.add('is-seen');
     lab.textContent = (mien.seenBy ? mien.seenBy + ' arrive' : 'Ton superviseur arrive');
@@ -21507,15 +21537,7 @@ function assistShowOverlay(req, restants){
   document.getElementById('vnAssistMeta').textContent =
     'Appel lancé à ' + String(h.getHours()).padStart(2,'0') + ':' + String(h.getMinutes()).padStart(2,'0');
   const q = document.getElementById('vnAssistQueue');
-  // On explique POURQUOI cet appel arrive ici : reçu en tant que superviseur, ou en renfort parce que
-  // le superviseur n'était pas disponible. Sans ça, un assistant agréé se demande s'il y a une erreur.
-  const dest = assistanceDestinataires();
-  const motif = dest.rideau === 'superviseur'
-    ? ''
-    : (dest.rideau === 'assistants'
-      ? '⚠️ Le superviseur n\'est pas disponible — tu reçois cet appel en renfort. '
-      : '🚨 Personne n\'est déclaré disponible — tout le monde est alerté. ');
-  q.textContent = motif + assistQueueLabel(restants);
+  q.textContent = assistMotifAlerte(req) + assistQueueLabel(restants);
   ov.style.display = 'flex';
   assistShownId = req.id;
   assistStartAlarm();
@@ -21530,6 +21552,18 @@ function assistShowOverlay(req, restants){
       n.onclick = ()=>{ window.focus(); assistanceAcknowledge(); n.close(); };
     }catch(e){}
   }
+}
+
+// On explique POURQUOI cet appel arrive ici : reçu en tant que superviseur, en renfort parce que le
+// superviseur n'était pas disponible, ou parce que quelqu'un a passé la main. Sans ça, un assistant
+// agréé se demande s'il y a une erreur.
+function assistMotifAlerte(req){
+  const dejaPasse = (req && Array.isArray(req.declinedBy) && req.declinedBy.length) ? req.declinedBy : null;
+  if(dejaPasse) return `↪️ ${dejaPasse.join(', ')} ${dejaPasse.length>1?'ont':'a'} passé la main — c'est à toi. `;
+  const dest = assistanceDestinataires(req);
+  if(dest.rideau === 'superviseur') return '';
+  if(dest.rideau === 'assistants') return '⚠️ Le superviseur n\'est pas disponible — tu reçois cet appel en renfort. ';
+  return '🚨 Personne n\'est déclaré disponible — tout le monde est alerté. ';
 }
 
 function assistHideOverlay(){
@@ -21557,9 +21591,50 @@ async function assistanceAcknowledge(){
   await assistMutate(l => l.map(r => r.id === id ? Object.assign({}, r, { status: 'seen', seenBy: moi, seenAt: Date.now() }) : r));
   const req = assistList.find(r => r.id === id);
   logAudit(moi, 'Assistance prise en charge', req ? req.agent : id);
-  if(req) assistHistAdd({ id: req.id, agent: req.agent, at: req.at, seenBy: moi, seenAt: Date.now(), waitMs: Date.now() - req.at, cancelled: false });
+  if(req) assistHistAdd({ id: req.id, agent: req.agent, at: req.at, seenBy: moi, seenAt: Date.now(), waitMs: Date.now() - req.at, cancelled: false, declinedBy: req.declinedBy || [] });
   showToast('✅ ' + (req ? req.agent : "L'agent") + ' a été prévenu que tu arrives. N\'oublie pas de cliquer « Je suis de retour » en revenant à ton poste.', 'ok', 8000);
   assistProcess();       // une autre demande attend peut-être derrière
+}
+
+// ── « Je ne suis pas disponible » — passer la main sans laisser l'agent en plan ────────────────
+// Avant, celui qui recevait l'alerte n'avait qu'un seul choix : confirmer qu'il arrivait. S'il était
+// en plein appel client ou déjà occupé, il fermait l'alarme et la demande restait bloquée chez lui —
+// l'agent voyait « quelqu'un arrive » sans que personne ne vienne. C'était le pire des cas possibles.
+//
+// Ce bouton fait trois choses d'un coup :
+//   1. il me retire des destinataires de CETTE demande, définitivement (elle ne resonnera plus ici) ;
+//   2. il me marque indisponible, pour que les demandes SUIVANTES ne repassent pas par moi non plus —
+//      un clic dans « Es-tu disponible ? » suffit à revenir dans le circuit ;
+//   3. il fait sonner l'alerte immédiatement chez le suivant, grâce au recalcul en direct des cibles.
+async function assistanceDecline(){
+  const id = assistShownId;
+  if(!id){ assistHideOverlay(); return; }
+  const moi = assistanceWhoAmI();
+  assistHideOverlay();   // on coupe le son IMMÉDIATEMENT, avant toute écriture réseau
+  if(!moi){ assistProcess(); return; }
+
+  await assistMutate(l => l.map(r => r.id === id
+    ? Object.assign({}, r, { declinedBy: (Array.isArray(r.declinedBy) ? r.declinedBy : []).concat([moi]) })
+    : r));
+
+  // Se déclarer indisponible dans la foulée n'a de sens que pour un assistant : le patron qui décline
+  // depuis le panneau Admin n'est pas dans le circuit des disponibilités.
+  if(isAssistant(moi)){
+    presenceManualSet({ raison: 'occupé', at: Date.now() });
+    await assistPresenceSync(true);
+    assistRenderPresenceBox();
+  }
+
+  const req = assistList.find(r => r.id === id);
+  logAudit(moi, 'Assistance — passé la main', req ? req.agent : id);
+
+  const suivants = assistanceDestinataires(req).liste;
+  showToast(suivants.length
+    ? `↪️ Demande passée à ${suivants.join(', ')}. Tu es maintenant marqué indisponible — reclique « Me déclarer disponible » quand tu es libre.`
+    : "↪️ Tu as passé la main, mais plus personne n'est disponible. Va prévenir quelqu'un de vive voix.",
+    suivants.length ? 'ok' : 'warn', 9000);
+
+  assistProcess();
 }
 
 // ── Le cœur : ce qui se passe à chaque changement de la liste ──────────────
@@ -21576,21 +21651,20 @@ function assistProcess(){
     });
   }
 
-  // 2. Côté superviseur : y a-t-il un appel à traiter ?
-  if(assistanceAmITarget()){
-    const attente = assistList.filter(r => r.status === 'pending').sort((a, b) => a.at - b.at);
-    if(attente.length){
-      const premier = attente[0];
-      if(assistShownId !== premier.id) assistShowOverlay(premier, attente.length - 1);
-      else {
-        const q = document.getElementById('vnAssistQueue');
-        if(q) q.textContent = assistQueueLabel(attente.length - 1);
-      }
-    } else if(assistShownId){
-      assistHideOverlay();   // quelqu'un d'autre l'a prise en charge
+  // 2. Côté assistant : y a-t-il un appel QUI ME CONCERNE à traiter ?
+  // On ne regarde plus seulement la plus ancienne demande : si j'ai passé la main sur celle-là, je dois
+  // quand même voir la suivante. On prend donc la plus ancienne parmi celles qui me sont destinées.
+  const attente = assistList.filter(r => r.status === 'pending').sort((a, b) => a.at - b.at);
+  const pourMoi = attente.filter(r => assistanceAmITargetFor(r));
+  if(pourMoi.length){
+    const premier = pourMoi[0];
+    if(assistShownId !== premier.id) assistShowOverlay(premier, pourMoi.length - 1);
+    else {
+      const q = document.getElementById('vnAssistQueue');
+      if(q) q.textContent = assistMotifAlerte(premier) + assistQueueLabel(pourMoi.length - 1);
     }
   } else if(assistShownId){
-    assistHideOverlay();
+    assistHideOverlay();   // prise en charge par quelqu'un d'autre, ou j'ai passé la main
   }
 
   assistRenderButton();
@@ -21753,6 +21827,19 @@ async function renderAssistanceHistory(){
     const s = parSup[r.seenBy] = parSup[r.seenBy] || { pris: 0, total: 0, best: Infinity };
     s.pris++; s.total += (r.waitMs || 0); s.best = Math.min(s.best, r.waitMs || 0);
   });
+  // 🆕 Qui passe la main, et combien de fois. Passer la main est légitime — on est parfois vraiment
+  // occupé — mais si toujours la même personne le fait, ça se voit ici plutôt que dans les tensions.
+  const parPasse = {};
+  rows.forEach(r=>{
+    (r.declinedBy || []).forEach(nom=>{ parPasse[nom] = (parPasse[nom] || 0) + 1; });
+  });
+  const passesTries = Object.entries(parPasse).sort((a,b)=> b[1]-a[1]);
+  const blocPasses = passesTries.length ? `
+    <div class="section-title" style="margin-top:22px;">↪️ Demandes passées à quelqu'un d'autre</div>
+    <div class="section-sub">Qui a cliqué « Je ne suis pas disponible » sur une alerte. Normal de temps en temps ; à regarder de près si c'est toujours le même nom.</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+      ${passesTries.map(([nom, n])=> `<span class="tag ${n>=5?'late':(n>=3?'warn':'')}">${escapeHtml(nom)} — ${n} fois</span>`).join('')}
+    </div>` : '';
 
   const kpi = (label, valeur, couleur, sous)=> `
     <div style="flex:1; min-width:170px; padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
@@ -21805,15 +21892,18 @@ async function renderAssistanceHistory(){
       </table>
     </div>` : ''}
 
-    <div style="overflow-x:auto;">
+    ${blocPasses}
+
+    <div style="overflow-x:auto; margin-top:22px;">
       <div style="font-size:12.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px;">Les 15 derniers appels</div>
       <table class="salary-table">
-        <thead><tr><th>Quand</th><th>Agent</th><th>Attente</th><th>Pris en charge par</th></tr></thead>
+        <thead><tr><th>Quand</th><th>Agent</th><th>Attente</th><th>Pris en charge par</th><th>Passé par</th></tr></thead>
         <tbody>${rows.slice(0, 15).map(r=>`<tr>
           <td style="color:var(--muted);">${new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</td>
           <td><b>${escapeHtml(r.agent || '?')}</b></td>
           <td>${r.cancelled ? '<span style="color:var(--red);">annulé</span>' : assistHistFmt(r.waitMs || 0)}</td>
           <td>${r.cancelled ? '<span style="color:var(--red);">personne</span>' : escapeHtml(r.seenBy || '—')}</td>
+          <td style="color:var(--amber); font-size:12.5px;">${(r.declinedBy && r.declinedBy.length) ? escapeHtml(r.declinedBy.join(', ')) : '<span style="color:var(--muted);">—</span>'}</td>
         </tr>`).join('')}</tbody>
       </table>
     </div>`;
