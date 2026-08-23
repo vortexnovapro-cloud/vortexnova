@@ -117,6 +117,27 @@
     50%    { box-shadow:0 12px 34px rgba(229,72,77,.45), 0 0 0 16px rgba(229,72,77,0); }
   }
   @media (max-width:700px){ .vn-sos{ right:14px; bottom:14px; padding:13px 20px; font-size:14px; } }
+
+  /* ═══ 🤝 « TU ES PARTI ASSISTER » ═══
+     La boîte de disponibilité ne vit que sur l'écran Pointage. Quelqu'un parti dépanner un collègue
+     passe souvent sur Supervision ou Mon argent en revenant — il n'avait alors AUCUN moyen de dire
+     qu'il était rentré, et restait indisponible pour tout le monde. Ce rappel flottant le suit sur
+     tous les écrans, en bas à gauche pour ne jamais recouvrir le bouton d'assistance (bas à droite). */
+  .vn-back{
+    position:fixed; left:22px; bottom:22px; z-index:9990;
+    display:none; align-items:center; gap:12px; max-width:min(420px, 92vw);
+    padding:13px 18px; border-radius:14px; cursor:pointer; font-family:inherit; text-align:left;
+    border:1.5px solid rgba(232,180,90,.6);
+    background:linear-gradient(135deg, rgba(232,180,90,.22), rgba(232,180,90,.10)), #17222b;
+    color:#f0d9a8; box-shadow:0 12px 34px rgba(0,0,0,.45);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .vn-back:hover{ transform:translateY(-2px); box-shadow:0 16px 40px rgba(0,0,0,.55); }
+  .vn-back__txt{ font-size:13px; font-weight:700; line-height:1.35; }
+  .vn-back__txt b{ display:block; font-size:14.5px; font-weight:900; color:#f6e3bd; }
+  .vn-back__cta{ flex-shrink:0; font-size:12.5px; font-weight:900; letter-spacing:.3px;
+    padding:9px 15px; border-radius:9px; background:#e8b45a; color:#2a1f08; }
+  @media (max-width:700px){ .vn-back{ left:14px; right:14px; bottom:76px; max-width:none; } }
   @media (prefers-reduced-motion: reduce){ .vn-sos{ animation:none; } .vn-sos:hover{ transform:none; } }
 
   /* ═══ L'ALERTE CHEZ LE SUPERVISEUR ═══
@@ -872,6 +893,12 @@ function tryDeviceGateAdmin(){
 <button id="vnSosBtn" class="vn-sos" type="button" onclick="assistanceButtonClick()"
         title="Prévenir ton superviseur que tu as besoin d'aide">
   <span class="vn-sos__dot"></span><span id="vnSosLabel">Assistance</span>
+</button>
+
+<button id="vnBackBtn" class="vn-back" type="button" onclick="assistanceJeSuisRevenu()"
+        title="Signale que tu es rentré à ton poste — tu redeviens joignable pour les demandes d'assistance">
+  <span class="vn-back__txt" id="vnBackTxt"><b>Tu es parti assister</b>Clique en revenant à ton poste.</span>
+  <span class="vn-back__cta">✅ Je suis de retour</span>
 </button>
 
 <div id="vnAssistOverlay" class="vn-assist" role="alertdialog" aria-live="assertive" aria-labelledby="vnAssistWho">
@@ -2177,6 +2204,7 @@ function tryDeviceGateAdmin(){
             <label style="margin-bottom:6px;">🤝 Qui peut assister — et qui est disponible en ce moment</label>
             <div class="section-sub">Un superviseur est assistant d'office. Pour ajouter quelqu'un d'autre, va dans <b>Agents</b> plus bas et clique le bouton 🤝 sur sa fiche. Chacun voit sur son écran de pointage une case pour se déclarer indisponible, et l'appli détecte toute seule les pauses, ADF, écoutes et fins de journée.</div>
             <div id="assistantsPanel" style="margin-top:12px;"></div>
+            <button onclick="assistanceReinitialiserPresences()" style="margin-top:10px; padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;" title="Remet tous les assistants disponibles d'un coup. La détection automatique reprend aussitôt : quelqu'un réellement en pause ou en ADF redevient indisponible tout seul.">↩️ Remettre tout le monde disponible</button>
           </div>
         </div>
 
@@ -2425,7 +2453,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-23-r118';
+const APP_VERSION = '2026-08-23-r119';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2700,7 +2728,7 @@ async function triggerInactivityLockout(){
   lockedOutSince = new Date();
   const agentForLog = currentAgent;
   currentAgent = null;
-  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); assistRenderReturnBanner(); }catch(e){}
   document.getElementById('agentSelect').value = '';
   document.getElementById('lockAgentName').textContent = `${lockedOutAgent} — inactif depuis plus de ${config.inactivityTimeoutMin||5} min`;
   document.getElementById('lockScreen').style.display = 'block';
@@ -3948,7 +3976,7 @@ function showView(view){
   }
 
   // 🆘 Le bouton d'assistance suit la vue : visible dès qu'un agent est identifié, masqué dans l'Admin.
-  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); assistRenderReturnBanner(); }catch(e){}
 }
 
 function showAdminSub(sub){
@@ -4815,7 +4843,7 @@ async function onAgentChange(){
   }
 
   currentAgent = selected;
-  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); assistRenderReturnBanner(); }catch(e){}
   resetInactivityTimer();
   refreshAgentButtons();
   refreshAgentStatus();
@@ -13052,7 +13080,7 @@ async function onArenaAgentChange(){
     return;
   }
   currentArenaAgent = selected || null;
-  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); assistRenderReturnBanner(); }catch(e){}
   document.getElementById('arenaContent').style.display = selected ? 'block' : 'none';
   document.getElementById('arenaEmpty').style.display = selected ? 'none' : 'block';
   if(selected){
@@ -13464,7 +13492,7 @@ async function onCashAgentChange(){
     return;
   }
   currentCashAgent = selected || null;
-  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); assistRenderReturnBanner(); }catch(e){}
   document.getElementById('cashContent').style.display = selected ? 'block' : 'none';
   document.getElementById('cashEmpty').style.display = selected ? 'none' : 'block';
   lastWolfTier = -1;
@@ -14272,7 +14300,7 @@ async function onSupervisionAgentChange(){
     return;
   }
   currentSupervisionAgent = selected || null;
-  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); assistRenderReturnBanner(); }catch(e){}
   document.getElementById('supervisionContent').style.display = selected ? 'block' : 'none';
   document.getElementById('supervisionEmpty').style.display = selected ? 'none' : 'block';
   if(selected){
@@ -21185,21 +21213,50 @@ let myPresenceLastWriteAt = 0;
 let myPresenceLastSig = '';
 // Déclaratif, gardé sur CE poste : la personne coche « indisponible » et ça la suit tant qu'elle ne
 // décoche pas, même si elle recharge la page.
+// ⚠️ BUG CORRIGÉ — ces deux réglages étaient rangés sous une clé UNIQUE par poste, pas par personne.
+// Conséquence : sur un poste où l'on change de nom dans « Qui es-tu ? » (un test, ou tout simplement un
+// poste partagé entre deux agents), le deuxième héritait de l'état du premier. En testant tour à tour
+// plusieurs agents depuis le même navigateur, TOUT LE MONDE se retrouvait « parti assister quelqu'un »,
+// donc plus personne n'était disponible et le circuit d'assistance était bloqué.
+// Chaque personne a désormais sa propre clé. Les anciennes clés globales sont effacées au passage,
+// sinon un poste qui a connu l'ancienne version resterait bloqué après la mise à jour.
 const PRESENCE_MANUAL_KEY = 'vn_assistIndispo';
-function presenceManualGet(){
-  try{ return JSON.parse(localStorage.getItem(PRESENCE_MANUAL_KEY) || 'null'); }catch(e){ return null; }
+const PRESENCE_ASSIST_KEY_BASE = 'vn_assistEnCours';
+(function nettoyerAnciennesClesPresence(){
+  try{ localStorage.removeItem('vn_assistIndispo'); localStorage.removeItem('vn_assistEnCours'); }catch(e){}
+})();
+function presenceCle(base, agent){
+  const qui = agent || assistanceWhoAmI() || '';
+  return `${base}:${qui}`;
 }
-function presenceManualSet(v){
-  try{ v ? localStorage.setItem(PRESENCE_MANUAL_KEY, JSON.stringify(v)) : localStorage.removeItem(PRESENCE_MANUAL_KEY); }catch(e){}
+function presenceManualGet(agent){
+  try{ return JSON.parse(localStorage.getItem(presenceCle(PRESENCE_MANUAL_KEY, agent)) || 'null'); }catch(e){ return null; }
+}
+function presenceManualSet(v, agent){
+  const k = presenceCle(PRESENCE_MANUAL_KEY, agent);
+  try{ v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k); }catch(e){}
 }
 // « Je suis parti assister X » — posé au moment où la personne confirme qu'elle y va, retiré quand
 // elle clique « Je suis de retour ». Gardé sur le poste pour survivre à un rechargement de page.
-const PRESENCE_ASSIST_KEY = 'vn_assistEnCours';
-function presenceAssistingGet(){
-  try{ return JSON.parse(localStorage.getItem(PRESENCE_ASSIST_KEY) || 'null'); }catch(e){ return null; }
+// Durée au-delà de laquelle une assistance est considérée comme oubliée. Personne n'aide un collègue
+// pendant une heure sans revenir à son poste : passé ce délai, on repasse la personne disponible toute
+// seule, plutôt que de laisser le circuit bloqué parce qu'un clic a été oublié.
+const PRESENCE_ASSIST_OUBLI_MS = 60 * 60 * 1000;
+function presenceAssistingGet(agent){
+  let v = null;
+  try{ v = JSON.parse(localStorage.getItem(presenceCle(PRESENCE_ASSIST_KEY_BASE, agent)) || 'null'); }catch(e){ return null; }
+  if(!v) return null;
+  // Filet 1 : assistance oubliée depuis plus d'une heure.
+  if(v.at && (Date.now() - v.at) > PRESENCE_ASSIST_OUBLI_MS){ presenceAssistingSet(null, agent); return null; }
+  // Filet 2 : l'admin a forcé le retour de cette personne depuis Réglages (voir assistanceForcerRetour).
+  const qui = agent || assistanceWhoAmI();
+  const partage = qui && presenceMap ? presenceMap[qui] : null;
+  if(partage && partage.forcedAt && v.at && partage.forcedAt > v.at){ presenceAssistingSet(null, agent); return null; }
+  return v;
 }
-function presenceAssistingSet(v){
-  try{ v ? localStorage.setItem(PRESENCE_ASSIST_KEY, JSON.stringify(v)) : localStorage.removeItem(PRESENCE_ASSIST_KEY); }catch(e){}
+function presenceAssistingSet(v, agent){
+  const k = presenceCle(PRESENCE_ASSIST_KEY_BASE, agent);
+  try{ v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k); }catch(e){}
 }
 
 // L'état de la personne devant CE poste, recalculé à la demande. Ordre volontaire : ce qui est
@@ -21277,6 +21334,24 @@ function subscribeAssistPresence(){
   }, err=> console.error('presence listener:', err));
 }
 
+// Rappel flottant, présent sur TOUS les écrans tant que la personne n'est pas revenue à son poste.
+function assistRenderReturnBanner(){
+  const btn = document.getElementById('vnBackBtn');
+  if(!btn) return;
+  const moi = assistanceWhoAmI();
+  const enCours = moi ? presenceAssistingGet() : null;
+  if(!enCours){ btn.style.display = 'none'; return; }
+  btn.style.display = 'flex';
+  const depuis = enCours.at ? Math.round((Date.now() - enCours.at) / 60000) : 0;
+  const txt = document.getElementById('vnBackTxt');
+  if(txt){
+    txt.innerHTML = `<b>Tu aides ${escapeHtml(enCours.agent || 'un collègue')}${depuis >= 1 ? ` — depuis ${depuis} min` : ''}</b>`
+      + `Tant que tu n'as pas cliqué, tu restes indisponible pour les autres demandes.`;
+  }
+}
+// Le compteur de minutes doit avancer tout seul, sinon « depuis 1 min » reste affiché une demi-heure.
+setInterval(()=>{ try{ assistRenderReturnBanner(); }catch(e){} }, 60000);
+
 // ── La boîte « Es-tu disponible ? », visible par les assistants agréés ──────
 function assistRenderPresenceBox(){
   const box = document.getElementById('assistPresenceBox');
@@ -21338,6 +21413,7 @@ async function assistanceJeSuisRevenu(){
   presenceAssistingSet(null);
   await assistPresenceSync(true);
   assistRenderPresenceBox();
+  assistRenderReturnBanner();
   const moi = assistanceWhoAmI();
   if(enCours && moi) logAudit(moi, 'Assistance terminée — retour au poste', enCours.agent || '');
   showToast('✅ Te voilà de nouveau disponible pour les demandes d\'assistance.', 'ok', 4000);
@@ -21588,6 +21664,7 @@ async function assistanceAcknowledge(){
   presenceAssistingSet({ agent: req0 ? req0.agent : null, at: Date.now(), reqId: id });
   assistPresenceSync(true);
   assistRenderPresenceBox();
+  assistRenderReturnBanner();
   await assistMutate(l => l.map(r => r.id === id ? Object.assign({}, r, { status: 'seen', seenBy: moi, seenAt: Date.now() }) : r));
   const req = assistList.find(r => r.id === id);
   logAudit(moi, 'Assistance prise en charge', req ? req.agent : id);
@@ -21669,6 +21746,7 @@ function assistProcess(){
 
   assistRenderButton();
   assistRenderPresenceBox();
+  assistRenderReturnBanner();
   if(typeof renderAssistantsPanel === 'function') renderAssistantsPanel();
 }
 
@@ -21699,12 +21777,15 @@ function renderAssistantsPanel(){
     const couleur = dispo ? 'var(--green)' : (st.state === 'assiste' ? 'var(--amber)' : 'var(--muted)');
     const libelle = dispo ? 'Disponible' : (st.state === 'assiste' ? (st.raison || 'en assistance') : (st.raison || 'indisponible'));
     const source = st.perime ? 'poste fermé ou navigateur en veille' : (st.auto ? 'détecté automatiquement' : (st.manuel ? 'déclaré par lui-même' : ''));
+    // Déblocage : un clic oublié sur « Je suis de retour » ne doit jamais immobiliser tout le circuit.
+    const debloquable = !dispo && !st.perime;
     return `<div style="display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:9px; background:var(--panel2); border:1px solid var(--border); margin-bottom:7px; flex-wrap:wrap;">
       <span style="width:10px;height:10px;border-radius:50%;background:${couleur};flex-shrink:0;"></span>
       <b>${escapeHtml(a)}</b>
       ${isSupervisor(a) ? '<span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">📊 Superviseur</span>' : '<span class="tag" style="background:rgba(181,89,92,0.18);color:#e08b8e;">🤝 Assistant agréé</span>'}
       <span style="color:${couleur}; font-weight:700; font-size:13px;">${escapeHtml(libelle)}</span>
       ${source ? `<span style="font-size:11.5px; color:var(--muted);">(${escapeHtml(source)})</span>` : ''}
+      ${debloquable ? `<button onclick="assistanceForcerRetour('${a.replace(/'/g,"\\'")}')" title="Remettre cette personne disponible — utile si elle a oublié de cliquer « Je suis de retour » après une assistance" style="margin-left:auto; padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--accent); font-weight:700; font-size:11.5px; cursor:pointer;">↩️ Remettre disponible</button>` : ''}
     </div>`;
   }).join('');
   const dispoCount = liste.filter(estDisponible).length;
@@ -21714,6 +21795,50 @@ function renderAssistantsPanel(){
       ? '<div style="margin-top:8px; padding:10px 12px; border-radius:8px; background:rgba(229,168,61,0.12); border:1px solid rgba(229,168,61,0.4); font-size:12.5px; color:var(--amber); font-weight:600;">⚠️ Un seul assistant : dès qu\'il est en pause ou en intervention, il n\'y a plus de filet. Agrée au moins un deuxième agent avec le bouton 🤝.</div>'
       : `<div style="margin-top:8px; font-size:12.5px; color:var(--muted);">${dispoCount} disponible${dispoCount>1?'s':''} sur ${liste.length}.</div>`);
   el.innerHTML = lignes + alerte;
+}
+
+// L'admin remet quelqu'un disponible de force. Le poste de la personne concernée l'apprend au snapshot
+// suivant : presenceAssistingGet() voit forcedAt plus récent que son assistance en cours et efface son
+// état local tout seul — sinon son prochain battement de présence le remettrait aussitôt indisponible.
+async function assistanceForcerRetour(agent){
+  if(!agent) return;
+  try{
+    let courant = {};
+    try{
+      const res = await storageGet(PRESENCE_KEY);
+      if(res && res.value) courant = JSON.parse(res.value) || {};
+    }catch(e){}
+    courant[agent] = { state: 'dispo', raison: '', auto: false, manuel: false, at: Date.now(), forcedAt: Date.now() };
+    presenceMap = courant;
+    await storageSet(PRESENCE_KEY, JSON.stringify(courant));
+    // Si c'est moi-même sur ce poste, on nettoie aussi l'état local dans la foulée.
+    if(agent === assistanceWhoAmI()){ presenceAssistingSet(null); presenceManualSet(null); }
+    logAudit('Admin', 'Assistance : remis disponible de force', agent);
+    showToast(`↩️ ${agent} est de nouveau disponible pour les demandes d'assistance.`, 'ok', 4500);
+    renderAssistantsPanel();
+    assistRenderPresenceBox();
+    assistRenderReturnBanner();
+    assistProcess();
+  }catch(e){ console.warn('assistanceForcerRetour', e); showToast("⚠️ Impossible de remettre cette personne disponible — vérifie ta connexion.", 'warn', 5000); }
+}
+
+// Remise à zéro complète — le bouton à utiliser après une série d'essais, ou le lendemain d'une panne.
+async function assistanceReinitialiserPresences(){
+  if(!confirm('Remettre TOUS les assistants disponibles ?\n\nÀ utiliser après des tests, ou si plusieurs personnes ont oublié de cliquer « Je suis de retour ». Chacun redeviendra automatiquement indisponible s\'il est réellement en pause, en ADF ou en écoute.')) return;
+  try{
+    const maintenant = Date.now();
+    const remis = {};
+    listAssistants().forEach(a=>{ remis[a] = { state: 'dispo', raison: '', auto: false, manuel: false, at: maintenant, forcedAt: maintenant }; });
+    presenceMap = remis;
+    await storageSet(PRESENCE_KEY, JSON.stringify(remis));
+    presenceAssistingSet(null); presenceManualSet(null);
+    logAudit('Admin', 'Assistance : toutes les présences réinitialisées', listAssistants().join(', '));
+    showToast('↩️ Tous les assistants sont de nouveau disponibles.', 'ok', 5000);
+    renderAssistantsPanel();
+    assistRenderPresenceBox();
+    assistRenderReturnBanner();
+    assistProcess();
+  }catch(e){ console.warn('assistanceReinitialiserPresences', e); showToast("⚠️ La réinitialisation n'a pas abouti — vérifie ta connexion.", 'warn', 5000); }
 }
 
 function renderAssistanceSupervisorSelect(){
