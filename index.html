@@ -957,6 +957,9 @@ function tryDeviceGateAdmin(){
       </div>
 
       <div class="settings-box" id="adfBox" style="margin-top:18px; text-align:center; display:none; border-color:rgba(155,89,182,0.45); background:linear-gradient(135deg, rgba(155,89,182,0.08), var(--panel));"></div>
+      <!-- 🤝 Visible uniquement pour les superviseurs et les assistants agréés : leur disponibilité,
+           celle des autres, et le bouton « je suis de retour » quand ils sont partis dépanner. -->
+      <div class="settings-box" id="assistPresenceBox" style="margin-top:18px; display:none; border-color:rgba(181,89,92,0.45); background:linear-gradient(135deg, rgba(181,89,92,0.07), var(--panel));"></div>
 
       <div class="today-log" id="todayLog" style="display:none;">
         <h3>Aujourd'hui</h3>
@@ -1120,7 +1123,9 @@ function tryDeviceGateAdmin(){
 
       <div id="supervisionContent" style="display:none; margin-top:18px;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:10px;">
-          <div style="font-size:11px; color:var(--muted);">🔄 Actualisation automatique toutes les 35s — les chiffres restent à jour sans avoir à recharger la page.</div>
+          <div style="font-size:11px; color:var(--muted);">🔄 Le tableau d'équipe se met à jour tout seul toutes les 30 s, et les contrats apparaissent instantanément dès qu'ils sont saisis.</div>
+          <button type="button" class="privacy-btn" onclick="forceFullRefresh(this)"
+                  title="Vide entièrement le cache et relit tout depuis la base. Utile si une correction faite depuis un autre poste sur une journée déjà passée ne s'affiche pas encore ici.">🔄 Tout recharger</button>
           <button type="button" id="supPrivacyBtn" class="privacy-btn" onclick="toggleSupPrivacy()"
                   title="Masque uniquement TES montants : ton salaire et ta prime de supervision. Les objectifs, les conseils, le bilan et les chiffres de l'équipe restent affichés — pratique quand tu montres ton écran à l'équipe. Le réglage reste actif sur cet appareil.">🙈 Masquer mon salaire &amp; ma prime</button>
         </div>
@@ -1185,7 +1190,7 @@ function tryDeviceGateAdmin(){
             title="Masque d'un coup tout ce qui touche à TON argent : chiffre d'affaires, charges, résultat, masse salariale. Uniquement ici, dans Admin — les agents ne voient jamais ces chiffres de toute façon. Pratique quand quelqu'un passe derrière toi ou que tu partages ton écran. Passe la souris sur une zone floutée pour la relire sans tout réafficher.">👁️ Masquer mes chiffres</button>
         </div>
         <div style="font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.55;">Ce statut vient du navigateur, pas d'un vrai test de connexion à la base de données — il peut parfois rester bloqué sur « Hors ligne » même quand le réseau fonctionne. Si ça arrive : vérifie que l'appareil a bien internet (ouvre un autre site), puis <b>rafraîchis la page</b>. Dans tous les cas, rien n'est perdu — les écritures en attente sont gardées et s'envoient automatiquement dès que la connexion revient.</div>
-        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">🔄 Actualisation automatique toutes les 25s dans « Vue d'ensemble » — les chiffres restent à jour sans avoir à recharger la page. Volontairement désactivée dans « Pointage du jour » et « Production » (formulaires de correction et de salaire) pour ne jamais effacer une saisie en cours.</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">🔄 Actualisation automatique à trois vitesses : les alertes et les contrats du backoffice toutes les 30 s, les tableaux de « Vue d'ensemble » toutes les 60 s, les chiffres financiers (CA, masse salariale, bilan net) toutes les 5 min — ils bougent peu et coûtent cher à recalculer. Volontairement désactivée dans « Pointage du jour » et « Production » (formulaires de correction et de salaire) pour ne jamais effacer une saisie en cours.</div>
       </div>
 
       <div id="monthRolloverBanner" style="display:none; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4); border-radius:12px; padding:14px 18px; margin-bottom:16px;">
@@ -1768,7 +1773,8 @@ function tryDeviceGateAdmin(){
 
         <div class="settings-box">
           <label>🎁 Primes manuelles</label>
-          <div class="section-sub">Ajoute une prime libre par agent : nom et montant de ton choix. Cooptation, challenge gagné, prime exceptionnelle... Elle s'ajoute automatiquement au salaire du mois choisi, partout où le salaire est affiché.</div>
+          <div class="section-sub">Ajoute une prime libre : nom et montant de ton choix. Cooptation, challenge gagné, prime exceptionnelle... Elle s'ajoute automatiquement au salaire du <b>mois que tu choisis</b> — y compris un mois passé — et apparaît partout où le salaire est affiché : Mon argent côté agent, tableau des objectifs, masse salariale et fiche de paie.</div>
+          <div class="section-sub" style="margin-top:6px;">👥 Tu peux viser <b>un agent</b>, ou d'un coup <b>tous les agents</b>, tous les salariés, ou tous les indépendants — pratique pour un challenge collectif. Chaque agent reçoit sa propre copie, supprimable individuellement ensuite.</div>
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
               <div>
@@ -2145,7 +2151,8 @@ function tryDeviceGateAdmin(){
 
         <div class="settings-box">
           <label>🆘 Bouton d'assistance</label>
-          <div class="section-sub">Chaque agent a en permanence un bouton rouge <b>Assistance</b> en bas de son écran. Un clic déclenche une alarme chez le superviseur choisi ici — un chant de grillons qui monte progressivement et ne s'arrête que lorsqu'il confirme. L'agent est alors prévenu que son superviseur arrive.</div>
+          <div class="section-sub">Chaque agent a en permanence un bouton rouge <b>Assistance</b> en bas de son écran. Un clic déclenche une alarme — un chant de grillons qui monte progressivement et ne s'arrête que lorsque quelqu'un confirme. L'agent est alors prévenu de qui arrive.</div>
+          <div class="section-sub" style="margin-top:8px;">📡 <b>L'appel part en cascade.</b> D'abord le superviseur choisi ci-dessous, <b>s'il est réellement disponible</b>. S'il est en pause, en ADF, en écoute, déjà parti dépanner quelqu'un, ou s'il s'est déclaré indisponible, l'alerte bascule automatiquement chez les <b>assistants agréés disponibles</b> (bouton 🤝 sur la fiche de chaque agent, plus bas dans Agents). Et si vraiment personne n'est disponible, tout le monde est alerté quand même — un appel à l'aide sans réponse est toujours le pire scénario.</div>
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div>
               <label style="margin-bottom:4px;">Superviseur alerté</label>
@@ -2156,6 +2163,12 @@ function tryDeviceGateAdmin(){
             <div class="save-note" id="assistSaveNote"></div>
           </div>
           <div class="section-sub" style="margin-top:12px;">💡 Laisse sur <b>Tous les superviseurs</b> si tu préfères qu'aucun appel ne se perde quand le superviseur désigné est absent. Le panneau Admin ouvert reçoit toujours les alertes, quoi qu'il arrive.</div>
+
+          <div style="margin-top:18px; border-top:1px solid var(--border); padding-top:16px;">
+            <label style="margin-bottom:6px;">🤝 Qui peut assister — et qui est disponible en ce moment</label>
+            <div class="section-sub">Un superviseur est assistant d'office. Pour ajouter quelqu'un d'autre, va dans <b>Agents</b> plus bas et clique le bouton 🤝 sur sa fiche. Chacun voit sur son écran de pointage une case pour se déclarer indisponible, et l'appli détecte toute seule les pauses, ADF, écoutes et fins de journée.</div>
+            <div id="assistantsPanel" style="margin-top:12px;"></div>
+          </div>
         </div>
 
         <div class="settings-box">
@@ -2358,6 +2371,33 @@ function tryDeviceGateAdmin(){
               <label>🧑‍💼 Indépendants</label>
               <textarea id="msgIndep" rows="4" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;"></textarea>
             </div>
+            <div style="grid-column:1/-1; border-top:1px solid var(--border); padding-top:14px; margin-top:4px;">
+              <div class="section-sub" style="margin-bottom:10px;">📣 <b>Annonces du bandeau défilant</b> — une phrase est tirée au hasard dans la banque correspondant à la place de l'agent au classement du mois. Variables disponibles : <code>{agent}</code> (le nom), <code>{score}</code> (son nombre de contrats) et, pour les ex-aequo seulement, <code>{agent2}</code>.</div>
+            </div>
+            <div>
+              <label>🥇 Annonce — 1er du mois</label>
+              <textarea id="msgTickerFirst" rows="4" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+            </div>
+            <div>
+              <label>🥈 Annonce — 2e du mois</label>
+              <textarea id="msgTickerSecond" rows="4" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+            </div>
+            <div>
+              <label>🥉 Annonce — 3e du mois</label>
+              <textarea id="msgTickerThird" rows="4" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+            </div>
+            <div>
+              <label>😅 Annonce — avant-dernier</label>
+              <textarea id="msgTickerSecondLast" rows="4" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+            </div>
+            <div>
+              <label>🐢 Annonce — dernier du mois</label>
+              <textarea id="msgTickerLast" rows="4" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+            </div>
+            <div>
+              <label>🤝 Annonce — ex-aequo</label>
+              <textarea id="msgTickerTie" rows="4" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+            </div>
           </div>
           <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
             <button onclick="saveArenaMessages()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer les phrases</button>
@@ -2376,7 +2416,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-21-r114';
+const APP_VERSION = '2026-08-23-r117';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2651,7 +2691,7 @@ async function triggerInactivityLockout(){
   lockedOutSince = new Date();
   const agentForLog = currentAgent;
   currentAgent = null;
-  try{ subscribeAssistance(); assistRenderButton(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
   document.getElementById('agentSelect').value = '';
   document.getElementById('lockAgentName').textContent = `${lockedOutAgent} — inactif depuis plus de ${config.inactivityTimeoutMin||5} min`;
   document.getElementById('lockScreen').style.display = 'block';
@@ -2968,13 +3008,41 @@ try{
 bootApp();
 });
 
+// ⚡ DÉDUPLICATION DES LECTURES — l'optimisation la plus rentable de l'appli.
+// Tout le code de rendu est écrit en Promise.all(config.agents.map(...)) : quand 8 agents sont traités en
+// parallèle, chacun redemande les MÊMES documents partagés (le tableau du jour, les contrats du mois,
+// les retours...). Résultat mesuré : 649 lectures Firestore pour un rendu de Supervision, dont 231 sont
+// exactement la même clé lue plusieurs fois en même temps.
+// Deux mécanismes ici, volontairement minimalistes :
+//   • _getInflight : deux demandes SIMULTANÉES de la même clé partagent la même promesse — une seule
+//     lecture part réellement. Aucun risque de donnée périmée, c'est le même instant.
+//   • _getRecent : mémo de 3 secondes. C'est calibré pour faire tenir UN rendu (toujours < 3 s), jamais
+//     pour survivre d'un rafraîchissement à l'autre (35 s minimum). Toute écriture purge la clé
+//     immédiatement, et clearRenderCaches() vide tout.
+const _getInflight = new Map();
+const _getRecent = new Map();
+const STORAGE_GET_TTL_MS = 3000;
+function storageForget(key){ _getRecent.delete(key); }
+function storageForgetAll(){ _getRecent.clear(); }
+
 async function storageGet(key){
   if(!firebaseReady) return null;
-  try{
-    const doc = await db.collection('vortexnova').doc(key).get();
-    if(doc.exists) return { key, value: doc.data().value };
-    return null;
-  }catch(e){ console.error('storageGet error:', e); return null; }
+  const memo = _getRecent.get(key);
+  if(memo && (Date.now() - memo.at) < STORAGE_GET_TTL_MS) return memo.res;
+  const enVol = _getInflight.get(key);
+  if(enVol) return enVol;
+  const p = (async ()=>{
+    try{
+      const doc = await db.collection('vortexnova').doc(key).get();
+      return doc.exists ? { key, value: doc.data().value } : null;
+    }catch(e){ console.error('storageGet error:', e); return null; }
+  })();
+  _getInflight.set(key, p);
+  let res = null;
+  try{ res = await p; } finally { _getInflight.delete(key); }
+  if(_getRecent.size > 4000) _getRecent.clear(); // garde-fou mémoire, jamais atteint en usage normal
+  _getRecent.set(key, { at: Date.now(), res });
+  return res;
 }
 // Indicateur de synchronisation, toujours visible en haut de l'app (pas juste un toast qui disparaît) :
 // vert = tout est sauvegardé, jaune = écriture en cours, rouge = hors ligne (grâce à la persistance
@@ -3007,6 +3075,30 @@ window.addEventListener('offline', updateSyncIndicator);
 // Admin (le boss) a besoin du maximum de fraîcheur raisonnable ; Supervision peut se permettre un cran
 // moins fréquent (les superviseurs consultent, ils ne pilotent pas la paie en direct) tout en restant
 // largement assez frais pour du pilotage d'équipe.
+// ⚡ TROIS CADENCES AU LIEU D'UNE
+// -----------------------------------------------------------------------------------------------
+// Avant, tout un écran se rafraîchissait au même rythme : le chiffre d'affaires du mois était relu
+// aussi souvent que le nombre de contrats du jour, alors que l'un bouge toutes les minutes et l'autre
+// quasiment jamais. On distingue donc ce qu'on a besoin de voir vite de ce qui peut attendre.
+//
+//  • RAPIDE  (30 s) — ce qui doit être vu tout de suite : la bannière d'anomalies, le tableau d'équipe
+//    de Supervision, l'écran de l'agent. Ce sont les seuls écrans où un retard d'affichage a une
+//    conséquence réelle (un agent à 0 qu'on repère trop tard).
+//  • COURANT (60 s) — la Vue d'ensemble Admin, le rapport de pointage du jour, les confirmations de
+//    briefing. Utile, mais personne ne regarde ça seconde par seconde.
+//  • LENT    (5 min) — tout ce qui est financier et déjà plafonné par HEAVY_FINANCIAL_REFRESH_MS.
+//
+// Les contrats, eux, n'attendent AUCUNE de ces cadences : ils arrivent en temps réel par l'écoute
+// Firestore (subscribeProdBoard / prodPulse). Ces minuteries ne rattrapent que le reste — corrections
+// de pointage, changements de tarif, primes manuelles.
+const REFRESH_RAPIDE_MS = 30000;
+const REFRESH_COURANT_MS = 60000;
+const REFRESH_LENT_MS = 300000;
+// Le minuteur bat à ce rythme et ne déclenche que les familles réellement dues : un tour où rien n'est
+// dû ne coûte rien du tout (aucune lecture, aucun rendu).
+const REFRESH_TICK_MS = 10000;
+// Conservées pour référence historique : ces trois cadences "un seul rythme par écran" sont remplacées
+// par les trois familles ci-dessus (REFRESH_RAPIDE/COURANT/LENT). Elles ne pilotent plus rien.
 const ADMIN_REFRESH_MS = 25000;
 const SUPERVISION_REFRESH_MS = 35000;
 // Arena/Cash (les agents eux-mêmes) : les contrats sont déjà en temps réel via l'écoute Firestore
@@ -3015,6 +3107,7 @@ const SUPERVISION_REFRESH_MS = 35000;
 const AGENT_REFRESH_MS = 40000;
 let autoRefreshTimer = null;
 let autoRefreshKind = null; // 'admin' | 'supervision' | 'agent' | null
+let refreshTierLastRun = { rapide: 0, courant: 0, lent: 0 };
 
 function clearRenderCaches(){
   prodBoardCache = {};
@@ -3028,6 +3121,51 @@ function clearRenderCaches(){
   if(typeof billingInvalidate === 'function') billingInvalidate();
   billingContractIndexCache = null;
   if(typeof clearDailyCountCache === 'function') clearDailyCountCache();
+  if(typeof monthlyStatsCache !== 'undefined') monthlyStatsCache = {};
+  if(typeof storageForgetAll === 'function') storageForgetAll();
+  lastFullCachePurgeAt = Date.now();
+}
+
+// ⚡ RAFRAÎCHISSEMENT AUTOMATIQUE — ne plus tout relire toutes les 25-35 secondes
+// ---------------------------------------------------------------------------
+// Avant : chaque tour d'auto-refresh appelait clearRenderCaches(), qui jette TOUT — y compris les
+// pointages et les contrats des journées DÉJÀ TERMINÉES, qui ne changeront plus. L'écran Supervision
+// reposait donc ~190 fois les mêmes questions à la base, toutes les 35 secondes, pour n'obtenir de
+// nouveau que les chiffres du jour.
+//
+// Maintenant : le tour automatique ne relit que ce qui peut vraiment avoir bougé (le jour en cours et
+// tous les agrégats du mois) et garde en mémoire les journées passées. Un vidage COMPLET reste fait
+// au moins toutes les 5 minutes, pour qu'une correction de pointage sur un jour passé faite depuis un
+// AUTRE poste finisse toujours par apparaître toute seule, sans rien avoir à cliquer.
+//
+// Important : toute écriture faite depuis CE poste continue d'appeler clearRenderCaches() en entier
+// (une trentaine d'endroits), tout comme le signal temps réel prodPulse envoyé par les autres postes
+// quand des contrats bougent. Ce compromis ne concerne donc QUE les corrections sur des journées
+// passées venues d'un autre poste — et au pire elles arrivent avec 5 minutes de retard au lieu de 35
+// secondes. Le bouton "🔄 Actualiser" force un vidage complet immédiat dans tous les cas.
+let lastFullCachePurgeAt = 0;
+const FULL_CACHE_PURGE_MS = 5 * 60 * 1000;
+
+function clearVolatileCaches(){
+  if(Date.now() - lastFullCachePurgeAt >= FULL_CACHE_PURGE_MS){
+    clearRenderCaches();   // remet lastFullCachePurgeAt à jour
+    return;
+  }
+  const today = todayStr();
+  // Clé "YYYY-MM-DD:agent" pour les pointages et les infractions, "YYYY-MM-DD" pour le tableau du jour.
+  Object.keys(dayLogCache).forEach(k=>{ if(k.slice(0,10) >= today) delete dayLogCache[k]; });
+  Object.keys(infrCache).forEach(k=>{ if(k.slice(0,10) >= today) delete infrCache[k]; });
+  Object.keys(prodBoardCache).forEach(k=>{ if(k >= today) delete prodBoardCache[k]; });
+  // Tout ce qui porte sur le MOIS entier (donc sur aujourd'hui aussi) est toujours relu, sans exception :
+  // rétractations, objectifs visés, primes manuelles, statistiques mensuelles, contrats et retours importés.
+  retractCache = {};
+  desiredObjCache = {};
+  manualPrimesCache = {};
+  if(typeof billingInvalidate === 'function') billingInvalidate();
+  billingContractIndexCache = null;
+  if(typeof clearDailyCountCache === 'function') clearDailyCountCache();
+  if(typeof monthlyStatsCache !== 'undefined') monthlyStatsCache = {};
+  if(typeof storageForgetAll === 'function') storageForgetAll();
 }
 
 let autoRefreshBusy = false;
@@ -3049,13 +3187,24 @@ function startAutoRefresh(kind){
   if(autoRefreshTimer && autoRefreshKind === kind) return; // déjà en route avec le bon intervalle
   if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
   autoRefreshKind = kind;
-  const intervalMs = kind === 'admin' ? ADMIN_REFRESH_MS : (kind === 'supervision' ? SUPERVISION_REFRESH_MS : AGENT_REFRESH_MS);
+  refreshTierLastRun = { rapide: 0, courant: 0, lent: 0 };
   autoRefreshTimer = setInterval(async ()=>{
     if(document.hidden) return; // onglet en arrière-plan : on ne consomme rien pour rien
     if(autoRefreshBusy) return; // un tour précédent tourne encore (ex: connexion lente) : on ne s'empile pas dessus
     if(userIsTypingInForm()) return; // ne jamais couper quelqu'un en pleine saisie
+
+    const maintenant = Date.now();
+    const du = (famille, delai)=> (maintenant - (refreshTierLastRun[famille] || 0)) >= delai;
+    const rapideDu  = du('rapide',  REFRESH_RAPIDE_MS);
+    const courantDu = du('courant', REFRESH_COURANT_MS);
+    const lentDu    = du('lent',    REFRESH_LENT_MS);
+    if(!rapideDu && !courantDu && !lentDu) return; // rien à faire ce tour-ci : zéro lecture, zéro rendu
+    if(rapideDu)  refreshTierLastRun.rapide  = maintenant;
+    if(courantDu) refreshTierLastRun.courant = maintenant;
+    if(lentDu)    refreshTierLastRun.lent    = maintenant;
+
     autoRefreshBusy = true;
-    clearRenderCaches();
+    clearVolatileCaches();
     try{
       if(autoRefreshKind === 'admin'){
         // La bannière d'anomalies est rafraîchie à CHAQUE tour, quel que soit le sous-onglet ouvert —
@@ -3067,27 +3216,36 @@ function startAutoRefresh(kind){
         // aucun risque d'effacer une correction en cours de saisie). "Production" reste volontairement
         // exclu : son tableau de rémunération par agent est un grand formulaire éditable, le rafraîchir
         // effacerait une saisie de salaire en cours.
-        renderAnomalyBanner();
-        applyPrivacyMode();   // les panneaux d'argent sont réécrits à chaque tour : on remet le flou
-        checkSupervisionBriefingAcksForAdmin();
-        // Le bandeau du briefing hebdo se met à jour tout seul à chaque tour, quel que soit le
-        // sous-onglet ouvert : le patron n'a rien à cocher, il voit juste qui a confirmé et quand.
-        checkWeeklyBriefingReminder();
-        // Contrats validés arrivés du backoffice depuis le dernier tour (Telegram → Pabbly → CRM).
-        syncBackofficeInbox();
-        const overviewEl = document.getElementById('admin-overview');
-        if(overviewEl && overviewEl.classList.contains('active')) showAdminSub('overview');
-        const dayEl = document.getElementById('admin-day');
-        if(dayEl && dayEl.classList.contains('active')) renderReport();
+        // RAPIDE — une anomalie et un contrat qui arrive doivent se voir tout de suite, quel que soit
+        // le sous-onglet ouvert. C'est le seul bloc à 30 secondes côté admin.
+        if(rapideDu){
+          renderAnomalyBanner();
+          syncBackofficeInbox();   // contrats validés arrivés du backoffice (Telegram → Pabbly → CRM)
+        }
+        // COURANT — les tableaux de bord en lecture seule. "Production" reste volontairement exclu :
+        // son tableau de rémunération est un grand formulaire éditable, le rafraîchir effacerait une
+        // saisie de salaire en cours.
+        if(courantDu){
+          checkSupervisionBriefingAcksForAdmin();
+          checkWeeklyBriefingReminder();
+          const overviewEl = document.getElementById('admin-overview');
+          if(overviewEl && overviewEl.classList.contains('active')) showAdminSub('overview');
+          const dayEl = document.getElementById('admin-day');
+          if(dayEl && dayEl.classList.contains('active')) renderReport();
+          applyPrivacyMode();   // les panneaux d'argent viennent d'être réécrits : on remet le flou
+        }
       } else if(autoRefreshKind === 'supervision'){
-        await renderSupervision();
+        // Le tableau d'équipe est ce que le superviseur surveille en continu : il reste en RAPIDE.
+        if(rapideDu) await renderSupervision();
       } else if(autoRefreshKind === 'agent'){
-        if(document.getElementById('view-arena')?.classList.contains('active')) await renderArena();
-        if(document.getElementById('view-cash')?.classList.contains('active')) await renderCash();
+        if(rapideDu){
+          if(document.getElementById('view-arena')?.classList.contains('active')) await renderArena();
+          if(document.getElementById('view-cash')?.classList.contains('active')) await renderCash();
+        }
       }
     }catch(e){ console.warn('Auto-refresh error:', e); }
     finally{ autoRefreshBusy = false; }
-  }, intervalMs);
+  }, REFRESH_TICK_MS);
 }
 
 function stopAutoRefresh(){
@@ -3100,6 +3258,7 @@ async function storageSet(key, value){
   pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).set({ value });
+    storageForget(key); // la mémo de lecture ne doit jamais servir une valeur qu'on vient de remplacer
     return { key, value };
   }catch(e){
     // BUG CORRIGÉ : avant, une écriture échouée (coupure réseau, permission...) était avalée en
@@ -3117,6 +3276,7 @@ async function storageDelete(key){
   pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).delete();
+    storageForget(key);
     return { key, deleted: true };
   }catch(e){
     console.error('storageDelete error:', e);
@@ -3779,7 +3939,7 @@ function showView(view){
   }
 
   // 🆘 Le bouton d'assistance suit la vue : visible dès qu'un agent est identifié, masqué dans l'Admin.
-  try{ subscribeAssistance(); assistRenderButton(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
 }
 
 function showAdminSub(sub){
@@ -3808,7 +3968,7 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
-  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); }
+  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); }
 }
 
 // ============================================================
@@ -3912,9 +4072,10 @@ function renderAgentChips(){
     const inProbation = isInProbation(name);
     const term = getAgentTermination(name);
 
-    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
+    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${(!isSup && isAssistant(name))?' <span class="indep-badge" style="background:#b5595c;color:#fff;">🤝 Assistant agréé</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
       <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
       ${!isSup ? `<button onclick="toggleADFTrainer('${name.replace(/'/g,"\\'")}')" title="Basculer « formateur ADF »" style="color:#4a9891;margin-right:2px;">🎓</button>` : ''}
+      ${!isSup ? `<button onclick="toggleAssistant('${name.replace(/'/g,"\\'")}')" title="Basculer « assistant agréé » — il pourra recevoir une demande d'assistance quand le superviseur n'est pas disponible" style="color:#b5595c;margin-right:2px;${isAssistant(name)?'background:rgba(181,89,92,0.25);border-radius:4px;':''}">🤝</button>` : ''}
       <button onclick="toggleEcouteAutorisee('${name.replace(/'/g,"\\'")}')" title="Basculer l'autorisation d'être écouté (écoute)" style="color:var(--accent);margin-right:2px;${ecouteBtnStyle}">🎧</button>
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat » (permanent)" style="color:var(--amber);margin-right:2px;">🎯</button>
@@ -4645,7 +4806,7 @@ async function onAgentChange(){
   }
 
   currentAgent = selected;
-  try{ subscribeAssistance(); assistRenderButton(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
   resetInactivityTimer();
   refreshAgentButtons();
   refreshAgentStatus();
@@ -4702,29 +4863,50 @@ async function renderPointageGreeting(){
   const cleanDiscipline = monthStats.retardsCumules === 0 && monthStats.phoneYoutube === 0;
   const first = firstName(currentAgent);
 
+  // C'est le tout premier écran que l'agent voit chaque matin : deux phrases par branche, ça se répète
+  // vite. Chaque branche en a maintenant cinq ou six, et la graine inclut le jour.
+  const jourGraine = todayStr();
   let objLine;
   if(desiredObj > 0){
     if(monthReal >= desiredObj){
       objLine = seedPick([
         `🎯 Objectif visé (${desiredObj}) déjà atteint ce mois-ci — vise encore plus haut !`,
-        `🎯 ${desiredObj} atteints et dépassés, ${first} ! La suite est du bonus pur.`
-      ], `${currentAgent}|pg-hit|${monthReal}`);
+        `🎯 ${desiredObj} atteints et dépassés, ${first} ! La suite est du bonus pur.`,
+        `🎯 Ton objectif du mois est déjà dans la poche (${monthReal}/${desiredObj}). Tout ce qui suit est en plus.`,
+        `🎯 ${monthReal} contrats, objectif perso franchi. Tu peux viser un nouveau record, ${first}.`,
+        `🎯 Objectif atteint et le mois n'est pas fini — jusqu'où tu montes ?`,
+        `🎯 ${desiredObj} visés, ${monthReal} faits. C'est exactement comme ça qu'on finit un mois.`
+      ], `${currentAgent}|pg-hit|${monthReal}|${jourGraine}`);
     } else {
       const gap = desiredObj - monthReal;
       const rivalTxt = monthAhead ? ` — devance ${firstName(monthAhead.agent)} (${monthAhead.val})` : '';
       objLine = seedPick([
         `🎯 Ton objectif visé : ${monthReal}/${desiredObj} — encore ${gap} pour l'atteindre${rivalTxt}.`,
-        `🎯 ${monthReal} sur ton objectif de ${desiredObj} — ${gap} de plus et c'est gagné${rivalTxt}.`
-      ], `${currentAgent}|pg-gap|${monthReal}`);
+        `🎯 ${monthReal} sur ton objectif de ${desiredObj} — ${gap} de plus et c'est gagné${rivalTxt}.`,
+        `🎯 Plus que ${gap} contrat${gap>1?'s':''} avant ton objectif perso (${monthReal}/${desiredObj})${rivalTxt}.`,
+        `🎯 ${monthReal}/${desiredObj} ce mois-ci. ${gap} contrat${gap>1?'s':''} te sépare${gap>1?'nt':''} de ton objectif${rivalTxt}.`,
+        `🎯 Objectif perso à ${gap} de distance. Bonne journée pour en grignoter une partie${rivalTxt}.`,
+        `🎯 Tu es à ${monthReal} sur ${desiredObj}. Le compte à rebours est lancé${rivalTxt}.`
+      ], `${currentAgent}|pg-gap|${monthReal}|${jourGraine}`);
     }
   } else {
-    objLine = `🎯 Pas encore d'objectif fixé ce mois — vise-en un dans « Mes Objectifs » pour te motiver.`;
+    objLine = seedPick([
+      `🎯 Pas encore d'objectif fixé ce mois — vise-en un dans « Mes Objectifs » pour te motiver.`,
+      `🎯 Aucun objectif perso ce mois-ci. Fixe-en un dans « Mes Objectifs » : on travaille mieux avec un chiffre en tête.`,
+      `🎯 Tu n'as pas encore choisi ton objectif du mois. Deux clics dans « Mes Objectifs » et c'est fait.`,
+      `🎯 Un mois sans objectif, c'est un mois qu'on subit. Donne-toi un chiffre dans « Mes Objectifs ».`,
+      `🎯 Pas d'objectif visé pour l'instant — celui que tu te fixes toi-même est toujours le plus motivant.`
+    ], `${currentAgent}|pg-noobj|${jourGraine}`);
   }
 
   const cleanLine = cleanDiscipline
     ? `<div class="pgreet-line warm">${seedPick([
         `✨ Aucun souci de discipline ce mois-ci — nickel, continue comme ça !`,
-        `✨ Zéro retard, zéro accroc ce mois-ci — bravo ${first} !`
+        `✨ Zéro retard, zéro accroc ce mois-ci — bravo ${first} !`,
+        `✨ Mois impeccable côté ponctualité. Ça compte autant que les chiffres, ${first}.`,
+        `✨ Pas un retard ce mois-ci — ta prime d'assiduité est bien partie.`,
+        `✨ Discipline parfaite depuis le 1er. Continue, c'est de l'argent gagné.`,
+        `✨ Rien à redire sur ton pointage ce mois-ci. Merci ${first}.`
       ], `${currentAgent}|pg-clean|${todayStr()}`)}</div>`
     : '';
 
@@ -5430,14 +5612,25 @@ function freeBreakUsageToday(events, dateStr){
   const isToday = targetDate === todayStr();
   let usedSec = 0;
   let activeStart = null;
-  const nowSec = isToday ? (()=>{ const d=nowMA(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds(); })() : (toMinutes(scheduleForDate(targetDate).end)*60);
+  // ⚠️ BUG CORRIGÉ — une pause libre jamais refermée (l'agent clique "début" et oublie "fin") était
+  // comptée jusqu'à la FIN DE L'HORAIRE, même s'il avait pointé sa sortie deux heures plus tôt : le
+  // pointage de sortie était purement ignoré. Un clic oublié à 10h avec une sortie à 12h donnait 480 min
+  // de pause au lieu de 120 — soit ~112 DH de retenue et une unité au compteur de retards, pour rien.
+  // La borne est désormais : le pointage de sortie s'il existe, sinon l'heure actuelle (aujourd'hui) ou
+  // la fin d'horaire (jour passé).
+  const limiteSec = isToday ? (()=>{ const d=nowMA(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds(); })() : (toMinutes(scheduleForDate(targetDate).end)*60);
+  const outEvt = [...events].reverse().find(e=> e.type === 'out');
+  const outSec = outEvt && outEvt.time ? (toMinutes(String(outEvt.time).slice(0,5))*60 + Number(String(outEvt.time).slice(6,8)||0)) : null;
+  const nowSec = outSec != null ? Math.min(outSec, limiteSec) : limiteSec;
   pairs.forEach(p=>{
     const startSec = toMinutes(p.start.slice(0,5))*60 + Number(p.start.slice(6,8)||0);
     if(p.end){
       const endSec = toMinutes(p.end.slice(0,5))*60 + Number(p.end.slice(6,8)||0);
       usedSec += Math.max(0, endSec - startSec);
     } else {
-      if(isToday) activeStart = p.start;
+      // Pause encore en cours : uniquement si l'agent n'a pas déjà pointé sa sortie — sinon le chrono
+      // continuerait de tourner à l'écran alors qu'il est parti.
+      if(isToday && outSec == null) activeStart = p.start;
       usedSec += Math.max(0, nowSec - startSec);
     }
   });
@@ -5453,6 +5646,8 @@ async function refreshFreeBreakUI(){
   const log = await getDayLog(currentAgent, dateStr);
   { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   updateFreeBreakDisplay();
+  // La pause vient d'être lue : c'est l'un des deux signaux qui rendent quelqu'un indisponible.
+  try{ assistPresenceSync(); assistRenderPresenceBox(); }catch(e){}
 }
 
 function updateFreeBreakDisplay(){
@@ -5485,7 +5680,11 @@ function updateFreeBreakDisplay(){
   // dès que le compteur bouge) pour que ça reste vivant et donne vraiment envie de signer un contrat de
   // plus. Jamais pour un indépendant (pas de notion de pause pour eux, freeBreakCache.realizedToday=0).
   if(bannerEl){
-    const seed = `${currentAgent}|${realizedToday}`;
+    // La graine incluait seulement le nombre de contrats : tant que le compteur ne bougeait pas — donc
+    // le plus clair de la matinée — le texte restait strictement figé. On y ajoute le créneau horaire :
+    // le message change quelques fois dans la journée sans jamais sauter d'un rafraîchissement à l'autre.
+    const creneau = Math.floor(nowMA().getHours() / 2);
+    const seed = `${currentAgent}|${realizedToday}|${todayStr()}|${creneau}`;
     if(earnedBonus > 0){
       bannerEl.style.display = 'block';
       bannerEl.innerHTML = `<div style="display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:20px; background:rgba(255,215,0,0.14); border:1px solid rgba(255,215,0,0.4); font-weight:700; font-size:13.5px; color:var(--gold);">🎁 +${earnedBonus} min de pause débloquées — ${realizedToday} contrat${realizedToday>1?'s':''} aujourd'hui !</div>
@@ -5493,7 +5692,11 @@ function updateFreeBreakDisplay(){
           `Encore 1 contrat et +5 minutes de plus. Ça se joue maintenant.`,
           `Chaque contrat en plus, c'est 5 minutes de pause en plus. Continue !`,
           `Tu as déjà gagné du temps rien qu'en bossant bien. La suite ne tient qu'à toi.`,
-          `+5 min à chaque contrat au-dessus de 5 — le compteur tourne dans le bon sens.`
+          `+5 min à chaque contrat au-dessus de 5 — le compteur tourne dans le bon sens.`,
+          `Ces minutes-là, tu les as gagnées. Le prochain contrat en ajoute cinq.`,
+          `Ta pause s'allonge à chaque signature. C'est le seul chrono qui joue pour toi.`,
+          `Bien joué. Et rien ne t'empêche d'en débloquer encore.`,
+          `Tu transformes tes contrats en temps de pause — continue sur cette lancée.`
         ], seed)}</div>`;
     } else if(realizedToday > 0 && nextTierIn != null && nextTierIn <= 3){
       bannerEl.style.display = 'block';
@@ -5501,7 +5704,10 @@ function updateFreeBreakDisplay(){
         <div style="margin-top:6px; font-size:12px; color:var(--muted);">${seedPick([
           `Si proche du cadeau. Un dernier effort !`,
           `5 minutes de pause en plus t'attendent, à ${nextTierIn} contrat${nextTierIn>1?'s':''} près.`,
-          `Le 5e contrat débloque la pause bonus — tu y es presque.`
+          `Le 5e contrat débloque la pause bonus — tu y es presque.`,
+          `Plus que ${nextTierIn} et tu t'offres cinq minutes de plus. Ça vaut le coup.`,
+          `Tu es à ${nextTierIn} contrat${nextTierIn>1?'s':''} du bonus. Ne t'arrête pas si près.`,
+          `Encore un petit effort et la pause s'allonge.`
         ], seed)}</div>`;
     } else {
       // Encore loin du 5e contrat (0 ou 1 aujourd'hui) : on ne cache pas la bannière, on motive plutôt
@@ -5511,7 +5717,11 @@ function updateFreeBreakDisplay(){
         `5 contrats aujourd'hui = 5 minutes de pause offertes. Objectif du jour, tout simplement.`,
         `Chaque contrat au-dessus de 5, c'est 5 minutes de pause en plus. Le compteur n'attend que toi.`,
         `Le 5e contrat débloque la pause bonus. Encore ${Math.max(0,5-realizedToday)} pour y arriver.`,
-        `Vise le 5e contrat aujourd'hui — la pause bonus t'attend juste derrière.`
+        `Vise le 5e contrat aujourd'hui — la pause bonus t'attend juste derrière.`,
+        `La pause bonus se gagne à partir du 5e contrat. C'est à ta portée.`,
+        `Cinq contrats et tu récupères cinq minutes. Le marché est honnête.`,
+        `Ta pause peut s'allonger aujourd'hui : il suffit d'atteindre 5 contrats.`,
+        `Encore ${Math.max(0,5-realizedToday)} contrat${Math.max(0,5-realizedToday)>1?'s':''} avant la première pause bonus de la journée.`
       ], seed)}</div>`;
     }
   }
@@ -5606,6 +5816,32 @@ function listSupervisors(){
   return config.agents.filter(a => isSupervisor(a));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🤝 ASSISTANTS AGRÉÉS — qui, en dehors des superviseurs, peut aller dépanner un collègue
+// ═══════════════════════════════════════════════════════════════════════════
+// Même principe que « formateur ADF » : un superviseur l'est toujours d'office, et l'admin peut
+// désigner en plus n'importe quel agent expérimenté. Sert au routage en cascade des demandes
+// d'assistance : le superviseur reçoit l'appel en premier, et s'il ne peut pas y aller, l'alerte part
+// chez les assistants agréés disponibles au lieu de rester sans réponse.
+function isAssistant(agent){
+  return isSupervisor(agent) || !!(config.agentsAssistant && config.agentsAssistant[agent] === true);
+}
+function listAssistants(){
+  return config.agents.filter(a => isAssistant(a));
+}
+// Assistants agréés HORS superviseurs — c'est ce groupe-là qui prend le relais en second rideau.
+function listAssistantsSecondRideau(){
+  return config.agents.filter(a => !isSupervisor(a) && isAssistant(a));
+}
+async function toggleAssistant(name){
+  if(!config.agentsAssistant) config.agentsAssistant = {};
+  config.agentsAssistant[name] = !(config.agentsAssistant[name] === true);
+  await saveConfigSilent();
+  logAudit('Admin', `Statut assistant agréé ${config.agentsAssistant[name]?'activé':'retiré'} — ${name}`, '');
+  renderAgentChips();
+  if(typeof renderAssistantsPanel === 'function') renderAssistantsPanel();
+}
+
 // 🎓 Formateurs ADF — DEMANDE ADMIN : tous les agents doivent pouvoir quitter leur poste pour aller
 // former quelqu'un (comme le faisaient les superviseurs), mais pour l'instant seuls certains agents
 // désignés ("formateurs") peuvent RECEVOIR un collègue à leur poste pour le former. Un superviseur est
@@ -5686,6 +5922,9 @@ async function refreshADFStatus(){
     }
   }
   renderADFBox();
+  // Un ADF ou une écoute qui démarre rend l'assistant indisponible — et sa fin le rend de nouveau
+  // disponible, sans qu'il ait rien à cliquer.
+  try{ assistPresenceSync(); assistRenderPresenceBox(); }catch(e){}
 }
 
 
@@ -5981,43 +6220,97 @@ function absenceAttachmentLinkHtml(log){
 // (0 = alarme rouge), qui a besoin d'un coup de pouce (1-2), et qui est lancé (3-4+).
 // Phrases d'action pour le superviseur, selon l'avancée du jour de l'agent — variées pour ne pas répéter
 // toujours la même chose. 0 contrat = alerte forte ("va voir l'agent"), 1-2 = coup de pouce, 3-4+ = normal.
-function supervisorActionComment(count){
-  const zero = [
+// Conseil affiché au superviseur, dans la colonne 💬 Conseil du tableau d'équipe.
+// Deux corrections en même temps :
+//  • Le tirage était en Math.random() : avec 8 à 10 agents affichés d'un coup, la même phrase revenait
+//    plusieurs fois dans la même colonne, ET le conseil changeait tout seul toutes les 35 secondes sous
+//    les yeux du superviseur alors qu'aucun chiffre n'avait bougé. On passe à une graine
+//    (agent + nombre de contrats + jour) : le texte est stable tant que la situation ne change pas, et
+//    il change dès qu'un contrat tombe.
+//  • Les banques passent de 15 à 44 phrases, et chacune donne une action CONCRÈTE plutôt qu'un simple
+//    « va le voir » — c'est ce que le superviseur doit pouvoir lire et appliquer sans réfléchir.
+const SUPERVISOR_ACTION_MSGS = {
+  zero: [
     "🚨 Agent à ZÉRO — va le voir maintenant.",
     "🚨 0 contrat — fonce l'aider, pas de temps à perdre.",
     "🚨 Alerte 0 — passe à son poste tout de suite.",
     "🚨 Rien signé — va comprendre ce qui bloque.",
-    "🚨 Zéro contrat — une visite s'impose."
-  ];
-  const low = [
+    "🚨 Zéro contrat — une visite s'impose.",
+    "🚨 0 au compteur — écoute un de ses appels avant de le conseiller.",
+    "🚨 Rien aujourd'hui — fais-lui reprendre sa liste par les meilleurs prospects.",
+    "🚨 Journée blanche en cours — fixe-lui un objectif d'un seul contrat avant la pause.",
+    "🚨 0 contrat — vérifie d'abord qu'il n'a pas un problème technique ou de fichier.",
+    "🚨 Toujours rien — reste à côté de lui le temps de deux appels.",
+    "🚨 Zéro — demande-lui où ça bloque exactement, ne suppose pas.",
+    "🚨 0 contrat : c'est le moment d'intervenir, pas ce soir."
+  ],
+  low: [
     "⚡ Va le pousser un peu, encore un effort.",
     "⚡ Passe lui glisser un mot d'encouragement.",
     "⚡ Un petit coup de boost et ça repart.",
-    "⚡ Reste dans les clous, mais un coup de main aiderait."
-  ];
-  const mid = [
+    "⚡ Reste dans les clous, mais un coup de main aiderait.",
+    "⚡ Il a lancé la machine — aide-le à enchaîner tout de suite.",
+    "⚡ Deux de plus et sa journée change de couleur : dis-le lui.",
+    "⚡ Rappelle-lui son objectif du jour, à voix haute.",
+    "⚡ Bon départ mais lent — regarde s'il passe assez d'appels.",
+    "⚡ Encourage-le maintenant, pas en fin de journée.",
+    "⚡ Il est juste au-dessus de zéro : donne-lui un objectif court, atteignable."
+  ],
+  mid: [
     "🔥 Bien lancé, encourage-le à continuer.",
     "🔥 Bon rythme, un petit mot suffit.",
-    "🔥 Ça avance bien, laisse-le sur sa lancée."
-  ];
-  const good = [
+    "🔥 Ça avance bien, laisse-le sur sa lancée.",
+    "🔥 Bonne journée en cours — dis-lui que tu l'as remarqué.",
+    "🔥 Il tient le rythme : ne le déconcentre pas, félicite en passant.",
+    "🔥 Solide. Demande-lui ce qui marche aujourd'hui, ça servira aux autres.",
+    "🔥 Au-dessus de la moyenne — pousse-le à viser une journée record.",
+    "🔥 Rythme correct : un mot d'encouragement et il ira chercher plus.",
+    "🔥 Ça tourne. Garde-le concentré jusqu'au dernier appel.",
+    "🔥 Bonne dynamique — sers-t'en comme exemple au briefing de demain."
+  ],
+  good: [
     "🏆 Excellent, félicite-le !",
     "🏆 Super journée, dis-le lui.",
-    "🏆 Rien à redire, continue comme ça."
-  ];
-  let pool;
-  if(count <= 0) pool = zero;
-  else if(count <= 2) pool = low;
-  else if(count <= 4) pool = mid;
-  else pool = good;
-  return pool[Math.floor(Math.random()*pool.length)];
+    "🏆 Rien à redire, continue comme ça.",
+    "🏆 Grosse journée — félicite-le devant l'équipe, ça motive tout le monde.",
+    "🏆 Performance nette : demande-lui de partager sa méthode.",
+    "🏆 Il tire l'équipe vers le haut — fais-le savoir.",
+    "🏆 Journée remarquable. Un merci sincère vaut plus qu'une prime symbolique.",
+    "🏆 Au-dessus du lot aujourd'hui — note-le pour le bilan de la semaine.",
+    "🏆 Exemplaire. Laisse-le finir sur sa lancée, sans l'interrompre.",
+    "🏆 Excellent niveau — vérifie juste qu'il tient aussi la qualité des dossiers.",
+    "🏆 Belle journée : dis-lui précisément ce qu'il a bien fait, pas juste « bravo »."
+  ]
+};
+function supervisorActionComment(count, agentName){
+  let key;
+  // ⚠️ COHÉRENCE — la description de la page promet « félicite en vert à partir de 3 », mais le conseil
+  // ne passait en mode félicitation qu'à 5 : à 3 ou 4 contrats, le superviseur lisait « encourage-le à
+  // continuer » sous un badge vert « bonne journée ». Les seuils sont maintenant exactement ceux de
+  // dailyProgressBadge : 0 / 1-2 / 3-4 / 5 et plus, avec le même vocabulaire de part et d'autre.
+  if(count <= 0) key = 'zero';
+  else if(count <= 2) key = 'low';
+  else if(count <= 4) key = 'mid';
+  else key = 'good';
+  const pool = SUPERVISOR_ACTION_MSGS[key];
+  return seedPick(pool, `${agentName || ''}|sup|${key}|${count}|${todayStr()}`);
 }
 
-function dailyProgressBadge(count){
-  if(count <= 0) return { txt: '🚨 0 contrat', cls: 'late', pulse: true, title: 'Aucun contrat réalisé aujourd\'hui' };
-  if(count <= 2) return { txt: `⚡ ${count} — à pousser`, cls: 'warn', pulse: false, title: `${count} contrat${count>1?'s':''} aujourd'hui — encore un effort` };
-  if(count <= 4) return { txt: `🔥 ${count} — motivé`, cls: 'ok', pulse: false, title: `${count} contrats aujourd'hui — bon rythme` };
-  return { txt: `🏆 ${count} — lancé`, cls: 'ok', pulse: false, title: `${count} contrats aujourd'hui — excellente journée` };
+// Badge d'avancée du jour, affiché sur trois écrans à la fois (Bilan de la journée, tableau Supervision,
+// classement Arena). Le libellé après le nombre varie désormais par agent et par jour — la structure
+// (emoji + nombre + couleur) reste strictement identique pour rester lisible d'un coup d'œil.
+const DAILY_BADGE_WORDS = {
+  zero:  ['0 contrat', '0 contrat', 'rien signé', 'compteur vide'],
+  low:   ['à pousser', 'ça démarre', 'encore un effort', 'trop lent'],
+  mid:   ['motivé', 'bon rythme', 'ça tourne', 'dans le bon sens'],
+  good:  ['lancé', 'en feu', 'grosse journée', 'au-dessus du lot']
+};
+function dailyProgressBadge(count, agentName){
+  const mot = (key)=> seedPick(DAILY_BADGE_WORDS[key], `${agentName || ''}|badge|${key}|${count}|${todayStr()}`);
+  if(count <= 0) return { txt: `🚨 ${mot('zero')}`, cls: 'late', pulse: true, title: 'Aucun contrat réalisé aujourd\'hui' };
+  if(count <= 2) return { txt: `⚡ ${count} — ${mot('low')}`, cls: 'warn', pulse: false, title: `${count} contrat${count>1?'s':''} aujourd'hui — encore un effort` };
+  if(count <= 4) return { txt: `🔥 ${count} — ${mot('mid')}`, cls: 'ok', pulse: false, title: `${count} contrats aujourd'hui — bon rythme` };
+  return { txt: `🏆 ${count} — ${mot('good')}`, cls: 'ok', pulse: false, title: `${count} contrats aujourd'hui — excellente journée` };
 }
 
 const POINTAGE_TYPES = ['in','break_start','break_end','out'];
@@ -6534,10 +6827,27 @@ function isAssiduiteAcquise(monthStats){
   return monthStats.retardsCumules < 3;
 }
 
+// ⚡ Mémoïsé : monthlyStats rejoue evaluateDay sur TOUS les jours ouvrés du mois, et il est appelé 3 à 5
+// fois par agent et par rendu (billingReturnDivisor, computeAgentRealTimeSalary, computeTotalPayrollMonth,
+// le panneau assiduité, le tableau des objectifs...). Zéro lecture Firestore économisée — les documents
+// sont déjà en cache — mais 60 à 70 % du CPU d'un rendu de Supervision. Le cache est vidé par
+// clearRenderCaches(), donc à chaque auto-refresh et à chaque écriture : jamais de chiffre figé.
+let monthlyStatsCache = {};
 async function monthlyStats(agent, year, month){
   if(isIndependant(agent)){
     return { agent, retards: 0, pauseOver: 0, absences: 0, retardsCumules: 0, phoneYoutube: 0, objectif: 0, total: 0 };
   }
+  const statsKey = `${agent}|${year}-${month}`;
+  if(monthlyStatsCache[statsKey]) return monthlyStatsCache[statsKey];
+  // On mémorise la PROMESSE, pas le résultat : deux appels simultanés (le cas normal, tout est en
+  // Promise.all) partagent le même calcul au lieu de le lancer deux fois. En cas d'échec on retire
+  // l'entrée, pour ne jamais figer une erreur jusqu'au prochain rafraîchissement.
+  const statsPromise = monthlyStatsCompute(agent, year, month);
+  monthlyStatsCache[statsKey] = statsPromise;
+  statsPromise.catch(()=>{ delete monthlyStatsCache[statsKey]; });
+  return statsPromise;
+}
+async function monthlyStatsCompute(agent, year, month){
   const daysInMonth = new Date(year, month, 0).getDate();
   const todayDateStr = todayStr();
   let dateStrs = [];
@@ -6983,8 +7293,22 @@ function populatePrimeAgentSelect(){
   const sel = document.getElementById('primeAgent');
   if(!sel) return;
   const current = sel.value;
-  sel.innerHTML = config.agents.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('');
-  if(current && config.agents.includes(current)) sel.value = current;
+  // 🆕 Groupes en haut de liste : une prime de challenge collectif ou une prime exceptionnelle de fin
+  // d'année se donne rarement à une seule personne. Avant, il fallait la ressaisir agent par agent.
+  const groupes = `<option value="__TOUS__">👥 Tous les agents</option>`
+    + `<option value="__SALARIES__">👤 Tous les salariés (hors indépendants)</option>`
+    + `<option value="__INDEP__">🧑‍💼 Tous les indépendants</option>`
+    + `<option disabled>──────────</option>`;
+  sel.innerHTML = groupes + config.agents.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('');
+  if(current && (config.agents.includes(current) || current.startsWith('__'))) sel.value = current;
+}
+
+// Résout la sélection (un agent, ou un groupe) en liste de destinataires.
+function primeDestinataires(valeur){
+  if(valeur === '__TOUS__') return config.agents.slice();
+  if(valeur === '__SALARIES__') return config.agents.filter(a => !isIndependant(a));
+  if(valeur === '__INDEP__') return config.agents.filter(a => isIndependant(a));
+  return valeur ? [valeur] : [];
 }
 
 function initPrimeDefaults(){
@@ -7002,13 +7326,14 @@ function onPrimeTypeChange(){
 }
 
 async function addManualPrime(){
-  const agent = document.getElementById('primeAgent').value;
+  const selection = document.getElementById('primeAgent').value;
+  const destinataires = primeDestinataires(selection);
   const monthVal = document.getElementById('primeMonth').value || todayStr().slice(0,7);
   const label = document.getElementById('primeLabel').value.trim();
   const amount = parseFloat(document.getElementById('primeAmount').value);
   const type = document.getElementById('primeType').value;
 
-  if(!agent){ alert('Ajoute au moins un agent dans Réglages → Agents.'); return; }
+  if(!destinataires.length){ alert('Ajoute au moins un agent dans Réglages → Agents.'); return; }
   if(!label){ alert('Donne un nom à cette prime (ex: Prime de cooptation).'); return; }
   if(isNaN(amount) || amount <= 0){ alert('Indique un montant valide.'); return; }
 
@@ -7027,9 +7352,19 @@ async function addManualPrime(){
   }
 
   const [year, month] = monthVal.split('-').map(Number);
-  const list = await getManualPrimes(agent, year, month);
-  list.push(prime);
-  await saveManualPrimes(agent, year, month, list);
+  const moisLisible = new Date(year, month-1, 1).toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
+  if(destinataires.length > 1 && !confirm(`Ajouter « ${label} » (${amount} DH) à ${destinataires.length} agents pour ${moisLisible} ?`)) return;
+
+  // Chaque agent reçoit sa PROPRE copie de la prime, avec son propre identifiant : elle reste
+  // supprimable ou modifiable individuellement ensuite, exactement comme une prime saisie à la main.
+  for(const dest of destinataires){
+    const copie = Object.assign({}, prime, { id: prime.id + '_' + dest.replace(/[^a-zA-Z0-9]/g,'').slice(0,8) });
+    const list = await getManualPrimes(dest, year, month);
+    list.push(copie);
+    await saveManualPrimes(dest, year, month, list);
+  }
+  logAudit('Admin', `Prime manuelle « ${label} » ${amount} DH — ${moisLisible}`, destinataires.join(', '));
+  showToast(`🎁 Prime ajoutée à ${destinataires.length} agent${destinataires.length>1?'s':''} sur ${moisLisible}.`, 'ok', 5000);
 
   document.getElementById('primeLabel').value = '';
   document.getElementById('primeAmount').value = '';
@@ -7260,7 +7595,11 @@ function calendarizeRelativeDays(text, dateStr){
 function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRealized, seed, refDateStr){
   if(totalTarget <= 0) return '';
   const pct = Math.round((totalRealized/totalTarget)*100);
-  const color = pct>=100 ? 'var(--green)' : (pct>=50 ? 'var(--amber)' : 'var(--red)');
+  // ⚠️ COHÉRENCE CORRIGÉE — la couleur de l'anneau utilisait 100/50 alors que le texte juste en dessous
+  // utilise 130/100/70/40. À 45 %, l'anneau était ROUGE pendant que le message disait « Milieu de
+  // parcours, tout reste à jouer » ; à 60 %, anneau ORANGE et message encore dans le palier « loin de
+  // l'objectif ». Les deux suivent maintenant exactement les mêmes seuils.
+  const color = pct>=130 ? 'var(--gold)' : (pct>=100 ? 'var(--green)' : (pct>=70 ? 'var(--amber)' : 'var(--red)'));
   const ringPct = Math.min(100, pct);
   // Le réalisé compte TOUT LE MONDE (agents + indépendants, objectif fixé ou non) — la précision juste
   // en dessous indique la part qui vient des indépendants, pour ne jamais laisser croire que ce chiffre
@@ -7696,7 +8035,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const noObj = r.objective === 0;
       const pct = noObj ? 0 : Math.min(100, Math.round((r.realized/r.objective)*100));
       const hit = !noObj && r.realized >= r.objective;
-      const badge = dailyProgressBadge(r.realized);
+      const badge = dailyProgressBadge(r.realized, r.agent);
       const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
       const dayOverDay = dayOverDayMap[r.agent];
@@ -8606,7 +8945,12 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   let manualPrimesTotal = 0;
   if(isFullMonthToDate){
     if(!pay.isIndep){
-      const stFull = await monthlyObjectifStatus(agent, year, month);
+      // ⚠️ BUG CORRIGÉ — la prime d'objectif était accordée sur le réalisé BRUT, alors que la paie de fin
+      // de mois (estimateSalaryMonthReal) la calcule sur les contrats PAYABLES (après retours convertis).
+      // Un agent à 32 signés / 27 payés pour un mini de 30 voyait donc "ton salaire réel, maintenant"
+      // inclure une prime de 500 DH qu'il ne toucherait jamais — 800 DH d'écart mesuré avec sa paie.
+      const brRT = await payableContractsBreakdown(agent, year, month);
+      const stFull = await monthlyObjectifStatus(agent, year, month, brRT.payable);
       objectifPrimes = (stFull.primeObjectif||0) + (stFull.primeExtra||0);
     }
     const manualPrimes = await getManualPrimes(agent, year, month);
@@ -8665,7 +9009,10 @@ async function computeRealTimeExpenseForRange(fromDateStr, toDateStr){
 // réécrivent tout le panneau (donc referment un détail qu'on avait ouvert) et font clignoter "⏳
 // Calcul…" sans rien de neuf entre deux cycles. On les espace davantage, et on donne un bouton
 // "🔄 Actualiser" à côté de chacun pour forcer un recalcul immédiat quand on le veut vraiment.
-const HEAVY_FINANCIAL_REFRESH_MS = 180000;  // 💰 Mon CA / 💸 Dépenses temps réel / 💼 Masse salariale / 🧾 Bilan net
+const HEAVY_FINANCIAL_REFRESH_MS = 300000;  // 💰 Mon CA / 💸 Dépenses temps réel / 💼 Masse salariale / 🧾 Bilan net
+// Porté de 3 à 5 minutes : ce sont les panneaux les plus coûteux de l'appli (masse salariale = un
+// calcul de paie complet pour chaque agent) et les plus stables — un chiffre d'affaires mensuel qui
+// bouge de 5 minutes n'a jamais changé une décision.
 const READ_TIME_REFRESH_MS = 60000;         // ⏱️ Pauses en direct / ⏰ Retards-absences / 📅 Détail jour par jour
 let payrollSummaryLastComputed = 0;
 let payrollSummaryLastMonthKey = null;
@@ -8884,7 +9231,19 @@ async function computeMonthProjection(agent, year, month){
     }
   }
 
-  const pace = elapsedWorkingDays > 0 ? realized / elapsedWorkingDays : 0;
+  // ⚠️ BUG CORRIGÉ — les jours écoulés INCLUAIENT aujourd'hui, alors que les jours restants l'EXCLUENT
+  // (workingDaysRemainingFrom part de demain). Le jour en cours pesait donc au dénominateur du rythme
+  // sans que sa production soit faite : à 9 h, un agent à 3 contrats/jour depuis 10 jours affichait
+  // 2,7/jour et une projection de 60 au lieu de 66. Tout le monde apparaissait plus lent chaque matin,
+  // et d'autant plus tôt dans le mois. On ne compte le jour en cours dans la moyenne qu'à partir du
+  // moment où l'agent y a produit quelque chose — sinon on mesure son rythme sur les jours terminés.
+  let paceDays = elapsedWorkingDays;
+  if(isCurrentMonth && isWorkingDay(todayStr()) && paceDays > 1){
+    const boardToday = prodBoardCache[todayStr()];
+    const doneToday = boardToday ? ((boardToday.agents && boardToday.agents[agent] && boardToday.agents[agent].realized) || 0) : 0;
+    if(doneToday === 0) paceDays -= 1;
+  }
+  const pace = paceDays > 0 ? realized / paceDays : 0;
   const projected = Math.round(realized + pace * remainingWorkingDays);
   const onTrack = realized >= mini || projected >= mini;
   return { agent, mini, realized, pace: Math.round(pace*10)/10, projected, remainingWorkingDays, onTrack };
@@ -8964,14 +9323,13 @@ async function renderRepeatOffendersPanel(){
   const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const dateStrs = [];
-  for(let d=1; d<=daysInMonth; d++) dateStrs.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-
+  // ⚡ OPTIMISÉ — ce panneau relisait les 31 jours du mois pour chaque agent (jours futurs compris,
+  // forcément vides) : 248 lectures pour rien à chaque cycle Admin. monthlyStats compte déjà exactement
+  // la même chose (phoneYoutube), sur des documents déjà en cache, et applique en plus les mêmes bornes
+  // d'arrivée/départ que le tableau principal — les deux écrans sont donc désormais cohérents.
   const results = await Promise.all(nonIndep.map(async agent=>{
-    const allInfr = await Promise.all(dateStrs.map(d=> getInfractions(agent, d)));
-    const count = allInfr.reduce((s,list)=> s + list.filter(i=>i.type==='phone_youtube').length, 0);
-    return { agent, count };
+    const st = await monthlyStats(agent, year, month);
+    return { agent, count: st.phoneYoutube || 0 };
   }));
   const offenders = results.filter(r=>r.count>=2).sort((a,b)=> (b.count-a.count) || a.agent.localeCompare(b.agent));
   if(offenders.length===0){ el.innerHTML = '<div class="empty">✅ Aucun récidiviste ce mois.</div>'; return; }
@@ -8995,21 +9353,39 @@ async function renderRepeatOffendersPanel(){
 //   1) les contrats validés importés pour ce mois-là (données réelles du backoffice) ;
 //   2) à défaut, les compteurs de l'Arena (mois en cours, avant import).
 // Un seul point d'entrée pour toute l'app : impossible que deux écrans racontent deux histoires.
+// ⚡ OPTIMISÉ — cette fonction refiltrait TOUTES les lignes du mois pour CHAQUE jour affiché, en
+// reparsant la date de chaque contrat à chaque fois. Les trois panneaux d'analyse (tendance 14 jours,
+// comparaison de mois 54 jours, meilleur/pire jour 15 jours) demandaient ainsi ~83 jours × ~500 lignes,
+// soit plus de 41 000 analyses de date par cycle Admin, toutes les 25 secondes — c'était le principal
+// blocage du navigateur. On construit maintenant UN index date → nombre, une seule fois par mois, que
+// les trois panneaux se partagent.
 const dailyCountCache = {};
+const dailyCountIndex = {};   // 'YYYY-MM' → { 'YYYY-MM-DD': n }  |  null = aucun import ce mois-là
 async function dailyContractCount(dateStr){
   if(dailyCountCache[dateStr] != null) return dailyCountCache[dateStr];
   const mv = dateStr.slice(0, 7);
-  let n = null;
-  try{
-    const prod = await getBillingProd(mv);
-    if((prod.rows || []).length){
-      n = prod.rows.filter(r=>{
-        const iso = parseContractDate(r.datePropre || r.date);
-        return iso === dateStr && !r.retracted;
-      }).length;
-    }
-  }catch(e){}
-  if(n == null){
+  if(dailyCountIndex[mv] === undefined){
+    let idx = null;
+    try{
+      const prod = await getBillingProd(mv);
+      const rows = prod.rows || [];
+      if(rows.length){
+        idx = Object.create(null);
+        for(let i=0; i<rows.length; i++){
+          const r = rows[i];
+          if(!r || r.retracted) continue;
+          const iso = parseContractDate(r.datePropre || r.date);
+          if(iso) idx[iso] = (idx[iso] || 0) + 1;
+        }
+      }
+    }catch(e){}
+    dailyCountIndex[mv] = idx;
+  }
+  const idx = dailyCountIndex[mv];
+  let n;
+  if(idx){
+    n = idx[dateStr] || 0;
+  } else {
     const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
     prodBoardCache[dateStr] = board;
     n = 0;
@@ -9018,7 +9394,10 @@ async function dailyContractCount(dateStr){
   dailyCountCache[dateStr] = n;
   return n;
 }
-function clearDailyCountCache(){ Object.keys(dailyCountCache).forEach(k => delete dailyCountCache[k]); }
+function clearDailyCountCache(){
+  Object.keys(dailyCountCache).forEach(k => delete dailyCountCache[k]);
+  Object.keys(dailyCountIndex).forEach(k => delete dailyCountIndex[k]);
+}
 
 async function renderBestWorstDayPanel(targetId){
   const el = document.getElementById(targetId || 'bestWorstDayPanel');
@@ -9379,7 +9758,7 @@ async function exportMonthlyBilanCSV(){
     ]);
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const salRes = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
-    const supervisorBonus = isSupervisor(agent) ? (supervisionBonusMap.dh[agent] || 0) : 0;
+    const supervisorBonus = isSupervisor(agent) ? Math.round(supervisionBonusMap.dh[agent] || 0) : 0;
     return {
       agent, isIndep,
       realized: st.realized,
@@ -9675,6 +10054,9 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   const n = firstName(agentName);
   const fmtNum = x => (Math.round(x*10)/10).toLocaleString('fr-FR');
   const mk = (emoji, text, color, bg, critical) => ({ text: `${emoji} ${text}`, color, bg, critical: !!critical });
+  // ⚠️ CORRIGÉ — tout ce bloc écrivait « 1 contrats ». Le pluriel est désormais géré partout, comme il
+  // l'était déjà (correctement) dans la partie « journée terminée » de la même fonction.
+  const ctr = (v)=> `${v} contrat${v>1?'s':''}`;
   // La graine inclut le JOUR : à nombre de contrats égal, l'agent ne relit pas mot pour mot le même
   // commentaire demain. Elle reste stable dans la journée (pas de texte qui saute à chaque rafraîchissement).
   const seed = `${agentName}|${monthlyRealized}|${refDayForSeed || todayStr()}`;
@@ -9729,7 +10111,16 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
           `${rankValue} contrat${rankValue>1?'s':''}, meilleur score du jour. Journée bouclée en beauté.`
         ], seed+'|rangJour'), GOLD, GOLD_BG));
       } else if(rankValue === 0){
-        lines.push(mk('📉', `Journée terminée sans contrat. Demain est un autre jour — repars avec un plan clair dès la première heure.`, SLATE, SLATE_BG));
+        // Branche la plus sensible de toute l'appli : c'est ce que lit quelqu'un qui a fait une journée
+        // blanche. Elle n'avait qu'une seule phrase — désormais six, toutes tournées vers demain.
+        lines.push(mk('📉', seedPick([
+          `Journée terminée sans contrat. Demain est un autre jour — repars avec un plan clair dès la première heure.`,
+          `Zéro aujourd'hui. Ça arrive à tout le monde ; ce qui compte, c'est de ne pas enchaîner deux fois.`,
+          `Pas de contrat aujourd'hui. Prends cinq minutes ce soir pour préparer tes trois meilleurs prospects de demain.`,
+          `Journée blanche. Repère UNE chose qui n'a pas marché aujourd'hui, et attaque demain par celle-là.`,
+          `Rien signé aujourd'hui — la journée est finie, le mois ne l'est pas. Demain, un contrat avant midi.`,
+          `0 contrat aujourd'hui. Ne rumine pas ce soir : la seule chose qui compte, c'est ton premier appel de demain.`
+        ], seed+'|jourZero'), SLATE, SLATE_BG));
       } else {
         lines.push(mk('🥈', seedPick([
           `Tu finis ${rankTxt} de la journée avec ${rankValue} contrat${rankValue>1?'s':''}${rival ? `, à ${gapTxt} de ${rival}` : ''}. Journée honnête.`,
@@ -9745,50 +10136,60 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         const mValue = rankOverride.monthValue != null ? rankOverride.monthValue : monthlyRealized;
         if(mr.rank === 1){
           lines.push(mk('👑', seedPick([
-            `Et tu es toujours 1er du mois (${mValue} contrats). Garde cette place, elle se défend chaque jour.`,
-            `Au classement du mois, tu restes en tête avec ${mValue} contrats. Ne relâche pas demain.`
+            `Et tu es toujours 1er du mois (${ctr(mValue)}). Garde cette place, elle se défend chaque jour.`,
+            `Au classement du mois, tu restes en tête avec ${ctr(mValue)}. Ne relâche pas demain.`
           ], seed+'|rangMois'), GOLD, GOLD_BG));
         } else if(mr.prevGap > 0){
           const mRival = firstName(mr.prevAgent);
           const mGap = `${mr.prevGap} contrat${mr.prevGap>1?'s':''}`;
           lines.push(mk('👑', seedPick([
             `Sur le mois tu es ${mRankTxt}, à ${mGap} de ${mRival}. C'est là que tout se joue — demain, va le chercher.`,
-            `Classement du mois : ${mRankTxt}, ${mValue} contrats, ${mGap} derrière ${mRival}. Il reste des jours pour renverser ça.`,
+            `Classement du mois : ${mRankTxt}, ${ctr(mValue)}, ${mGap} derrière ${mRival}. Il reste des jours pour renverser ça.`,
             `${mGap} te sépare${mr.prevGap>1?'nt':''} de ${mRival} sur le mois. Rien n'est joué, et c'est le mois qui compte pour ta paie.`
           ], seed+'|rangMois'), SLATE, SLATE_BG));
         } else {
-          lines.push(mk('👑', `Sur le mois tu es ${mRankTxt} avec ${mValue} contrats.`, SLATE, SLATE_BG));
+          lines.push(mk('👑', seedPick([
+            `Sur le mois tu es ${mRankTxt} avec ${ctr(mValue)}. La place se joue sur les jours qui restent.`,
+            `Classement du mois : ${mRankTxt}, ${ctr(mValue)}. Rien n'est figé tant que le mois n'est pas fini.`,
+            `${mRankTxt} du mois avec ${ctr(mValue)} — c'est ce chiffre-là qui décidera de ta paie.`,
+            `Au mois, tu es ${mRankTxt} (${ctr(mValue)}). Une bonne journée demain et tu changes de ligne.`
+          ], seed+'|rangMoisEx'), SLATE, SLATE_BG));
         }
       }
     } else if(rankInfo.rank === 1){
       // --- Journée en cours, 1er du mois : la course est ouverte, on félicite et on entretient ---
       lines.push(mk('🏆', seedPick([
-        `Tu domines le classement ${periodLabel} avec ${rankValue} contrats. Continue comme ça, la place se mérite chaque jour !`,
-        `1er de l'équipe, ${rankValue} contrats ${periodLabel} : tu montres l'exemple à tout le monde. Beau travail !`,
+        `Tu domines le classement ${periodLabel} avec ${ctr(rankValue)}. Continue comme ça, la place se mérite chaque jour !`,
+        `1er de l'équipe, ${ctr(rankValue)} ${periodLabel} : tu montres l'exemple à tout le monde. Beau travail !`,
         genderPick(agentName,
-          `Personne devant toi ${periodLabel} (${rankValue} contrats) — champion pour l'instant. Reste affamé, ne relâche rien !`,
-          `Personne devant toi ${periodLabel} (${rankValue} contrats) — championne pour l'instant. Reste affamée, ne relâche rien !`
+          `Personne devant toi ${periodLabel} (${ctr(rankValue)}) — champion pour l'instant. Reste affamé, ne relâche rien !`,
+          `Personne devant toi ${periodLabel} (${ctr(rankValue)}) — championne pour l'instant. Reste affamée, ne relâche rien !`
         ),
         genderPick(agentName,
-          `Tu écrases le classement avec ${rankValue} contrats ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieux !`,
-          `Tu écrases le classement avec ${rankValue} contrats ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieuse !`
+          `Tu écrases le classement avec ${ctr(rankValue)} ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieux !`,
+          `Tu écrases le classement avec ${ctr(rankValue)} ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieuse !`
         ),
-        `1er, ${rankValue} contrats ${periodLabel}. Tout le monde te court après — à toi de rester injoignable.`,
-        `${rankValue} contrats ${periodLabel} et personne devant. C'est ça, la vie de rêve dont on parle — continue à la construire.`
+        `1er, ${ctr(rankValue)} ${periodLabel}. Tout le monde te court après — à toi de rester injoignable.`,
+        `${ctr(rankValue)} ${periodLabel} et personne devant. C'est ça, la vie de rêve dont on parle — continue à la construire.`
       ], seed+'|rang'), GOLD, GOLD_BG));
     } else if(rankInfo.prevGap > 0){
       // --- Journée en cours, quelqu'un devant : là, « va le chercher » a tout son sens ---
       const rivalObj = genderPick(rankInfo.prevAgent, 'le', 'la');
       lines.push(mk('🥈', seedPick([
-        `Tu es ${rankTxt} avec ${rankValue} contrats ${periodLabel} — encore ${gapTxt} et tu doubles ${rival} !`,
+        `Tu es ${rankTxt} avec ${ctr(rankValue)} ${periodLabel} — encore ${gapTxt} et tu doubles ${rival} !`,
         `${rival} est juste devant toi (${gapTxt} d'écart). Va ${rivalObj} chercher, c'est largement jouable !`,
-        `${rankTxt} de l'équipe avec ${rankValue} contrats ${periodLabel}. Il te manque ${gapTxt} pour passer devant ${rival} — fais-le !`,
+        `${rankTxt} de l'équipe avec ${ctr(rankValue)} ${periodLabel}. Il te manque ${gapTxt} pour passer devant ${rival} — fais-le !`,
         `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon coup et le classement change !`,
         `${gapTxt} seulement entre toi et ${rival}. C'est rien, un client de plus et la place est à toi.`,
         `${rankTxt}, à ${gapTxt} de ${rival}. Le classement n'attend qu'un déclic — que ce soit le tien aujourd'hui.`
       ], seed+'|rang'), SLATE, SLATE_BG));
     } else {
-      lines.push(mk('🥈', `Tu es ${rankTxt} de l'équipe avec ${rankValue} contrats ${periodLabel}.`, SLATE, SLATE_BG));
+      lines.push(mk('🥈', seedPick([
+        `Tu es ${rankTxt} de l'équipe avec ${ctr(rankValue)} ${periodLabel}. À toi de creuser l'écart.`,
+        `${rankTxt} avec ${ctr(rankValue)} ${periodLabel} — personne juste devant, donc rien à rattraper : tout à construire.`,
+        `${ctr(rankValue)} ${periodLabel}, ${rankTxt} de l'équipe. Le prochain contrat te met devant.`,
+        `Tu es ${rankTxt} (${ctr(rankValue)} ${periodLabel}). Ceux qui montent sont ceux qui ne s'arrêtent pas là.`
+      ], seed+'|rangEx'), SLATE, SLATE_BG));
     }
   }
 
@@ -9806,7 +10207,14 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         `Objectif minimum atteint. Bon travail — chaque contrat en plus maintenant, c'est du bonus pur.`
       ], seed+'|mini'), SAGE, SAGE_BG));
     } else if(remainingDays <= 0){
-      lines.push(mk('📌', `Dernier jour pour boucler ton objectif minimum (${monthlyRealized}/${mini}) ! C'est maintenant ou jamais.`, CRITICAL, CRITICAL_BG, true));
+      // Une seule phrase ici, en rouge clignotant, le dernier jour du mois : c'est le message le plus
+      // lourd de l'appli, il mérite mieux qu'une formulation unique répétée d'un mois sur l'autre.
+      lines.push(mk('📌', seedPick([
+        `Dernier jour pour boucler ton objectif minimum (${monthlyRealized}/${mini}) ! C'est maintenant ou jamais.`,
+        `Dernier jour du mois : il te manque ${ctr(miniGap)} pour ton objectif minimum. Tout se joue aujourd'hui.`,
+        `C'est le dernier jour. ${monthlyRealized}/${mini} — chaque contrat d'aujourd'hui compte double pour ta paie.`,
+        `Fin du mois, objectif minimum pas encore atteint (${monthlyRealized}/${mini}). Donne tout ce que tu as sur cette journée.`
+      ], seed+'|miniDernier'), CRITICAL, CRITICAL_BG, true));
     } else {
       const neededPace = miniGap / remainingDays;
       if(currentPace >= neededPace){
@@ -9852,7 +10260,12 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         )
       ], seed+'|vise'), TEAL, TEAL_BG));
     } else if(remainingDays <= 0){
-      lines.push(mk('🚀', `Dernier jour pour attraper ton objectif visé (${monthlyRealized}/${vise}) ! Un dernier coup et c'est fait.`, ROSE, ROSE_BG));
+      lines.push(mk('🚀', seedPick([
+        `Dernier jour pour attraper ton objectif visé (${monthlyRealized}/${vise}) ! Un dernier coup et c'est fait.`,
+        `Dernier jour : ${ctr(viseGap)} te sépare${viseGap>1?'nt':''} de l'objectif que tu t'étais fixé. Ça se tente.`,
+        `C'est aujourd'hui ou jamais pour ton objectif visé (${monthlyRealized}/${vise}). Finis le mois en beauté.`,
+        `Ton objectif perso est à ${ctr(viseGap)} — et il reste une journée. Vas-y à fond, tu n'as rien à perdre.`
+      ], seed+'|viseDernier'), ROSE, ROSE_BG));
     } else {
       const neededPaceVise = viseGap / remainingDays;
       if(currentPace >= neededPaceVise){
@@ -9861,12 +10274,21 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
           `Tu es sur le bon rythme pour ton objectif visé (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPaceVise)}). Continue, ça se voit !`,
           `Objectif visé bien parti : à ce rythme, tu y arrives tranquillement.`
         ], seed+'|vise'), BLUE, BLUE_BG));
-      } else if(neededPaceVise - currentPace <= 1.5){
+      } else if(neededPaceVise - currentPace <= 1){
+        // Seuils alignés sur ceux du bloc "minimum" ci-dessus (1 puis 2,5) : avant, un agent pouvait être
+        // annoncé "proche" de son objectif visé et "en danger réel" sur son objectif mini dans le même
+        // paragraphe, avec des écarts de rythme identiques.
         lines.push(mk('🚀', seedPick([
           `Il faudrait ${fmtNum(neededPaceVise)} contrat/jour pour l'objectif visé — tu es à ${fmtNum(currentPace)}/jour. Ça reste jouable, encore un effort !`,
           `Tu es proche du rythme pour ton objectif visé (${fmtNum(neededPaceVise)}/jour nécessaires). Un petit coup de plus et c'est fait !`,
           `Objectif visé encore atteignable. Allez, on y croit !`
         ], seed+'|vise'), VIOLET, VIOLET_BG));
+      } else if(neededPaceVise - currentPace <= 2.5){
+        lines.push(mk('🚀', seedPick([
+          `Ton objectif visé demande ${fmtNum(neededPaceVise)} contrats/jour, tu es à ${fmtNum(currentPace)}. L'écart est réel mais rattrapable.`,
+          `Objectif visé un peu au-dessus de ton rythme actuel. Deux bonnes journées et tu reviens dedans.`,
+          `Tu t'es fixé haut, et ça se voit dans les chiffres (${fmtNum(neededPaceVise)}/jour requis). Ce n'est pas hors de portée.`
+        ], seed+'|viseMoyen'), VIOLET, VIOLET_BG));
       } else {
         lines.push(mk('🚀', seedPick([
           `Il faudrait ${fmtNum(neededPaceVise)} contrats/jour pour l'objectif visé — tu es à ${fmtNum(currentPace)}/jour. Il va falloir forcer l'allure !`,
@@ -10032,7 +10454,10 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   const diff = todayRealized - yesterdayRealized;
   const avg = c.teamAvgToday || 0;
   const best = c.bestToday || 0;
-  const estMeilleur = best > 0 && todayRealized >= best;
+  // ⚠️ CORRIGÉ — le test était ">=" sans condition d'unicité : si TOUTE l'équipe finissait à 1 contrat,
+  // chacun recevait "Personne devant toi aujourd'hui". On exige désormais d'être seul en tête, ou au
+  // moins d'avoir une journée qui vaut le compliment (rang 1 réel).
+  const estMeilleur = best > 0 && todayRealized >= best && (c.rank == null || c.rank === 1);
   const bienAuDessus = avg > 0 && todayRealized >= avg * 1.3;
   const auDessus = avg > 0 && todayRealized >= avg;
   const objAtteint = (c.mini || 0) > 0 && (c.monthlyRealized || 0) >= c.mini;
@@ -10041,20 +10466,20 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   // ---- 1) Journée forte : on félicite, quoi qu'ait donné la veille ----
   if(estMeilleur && todayRealized > 0){
     return { text: seedPick([
-      `${todayRealized} contrats, meilleur score de l'équipe aujourd'hui. C'est toi qui tires tout le monde vers le haut.`,
+      `${todayRealized} contrat${todayRealized>1?'s':''}, meilleur score de l'équipe aujourd'hui. C'est toi qui tires tout le monde vers le haut.`,
       genderPick(agentName,
-        `Meilleur score du jour avec ${todayRealized} contrats. Personne n'a fait mieux — tu peux être fier de cette journée.`,
-        `Meilleur score du jour avec ${todayRealized} contrats. Personne n'a fait mieux — tu peux être fière de cette journée.`),
-      `${todayRealized} contrats : la meilleure journée de l'équipe. ${objAtteint ? 'Et ton objectif du mois est déjà bouclé.' : 'Continue comme ça et le mois est plié.'}`,
-      `Personne devant toi aujourd'hui (${todayRealized} contrats). Ce niveau-là, c'est ce qui fait la différence sur un mois.`
+        `Meilleur score du jour avec ${todayRealized} contrat${todayRealized>1?'s':''}. Personne n'a fait mieux — tu peux être fier de cette journée.`,
+        `Meilleur score du jour avec ${todayRealized} contrat${todayRealized>1?'s':''}. Personne n'a fait mieux — tu peux être fière de cette journée.`),
+      `${todayRealized} contrat${todayRealized>1?'s':''} : la meilleure journée de l'équipe. ${objAtteint ? 'Et ton objectif du mois est déjà bouclé.' : 'Continue comme ça et le mois est plié.'}`,
+      `Personne devant toi aujourd'hui (${todayRealized} contrat${todayRealized>1?'s':''}). Ce niveau-là, c'est ce qui fait la différence sur un mois.`
     ], `${agentName}|best|${refDateStr || todayStr()}`), color: GOLD_DOD, bg: GOLD_DOD_BG, critical: false };
   }
 
   if(bienAuDessus && todayRealized > 0){
     return { text: seedPick([
-      `Belle journée : ${todayRealized} contrats, nettement au-dessus de la moyenne de l'équipe${rangTxt ? ` (${rangTxt})` : ''}.`,
-      `${todayRealized} contrats aujourd'hui — bien au-dessus de ce que fait l'équipe en moyenne. Journée solide.`,
-      `Grosse journée à ${todayRealized} contrats. ${objAtteint ? 'Objectif du mois déjà en poche, tout ce qui vient maintenant est du bonus.' : 'À ce rythme, ton objectif du mois arrive vite.'}`
+      `Belle journée : ${todayRealized} contrat${todayRealized>1?'s':''}, nettement au-dessus de la moyenne de l'équipe${rangTxt ? ` (${rangTxt})` : ''}.`,
+      `${todayRealized} contrat${todayRealized>1?'s':''} aujourd'hui — bien au-dessus de ce que fait l'équipe en moyenne. Journée solide.`,
+      `Grosse journée à ${todayRealized} contrat${todayRealized>1?'s':''}. ${objAtteint ? 'Objectif du mois déjà en poche, tout ce qui vient maintenant est du bonus.' : 'À ce rythme, ton objectif du mois arrive vite.'}`
     ], `${agentName}|high|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
   }
 
@@ -10074,8 +10499,11 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   if(diff === 0){
     if(auDessus || objAtteint){
       return { text: seedPick([
-        `${todayRealized} contrats, comme hier — et toujours au-dessus de la moyenne. Cette régularité, c'est précieux.`,
-        `Deux journées de suite à ${todayRealized}. Tenir ce niveau jour après jour vaut mieux qu'un coup d'éclat isolé.`
+        `${todayRealized} contrat${todayRealized>1?'s':''}, comme hier — et toujours au-dessus de la moyenne. Cette régularité, c'est précieux.`,
+        `Deux journées de suite à ${todayRealized}. Tenir ce niveau jour après jour vaut mieux qu'un coup d'éclat isolé.`,
+        `Même total qu'hier (${todayRealized}), et toujours devant la moyenne de l'équipe. C'est une base solide.`,
+        `${todayRealized} pour la deuxième journée d'affilée. Les mois se gagnent comme ça, pas sur un jour.`,
+        `Tu reproduis ta journée d'hier (${todayRealized}), au-dessus du reste de l'équipe. Fiable, et ça se remarque.`
       ], `${agentName}|flatok|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
     }
     return { text: seedPick([
@@ -10089,7 +10517,7 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   const baisse = -diff;
   if(auDessus || objAtteint){
     return { text: seedPick([
-      `${todayRealized} contrats aujourd'hui, ${baisse} de moins qu'hier — mais tu restes au-dessus de la moyenne. Rien d'inquiétant.`,
+      `${todayRealized} contrat${todayRealized>1?'s':''} aujourd'hui, ${baisse} de moins qu'hier — mais tu restes au-dessus de la moyenne. Rien d'inquiétant.`,
       `Légère baisse face à hier (${todayRealized} contre ${yesterdayRealized}), sur une journée qui reste bonne. ${objAtteint ? 'Ton objectif du mois est déjà sécurisé.' : 'Rien à corriger, garde le cap.'}`,
       `${todayRealized} aujourd'hui. Un peu moins qu'hier, mais au-dessus de ce que fait l'équipe — une journée normale, pas un signal.`
     ], `${agentName}|downok|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
@@ -10097,7 +10525,10 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   if(baisse <= 1){
     return { text: seedPick([
       `${todayRealized} aujourd'hui contre ${yesterdayRealized} hier. Un contrat d'écart, ça ne veut rien dire — vise un peu plus haut demain.`,
-      `Presque le même total qu'hier (${todayRealized}). Rien d'alarmant, mais il y a de la place pour mieux.`
+      `Presque le même total qu'hier (${todayRealized}). Rien d'alarmant, mais il y a de la place pour mieux.`,
+      `Un contrat de moins qu'hier. C'est du bruit, pas une tendance — mais demain, repasse devant.`,
+      `${todayRealized} contre ${yesterdayRealized} : quasiment identique. À toi de faire pencher la balance demain.`,
+      `Journée très proche d'hier. Rien à corriger d'urgent, juste un cran d'exigence en plus.`
     ], `${agentName}|down1|${refDateStr || todayStr()}`), color: SLATE, bg: SLATE_BG, critical: false };
   }
   return { text: seedPick([
@@ -10525,7 +10956,25 @@ const CALL_CENTER_WEEKLY_TIPS = [
   "Célèbre les petites victoires individuelles à voix haute pendant la semaine, pas seulement au bilan du vendredi.",
   "Regarde l'écart entre le premier et le dernier du classement. S'il se creuse, ce n'est pas un problème de motivation : va écouter les appels de celui du bas, il bloque sur quelque chose de précis.",
   "Un agent qui décroche moins ne signe pas moins par malchance. Compare le nombre d'appels passés avant de parler de résultats — le volume vient toujours avant la conversion.",
-  "Les contrats rétractés reviennent souvent des mêmes situations : client mal informé, closing trop rapide. Reprends deux rétractations récentes en équipe, sans nommer personne."
+  "Les contrats rétractés reviennent souvent des mêmes situations : client mal informé, closing trop rapide. Reprends deux rétractations récentes en équipe, sans nommer personne.",
+  "Demande à ton meilleur agent de la semaine d'expliquer en deux minutes comment il a décroché son plus beau contrat. Ça vaut tous les scripts.",
+  "Regarde à quelle heure tombent les contrats de l'équipe. Si tout se joue le matin, protège ce créneau : pas de réunion, pas d'interruption.",
+  "Une semaine sans aucun retard, ça se souligne. Le règlement ne doit pas se rappeler qu'au moment de sanctionner.",
+  "Fais tourner les binômes : un agent expérimenté avec un plus récent pendant une heure, ça débloque souvent plus qu'une formation.",
+  "Les agents qui saturent en fin de semaine sont ceux qui n'ont pas coupé. Vérifie que les pauses sont vraiment prises, pas grignotées.",
+  "Reprends une objection que personne ne sait traiter et travaille-la en équipe jusqu'à ce que chacun ait sa formulation. Pas une phrase imposée : la sienne.",
+  "Annonce le classement de la semaine à voix haute, mais termine toujours par ce qu'il reste à jouer la semaine prochaine — jamais sur une sentence.",
+  "Un agent en baisse deux semaines de suite ne manque presque jamais de motivation. Cherche d'abord un problème de fichier, d'horaire ou de fatigue.",
+  "Fixe UN seul point d'amélioration collectif pour la semaine. Trois consignes en même temps, personne n'en applique aucune.",
+  "Compare le nombre d'appels et le nombre de contrats. Si la conversion est bonne mais le volume faible, le problème n'est pas le discours.",
+  "Prends deux minutes pour demander à l'équipe ce qui leur a compliqué la semaine. Souvent, la réponse coûte peu à corriger.",
+  "Ne félicite jamais « en général ». Dis précisément ce qui a été bien fait : c'est la seule façon que ça se reproduise.",
+  "Repère l'agent qui progresse le plus, pas seulement celui qui produit le plus. La progression se récompense aussi, et ça tire tout le monde.",
+  "Le vendredi est la journée où l'on décroche le moins. Fixe un objectif d'équipe spécifique à ce jour-là plutôt que de le subir.",
+  "Si plusieurs agents bloquent sur la même étape de l'appel, ce n'est pas eux le problème : c'est le script. Retravaille-le avec eux.",
+  "Rappelle ce que représente un contrat en argent réel pour chaque agent. Les objectifs abstraits ne motivent personne.",
+  "Un nouvel arrivant qui n'ose pas poser de questions est un nouvel arrivant qu'on perdra. Va le chercher, il ne viendra pas.",
+  "Termine la semaine en donnant un cap clair pour lundi. Une équipe qui sait par quoi elle commence démarre plus vite."
 ];
 
 // Conseils dédiés aux agents en période d'intégration (< 1 mois d'ancienneté) — jamais de comparaison
@@ -10535,7 +10984,16 @@ const NEW_AGENT_WEEKLY_TIPS = [
   "Fais-lui réécouter un bon appel d'un agent confirmé — le script s'apprend souvent mieux à l'oreille que sur papier.",
   "Fixe un petit objectif atteignable pour la semaine (pas le mini de l'équipe) pour construire la confiance étape par étape.",
   "Un point quotidien de 5 minutes en fin de journée cette semaine vaut mieux qu'un seul point en fin de semaine.",
-  "Valorise chaque contrat signé, même un seul — à ce stade, la régularité compte plus que le volume."
+  "Valorise chaque contrat signé, même un seul — à ce stade, la régularité compte plus que le volume.",
+  "Vérifie qu'il connaît par cœur les trois objections les plus fréquentes. Le reste viendra tout seul.",
+  "Demande-lui de te raconter un appel qui s'est mal passé. C'est là qu'on apprend le plus, et ça dédramatise.",
+  "Mets-le en binôme une heure avec un agent confirmé, sans objectif de production — juste pour observer.",
+  "Ne le compare jamais au classement de l'équipe devant les autres à ce stade : compare-le à sa propre semaine dernière.",
+  "Assure-toi qu'il sait exactement comment il est payé. Un nouvel agent qui ne comprend pas sa paie se démotive vite.",
+  "Corrige UNE chose à la fois. Lui lister cinq défauts d'un coup ne fait que le bloquer au téléphone.",
+  "Fais-lui écrire sa propre accroche, avec ses mots. Un script récité s'entend au bout de trois secondes.",
+  "Fixe-lui un objectif de nombre d'APPELS, pas de contrats, cette semaine. Le volume d'abord, la conversion ensuite.",
+  "Prends son premier contrat comme prétexte à une vraie célébration devant l'équipe. Ça marque durablement."
 ];
 
 // ============================================================
@@ -10549,11 +11007,15 @@ const NEW_AGENT_WEEKLY_TIPS = [
 //   Semaine 1 : 7 minimum.
 //   Semaine 2 : entre 10 et 15, 10 minimum.
 //   Semaine 3 et 4 : 10 minimum — en dessous, on tire la sonnette d'alarme.
+// ⚠️ CORRIGÉ — min et target étaient identiques en semaines 1, 3 et 4 : la variante intermédiaire
+// « 🙂 le minimum est là, vise plus haut » était donc INATTEIGNABLE, sauf en semaine 2. Les paliers
+// gardent exactement les mêmes MINIMUMS (rien ne change pour l'alerte) mais reçoivent une cible un cran
+// au-dessus, ce qui redonne trois niveaux de discours au lieu de deux.
 const NEW_AGENT_WEEK_THRESHOLDS = [
-  { week: 1, min: 7,  target: 7 },
+  { week: 1, min: 7,  target: 10 },
   { week: 2, min: 10, target: 15 },
-  { week: 3, min: 10, target: 10 },
-  { week: 4, min: 10, target: 10 }
+  { week: 3, min: 10, target: 14 },
+  { week: 4, min: 10, target: 16 }
 ];
 
 // Numéro de semaine d'ancienneté (1 à 4+) à partir du nombre de jours calendaires écoulés depuis
@@ -10570,16 +11032,34 @@ function newAgentWeekNumber(daysSinceStart){
 function newAgentWeekProgress(weekRealized, weekNumber){
   const tier = NEW_AGENT_WEEK_THRESHOLDS.find(t => t.week === weekNumber);
   if(!tier) return null; // 5e semaine et au-delà : sort du régime "nouvel arrivant"
+  const c = (v)=> `${v} contrat${v>1?'s':''}`;
+  const g = `s${tier.week}|${weekRealized}`;
   if(weekRealized >= tier.target){
-    return { text: `✅ ${weekRealized}/${tier.target} — objectif de la ${tier.week}ᵉ semaine atteint, très bon rythme pour un début.`, alarm: false, ok: true };
+    return { text: seedPick([
+      `✅ ${weekRealized}/${tier.target} — objectif de la ${tier.week}ᵉ semaine atteint, très bon rythme pour un début.`,
+      `✅ ${c(weekRealized)} en ${tier.week}ᵉ semaine : au-dessus de ce qu'on attend à ce stade. Dis-le lui clairement.`,
+      `✅ Objectif de la ${tier.week}ᵉ semaine dépassé (${weekRealized}/${tier.target}). L'intégration se passe bien.`
+    ], g+'|ok'), alarm: false, ok: true };
   }
   if(weekRealized >= tier.min){
-    return { text: `🙂 ${weekRealized} contrat${weekRealized>1?'s':''} — le minimum de la ${tier.week}ᵉ semaine (${tier.min}) est là, vise ${tier.target} pour la suite.`, alarm: false, ok: true };
+    return { text: seedPick([
+      `🙂 ${c(weekRealized)} — le minimum de la ${tier.week}ᵉ semaine (${tier.min}) est là, vise ${tier.target} pour la suite.`,
+      `🙂 ${c(weekRealized)} : le socle de la ${tier.week}ᵉ semaine est acquis. Le cran au-dessus, c'est ${tier.target}.`,
+      `🙂 Minimum tenu pour une ${tier.week}ᵉ semaine (${weekRealized} ≥ ${tier.min}). Montre-lui ce qui manque pour aller à ${tier.target}.`
+    ], g+'|mid'), alarm: false, ok: true };
   }
   if(tier.week <= 2){
-    return { text: `🌱 ${weekRealized} contrat${weekRealized>1?'s':''} cette semaine — sous le repère de ${tier.min} pour une ${tier.week}ᵉ semaine, mais on démarre à peine : accompagne-le sans pression.`, alarm: false, ok: false };
+    return { text: seedPick([
+      `🌱 ${c(weekRealized)} cette semaine — sous le repère de ${tier.min} pour une ${tier.week}ᵉ semaine, mais on démarre à peine : accompagne-le sans pression.`,
+      `🌱 ${c(weekRealized)} en ${tier.week}ᵉ semaine, sous le repère de ${tier.min}. Trop tôt pour s'inquiéter : reste à côté de lui.`,
+      `🌱 Démarrage lent (${weekRealized}/${tier.min}) — c'est une ${tier.week}ᵉ semaine, l'apprentissage compte plus que le chiffre.`
+    ], g+'|start'), alarm: false, ok: false };
   }
-  return { text: `🚨 ${weekRealized} contrat${weekRealized>1?'s':''} cette semaine — sous le minimum attendu à ce stade (${tier.min} en ${tier.week}ᵉ semaine). Ça ne peut plus passer inaperçu : un point s'impose cette semaine.`, alarm: true, ok: false };
+  return { text: seedPick([
+    `🚨 ${c(weekRealized)} cette semaine — sous le minimum attendu à ce stade (${tier.min} en ${tier.week}ᵉ semaine). Ça ne peut plus passer inaperçu : un point s'impose cette semaine.`,
+    `🚨 ${weekRealized}/${tier.min} en ${tier.week}ᵉ semaine. Le temps de l'indulgence est passé : fixe un point individuel cette semaine.`,
+    `🚨 Toujours sous le minimum en ${tier.week}ᵉ semaine (${c(weekRealized)}). Identifie précisément ce qui bloque, maintenant.`
+  ], g+'|alarm'), alarm: true, ok: false };
 }
 
 // Calcule uniquement le total de contrats réalisés par agent pour LA SEMAINE dont le lundi est passé en
@@ -10748,7 +11228,13 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   const buckets = { feliciter: [], motiver: [], encourager: [], pression: [] };
   veteranTeamStats.forEach((r, i)=>{
     const rank = i + 1;
-    if(r.zeroDays >= 1 || (teamAvg > 0 && r.weekRealized < teamAvg * 0.5) || r.lateCount >= 3){
+    // ⚠️ COHÉRENCE CORRIGÉE — le test "1 journée à 0" passait AVANT le test "1er de l'équipe" : un agent
+    // qui finissait la semaine en tête mais avec une seule journée blanche disparaissait de "🌟 À
+    // féliciter" et atterrissait dans "🚨 Sous pression", pendant que son Conseil du matin lui disait
+    // "Tu domines le classement". Le meilleur de la semaine n'est plus jamais classé sous pression pour
+    // ce seul motif — un vrai problème de discipline (3 retards et plus) le sort en revanche toujours.
+    const estMeilleurSemaine = rank === 1 && r.weekRealized > 0;
+    if(r.lateCount >= 3 || (!estMeilleurSemaine && (r.zeroDays >= 1 || (teamAvg > 0 && r.weekRealized < teamAvg * 0.5)))){
       buckets.pression.push(r);
     } else if(rank === 1 || (teamAvg > 0 && r.weekRealized >= teamAvg * 1.3 && r.lateCount === 0)){
       buckets.feliciter.push(r);
@@ -10778,18 +11264,44 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   const biggestDrop = validDeltas.length ? validDeltas.reduce((worst,c)=> (c.delta < worst.delta ? c : worst)) : null;
 
   // ---- Conseils pour la semaine à venir — calculés sur les vrais chiffres, jamais un texte tout fait ----
+  // ⚠️ Ces conseils n'avaient qu'UNE formulation chacun : une équipe avec des journées à 0 relisait mot
+  // pour mot exactement la même phrase tous les vendredis. Les trois plus fréquents ont désormais leur
+  // banque, tirée avec la date du lundi comme graine (stable toute la semaine, différente d'une semaine
+  // à l'autre).
   const tips = [];
+  const gSem = weekDates[0];
   if(zeroDayAgents.length > 0){
-    tips.push(`${zeroDayAgents.length} agent${zeroDayAgents.length>1?'s ont eu':' a eu'} au moins une journée à 0 contrat cette semaine (${zeroDayAgents.map(r=>firstName(r.agent)).join(', ')}) : instaure un point rapide en milieu de journée pour réagir avant la fin de journée, pas après.`);
+    const qui = zeroDayAgents.map(r=>firstName(r.agent)).join(', ');
+    const combien = `${zeroDayAgents.length} agent${zeroDayAgents.length>1?'s ont eu':' a eu'}`;
+    tips.push(seedPick([
+      `${combien} au moins une journée à 0 contrat cette semaine (${qui}) : instaure un point rapide en milieu de journée pour réagir avant la fin de journée, pas après.`,
+      `${combien} une journée blanche cette semaine (${qui}). Une journée à 0 se voit dès 11 h — c'est à ce moment-là qu'il faut intervenir, pas au débriefing du soir.`,
+      `Journée${zeroDayAgents.length>1?'s':''} à 0 contrat cette semaine pour ${qui}. Demande-leur ce qui s'est passé ce jour-là précisément : l'heure de démarrage, le fichier, le moral.`,
+      `${qui} : au moins une journée sans aucun contrat. Fixe-leur un objectif d'un seul contrat avant midi lundi — casser le zéro est plus important que le total.`,
+      `Des journées blanches cette semaine (${qui}). Vérifie d'abord le volume d'appels avant de parler de technique de vente : c'est presque toujours là que ça se joue.`
+    ], gSem+'|zeroDays'));
   }
   if(buckets.pression.length > 0){
-    tips.push(`Prévois un point individuel de 10 minutes avec ${buckets.pression.map(r=>firstName(r.agent)).join(', ')} en tout début de semaine, pour comprendre le blocage avant qu'il ne s'installe.`);
+    const quiP = buckets.pression.map(r=>firstName(r.agent)).join(', ');
+    tips.push(seedPick([
+      `Prévois un point individuel de 10 minutes avec ${quiP} en tout début de semaine, pour comprendre le blocage avant qu'il ne s'installe.`,
+      `${quiP} : un face-à-face court lundi matin vaut mieux qu'une semaine d'observation. Écoute avant de conseiller.`,
+      `Programme un point avec ${quiP} dès lundi. Un agent en difficulté qu'on laisse une semaine de plus décroche pour de bon.`,
+      `${quiP} sont sous pression cette semaine. Va écouter un de leurs appels avant le point — tu sauras quoi leur dire.`,
+      `Point individuel à caler avec ${quiP}. Objectif : repartir avec UNE chose concrète à changer, pas une liste de reproches.`
+    ], gSem+'|pression'));
   }
   if(totalLate > 0 || totalAbsences > 0){
     tips.push(`${totalLate} retard${totalLate>1?'s':''} et ${totalAbsences} absence${totalAbsences>1?'s':''} non justifiée${totalAbsences>1?'s':''} cumulés depuis le début de la semaine : un rappel collectif du règlement en ouverture du briefing peut couper court à une mauvaise habitude qui s'installe.`);
   }
   if(buckets.feliciter.length > 0){
-    tips.push(`Félicite publiquement ${buckets.feliciter.map(r=>firstName(r.agent)).join(', ')} devant toute l'équipe pendant le briefing — la reconnaissance publique tire tout le monde vers le haut.`);
+    const quiF = buckets.feliciter.map(r=>firstName(r.agent)).join(', ');
+    tips.push(seedPick([
+      `Félicite publiquement ${quiF} devant toute l'équipe pendant le briefing — la reconnaissance publique tire tout le monde vers le haut.`,
+      `${quiF} méritent d'être cités nommément au briefing. Dis précisément ce qu'ils ont bien fait, pas juste « bravo ».`,
+      `Mets ${quiF} en avant devant l'équipe. Et demande-leur d'expliquer ce qui a marché : ça vaut une formation.`,
+      `${quiF} ont tenu la semaine. Une reconnaissance publique coûte trente secondes et se ressent pendant des jours.`
+    ], gSem+'|feliciter'));
   }
   if(zeroDayAgents.length === 0 && totalLate === 0 && totalAbsences === 0){
     tips.push(`Semaine propre sur la discipline jusqu'ici (aucun retard, aucune absence, aucune journée à 0) : dis-le clairement à l'équipe en ouverture du briefing, ça se mérite.`);
@@ -10829,7 +11341,12 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     const meta = bucketMeta[key];
     if(!list.length) return `<div style="flex:1; min-width:220px; padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); font-family:'Inter',sans-serif;">
       <div style="font-weight:700; font-size:14px; color:${meta.color}; margin-bottom:4px;">${meta.title}</div>
-      <div style="font-size:12.5px; color:var(--muted);">Personne dans cette catégorie cette semaine.</div>
+      <div style="font-size:12.5px; color:var(--muted);">${seedPick([
+        'Personne dans cette catégorie cette semaine.',
+        'Aucun agent concerné cette semaine.',
+        'Catégorie vide cette semaine — tant mieux ou tant pis, selon laquelle.',
+        'Rien à signaler ici cette semaine.'
+      ], weekDates[0]+'|vide|'+key)}</div>
     </div>`;
     const items = list.map(r=>{
       const reasons = [];
@@ -11344,10 +11861,14 @@ function contractEarnings(pay, monthToDateRealized, windowRealized){
 // indépendant tant que l'admin ne les règle pas, et l'objectif reste toujours à 0 pour eux — donc le bonus
 // extra ne se déclenche jamais pour un indépendant, sans code séparé à maintenir)
 function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
-  const pay = getAgentPay(agent);
   const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
+  // ⚠️ BUG CORRIGÉ — getAgentPay était appelé SANS année ni mois : le fixe pris ici était le fixe PLEIN,
+  // alors que l'écran affichait juste en dessous la quote-part proratisée d'un agent embauché en cours de
+  // mois. Le gros chiffre et le détail ligne par ligne ne se rejoignaient pas (282 DH affichés contre
+  // 91 + 100 détaillés), et la somme des journées dépassait la paie réelle de fin de mois.
+  const pay = getAgentPay(agent, y, m);
   const daysMonth = workingDaysInMonth(y, m);
 
   // Le taux journalier reste basé sur le fixe PLEIN divisé par le nombre de jours ouvrés du mois entier
@@ -11377,11 +11898,13 @@ function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
 // (ex: weekData.daysElapsed) — sinon la quote-part fixe compterait une semaine entière alors qu'on n'est
 // par exemple qu'à mercredi, ce qui gonflerait artificiellement le total affiché comme "acquis à ce jour".
 function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month, daysElapsedOverride){
-  const pay = getAgentPay(agent);
   const pc = getProdConfig();
   const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
+  // Même correction que calculateDailySalary ci-dessus : le fixe doit être celui du mois demandé,
+  // prorata d'embauche compris, sinon le détail affiché ne fait pas la somme du total.
+  const pay = getAgentPay(agent, y, m);
   const daysMonth = workingDaysInMonth(y, m);
 
   const dailyBase = (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth;
@@ -11591,7 +12114,11 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
       // toujours une ligne, même à 0 DH (congé payé), pour que le motif/commentaire reste traçable dans
       // le détail du "Bilan net du mois".
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
-      if(jaMeta){
+      // ⚠️ BUG CORRIGÉ — un statut saisi un SAMEDI, un dimanche ou un jour férié était quand même retenu
+      // sur le salaire, alors que monthlyStats (qui alimente le compteur d'assiduité) filtrait bien les
+      // jours non ouvrés : les deux écrans se contredisaient sur le même jour, et l'agent perdait une
+      // quote-part de fixe pour une journée qu'il n'avait de toute façon pas à travailler.
+      if(jaMeta && isWorkingDay(dateStr)){
         const amt = jaMeta.deduction === 'full' ? dailyFixedQuote : (jaMeta.deduction === 'half' ? dailyFixedQuote / 2 : 0);
         total += amt;
         const payTxt = jaMeta.deduction === 'none' ? 'aucune retenue (payée)' : (jaMeta.deduction === 'full' ? 'journée non payée' : 'demi-journée non payée');
@@ -12058,7 +12585,10 @@ function subscribeProdBoard(dateStr){
     // le tableau du jour se met bien à jour mais « contrats du mois » reste figé à l'ancienne valeur.
     if(typeof billingInvalidate === 'function') billingInvalidate();
     billingContractIndexCache = null;
-    renderArena();
+    // ⚡ renderArena était appelé sans garde, contrairement à ses voisines : sur un poste Admin ou
+    // Supervision, chaque contrat reçu déclenchait un rendu Arena invisible (plus le recalcul du
+    // bandeau défilant) pour un écran que personne ne regarde.
+    if(document.getElementById('view-arena')?.classList.contains('active')) renderArena();
     if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
     if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
     if(document.getElementById('admin-overview')?.classList.contains('active')) renderObjectifSnapshot();
@@ -12256,6 +12786,41 @@ const DEFAULT_ARENA_MSGS = {
     "🧩 Indépendant, mais jamais seul face à l'objectif.",
     "🔥 Sans contrat de travail, mais avec toute la niaque."
   ],
+  // 🆕 Deux verrous à phrase unique neutralisaient auparavant 51 phrases : tout agent régulièrement dans
+  // le top 3, ou à 100 % de son objectif, ne voyait plus JAMAIS que « 🥉 Dans le top 3 — continue comme
+  // ça ! » ou « ✅ Objectif atteint — vise encore plus haut ! ». Ces deux cas ont désormais leur banque.
+  top3: [
+    "🥉 Solidement dans le top 3 — la première place n'est pas si loin.",
+    "🔝 Top 3 du jour, et ça se voit dans les chiffres.",
+    "🥈 Tu joues devant aujourd'hui. Reste sur ce rythme.",
+    "📈 Dans les trois premiers — encore un contrat et tu regardes tout le monde de haut.",
+    "⚡ Top 3 : tu fais partie de ceux qui tirent l'équipe.",
+    "🎯 Bien placé(e), bien lancé(e). Ne relâche pas maintenant.",
+    "🔥 Le podium te va bien. Va chercher la marche du dessus.",
+    "💪 Top 3 aujourd'hui — c'est une place qui se défend jusqu'au dernier appel."
+  ],
+  objAtteint: [
+    "✅ Objectif du jour atteint. Tout ce qui suit, c'est du bonus.",
+    "🎯 Objectif coché. Maintenant, à combien tu montes ?",
+    "💯 C'est fait. Le reste de la journée t'appartient.",
+    "🏁 Objectif franchi — chaque contrat de plus pèse directement sur ta paie.",
+    "✅ Mission du jour accomplie. Les meilleurs ne s'arrêtent pas là.",
+    "🚀 Objectif validé, et la journée n'est pas finie.",
+    "👏 Objectif atteint — c'est exactement ce qu'on attend de toi.",
+    "🔓 Objectif débloqué. À partir d'ici, tout est en plus."
+  ],
+  zeroDay: [
+    "🚨 Toujours 0 aujourd'hui. Le prochain appel est le bon.",
+    "📞 Zéro au compteur — ça ne se débloque qu'en décrochant.",
+    "⏰ Rien de signé pour l'instant. Il reste des heures, pas des excuses.",
+    "🎯 0 contrat : reprends ta liste par le haut et rappelle tes meilleurs prospects.",
+    "🚨 Journée encore blanche. Un seul contrat change tout de suite la couleur.",
+    "🔔 Compteur à zéro — c'est maintenant que ça se joue, pas ce soir.",
+    "📵 Zéro pour l'instant. Pose tout le reste et enchaîne les appels.",
+    "🥊 0 au tableau. Personne ne va le remplir à ta place.",
+    "⚠️ Rien encore aujourd'hui — va chercher le premier, le reste suit toujours.",
+    "🧭 0 contrat : change d'approche sur les deux prochains appels, ça suffit parfois."
+  ],
   tickerFirst: [
     "🥇 {agent} mène la danse avec {score} contrat(s) — chapeau.",
     "👑 {agent} est en tête ce mois-ci avec {score} contrat(s), ça sent le bonus.",
@@ -12319,7 +12884,11 @@ function getArenaMsgs(key){
   return (custom && custom.length) ? custom : DEFAULT_ARENA_MSGS[key];
 }
 
-const ARENA_MSG_FIELDS = { top: 'msgTop', mid: 'msgMid', roast: 'msgRoast', podium: 'msgPodium', ticker: 'msgTicker', indep: 'msgIndep' };
+const ARENA_MSG_FIELDS = { top: 'msgTop', mid: 'msgMid', roast: 'msgRoast', podium: 'msgPodium', ticker: 'msgTicker', indep: 'msgIndep',
+  // Les six banques d'annonces du bandeau défilant : elles existaient depuis le début mais n'étaient ni
+  // branchées ni éditables. Elles le sont désormais, exactement comme les autres.
+  tickerFirst: 'msgTickerFirst', tickerSecond: 'msgTickerSecond', tickerThird: 'msgTickerThird',
+  tickerSecondLast: 'msgTickerSecondLast', tickerLast: 'msgTickerLast', tickerTie: 'msgTickerTie' };
 
 function loadArenaMessagesUI(){
   if(!config.arenaMessages) config.arenaMessages = {};
@@ -12395,16 +12964,25 @@ function pickRandomSample(arr, n){
 function getArenaMessage(row, rankings){
   const total = rankings.length;
   const first = rankings[0];
+  // ⚠️ COHÉRENCE CORRIGÉE — le chambrage ne regardait QUE la place au classement, jamais le nombre de
+  // contrats. Sur une équipe de 8, le 5e avec 4 contrats affichait « 🔥 4 — motivé » (badge vert) juste
+  // à côté de « 🦥 Le paresseux du zoo bosse plus vite que ça. » : la contradiction la plus visible de
+  // l'appli. Et à l'inverse, un agent à 0 contrat classé dans la moitié haute (équipe peu productive)
+  // recevait « 🎯 Objectif à portée — ne lâche rien ! » sous un badge rouge clignotant.
+  // On aligne donc sur exactement les mêmes seuils que dailyProgressBadge : 0 = rouge, 1-2 = à pousser,
+  // 3 et plus = bonne journée, et on ne chambre JAMAIS quelqu'un qui a déjà 3 contrats dans la journée.
+  const chambrageAutorise = row.realized <= 2 && (row.objective <= 0 || row.realized < row.objective);
   if(row.rank === 1 && row.realized > 0) return { text: pickRandomNoRepeat('top', getArenaMsgs('top')), cls: 'gold' };
-  if(row.rank <= 3 && row.pct >= 80) return { text: "🥉 Dans le top 3 — continue comme ça !", cls: 'gold' };
-  if(row.pct >= 100 && row.objective > 0) return { text: "✅ Objectif atteint — vise encore plus haut !", cls: 'encourage' };
+  if(row.pct >= 100 && row.objective > 0) return { text: pickRandomNoRepeat('objAtteint', getArenaMsgs('objAtteint')), cls: 'encourage' };
+  if(row.rank <= 3 && row.pct >= 80) return { text: pickRandomNoRepeat('top3', getArenaMsgs('top3')), cls: 'gold' };
   if((row.isIndep || row.noObjectif) && row.realized > 0) return { text: pickRandomNoRepeat('indep', getArenaMsgs('indep')), cls: 'encourage' };
-  if(row.rank === total && total > 2 && row.realized < row.objective){
+  if(row.realized <= 0) return { text: pickRandomNoRepeat('zeroDay', getArenaMsgs('zeroDay')), cls: 'roast' };
+  if(row.rank === total && total > 2 && chambrageAutorise){
     let msg = pickRandomNoRepeat('roast', getArenaMsgs('roast'));
     msg = msg.replace('{first}', first.agent).replace('{real}', first.realized);
     return { text: msg, cls: 'roast' };
   }
-  if(row.rank > total / 2){
+  if(row.rank > total / 2 && chambrageAutorise){
     const roastPool = getArenaMsgs('roast');
     const mildPool = roastPool.slice(0, Math.max(4, Math.ceil(roastPool.length/2)));
     let msg = pickRandomNoRepeat('roastMild', mildPool);
@@ -12465,7 +13043,7 @@ async function onArenaAgentChange(){
     return;
   }
   currentArenaAgent = selected || null;
-  try{ subscribeAssistance(); assistRenderButton(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
   document.getElementById('arenaContent').style.display = selected ? 'block' : 'none';
   document.getElementById('arenaEmpty').style.display = selected ? 'none' : 'block';
   if(selected){
@@ -12755,7 +13333,7 @@ async function renderArena(){
     const miniLabel = miniPctVal != null ? miniPctVal+'%' : (isMonthScope ? (r.isIndep ? '🧑‍💼' : (r.noObjectif ? '🎯' : '—')) : '—');
     const desiredLabel = desiredPctVal != null ? desiredPctVal+'%' : '—';
 
-    const dayBadge = !isMonthScope && !r.isIndep ? dailyProgressBadge(r.realized) : null;
+    const dayBadge = !isMonthScope && !r.isIndep ? dailyProgressBadge(r.realized, r.agent) : null;
 
     return `<div class="lb-row ${rowCls}">
       <div class="lb-rank">${rankEmoji(r.rank, rankings.length)}</div>
@@ -12782,16 +13360,70 @@ async function renderArena(){
 // ============================================================
 let currentCashAgent = null;
 let cashSimPerDay = 2;
+// ⚠️ BUG CORRIGÉ — la cible du mois était reconstruite à chaque rendu depuis le rythme journalier
+// ARRONDI (cashSimPerDay × jours ouvrés) : un objectif de 30 sur 22 jours donnait 1/j puis 22, et la
+// carte passait de 7 000 DH à 5 700 DH toute seule au premier rafraîchissement, sans que personne
+// n'ait touché au curseur. On mémorise donc la CIBLE MENSUELLE — la valeur que l'agent voit et règle —
+// et le rythme par jour n'est plus qu'un affichage dérivé.
+let cashSimMonthly = 44;
 let cashSimMinMonthly = 0;
 let lastWolfTier = -1;
 let cashRealCache = null;
 
+// Jauge « loup » de l'onglet Mon argent. Avant : UN seul libellé par palier, donc un agent régulier
+// lisait exactement le même mot tous les jours du mois. Chaque palier a maintenant sa banque, et le
+// libellé est tiré avec une graine (agent + jour) : il varie d'un jour à l'autre et d'un agent à
+// l'autre, mais reste STABLE toute la journée pour une même personne — pas de texte qui saute sous les
+// yeux à chaque rafraîchissement.
+const WOLF_TIER_LABELS = {
+  legende: [
+    '🚀🐺 LE VRAI LOUP DE WALL STREET',
+    '🚀🐺 HORS CATÉGORIE — le reste de l\'équipe regarde',
+    '👑🐺 NIVEAU LÉGENDE : tu joues dans une autre division',
+    '🔥🐺 MACHINE DE GUERRE — objectif pulvérisé',
+    '💎🐺 CE MOIS-CI, LA RÉFÉRENCE C\'EST TOI'
+  ],
+  loup: [
+    '🐺 Loup de Wall Street',
+    '🐺 Loup confirmé — objectif dans la poche',
+    '🐺 Tu closes comme tu respires',
+    '🐺 Niveau loup atteint. Et maintenant ?',
+    '🐺 Le compteur te donne raison'
+  ],
+  closer: [
+    '🧑‍💼 Closer en approche',
+    '🧑‍💼 Tu tiens la moitié du chemin — la suite est la plus rentable',
+    '🧑‍💼 Bon rythme, il manque l\'accélération',
+    '🧑‍💼 Sérieux et régulier — encore un cran au-dessus',
+    '🧑‍💼 À mi-parcours : c\'est là que les meilleurs passent devant'
+  ],
+  stagiaire: [
+    '🐣 Stagiaire motivé',
+    '🐣 Ça démarre — le plus dur est de lancer la machine',
+    '🐣 Premiers pas au compteur, continue',
+    '🐣 Le début du mois ne fait pas le mois',
+    '🐣 On a vu le premier contrat, on attend la suite'
+  ],
+  canape: [
+    '😴 Mode canapé — Jordan Belfort pleure',
+    '😴 Compteur à zéro — le téléphone est juste là',
+    '😴 Rien au tableau pour l\'instant. Rien d\'irréversible non plus.',
+    '😴 Zéro contrat : la seule chose qui manque, c\'est le premier',
+    '😴 Le classement t\'attend, il n\'attend pas éternellement'
+  ]
+};
+function wolfTierLabel(key, fallbackIndex){
+  const list = WOLF_TIER_LABELS[key];
+  if(!list || !list.length) return '';
+  const graine = `${currentCashAgent || currentAgent || 'x'}|wolf|${key}|${todayStr()}`;
+  return seedPick(list, graine);
+}
 function wolfTierFor(ratio){
-  if(ratio >= 1.5) return { label: '🚀🐺 LE VRAI LOUP DE WALL STREET', pct: 100, cls: 'over' };
-  if(ratio >= 1.0) return { label: '🐺 Loup de Wall Street', pct: Math.min(100, Math.round(ratio*66)), cls: 'over' };
-  if(ratio >= 0.5) return { label: '🧑‍💼 Closer en approche', pct: Math.round(ratio*66) };
-  if(ratio > 0) return { label: '🐣 Stagiaire motivé', pct: Math.max(6, Math.round(ratio*66)) };
-  return { label: '😴 Mode canapé — Jordan Belfort pleure', pct: 3 };
+  if(ratio >= 1.5) return { label: wolfTierLabel('legende'), pct: 100, cls: 'over' };
+  if(ratio >= 1.0) return { label: wolfTierLabel('loup'), pct: Math.min(100, Math.round(ratio*66)), cls: 'over' };
+  if(ratio >= 0.5) return { label: wolfTierLabel('closer'), pct: Math.round(ratio*66) };
+  if(ratio > 0) return { label: wolfTierLabel('stagiaire'), pct: Math.max(6, Math.round(ratio*66)) };
+  return { label: wolfTierLabel('canape'), pct: 3 };
 }
 
 function triggerMoneyRain(){
@@ -12823,7 +13455,7 @@ async function onCashAgentChange(){
     return;
   }
   currentCashAgent = selected || null;
-  try{ subscribeAssistance(); assistRenderButton(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
   document.getElementById('cashContent').style.display = selected ? 'block' : 'none';
   document.getElementById('cashEmpty').style.display = selected ? 'none' : 'block';
   lastWolfTier = -1;
@@ -12833,6 +13465,7 @@ async function onCashAgentChange(){
     const daysMonth = getProdConfig().daysPerMonth || 22;
     let monthlyTarget = pay.isIndep ? 44 : (pay.objectifMensuel || 44);
     cashSimMinMonthly = pay.isIndep ? 0 : (pay.objectifMensuel || 0);
+    cashSimMonthly = monthlyTarget;
     cashSimPerDay = Math.max(1, Math.round(monthlyTarget / daysMonth));
     document.getElementById('cashSimSlider').value = cashSimPerDay;
     document.getElementById('cashSimVal').textContent = cashSimPerDay + ' / j';
@@ -12857,6 +13490,7 @@ function onCashSimSliderInput(){
     cashSimPerDay = Math.max(0, Math.ceil(monthlyTarget / daysMonth));
     document.getElementById('cashSimSlider').value = Math.min(15, cashSimPerDay);
   }
+  cashSimMonthly = monthlyTarget;
   document.getElementById('cashSimVal').textContent = cashSimPerDay + ' / j';
   document.getElementById('cashSimMonthlyInput').value = monthlyTarget;
   renderCashSim(monthlyTarget);
@@ -12869,6 +13503,7 @@ function onCashSimMonthlyInput(){
     monthlyTarget = cashSimMinMonthly;
     document.getElementById('cashSimMonthlyInput').value = monthlyTarget;
   }
+  cashSimMonthly = monthlyTarget;
   cashSimPerDay = Math.max(0, Math.round(monthlyTarget / daysMonth));
   document.getElementById('cashSimSlider').value = Math.min(15, cashSimPerDay);
   document.getElementById('cashSimVal').textContent = cashSimPerDay + ' / j';
@@ -12952,7 +13587,7 @@ async function supervisorRateBoostToday(supervisor){
 // personne ne touche rien ce jour-là (jamais reporté). Retourne { dh, contracts } par superviseur —
 // "contracts" = somme des contrats réels de l'équipe sur les jours où CE superviseur était éligible
 // (utile pour afficher "X contrats × Y DH" de façon lisible), "dh" = montant réellement gagné.
-async function supervisorBonusForDates(dateStrs){
+async function supervisorBonusForDates(dateStrs, retirerRetractations){
   const supervisors = listSupervisors();
   const dh = {}, contracts = {};
   supervisors.forEach(s=>{ dh[s] = 0; contracts[s] = 0; });
@@ -12981,15 +13616,46 @@ async function supervisorBonusForDates(dateStrs){
     return { dayPool, eligible, bonusRatePerEligible };
   }));
 
+  // ⚠️ BUG CORRIGÉ — le pool venait du BRUT du tableau de production, alors que le nombre de contrats
+  // affiché juste à côté ("dont X agents de base") vient du NET, rétractations déduites : la même carte
+  // annonçait 500 DH « sur 100 contrats » et « 96 contrats » deux lignes plus bas.
+  // La correction ne s'applique QUE sur la fenêtre "mois" (retirerRetractations = true, passé par
+  // supervisorMonthlyBonus). Raison : une rétractation porte sur le mois, pas sur un jour précis — la
+  // retirer d'une fenêtre d'un seul jour pourrait afficher "0 DH aujourd'hui" alors que l'équipe a bien
+  // signé ce jour-là. L'invariant jour ≤ semaine ≤ mois est garanti autrement, par un simple plafond à
+  // l'affichage (voir renderSupervision et renderCash).
+  if(retirerRetractations){
+    const moisConcernes = [...new Set(dateStrs.map(d=>d.slice(0,7)))];
+    const retractParMois = {};
+    await Promise.all(moisConcernes.map(async mv=>{
+      const [y, m] = mv.split('-').map(Number);
+      const parAgent = await Promise.all(config.agents.map(agent=>
+        isSupervisor(agent) ? Promise.resolve(0) : monthlyRetractions(agent, y, m)
+      ));
+      retractParMois[mv] = parAgent.reduce((a,b)=> a + (b||0), 0);
+    }));
+    perDayResults
+      .map((res, i)=> ({ res, ds: dateStrs[i] }))
+      .filter(x=> x.res)
+      .sort((a,b)=> b.ds.localeCompare(a.ds))
+      .forEach(({ res, ds })=>{
+        const mv = ds.slice(0,7);
+        const aRetirer = Math.min(res.dayPool, retractParMois[mv] || 0);
+        if(aRetirer > 0){ res.dayPool -= aRetirer; retractParMois[mv] -= aRetirer; }
+      });
+  }
+
   perDayResults.forEach(res=>{
-    if(!res) return;
+    if(!res || res.dayPool <= 0) return;
     res.eligible.forEach(sup=>{
       const effectiveRate = rates[sup] + res.bonusRatePerEligible;
       dh[sup] += res.dayPool * effectiveRate;
       contracts[sup] += res.dayPool;
     });
   });
-  supervisors.forEach(s=> dh[s] = Math.round(dh[s]));
+  // ⚠️ Volontairement PAS d'arrondi ici : arrondir à chaque appel faisait que la somme des 20 montants
+  // "Jour" du mois ne retombait pas sur la tuile "Mois" (460 DH contre 450 sur un cas testé). L'arrondi
+  // est désormais fait une seule fois, à l'affichage.
   return { dh, contracts };
 }
 
@@ -12998,11 +13664,19 @@ function currentWeekDateStrs(){
   const now = nowMA();
   const dow = now.getDay();
   const daysSinceMonday = (dow + 6) % 7;
+  // ⚠️ BUG CORRIGÉ — la semaine remontait au lundi SANS jamais s'arrêter au 1er du mois. Dès qu'une
+  // semaine était à cheval sur deux mois (mardi 1er septembre, lundi 31 août), la prime "Semaine"
+  // englobait des jours du mois précédent et pouvait dépasser la prime "Mois" — l'invariant
+  // jour ≤ semaine ≤ mois, promis juste en dessous, ne tenait plus. Même défaut sur les retenues
+  // hebdomadaires, qui cherchaient des dates du mois précédent dans une liste ne contenant que le mois
+  // en cours : les retenues du lundi disparaissaient purement et simplement.
+  const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
   const days = [];
   for(let i=0; i<=daysSinceMonday; i++){
     const d = new Date(now);
     d.setDate(d.getDate() - (daysSinceMonday - i));
-    days.push(todayStr(d));
+    const ds = todayStr(d);
+    if(ds >= firstOfMonth) days.push(ds);
   }
   return days;
 }
@@ -13036,7 +13710,7 @@ async function supervisorMonthlyBonus(year, month){
   // jour ≤ semaine ≤ mois soit TOUJOURS vrai, les 3 utilisent maintenant exactement le même calcul : une
   // simple somme des montants journaliers (supervisorBonusForDates), sans aucun ajustement séparé pour
   // le mois — un jour de plus ne peut jamais faire baisser le total.
-  const { dh: monthDh, contracts: monthContracts } = await supervisorBonusForDates(dateStrs);
+  const { dh: monthDh, contracts: monthContracts } = await supervisorBonusForDates(dateStrs, true);
   supervisors.forEach(sup=>{
     dh[sup] = monthDh[sup] || 0;
     contracts[sup] = monthContracts[sup] || 0;
@@ -13071,24 +13745,41 @@ async function refreshTickerPool(now){
     tieGroups[r.realized].push(r.agent);
   });
 
+  // ⚠️ CORRIGÉ — les six annonces du bandeau étaient écrites en dur, UNE seule formulation chacune,
+  // réaffichées toutes les 42 secondes sur Cash ET sur Objectifs : « X mène le mois avec N contrats »
+  // était de loin la phrase la plus vue de l'application. Les six banques de remplacement existaient
+  // déjà dans DEFAULT_ARENA_MSGS (tickerFirst, tickerSecond, tickerThird, tickerSecondLast, tickerLast,
+  // tickerTie) — 44 phrases écrites, jamais branchées nulle part. Elles le sont maintenant, et elles
+  // deviennent du même coup modifiables par l'admin comme les autres.
   const dynamicLines = [];
+  // {score} gère son pluriel tout seul via la forme "contrat(s)" déjà utilisée dans ces banques.
+  const remplirTicker = (key, agentName, score, agent2)=>{
+    const banque = getArenaMsgs(key);
+    if(!banque || !banque.length) return null;
+    return pickRandom(banque)
+      .replace(/\{agent\}/g, agentName)
+      .replace(/\{agent2\}/g, agent2 || '')
+      .replace(/\{score\}/g, score);
+  };
+  const pousser = (ligne)=>{ if(ligne) dynamicLines.push(ligne); };
+
   if(leaderAgent && leaderAgent.realized > 0){
-    dynamicLines.push(`🔥 ${leaderAgent.agent} mène le mois avec ${leaderAgent.realized} contrat${leaderAgent.realized>1?'s':''} !`);
+    pousser(remplirTicker('tickerFirst', leaderAgent.agent, leaderAgent.realized));
   }
   if(secondAgent && secondAgent.realized > 0 && nAg > 1){
-    dynamicLines.push(`🥈 ${secondAgent.agent} tient la 2e place avec ${secondAgent.realized} contrat${secondAgent.realized>1?'s':''} — pas loin du sommet.`);
+    pousser(remplirTicker('tickerSecond', secondAgent.agent, secondAgent.realized));
   }
   if(thirdAgent && thirdAgent.realized > 0 && nAg > 2){
-    dynamicLines.push(`🥉 ${thirdAgent.agent} complète le podium avec ${thirdAgent.realized} contrat${thirdAgent.realized>1?'s':''}.`);
+    pousser(remplirTicker('tickerThird', thirdAgent.agent, thirdAgent.realized));
   }
   if(nAg > 3 && penultAgent){
-    dynamicLines.push(`😅 ${penultAgent.agent} évite la dernière place de justesse avec ${penultAgent.realized} contrat${penultAgent.realized>1?'s':''}.`);
+    pousser(remplirTicker('tickerSecondLast', penultAgent.agent, penultAgent.realized));
   }
   if(lastAgent && nAg > 2){
-    dynamicLines.push(`🐢 ${lastAgent.agent} ferme la marche avec ${lastAgent.realized} contrat${lastAgent.realized>1?'s':''} — il est temps de réagir !`);
+    pousser(remplirTicker('tickerLast', lastAgent.agent, lastAgent.realized));
   }
-  Object.values(tieGroups).forEach(names=>{
-    if(names.length > 1) dynamicLines.push(`⚖️ Ex-aequo : ${names.join(' & ')} — le prochain contrat départage tout !`);
+  Object.entries(tieGroups).forEach(([score, names])=>{
+    if(names.length > 1) pousser(remplirTicker('tickerTie', names[0], score, names.slice(1).join(' & ')));
   });
 
   // On mélange 1-2 annonces dynamiques (basées sur les vrais chiffres du jour) avec des phrases piochées
@@ -13150,11 +13841,12 @@ async function renderCash(){
       supervisorBonusForDates(currentWeekDateStrs())
     ]);
     contractsUnderSupervision = supervisionBonusCash.contracts[agent] || 0;
-    supervisorBonus = supervisionBonusCash.dh[agent] || 0;
+    supervisorBonus = Math.round(supervisionBonusCash.dh[agent] || 0);
     contractsUnderSupervisionDay = bonusDayMap.contracts[agent] || 0;
-    supervisorBonusDay = bonusDayMap.dh[agent] || 0;
     contractsUnderSupervisionWeek = bonusWeekMap.contracts[agent] || 0;
-    supervisorBonusWeek = bonusWeekMap.dh[agent] || 0;
+    // Même plafond que dans Supervision : jour ≤ semaine ≤ mois, toujours.
+    supervisorBonusWeek = Math.min(supervisorBonus, Math.round(bonusWeekMap.dh[agent] || 0));
+    supervisorBonusDay = Math.min(supervisorBonusWeek, Math.round(bonusDayMap.dh[agent] || 0));
   }
   const supIneligReason = isSupervisorAgent ? await supervisorIneligibilityReasonToday(agent) : null;
 
@@ -13436,7 +14128,7 @@ function renderCashRealGrid(){
 
 function renderCashSim(monthlyTargetOverride){
   if(!cashRealCache) return;
-  const { pay, isSupervisorAgent, contractsUnderSupervision, supervisorBonus } = cashRealCache;
+  const { pay, isSupervisorAgent, contractsUnderSupervision, supervisorBonus, assiduiteAcquise, monthRes } = cashRealCache;
   const pc = getProdConfig();
   const daysMonth = pc.daysPerMonth || 22;
   const daysWeek = pc.daysPerWeek || 5;
@@ -13446,27 +14138,51 @@ function renderCashSim(monthlyTargetOverride){
   // Le rythme "par jour" affiché est TOUJOURS recalculé à partir de cette même valeur (division exacte,
   // pas un entier arrondi séparé) — jour, semaine et mois restent ainsi mathématiquement cohérents entre
   // eux à chaque changement, que ce soit via le curseur ou le champ "objectif du mois".
-  monthlyContracts = monthlyTargetOverride != null ? monthlyTargetOverride : cashSimPerDay * daysMonth;
+  //
+  // ⚠️ BUG CORRIGÉ (le plus grave de l'appli) — la simulation payait les contrats "monthlyContracts ×
+  // DH/contrat" DÈS LE PREMIER, alors que la paie réelle applique le palier d'objectif : sous le mini
+  // obligatoire le taux est "DH/contrat AVANT objectif" (0 par défaut), au-dessus seulement c'est le taux
+  // plein. L'écart valait exactement "objectif × DH/contrat" — 3 000 DH de trop en permanence sur une
+  // config type (objectif 30, 100 DH/contrat), quel que soit le nombre de contrats simulé. On passe
+  // maintenant par contractEarnings(), la MÊME fonction que estimateSalaryMonthReal : une seule règle de
+  // paie dans toute l'appli, plus deux formules parallèles qui divergent.
+  const retenuesMois = (monthRes && monthRes.deductions) ? (monthRes.deductions.total || 0) : 0;
+  monthlyContracts = monthlyTargetOverride != null ? monthlyTargetOverride : Math.max(cashSimMinMonthly, cashSimMonthly);
   const perDayExact = daysMonth > 0 ? (monthlyContracts / daysMonth) : 0;
 
   let simDay, simWeek;
   if(pay.isIndep){
-    simDay = Math.round(perDayExact * pay.perContract);
-    simWeek = Math.round(perDayExact * daysWeek * pay.perContract);
-    simMonth = Math.round(monthlyContracts * pay.perContract);
+    // Un indépendant n'a pas de palier : contractEarnings retombe sur le taux plein dès le 1er contrat,
+    // exactement comme avant pour lui.
+    const ceMonthI = contractEarnings(pay, monthlyContracts, monthlyContracts);
+    const ceDayI = contractEarnings(pay, monthlyContracts, perDayExact);
+    simDay = Math.round(ceDayI.total);
+    simWeek = Math.round(ceDayI.total * daysWeek);
+    simMonth = Math.round(pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite + ceMonthI.total);
     objectif = 0;
     atteint = false;
     extraCount = 0;
   } else {
     const fixedDaily = (pay.baseSalary+pay.primeFixeMensuelle)/daysMonth;
-    simDay = Math.round(fixedDaily + perDayExact*pay.perContract);
-    simWeek = Math.round(fixedDaily*daysWeek + perDayExact*daysWeek*pay.perContract);
     objectif = pay.objectifMensuel || 0;
     atteint = objectif > 0 && monthlyContracts >= objectif;
     extraCount = atteint ? Math.max(0, monthlyContracts - objectif) : 0;
-    simMonth = Math.round(pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite
-      + monthlyContracts*pay.perContract + (atteint ? pay.primeObjectifJour : 0) + extraCount*pay.primeExtraContrat);
+    const ceMonth = contractEarnings(pay, monthlyContracts, monthlyContracts);
+    const ceDay = contractEarnings(pay, monthlyContracts, perDayExact);
+    const extraDaily = monthlyContracts > 0 ? (perDayExact/monthlyContracts) * extraCount * pay.primeExtraContrat : 0;
+    simDay = Math.round(fixedDaily + ceDay.total + extraDaily);
+    simWeek = Math.round((fixedDaily + ceDay.total + extraDaily) * daysWeek);
+    // La prime d'assiduité n'est ajoutée que si elle est RÉELLEMENT acquise — l'info est déjà dans le
+    // cache, elle était simplement ignorée ici, ce qui promettait 500 DH à un agent qui les avait perdus.
+    simMonth = Math.round(pay.baseSalary + pay.primeFixeMensuelle
+      + (assiduiteAcquise === false ? 0 : pay.primeAssiduite)
+      + ceMonth.total + (atteint ? pay.primeObjectifJour : 0) + extraCount*pay.primeExtraContrat);
   }
+  // Les retenues déjà encaissées ce mois-ci (retards, absences, résiliations) sont réelles : les ignorer
+  // faisait miroiter un montant que l'agent ne toucherait jamais — et d'autant plus élevé qu'il avait
+  // accumulé de retenues, soit exactement l'inverse du signal voulu.
+  const simMonthBrut = simMonth;
+  simMonth = Math.max(0, simMonth - retenuesMois);
 
   // Superviseur : sa prime d'équipe (basée sur les contrats RÉELS de l'équipe de base ce mois-ci, hors
   // superviseurs) s'ajoute au total simulé — elle ne dépend pas du rythme perso qu'il simule ci-dessus.
@@ -13492,9 +14208,12 @@ function renderCashSim(monthlyTargetOverride){
       <div class="cash-breakdown">
         ${pay.isIndep ? `<div class="hit"><span>🧑‍💼 Indépendant</span><b>${pay.perContract} DH/contrat</b></div>` :
           `<div class="${atteint?'hit':'miss'}"><span>Prime objectif</span><b>${atteint ? '+'+pay.primeObjectifJour.toLocaleString('fr-FR')+' DH' : (objectif?'Objectif non atteint':'Non réglé')}</b></div>
-          ${extraCount>0 ? `<div class="hit"><span>Bonus ${extraCount} contrat(s) au-delà</span><b>+${(extraCount*pay.primeExtraContrat).toLocaleString('fr-FR')} DH</b></div>` : ''}`}
+          ${(extraCount>0 && pay.primeExtraContrat>0) ? `<div class="hit"><span>Bonus ${extraCount} contrat(s) au-delà</span><b>+${(extraCount*pay.primeExtraContrat).toLocaleString('fr-FR')} DH</b></div>` : ''}`}
         ${(isSupervisorAgent && supervisorBonus>0) ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe réels)</span><b>+${supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${(!pay.isIndep && assiduiteAcquise === false && pay.primeAssiduite>0) ? `<div class="miss"><span>🎖️ Prime d'assiduité</span><b>Perdue ce mois — ${pay.primeAssiduite.toLocaleString('fr-FR')} DH en moins</b></div>` : ''}
+        ${retenuesMois>0 ? `<div class="miss"><span>➖ Retenues déjà encaissées (retards, absences, retours)</span><b>−${Math.round(retenuesMois).toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
+      ${retenuesMois>0 ? `<div class="cp-sub" style="margin-top:8px; opacity:0.85;">Avant retenues : ${simMonthBrut.toLocaleString('fr-FR')} DH. Chaque retard et chaque absence se voit ici.</div>` : ''}
     </div>`;
 
   let ratio;
@@ -13544,7 +14263,7 @@ async function onSupervisionAgentChange(){
     return;
   }
   currentSupervisionAgent = selected || null;
-  try{ subscribeAssistance(); assistRenderButton(); }catch(e){}
+  try{ subscribeAssistance(); subscribeAssistPresence(); assistPresenceSync(true); assistRenderButton(); assistRenderPresenceBox(); }catch(e){}
   document.getElementById('supervisionContent').style.display = selected ? 'block' : 'none';
   document.getElementById('supervisionEmpty').style.display = selected ? 'none' : 'block';
   if(selected){
@@ -13566,9 +14285,13 @@ async function renderSupervision(){
   }
 
   const myToken = ++supervisionRenderToken;
+  // ⚠️ BUG CORRIGÉ — le test d'abandon était placé JUSTE APRÈS son propre incrément : il ne pouvait
+  // mathématiquement jamais être vrai, donc il ne protégeait rien. Or renderSupervision est déclenché par
+  // trois sources indépendantes (auto-refresh 35 s, listener prodBoard, listener prodPulse) : un contrat
+  // reçu pendant un rafraîchissement lançait deux rendus complets en parallèle, soit ~1 300 lectures
+  // Firestore pour un seul écran. Le vrai test est maintenant fait APRÈS chaque await (voir plus bas).
   // N'affiche le "Chargement…" que si la page est vide (premier chargement / changement d'agent) —
   // pas à chaque mise à jour temps réel, pour éviter que l'écran clignote à chaque contrat ajouté.
-  if(myToken !== supervisionRenderToken) return; // une saisie plus récente a déjà démarré, on abandonne celle-ci
   if(!dashboard.innerHTML.trim()){
     dashboard.innerHTML = '<div class="empty">⏳ Chargement du tableau de bord équipe…</div>';
     detail.innerHTML = '';
@@ -13584,6 +14307,7 @@ async function renderSupervision(){
 
   const dateBoard = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   prodBoardCache[dateStr] = dateBoard;
+  if(myToken !== supervisionRenderToken) return; // un rendu plus récent a démarré : on abandonne celui-ci
 
   if(config.agents.length === 0){
     dashboard.innerHTML = '<div class="empty">Ajoute des agents dans Admin → Réglages.</div>';
@@ -13674,6 +14398,8 @@ async function renderSupervision(){
     };
   }));
 
+  if(myToken !== supervisionRenderToken) return; // idem : les lectures par agent viennent de finir
+
   rows.forEach(r=>{
     if(!r.isIndep){
       totalDayReal += r.dayRealized; totalDayObj += r.dayObjective;
@@ -13712,16 +14438,26 @@ async function renderSupervision(){
   const contractsDay = bonusDayMap.contracts[supervisor] || 0;
   const contractsWeek = bonusWeekMap.contracts[supervisor] || 0;
   const contractsUnderSupervision = bonusMonthMap.contracts[supervisor] || 0;
-  const bonusDay = bonusDayMap.dh[supervisor] || 0;
-  const bonusWeek = bonusWeekMap.dh[supervisor] || 0;
-  const supervisorBonus = bonusMonthMap.dh[supervisor] || 0;
+  // Arrondi UNE seule fois, ici, à l'affichage (voir supervisorBonusForDates) — le taux effectif juste
+  // en dessous se calcule sur la valeur exacte, pour ne pas empiler deux arrondis.
+  const bonusDayRaw = bonusDayMap.dh[supervisor] || 0;
+  const supervisorBonus = Math.round(bonusMonthMap.dh[supervisor] || 0);
+  // Plafond : une rétractation est retirée du total du MOIS (voir supervisorBonusForDates). Sans ce
+  // plafond, la semaine ou le jour pourraient afficher plus que le mois — ce qui n'a aucun sens et
+  // avait déjà été remonté par capture d'écran.
+  const bonusWeek = Math.min(supervisorBonus, Math.round(bonusWeekMap.dh[supervisor] || 0));
+  const bonusDay = Math.min(bonusWeek, Math.round(bonusDayRaw));
   // Taux effectif réellement appliqué aujourd'hui (peut dépasser le taux perso si un collègue
   // superviseur est en retard >10min ou absent ce jour-là — sa part est reversée sur ce taux). BUG
   // CORRIGÉ : tant qu'aucun contrat n'était encore saisi aujourd'hui (contractsDay=0), on retombait sur
   // le taux de base sans indice de boost — on utilise maintenant rateBoostToday (basé sur l'éligibilité
   // réelle du jour, pas sur les contrats déjà saisis) dans ce cas.
-  const effectiveRateToday = contractsDay > 0 ? (bonusDay / contractsDay) : (rate + rateBoostToday);
   const myIneligibilityReason = await supervisorIneligibilityReasonToday(supervisor);
+  // ⚠️ BUG CORRIGÉ — tant qu'aucun contrat n'était saisi (contractsDay = 0), l'écran affichait le taux de
+  // BASE à un superviseur pourtant inéligible ce jour-là, pendant que le bandeau rouge deux lignes plus
+  // bas annonçait "0 DH/contrat". La page se contredisait elle-même.
+  const effectiveRateToday = myIneligibilityReason ? 0
+    : (contractsDay > 0 ? (bonusDayRaw / contractsDay) : (rate + rateBoostToday));
   const teamPct = totalMonthObj > 0 ? Math.round((totalMonthReal/totalMonthObj)*100) : 0;
   // Pourquoi "76" (équipe, y compris superviseurs) ne correspond pas directement à "46" (pool de
   // commission, hors superviseurs) : la différence = les contrats PERSO de tous les superviseurs (le
@@ -13892,7 +14628,7 @@ async function renderSupervision(){
 
   let html = pressureHtml + dailyBriefingHtml + objBlockHtml + weeklyBriefingHtml + pressureExtraHtml + `
     <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
-    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour visé par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, félicite en vert à partir de 3. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon. "☕ Pause" = pause libre prise aujourd'hui / budget (⚠️ si dépassée), avec en dessous le nombre d'équivalents retard accumulés ce mois via la pause (voir Réglages → Horaires pour le seuil).</div>
+    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour visé par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, passe au vert à partir de 3 et salue une grosse journée à partir de 5 — la colonne "Conseil" utilise exactement les mêmes seuils. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon. "☕ Pause" = pause libre prise aujourd'hui / budget (⚠️ si dépassée), avec en dessous le nombre d'équivalents retard accumulés ce mois via la pause (voir Réglages → Horaires pour le seuil).</div>
     <div style="overflow-x:auto;">
     <table class="salary-table"><thead><tr>
       <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>💬 Conseil</th><th>Jour (réalisé/visé)</th><th>Semaine</th><th>Mois</th><th>%</th><th>📅 Projection</th><th>☕ Pause</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
@@ -13904,9 +14640,9 @@ async function renderSupervision(){
     const rowsHtml = await Promise.all(teamRows.map(async r=>{
       const isMe = r.agent === supervisor;
       const pctCls = r.pctMonth >= 100 ? 'good' : (r.pctMonth >= 50 ? 'mid' : 'bad');
-      const badge = dailyProgressBadge(r.dayRealized);
+      const badge = dailyProgressBadge(r.dayRealized, r.agent);
       const rowStyle = (r.monthObj>0 && !r.atteint && r.pctMonth<70) || r.dayRealized<=0 ? 'background:var(--red-bg);' : '';
-      const comment = supervisorActionComment(r.dayRealized);
+      const comment = supervisorActionComment(r.dayRealized, r.agent);
       const proj = await computeMonthProjection(r.agent, now.getFullYear(), now.getMonth()+1);
       const projHtml = proj
         ? `<span class="tag ${proj.onTrack?'ok':'late'}" title="Rythme ${proj.pace}/jour, ${proj.remainingWorkingDays}j restants">${proj.onTrack?'✅':'⚠️'} ${proj.projected}</span>`
@@ -14010,7 +14746,9 @@ async function renderSupervision(){
       const below = pct < 70;
       const cls = pct >= 100 ? 'over' : (pct < 50 ? 'under' : '');
       const manque = Math.max(0, r.desiredObj - r.monthReal);
-      const perDayNeeded = (below && daysRemaining > 0) ? Math.ceil(manque/daysRemaining) : 0;
+      // Le dernier jour ouvré du mois (daysRemaining = 0), afficher "0 contrat/jour requis" à côté de
+      // "il manque 8" n'avait aucun sens : c'est bien 8 qu'il faut faire, aujourd'hui.
+      const perDayNeeded = below ? (daysRemaining > 0 ? Math.ceil(manque/daysRemaining) : manque) : 0;
       const borderColor = pct >= 100 ? 'rgba(52,183,116,0.35)' : (below ? 'rgba(229,72,77,0.45)' : 'rgba(61,139,253,0.25)');
       const statusTag = pct >= 100 ? ' <span class="tag ok">✅ atteint</span>' : (below ? ' <span class="tag late">🚨 en dessous</span>' : '');
       return `<div class="escalade-card" style="border-color:${borderColor};${below?'background:var(--red-bg);':''}">
@@ -14250,7 +14988,7 @@ async function renderMonthlyObjectif(){
   const supervisionBonusMoMap = await supervisorMonthlyBonus(year, month);
 
   let html = `<table class="salary-table"><thead><tr>
-    <th>Rang</th><th>Agent</th><th>Réalisé</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire Brut Avant Retour</th>
+    <th>Rang</th><th>Agent</th><th>Réalisé</th><th>Objectif (mini)</th><th>🎯 Objectif visé (agent)</th><th>%</th><th>Restant</th><th>Prime obtenue</th><th>Retenues règlement</th><th>Salaire estimé (après retours)</th>
   </tr></thead><tbody>`;
   let totalBrutTeam = 0, totalBrutIndep = 0, totalBrutBackoffice = 0;
   let totalDesiredObjSum = 0, totalRealizedForDesiredSum = 0;
@@ -14258,25 +14996,35 @@ async function renderMonthlyObjectif(){
     const pay = getAgentPay(r.agent, year, month);
     const noObj = pay.noObjectif;
     const isFreeRow = r.isIndep || noObj;
-    const pctCls = isFreeRow ? 'good' : (r.pct >= 100 ? 'good' : (r.pct >= 50 ? 'mid' : 'bad'));
+    const monthStats = await monthlyStats(r.agent, year, month);
+    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
+    const full = await estimateSalaryMonthReal(r.agent, year, month, assiduiteAcquise);
+    // ⚠️ BUG CORRIGÉ — la colonne "Prime obtenue" raisonnait sur le réalisé BRUT (r), la colonne
+    // "Salaire" sur les contrats PAYABLES (après retours). Résultat : la même ligne annonçait
+    // "107 % · +600 DH de prime" pendant que le salaire de la ligne d'à côté ne contenait aucune prime,
+    // parce que les retours faisaient repasser l'agent sous son mini. On affiche désormais la prime
+    // réellement payée (celle du calcul de paie, full.status) et on montre les deux compteurs.
+    const stPaye = (full && full.status) ? full.status : r;
+    const payableCount = (full && full.breakdown && full.breakdown.payable != null) ? full.breakdown.payable : r.realized;
+    const pctPaye = (!isFreeRow && stPaye.objectif > 0) ? stPaye.pct : r.pct;
+    const pctCls = isFreeRow ? 'good' : (pctPaye >= 100 ? 'good' : (pctPaye >= 50 ? 'mid' : 'bad'));
     let primeTxt = '—';
     if(r.isIndep){
       primeTxt = '<span style="color:var(--independant);">🧑‍💼 Indépendant</span>';
     } else if(noObj){
       primeTxt = `<span style="color:var(--amber);">🎯 ${getNoObjectifLabel(r.agent)} — payé au contrat</span>`;
-    } else if(r.objectif <= 0){
+    } else if(stPaye.objectif <= 0){
       primeTxt = '<span style="color:var(--muted);">Pas d\'objectif réglé</span>';
-    } else if(r.atteint){
-      const primeTotal = r.primeObjectif + r.primeExtra;
+    } else if(stPaye.atteint){
+      const primeTotal = stPaye.primeObjectif + stPaye.primeExtra;
       primeTxt = `<b style="color:var(--green);">+${primeTotal.toLocaleString('fr-FR')} DH</b>`;
-      if(r.extraCount > 0) primeTxt += `<div style="font-size:11px;color:var(--muted);">dont ${r.extraCount} contrat(s) bonus</div>`;
+      if(stPaye.extraCount > 0) primeTxt += `<div style="font-size:11px;color:var(--muted);">dont ${stPaye.extraCount} contrat(s) bonus</div>`;
+    } else if(payableCount < r.realized && r.atteint){
+      primeTxt = `<span style="color:var(--red);">0 DH — repassé sous le mini après retours (${payableCount}/${stPaye.objectif})</span>`;
     } else {
       primeTxt = `<span style="color:var(--muted);">0 DH — objectif non atteint</span>`;
     }
-    const monthStats = await monthlyStats(r.agent, year, month);
-    const assiduiteAcquise = isAssiduiteAcquise(monthStats);
-    const full = await estimateSalaryMonthReal(r.agent, year, month, assiduiteAcquise);
-    const supervisorBonusMo = isSupervisor(r.agent) ? (supervisionBonusMoMap.dh[r.agent] || 0) : 0;
+    const supervisorBonusMo = isSupervisor(r.agent) ? Math.round(supervisionBonusMoMap.dh[r.agent] || 0) : 0;
     const fullTotalWithSupervisor = (full ? full.total : 0) + supervisorBonusMo;
     const rowClass = isFreeRow ? '' : (r.objectif>0 && r.atteint ? '' : (r.objectif>0 ? 'warn' : ''));
     const indepTag = r.isIndep ? ' <span class="tag independant">Indé</span>' : (noObj ? ` <span class="tag warn">${getNoObjectifLabel(r.agent)}</span>` : '');
@@ -14299,7 +15047,7 @@ async function renderMonthlyObjectif(){
     html += `<tr class="${rowClass}">
       <td style="font-weight:800;">${rankEmoji(r.rank, rows.length)}</td>
       <td><b>${r.agent}${indepTag}</b></td>
-      <td><b>${r.realized}</b></td>
+      <td><b>${r.realized}</b>${payableCount !== r.realized ? `<div style="font-size:11px;color:var(--muted);" title="Contrats réellement payés = signés − rétractés − retours convertis">${payableCount} payé${payableCount>1?'s':''}</div>` : ''}</td>
       <td>${isFreeRow ? '∞' : (r.objectif > 0 ? r.objectif : '—')}${proratedTag}</td>
       <td>
         <input type="number" min="0" step="1" value="${desiredObjAdmin || ''}" placeholder="—"
@@ -14307,8 +15055,8 @@ async function renderMonthlyObjectif(){
           title="Objectif visé par l'agent — tu peux aussi le régler toi-même ici si besoin"
           onchange="adminSetDesiredObjective('${agentKeySafe}', ${year}, ${month}, this.value)">
       </td>
-      <td class="lb-pct ${pctCls}">${isFreeRow ? '🎯' : (r.objectif>0 ? r.pct+'%' : '—')}</td>
-      <td>${isFreeRow ? '—' : (r.objectif>0 ? (r.remaining>0 ? r.remaining+' à faire' : '✅ atteint') : '—')}</td>
+      <td class="lb-pct ${pctCls}">${isFreeRow ? '🎯' : (stPaye.objectif>0 ? pctPaye+'%' : '—')}</td>
+      <td>${isFreeRow ? '—' : (stPaye.objectif>0 ? (stPaye.remaining>0 ? stPaye.remaining+' à faire' : '✅ atteint') : '—')}</td>
       <td>${primeTxt}</td>
       <td>${isFreeRow ? '—' : (full && full.deductions.total>0 ? `<span style="color:var(--red);">-${full.deductions.total.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>')}</td>
       <td><b style="color:${r.isIndep?'var(--independant)':(noObj?'var(--amber)':'var(--green)')};">${fullTotalWithSupervisor.toLocaleString('fr-FR')} DH</b>${supervisorBonusMo>0 ? `<div style="font-size:11px;color:var(--muted);">dont +${supervisorBonusMo.toLocaleString('fr-FR')} DH supervision</div>` : ''}${full && full.manualPrimesTotal>0 ? `<div style="font-size:11px;color:var(--gold);">🎁 dont +${full.manualPrimesTotal.toLocaleString('fr-FR')} DH prime(s) manuelle(s)</div>` : ''}</td>
@@ -14442,7 +15190,7 @@ async function renderProdAdmin(){
         const daySal = calculateDailySalary(r.agent, r.realized, monthContracts, simYear, simMonth);
         const assiduiteAcquise = isAssiduiteAcquise(monthStats);
         const monthRes = await estimateSalaryMonthReal(r.agent, simYear, simMonth, assiduiteAcquise);
-        const supervisorBonusSim = isSupervisor(r.agent) ? (supervisionBonusSimMap.dh[r.agent] || 0) : 0;
+        const supervisorBonusSim = isSupervisor(r.agent) ? Math.round(supervisionBonusSimMap.dh[r.agent] || 0) : 0;
         const monthTotalSim = (monthRes ? monthRes.total : 0) + supervisorBonusSim;
         return { r, pay, daySal, monthRes, supervisorBonusSim, monthTotalSim };
       }catch(e){
@@ -17205,7 +17953,7 @@ async function billingComputeAgent(agent, monthVal){
   let supervisorBonusAmt = 0, supervisorBonusContracts = 0;
   if(isSupervisor(agent)){
     const supBonusMap = await supervisorMonthlyBonus(year, month);
-    supervisorBonusAmt = supBonusMap.dh[agent] || 0;
+    supervisorBonusAmt = Math.round(supBonusMap.dh[agent] || 0);
     supervisorBonusContracts = supBonusMap.contracts[agent] || 0;
   }
   if(supervisorBonusAmt){
@@ -18821,6 +19569,27 @@ function toggleSupPrivacy(){
   applySupPrivacy();
 }
 
+// 🔄 Tout recharger — filet de sécurité du cache allégé (voir clearVolatileCaches).
+// Le rafraîchissement automatique garde en mémoire les journées déjà terminées pendant 5 minutes
+// maximum. Ce bouton force un vidage COMPLET immédiat : à utiliser quand une correction faite depuis
+// un autre poste sur une journée passée doit apparaître tout de suite, sans attendre.
+async function forceFullRefresh(btn){
+  const libelle = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Rechargement…'; }
+  try{
+    clearRenderCaches();
+    if(document.getElementById('view-supervision')?.classList.contains('active')) await renderSupervision();
+    if(document.getElementById('view-cash')?.classList.contains('active')) await renderCash();
+    if(document.getElementById('view-arena')?.classList.contains('active')) await renderArena();
+    showToast('✅ Tout a été relu depuis la base.', 'ok', 2500);
+  }catch(e){
+    console.warn('forceFullRefresh:', e);
+    showToast("⚠️ Le rechargement n'a pas abouti — vérifie ta connexion et réessaie.", 'warn', 5000);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = libelle || '🔄 Tout recharger'; }
+  }
+}
+
 // ------------------------------------------------------------
 // 🔎 RECHERCHE — retrouver un contrat sans savoir où il est
 // ------------------------------------------------------------
@@ -20381,21 +21150,237 @@ function assistChime(){
   });
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🟢 DISPONIBILITÉ DES ASSISTANTS — qui peut réellement se lever, là, maintenant
+// ═══════════════════════════════════════════════════════════════════════════
+// Sans cette brique, une demande d'assistance partait chez le superviseur et y restait, même s'il
+// était en pause, en ADF, en écoute, ou déjà parti dépanner quelqu'un d'autre. L'agent attendait
+// devant un écran qui lui disait « ton superviseur arrive » alors que personne n'avait vu l'appel.
+//
+// Principe : chaque poste publie SON état dans un unique document partagé. Deux sources se combinent :
+//   • ce que la personne déclare elle-même (« je suis indisponible », avec un motif libre) ;
+//   • ce que l'appli détecte toute seule : pause en cours, ADF ou écoute en cours, pas encore pointé,
+//     journée terminée, ou parti assister un collègue.
+// La détection automatique prime toujours sur le déclaratif : quelqu'un qui se dit disponible mais
+// qui est en pause n'est pas disponible, et on ne va pas le déranger sur la foi d'une case cochée.
+//
+// Un état plus vieux que PRESENCE_STALE_MS compte comme indisponible : c'est le cas d'un poste fermé
+// ou d'un navigateur endormi — la personne n'est de toute façon pas devant son écran.
+const PRESENCE_KEY = 'assistPresence';
+const PRESENCE_STALE_MS = 4 * 60 * 1000;
+const PRESENCE_KEEPALIVE_MS = 2 * 60 * 1000;
+let presenceMap = {};
+let presenceUnsub = null;
+let myPresenceLastWriteAt = 0;
+let myPresenceLastSig = '';
+// Déclaratif, gardé sur CE poste : la personne coche « indisponible » et ça la suit tant qu'elle ne
+// décoche pas, même si elle recharge la page.
+const PRESENCE_MANUAL_KEY = 'vn_assistIndispo';
+function presenceManualGet(){
+  try{ return JSON.parse(localStorage.getItem(PRESENCE_MANUAL_KEY) || 'null'); }catch(e){ return null; }
+}
+function presenceManualSet(v){
+  try{ v ? localStorage.setItem(PRESENCE_MANUAL_KEY, JSON.stringify(v)) : localStorage.removeItem(PRESENCE_MANUAL_KEY); }catch(e){}
+}
+// « Je suis parti assister X » — posé au moment où la personne confirme qu'elle y va, retiré quand
+// elle clique « Je suis de retour ». Gardé sur le poste pour survivre à un rechargement de page.
+const PRESENCE_ASSIST_KEY = 'vn_assistEnCours';
+function presenceAssistingGet(){
+  try{ return JSON.parse(localStorage.getItem(PRESENCE_ASSIST_KEY) || 'null'); }catch(e){ return null; }
+}
+function presenceAssistingSet(v){
+  try{ v ? localStorage.setItem(PRESENCE_ASSIST_KEY, JSON.stringify(v)) : localStorage.removeItem(PRESENCE_ASSIST_KEY); }catch(e){}
+}
+
+// L'état de la personne devant CE poste, recalculé à la demande. Ordre volontaire : ce qui est
+// constaté passe avant ce qui est déclaré.
+function computeMyPresence(){
+  const moi = assistanceWhoAmI();
+  if(!moi) return null;
+  const enAssistance = presenceAssistingGet();
+  if(enAssistance) return { state: 'assiste', raison: `est parti aider ${enAssistance.agent || 'un collègue'}`, depuis: enAssistance.at || Date.now() };
+  if(myADFStatus && myADFStatus.record && (myADFStatus.record.status === 'pending' || myADFStatus.record.status === 'confirmed')){
+    const estEcoute = myADFStatus.record.type === 'ecoute';
+    return { state: 'indispo', raison: estEcoute ? 'écoute en cours' : 'ADF en cours', auto: true };
+  }
+  // Pointage du jour : on ne s'appuie que sur ce que ce poste connaît déjà (freeBreakCache), pour ne
+  // déclencher aucune lecture supplémentaire.
+  const evts = (freeBreakCache && freeBreakCache.dateStr === todayStr()) ? (freeBreakCache.events || []) : null;
+  if(evts && !isIndependant(moi)){
+    if(isOnAnyBreakNow(evts)) return { state: 'indispo', raison: 'en pause', auto: true };
+    const dernier = lastEventType(evts);
+    if(!dernier) return { state: 'indispo', raison: 'pas encore pointé', auto: true };
+    if(dernier === 'out') return { state: 'indispo', raison: 'journée terminée', auto: true };
+  }
+  const manuel = presenceManualGet();
+  if(manuel) return { state: 'indispo', raison: manuel.raison || 'indisponible', manuel: true };
+  return { state: 'dispo', raison: '' };
+}
+
+// Écrit mon état dans le document partagé — seulement s'il a changé, ou toutes les 2 minutes pour
+// signaler que ce poste est toujours vivant. Sans cette double condition, un poste ouvert 8 heures
+// écrirait des milliers de fois par jour pour rien.
+async function assistPresenceSync(force){
+  const moi = assistanceWhoAmI();
+  if(!moi || !firebaseReady) return;
+  const p = computeMyPresence();
+  if(!p) return;
+  const sig = `${p.state}|${p.raison}`;
+  const trop_recent = (Date.now() - myPresenceLastWriteAt) < 4000;
+  const inchange = sig === myPresenceLastSig;
+  if(!force && inchange && (Date.now() - myPresenceLastWriteAt) < PRESENCE_KEEPALIVE_MS) return;
+  if(!force && inchange && trop_recent) return;
+  myPresenceLastSig = sig;
+  myPresenceLastWriteAt = Date.now();
+  try{
+    // Relecture juste avant d'écrire : chaque poste ne touche QUE sa propre clé, mais deux postes
+    // peuvent écrire à la même seconde — on ne veut pas qu'un état en efface un autre.
+    let courant = {};
+    try{
+      const res = await storageGet(PRESENCE_KEY);
+      if(res && res.value) courant = JSON.parse(res.value) || {};
+    }catch(e){}
+    courant[moi] = { state: p.state, raison: p.raison, auto: !!p.auto, manuel: !!p.manuel, at: Date.now() };
+    presenceMap = courant;
+    await storageSet(PRESENCE_KEY, JSON.stringify(courant));
+  }catch(e){ console.warn('assistPresenceSync', e); }
+}
+
+function presenceOf(agent){
+  const p = presenceMap && presenceMap[agent];
+  if(!p) return { state: 'inconnu', raison: 'poste fermé', perime: true };
+  if(Date.now() - (p.at || 0) > PRESENCE_STALE_MS) return { state: 'inconnu', raison: 'poste fermé', perime: true };
+  return p;
+}
+function estDisponible(agent){
+  return presenceOf(agent).state === 'dispo';
+}
+
+function subscribeAssistPresence(){
+  if(!firebaseReady || !db) return;
+  if(presenceUnsub) return;
+  presenceUnsub = db.collection('vortexnova').doc(PRESENCE_KEY).onSnapshot(doc=>{
+    try{ presenceMap = (doc.exists && doc.data().value) ? (JSON.parse(doc.data().value) || {}) : {}; }
+    catch(e){ presenceMap = {}; }
+    assistRenderPresenceBox();
+    assistProcess();   // un superviseur qui devient indisponible fait basculer l'alerte tout de suite
+  }, err=> console.error('presence listener:', err));
+}
+
+// ── La boîte « Es-tu disponible ? », visible par les assistants agréés ──────
+function assistRenderPresenceBox(){
+  const box = document.getElementById('assistPresenceBox');
+  if(!box) return;
+  const moi = assistanceWhoAmI();
+  if(!moi || !isAssistant(moi)){ box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const p = computeMyPresence();
+  const enAssistance = presenceAssistingGet();
+  const autres = listAssistants().filter(a => a !== moi);
+  const ligneAutres = autres.length ? autres.map(a=>{
+    const st = presenceOf(a);
+    const couleur = st.state === 'dispo' ? 'var(--green)' : (st.state === 'assiste' ? 'var(--amber)' : 'var(--muted)');
+    const libelle = st.state === 'dispo' ? 'disponible' : (st.state === 'assiste' ? (st.raison || 'en assistance') : (st.raison || 'indisponible'));
+    return `<span style="display:inline-flex; align-items:center; gap:5px; margin-right:12px; font-size:12.5px; color:var(--muted);"><span style="width:8px;height:8px;border-radius:50%;background:${couleur};display:inline-block;"></span>${escapeHtml(a)}${isSupervisor(a)?' 📊':''} — <span style="color:${couleur};">${escapeHtml(libelle)}</span></span>`;
+  }).join('') : '<span style="font-size:12.5px;color:var(--muted);">Aucun autre assistant agréé pour l\'instant.</span>';
+
+  if(enAssistance){
+    box.innerHTML = `
+      <label style="margin-bottom:4px;">🤝 Tu es parti assister ${escapeHtml(enAssistance.agent || 'un collègue')}</label>
+      <div class="section-sub">Tant que tu n'es pas revenu, les nouvelles demandes d'assistance partent chez les autres assistants disponibles — personne n'attend dans le vide.</div>
+      <button class="action-btn arena-btn-set" style="max-width:260px; margin-top:12px;" onclick="assistanceJeSuisRevenu()">✅ Je suis de retour à mon poste</button>
+      <div style="margin-top:14px;">${ligneAutres}</div>`;
+    return;
+  }
+  const dispo = p && p.state === 'dispo';
+  const auto = p && p.auto;
+  box.innerHTML = `
+    <label style="margin-bottom:4px;">🤝 Assistance — es-tu disponible ?</label>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:10px 0 6px;">
+      <span style="display:inline-flex; align-items:center; gap:7px; font-weight:800; font-size:14px; color:${dispo?'var(--green)':'var(--amber)'};">
+        <span style="width:11px;height:11px;border-radius:50%;background:${dispo?'var(--green)':'var(--amber)'};display:inline-block;"></span>
+        ${dispo ? 'Disponible' : 'Indisponible'}${(!dispo && p && p.raison) ? ` — ${escapeHtml(p.raison)}` : ''}
+      </span>
+      ${auto
+        ? '<span class="section-sub" style="margin:0;">Détecté automatiquement — ça se remettra tout seul quand tu reprendras ton poste.</span>'
+        : `<button class="action-btn arena-btn-set" style="max-width:230px; margin:0;" onclick="assistanceToggleDispo()">${dispo ? '🚫 Me déclarer indisponible' : '✅ Me déclarer disponible'}</button>`}
+    </div>
+    <div class="section-sub">Une demande d'assistance part d'abord chez le superviseur. S'il est indisponible ou déjà en train d'aider quelqu'un, elle bascule automatiquement chez les assistants agréés disponibles.</div>
+    <div style="margin-top:12px;">${ligneAutres}</div>`;
+}
+
+async function assistanceToggleDispo(){
+  const manuel = presenceManualGet();
+  if(manuel){
+    presenceManualSet(null);
+  } else {
+    const raison = (window.prompt("Pourquoi es-tu indisponible ? (facultatif — ex : rendez-vous client, formation, réunion)", '') || '').trim();
+    presenceManualSet({ raison: raison || 'indisponible', at: Date.now() });
+  }
+  await assistPresenceSync(true);
+  assistRenderPresenceBox();
+  const moi = assistanceWhoAmI();
+  logAudit(moi || 'Agent', presenceManualGet() ? 'Assistance : déclaré indisponible' : 'Assistance : déclaré disponible', presenceManualGet()?.raison || '');
+}
+
+async function assistanceJeSuisRevenu(){
+  const enCours = presenceAssistingGet();
+  presenceAssistingSet(null);
+  await assistPresenceSync(true);
+  assistRenderPresenceBox();
+  const moi = assistanceWhoAmI();
+  if(enCours && moi) logAudit(moi, 'Assistance terminée — retour au poste', enCours.agent || '');
+  showToast('✅ Te voilà de nouveau disponible pour les demandes d\'assistance.', 'ok', 4000);
+  assistProcess();
+}
+
 // ── Qui est devant cet écran ? ─────────────────────────────────────────────
 function assistanceWhoAmI(){
   return currentAgent || currentArenaAgent || currentCashAgent || currentSupervisionAgent || null;
 }
 
-// Ce poste doit-il recevoir les alertes ? Oui si la personne connectée est LE superviseur désigné
-// dans Réglages (ou n'importe quel superviseur si aucun n'est désigné), et toujours oui pour le
-// patron quand le panneau Admin est déverrouillé — un appel à l'aide ne doit jamais tomber dans le vide.
+// ═══════════════════════════════════════════════════════════════════════════
+// 📡 À QUI PART L'APPEL — routage en cascade
+// ═══════════════════════════════════════════════════════════════════════════
+// Avant : l'appel partait chez le superviseur désigné, et y restait. S'il était en pause, en ADF, en
+// écoute, ou déjà parti dépanner quelqu'un d'autre, l'agent voyait « ton superviseur arrive » pendant
+// que personne n'avait rien vu.
+//
+// Maintenant, la cible est RECALCULÉE en permanence à partir des disponibilités partagées, jamais
+// figée dans la demande. Trois rideaux, dans cet ordre :
+//   1. Le superviseur (celui désigné dans Réglages, ou n'importe lequel si aucun n'est désigné) —
+//      à condition qu'il soit réellement disponible.
+//   2. Sinon, tous les assistants agréés disponibles. Comme la disponibilité est partagée en direct,
+//      le basculement se fait tout seul : le superviseur clique « j'y vais » pour un premier agent,
+//      son état passe à « parti assister », et l'appel suivant sonne immédiatement chez les autres.
+//   3. Si vraiment personne n'est disponible, on sonne chez TOUS les assistants, disponibles ou non.
+//      Déranger quelqu'un en pause reste infiniment moins grave qu'un appel à l'aide sans réponse.
+// Le panneau Admin ouvert reçoit toujours tout, en dernier filet de sécurité.
+function superviseursDeGarde(){
+  const designe = (config.assistanceSupervisor || '').trim();
+  const sups = listSupervisors();
+  return designe ? sups.filter(a => a === designe) : sups;
+}
+
+// Renvoie la liste des personnes qui doivent voir l'alerte, à cet instant précis.
+function assistanceDestinataires(){
+  const supsDispo = superviseursDeGarde().filter(estDisponible);
+  if(supsDispo.length) return { rideau: 'superviseur', liste: supsDispo };
+  const assistantsDispo = listAssistants().filter(estDisponible);
+  if(assistantsDispo.length) return { rideau: 'assistants', liste: assistantsDispo };
+  const tous = listAssistants();
+  return { rideau: 'dernier-recours', liste: tous };
+}
+
 function assistanceAmITarget(){
-  const moi = assistanceWhoAmI();
   const adminOuvert = document.getElementById('adminPanel')?.style.display === 'block';
   if(adminOuvert) return true;
-  if(!moi || !isSupervisor(moi)) return false;
-  const designe = (config.assistanceSupervisor || '').trim();
-  return !designe || designe === moi;
+  const moi = assistanceWhoAmI();
+  if(!moi || !isAssistant(moi)) return false;
+  // Quelqu'un déjà parti assister ne doit pas recevoir une deuxième alerte en pleine intervention.
+  if(presenceAssistingGet()) return false;
+  return assistanceDestinataires().liste.includes(moi);
 }
 
 // ── Lecture / écriture de la liste des demandes ────────────────────────────
@@ -20440,9 +21425,12 @@ async function assistanceButtonClick(){
   }
   const id = 'a' + Date.now().toString(36) + Math.floor(performance.now() % 1000).toString(36);
   assistMyRequestId = id;
-  await assistMutate(l => l.concat([{ id, agent: moi, at: Date.now(), status: 'pending', seenBy: null, seenAt: null }]));
-  logAudit(moi, 'Demande assistance', 'Appel superviseur');
-  showToast('🆘 Ton superviseur est prévenu. Reste à ton poste, il arrive.', 'ok', 6000);
+  const cible = assistanceDestinataires();
+  await assistMutate(l => l.concat([{ id, agent: moi, at: Date.now(), status: 'pending', seenBy: null, seenAt: null, rideau: cible.rideau }]));
+  logAudit(moi, 'Demande assistance', cible.rideau === 'superviseur' ? 'Appel superviseur' : `Superviseur indisponible — appel transmis à ${cible.liste.join(', ') || 'personne'}`);
+  showToast(cible.rideau === 'superviseur'
+    ? '🆘 Ton superviseur est prévenu. Reste à ton poste, il arrive.'
+    : '🆘 Ton superviseur n\'est pas disponible — ta demande part chez les assistants agréés. Reste à ton poste.', 'ok', 7000);
   assistRenderButton();
 }
 
@@ -20460,7 +21448,13 @@ function assistRenderButton(){
   if(mien.status === 'pending'){
     btn.classList.add('is-waiting');
     lab.textContent = 'Demande envoyée…';
-    btn.title = 'Clique à nouveau pour annuler ta demande';
+    // On dit à l'agent CHEZ QUI son appel sonne réellement, plutôt que de lui laisser croire que son
+    // superviseur l'a forcément reçu alors qu'il est peut-être en pause ou déjà en intervention.
+    const dest = assistanceDestinataires();
+    btn.title = (dest.rideau === 'superviseur'
+      ? 'Ton superviseur est prévenu. '
+      : 'Ton superviseur n\'est pas disponible — ' + (dest.liste.length ? dest.liste.join(', ') + ' ' + (dest.liste.length>1?'sont prévenus':'est prévenu') : 'personne n\'est disponible pour l\'instant') + '. ')
+      + 'Clique à nouveau pour annuler ta demande.';
   } else {
     btn.classList.add('is-seen');
     lab.textContent = (mien.seenBy ? mien.seenBy + ' arrive' : 'Ton superviseur arrive');
@@ -20513,7 +21507,15 @@ function assistShowOverlay(req, restants){
   document.getElementById('vnAssistMeta').textContent =
     'Appel lancé à ' + String(h.getHours()).padStart(2,'0') + ':' + String(h.getMinutes()).padStart(2,'0');
   const q = document.getElementById('vnAssistQueue');
-  q.textContent = assistQueueLabel(restants);
+  // On explique POURQUOI cet appel arrive ici : reçu en tant que superviseur, ou en renfort parce que
+  // le superviseur n'était pas disponible. Sans ça, un assistant agréé se demande s'il y a une erreur.
+  const dest = assistanceDestinataires();
+  const motif = dest.rideau === 'superviseur'
+    ? ''
+    : (dest.rideau === 'assistants'
+      ? '⚠️ Le superviseur n\'est pas disponible — tu reçois cet appel en renfort. '
+      : '🚨 Personne n\'est déclaré disponible — tout le monde est alerté. ');
+  q.textContent = motif + assistQueueLabel(restants);
   ov.style.display = 'flex';
   assistShownId = req.id;
   assistStartAlarm();
@@ -20545,11 +21547,18 @@ async function assistanceAcknowledge(){
   if(!id) { assistHideOverlay(); return; }
   const moi = assistanceWhoAmI() || 'Superviseur';
   assistHideOverlay();   // on coupe le son IMMÉDIATEMENT, avant l'écriture réseau
+  const req0 = assistList.find(r => r.id === id);
+  // « Je pars assister » — c'est ce qui fait basculer les demandes SUIVANTES chez les autres assistants
+  // pendant qu'on est en intervention, et c'est ce que la personne annulera en cliquant « Je suis de
+  // retour ». Posé avant l'écriture réseau : l'état local doit être juste immédiatement.
+  presenceAssistingSet({ agent: req0 ? req0.agent : null, at: Date.now(), reqId: id });
+  assistPresenceSync(true);
+  assistRenderPresenceBox();
   await assistMutate(l => l.map(r => r.id === id ? Object.assign({}, r, { status: 'seen', seenBy: moi, seenAt: Date.now() }) : r));
   const req = assistList.find(r => r.id === id);
   logAudit(moi, 'Assistance prise en charge', req ? req.agent : id);
   if(req) assistHistAdd({ id: req.id, agent: req.agent, at: req.at, seenBy: moi, seenAt: Date.now(), waitMs: Date.now() - req.at, cancelled: false });
-  showToast('✅ ' + (req ? req.agent : "L'agent") + ' a été prévenu que tu arrives.', 'ok', 5000);
+  showToast('✅ ' + (req ? req.agent : "L'agent") + ' a été prévenu que tu arrives. N\'oublie pas de cliquer « Je suis de retour » en revenant à ton poste.', 'ok', 8000);
   assistProcess();       // une autre demande attend peut-être derrière
 }
 
@@ -20585,6 +21594,8 @@ function assistProcess(){
   }
 
   assistRenderButton();
+  assistRenderPresenceBox();
+  if(typeof renderAssistantsPanel === 'function') renderAssistantsPanel();
 }
 
 function subscribeAssistance(){
@@ -20597,7 +21608,40 @@ function subscribeAssistance(){
 }
 
 
-// ── Réglage : qui reçoit les appels ────────────────────────────────────────
+// ── Réglage : qui peut assister, et qui est disponible ─────────────────────
+// Vue admin en direct : elle sert surtout à repérer le cas gênant — un seul assistant agréé, donc
+// aucun filet quand le superviseur est occupé.
+function renderAssistantsPanel(){
+  const el = document.getElementById('assistantsPanel');
+  if(!el) return;
+  const liste = listAssistants();
+  if(!liste.length){
+    el.innerHTML = '<div class="empty">Aucun assistant pour l\'instant — coche « Superviseur » 📊 ou « Assistant agréé » 🤝 sur au moins un agent.</div>';
+    return;
+  }
+  const lignes = liste.map(a=>{
+    const st = presenceOf(a);
+    const dispo = st.state === 'dispo';
+    const couleur = dispo ? 'var(--green)' : (st.state === 'assiste' ? 'var(--amber)' : 'var(--muted)');
+    const libelle = dispo ? 'Disponible' : (st.state === 'assiste' ? (st.raison || 'en assistance') : (st.raison || 'indisponible'));
+    const source = st.perime ? 'poste fermé ou navigateur en veille' : (st.auto ? 'détecté automatiquement' : (st.manuel ? 'déclaré par lui-même' : ''));
+    return `<div style="display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:9px; background:var(--panel2); border:1px solid var(--border); margin-bottom:7px; flex-wrap:wrap;">
+      <span style="width:10px;height:10px;border-radius:50%;background:${couleur};flex-shrink:0;"></span>
+      <b>${escapeHtml(a)}</b>
+      ${isSupervisor(a) ? '<span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">📊 Superviseur</span>' : '<span class="tag" style="background:rgba(181,89,92,0.18);color:#e08b8e;">🤝 Assistant agréé</span>'}
+      <span style="color:${couleur}; font-weight:700; font-size:13px;">${escapeHtml(libelle)}</span>
+      ${source ? `<span style="font-size:11.5px; color:var(--muted);">(${escapeHtml(source)})</span>` : ''}
+    </div>`;
+  }).join('');
+  const dispoCount = liste.filter(estDisponible).length;
+  const alerte = dispoCount === 0
+    ? '<div style="margin-top:8px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚨 Personne n\'est disponible en ce moment. Un appel à l\'aide sonnerait chez tout le monde, y compris ceux en pause.</div>'
+    : (liste.length === 1
+      ? '<div style="margin-top:8px; padding:10px 12px; border-radius:8px; background:rgba(229,168,61,0.12); border:1px solid rgba(229,168,61,0.4); font-size:12.5px; color:var(--amber); font-weight:600;">⚠️ Un seul assistant : dès qu\'il est en pause ou en intervention, il n\'y a plus de filet. Agrée au moins un deuxième agent avec le bouton 🤝.</div>'
+      : `<div style="margin-top:8px; font-size:12.5px; color:var(--muted);">${dispoCount} disponible${dispoCount>1?'s':''} sur ${liste.length}.</div>`);
+  el.innerHTML = lignes + alerte;
+}
+
 function renderAssistanceSupervisorSelect(){
   const sel = document.getElementById('assistSupervisorSelect');
   if(!sel) return;
