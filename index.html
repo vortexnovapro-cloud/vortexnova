@@ -2464,7 +2464,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-23-r123';
+const APP_VERSION = '2026-08-23-r124';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3145,6 +3145,37 @@ function fbUsageRAZ(){
 // par poste et par jour — un demi-pour-cent du quota d'écritures gratuit, pour rendre visible ce qui
 // consomme le reste.
 const FB_USAGE_SYNC_MS = 5 * 60 * 1000;
+
+// ── Le rythme, mesuré sur une fenêtre GLISSANTE ────────────────────────────
+// ⚠️ BUG CORRIGÉ (2e passage). La première correction attendait 10 minutes avant d'annoncer un rythme,
+// mais le calcul restait « total des lectures ÷ temps depuis l'ouverture ». Or l'ouverture d'un écran
+// coûte à elle seule une grosse salve (≈ 1 500 lectures pour la Vue d'ensemble). Cette salve restait
+// dans la moyenne pour toujours : après 15 minutes, l'appli annonçait encore 8 900 lectures/heure là où
+// le régime réel tournait autour de 2 500.
+// On mesure donc désormais la PENTE sur les dernières minutes, pas la moyenne depuis le début : on
+// relève le compteur chaque minute, et le rythme est la différence entre maintenant et le relevé le
+// plus ancien de la fenêtre. La salve de démarrage sort d'elle-même de la fenêtre, et le chiffre
+// affiché correspond enfin à ce que l'appli consomme en fonctionnement normal.
+const FB_RYTHME_FENETRE_MS = 15 * 60 * 1000;   // on garde 15 minutes de relevés
+const FB_RYTHME_MINI_MS = 5 * 60 * 1000;       // ...et il en faut au moins 5 pour annoncer un chiffre
+let fbEchantillons = [];
+setInterval(()=>{
+  try{
+    fbEchantillons.push({ t: Date.now(), reads: fbUsage.reads, writes: fbUsage.writes });
+    const limite = Date.now() - FB_RYTHME_FENETRE_MS;
+    fbEchantillons = fbEchantillons.filter(e => e.t >= limite);
+  }catch(e){}
+}, 60000);
+
+// Lectures par heure sur la fenêtre glissante — null tant qu'on n'a pas 5 minutes de recul.
+function fbRythmeGlissant(){
+  if(fbEchantillons.length < 2) return null;
+  const plusVieux = fbEchantillons[0];
+  const dtMs = Date.now() - plusVieux.t;
+  if(dtMs < FB_RYTHME_MINI_MS) return null;
+  const delta = fbUsage.reads - plusVieux.reads;
+  return Math.max(0, delta / (dtMs / 3600000));
+}
 function fbPosteId(){
   try{
     let id = localStorage.getItem('vn_posteId');
@@ -3171,7 +3202,8 @@ async function fbUsagePublier(force){
       agent: (typeof assistanceWhoAmI === 'function' ? assistanceWhoAmI() : null) || null,
       admin: document.getElementById('adminPanel')?.style.display === 'block',
       jour: fbUsage.jour, reads: fbUsage.reads, writes: fbUsage.writes, deletes: fbUsage.deletes,
-      debut: fbUsage.debut, at: Date.now()
+      debut: fbUsage.debut, at: Date.now(),
+      rythme: fbRythmeGlissant()   // null tant que la mesure n'a pas assez de recul
     }) });
     fbCompter('write');
   }catch(e){ /* jamais bloquant : ce n'est qu'un compteur */ }
@@ -21985,7 +22017,7 @@ async function renderFirebaseUsagePanel(){
       agent: (typeof assistanceWhoAmI === 'function' ? assistanceWhoAmI() : null) || null,
       admin: document.getElementById('adminPanel')?.style.display === 'block',
       jour: fbUsage.jour, reads: fbUsage.reads, writes: fbUsage.writes, deletes: fbUsage.deletes,
-      debut: fbUsage.debut, at: Date.now()
+      debut: fbUsage.debut, at: Date.now(), rythme: fbRythmeGlissant()
     }]);
   }
 
@@ -22010,15 +22042,13 @@ async function renderFirebaseUsagePanel(){
   // alors que 1 600 seulement avaient été consommées — et une fausse alerte « plafond dans 2 heures ».
   // On n'annonce donc un rythme qu'à partir de 10 minutes d'observation, le temps que la salve de
   // démarrage soit diluée dans le fonctionnement normal.
-  const OBSERVATION_MINI_H = 10 / 60;
-  const postesMesures = postes.filter(p => (((p.at || Date.now()) - (p.debut || Date.now())) / 3600000) >= OBSERVATION_MINI_H);
-  const rythmeEquipe = postesMesures.reduce((s,p)=>{
-    const h = ((p.at || Date.now()) - (p.debut || Date.now())) / 3600000;
-    return s + (p.reads || 0) / h;
-  }, 0);
+  // Chaque poste publie SON rythme, mesuré chez lui sur une fenêtre glissante de 15 minutes (voir
+  // fbRythmeGlissant). Le rythme d'équipe est simplement leur somme. Un poste qui n'a pas encore assez
+  // de recul publie `rythme: null` et n'est pas compté — mieux vaut ne rien annoncer qu'annoncer faux.
+  const postesMesures = postes.filter(p => typeof p.rythme === 'number' && isFinite(p.rythme));
+  const rythmeEquipe = postesMesures.reduce((s,p)=> s + p.rythme, 0);
   const mesureFiable = postesMesures.length > 0;
-  // Combien de temps encore avant que le poste le plus jeune atteigne 10 minutes d'observation ?
-  const attenteMin = mesureFiable ? 0 : Math.max(1, Math.ceil(10 - Math.max(...postes.map(p => ((p.at||Date.now()) - (p.debut||Date.now()))/60000), 0)));
+  const attenteMin = mesureFiable ? 0 : Math.max(1, Math.ceil(5 - Math.max(...postes.map(p => ((p.at||Date.now()) - (p.debut||Date.now()))/60000), 0)));
 
   const pctQuota = Math.round((totalR / FB_USAGE_GRATUIT.read) * 100);
   const couleurQuota = pctQuota >= 100 ? 'var(--red)' : (pctQuota >= 70 ? 'var(--amber)' : 'var(--green)');
@@ -22042,7 +22072,7 @@ async function renderFirebaseUsagePanel(){
   let alerte;
   if(!mesureFiable && restant > 0){
     // Tant qu'on n'a pas assez de recul, on ne dit RIEN plutôt que de dire n'importe quoi.
-    alerte = `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:var(--panel2); border:1px solid var(--border); font-size:13px; color:var(--muted); font-weight:600;">⏳ Mesure en cours — le rythme sera fiable dans environ ${attenteMin} minute${attenteMin>1?'s':''}. L'ouverture d'un écran consomme une grosse salve d'un coup : il faut la laisser se diluer avant d'en tirer une moyenne.</div>`;
+    alerte = `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:var(--panel2); border:1px solid var(--border); font-size:13px; color:var(--muted); font-weight:600;">⏳ Mesure en cours — encore ${attenteMin} minute${attenteMin>1?'s':''} environ. Le rythme est mesuré sur les 15 dernières minutes, pas depuis l'ouverture : l'écran de démarrage consomme une grosse salve d'un coup, qui n'a rien à voir avec le régime normal.</div>`;
   } else if(restant <= 0){
     alerte = `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.45); font-size:13px; color:var(--red); font-weight:700;">🚨 Le quota gratuit du jour est dépassé pour toute l'équipe. En forfait Spark, la base a cessé de répondre — c'est ce qui donne l'impression que le CRM « se fige ». Elle repartira vers 8h-9h demain matin. En forfait Blaze, tout continue normalement et c'est simplement facturé (voir le coût estimé).</div>`;
   } else if(rythmeEquipe > 0){
@@ -22062,8 +22092,7 @@ async function renderFirebaseUsagePanel(){
     const actif = inactifDepuis < 12;
     const qui = pp.admin ? '🛠️ Panneau Admin' : (pp.agent ? escapeHtml(pp.agent) : 'Poste sans nom sélectionné');
     const part = totalR > 0 ? Math.round(((pp.reads||0) / totalR) * 100) : 0;
-    const hObs = ((pp.at || Date.now()) - (pp.debut || Date.now())) / 3600000;
-    const rythmePoste = hObs >= OBSERVATION_MINI_H ? Math.round((pp.reads||0) / hObs) : null;
+    const rythmePoste = (typeof pp.rythme === 'number' && isFinite(pp.rythme)) ? Math.round(pp.rythme) : null;
     return `<tr${pp.poste === moi ? ' style="background:rgba(61,139,253,0.08);"' : ''}>
       <td><b>${qui}</b>${pp.poste === moi ? ' <span class="tag ok" style="background:rgba(61,139,253,0.18);color:var(--accent);">ce poste</span>' : ''}</td>
       <td style="font-variant-numeric:tabular-nums;"><b>${fmt(pp.reads||0)}</b> <span style="color:var(--muted);font-size:12px;">(${part}%)</span>${rythmePoste != null ? `<div style="font-size:11.5px;color:var(--muted);">${fmt(rythmePoste)} /h</div>` : '<div style="font-size:11.5px;color:var(--muted);">mesure en cours</div>'}</td>
@@ -22095,7 +22124,7 @@ async function renderFirebaseUsagePanel(){
     </div>
 
     <div class="section-sub" style="margin-top:14px;">
-      📐 Chaque poste publie son compteur toutes les 5 minutes et en quittant la page — un poste éteint depuis longtemps reste affiché avec son total de la journée, c'est normal, il a bien consommé. Tarif : 0,03 $ par tranche de 100 000 lectures, 0,09 $ pour les écritures, quota gratuit déduit chaque jour.
+      📐 Le <b>rythme</b> est mesuré sur les 15 dernières minutes de fonctionnement — pas depuis l'ouverture de la page, sinon la salve du chargement initial fausserait la moyenne pendant des heures. Le <b>total</b>, lui, compte bien tout depuis minuit. Chaque poste publie son compteur toutes les 5 minutes et en quittant la page — un poste éteint depuis longtemps reste affiché avec son total de la journée, c'est normal, il a bien consommé. Tarif : 0,03 $ par tranche de 100 000 lectures, 0,09 $ pour les écritures, quota gratuit déduit chaque jour.
     </div>
     <div class="section-sub" style="margin-top:8px;">
       ⚠️ Le chiffre qui fait foi reste celui de la console Firebase (Firestore → Utilisation). Celui-ci sert à comparer avant/après un réglage et à repérer quel écran coûte le plus cher.
