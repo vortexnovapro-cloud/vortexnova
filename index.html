@@ -2186,6 +2186,17 @@ function tryDeviceGateAdmin(){
       <div class="admin-subview" id="admin-settings">
 
         <div class="settings-box">
+          <label>📊 Consommation Firebase — ce que coûte l'appli</label>
+          <div class="section-sub">Firebase facture à l'opération : chaque document lu, écrit ou supprimé. Le forfait gratuit s'arrête net à 50 000 lectures par jour — au-delà, la base ne répond plus jusqu'au lendemain (heure du Pacifique, soit vers 8h-9h du matin chez toi). Ce quota est <b>global au projet</b> : ce qui compte, c'est le total de tous les postes ouverts, pas le chiffre d'un écran isolé.</div>
+          <div class="section-sub" style="margin-top:6px;">👥 Chaque poste publie son compteur ici toutes les 5 minutes. Le tableau te montre <b>qui consomme quoi</b> — c'est ce qui te dira quel écran fermer si tu approches du plafond.</div>
+          <div id="firebaseUsagePanel" style="margin-top:14px;"></div>
+          <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button onclick="renderFirebaseUsagePanel()" style="padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🔄 Actualiser le compteur</button>
+            <button onclick="fbUsageRAZ()" style="padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;" title="Repart de zéro pour mesurer l'effet d'un réglage. N'efface rien côté Firebase — c'est juste ce compteur local.">↩️ Remettre à zéro</button>
+          </div>
+        </div>
+
+        <div class="settings-box">
           <label>🆘 Bouton d'assistance</label>
           <div class="section-sub">Chaque agent a en permanence un bouton rouge <b>Assistance</b> en bas de son écran. Un clic déclenche une alarme — un chant de grillons qui monte progressivement et ne s'arrête que lorsque quelqu'un confirme. L'agent est alors prévenu de qui arrive.</div>
           <div class="section-sub" style="margin-top:8px;">📡 <b>L'appel part en cascade.</b> D'abord le superviseur choisi ci-dessous, <b>s'il est réellement disponible</b>. S'il est en pause, en ADF, en écoute, déjà parti dépanner quelqu'un, ou s'il s'est déclaré indisponible, l'alerte bascule automatiquement chez les <b>assistants agréés disponibles</b> (bouton 🤝 sur la fiche de chaque agent, plus bas dans Agents). Et si vraiment personne n'est disponible, tout le monde est alerté quand même — un appel à l'aide sans réponse est toujours le pire scénario.</div>
@@ -2453,7 +2464,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-23-r119';
+const APP_VERSION = '2026-08-23-r122';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3062,6 +3073,135 @@ const STORAGE_GET_TTL_MS = 3000;
 function storageForget(key){ _getRecent.delete(key); }
 function storageForgetAll(){ _getRecent.clear(); }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 📊 COMPTEUR DE CONSOMMATION FIREBASE
+// ═══════════════════════════════════════════════════════════════════════════
+// Firestore facture à l'opération : chaque document lu, écrit ou supprimé. Le forfait gratuit (Spark)
+// s'arrête net à 50 000 lectures, 20 000 écritures et 20 000 suppressions par jour — la base cesse
+// alors de répondre jusqu'au lendemain. Au-delà (forfait Blaze), c'est facturé au compteur.
+//
+// Le problème : ces chiffres ne se voient nulle part depuis l'appli, il faut aller les chercher dans la
+// console Google. On les compte donc ici, à la source, au moment exact où une opération part vraiment
+// sur le réseau — les lectures servies par la mémo ou par la déduplication ne sont PAS comptées,
+// puisqu'elles ne sont pas facturées non plus.
+//
+// ⚠️ Ce compteur ne connaît que CE poste. Le total facturé, c'est la somme de tous les postes ouverts.
+// Le panneau l'affiche clairement et propose une estimation d'équipe.
+const FB_USAGE_PRIX = { read: 0.03, write: 0.09, del: 0.01 };   // $ par tranche de 100 000
+const FB_USAGE_GRATUIT = { read: 50000, write: 20000, del: 20000 };  // par jour, forfait Spark
+let fbUsage = { jour: '', reads: 0, writes: 0, deletes: 0, debut: Date.now() };
+
+function fbUsageCle(){ return 'vn_fbUsage'; }
+// `force` n'est vrai qu'au tout premier appel, au démarrage. Ensuite, cette fonction ne fait plus que
+// détecter le passage à un nouveau jour : sans cette précaution, chaque affichage du panneau relisait
+// le stockage et écrasait les opérations comptées depuis la dernière sauvegarde (différée de 1,5 s) —
+// le compteur semblait alors retomber tout seul.
+function fbUsageCharger(force){
+  const aujourdhui = todayStr();
+  if(!force && fbUsage.jour === aujourdhui) return;   // déjà à jour en mémoire, rien à relire
+  if(force){
+    try{
+      const brut = JSON.parse(localStorage.getItem(fbUsageCle()) || 'null');
+      if(brut && brut.jour === aujourdhui){ fbUsage = brut; return; }
+    }catch(e){}
+  }
+  // Nouveau jour (ou premier lancement) : on repart de zéro, comme le quota Firebase lui-même.
+  fbUsage = { jour: aujourdhui, reads: 0, writes: 0, deletes: 0, debut: Date.now() };
+  fbUsageEnregistrer();
+}
+let fbUsageSaveTimer = null;
+function fbUsageEnregistrer(){
+  // Écriture différée : sans ça, on écrirait dans localStorage des centaines de fois par seconde.
+  if(fbUsageSaveTimer) return;
+  fbUsageSaveTimer = setTimeout(()=>{
+    fbUsageSaveTimer = null;
+    try{ localStorage.setItem(fbUsageCle(), JSON.stringify(fbUsage)); }catch(e){}
+  }, 1500);
+}
+function fbCompter(type, combien){
+  if(!fbUsage.jour || fbUsage.jour !== todayStr()) fbUsageCharger();
+  const n = combien == null ? 1 : combien;
+  if(type === 'read') fbUsage.reads += n;
+  else if(type === 'write') fbUsage.writes += n;
+  else if(type === 'del') fbUsage.deletes += n;
+  fbUsageEnregistrer();
+}
+function fbUsageRAZ(){
+  fbUsage = { jour: todayStr(), reads: 0, writes: 0, deletes: 0, debut: Date.now() };
+  try{ localStorage.setItem(fbUsageCle(), JSON.stringify(fbUsage)); }catch(e){}
+  if(typeof renderFirebaseUsagePanel === 'function') renderFirebaseUsagePanel();
+}
+
+// ── Le compteur d'ÉQUIPE ───────────────────────────────────────────────────
+// Le compteur ci-dessus ne connaît que le poste où il tourne. Or ce qui est facturé, et ce qui fait
+// sauter le quota gratuit, c'est le TOTAL de tous les postes ouverts. Chaque poste publie donc son
+// compteur du jour dans son propre document, et le panneau Admin les additionne.
+//
+// Un document PAR POSTE et PAR JOUR (et non un document partagé) : chacun n'écrit que le sien, donc
+// aucune relecture préalable, aucun risque d'écrasement entre deux postes, et une écriture au lieu de
+// deux. Les documents de la veille sont ignorés et disparaissent d'eux-mêmes du calcul.
+//
+// Cadence : toutes les 5 minutes, et au moment où l'on quitte la page. Soit une centaine d'écritures
+// par poste et par jour — un demi-pour-cent du quota d'écritures gratuit, pour rendre visible ce qui
+// consomme le reste.
+const FB_USAGE_SYNC_MS = 5 * 60 * 1000;
+function fbPosteId(){
+  try{
+    let id = localStorage.getItem('vn_posteId');
+    if(!id){ id = 'p' + Math.random().toString(36).slice(2, 9); localStorage.setItem('vn_posteId', id); }
+    return id;
+  }catch(e){ return 'p-inconnu'; }
+}
+function fbUsageDocCle(jour, poste){ return `fbUsage:${jour || todayStr()}:${poste || fbPosteId()}`; }
+
+let fbUsageDernierePublication = 0;
+let fbUsageDerniereSignature = '';
+async function fbUsagePublier(force){
+  if(!firebaseReady || !db) return;
+  const sig = `${fbUsage.reads}|${fbUsage.writes}|${fbUsage.deletes}`;
+  if(!force){
+    if(sig === fbUsageDerniereSignature) return;
+    if(Date.now() - fbUsageDernierePublication < FB_USAGE_SYNC_MS) return;
+  }
+  fbUsageDernierePublication = Date.now();
+  fbUsageDerniereSignature = sig;
+  try{
+    await db.collection('vortexnova').doc(fbUsageDocCle()).set({ value: JSON.stringify({
+      poste: fbPosteId(),
+      agent: (typeof assistanceWhoAmI === 'function' ? assistanceWhoAmI() : null) || null,
+      admin: document.getElementById('adminPanel')?.style.display === 'block',
+      jour: fbUsage.jour, reads: fbUsage.reads, writes: fbUsage.writes, deletes: fbUsage.deletes,
+      debut: fbUsage.debut, at: Date.now()
+    }) });
+    fbCompter('write');
+  }catch(e){ /* jamais bloquant : ce n'est qu'un compteur */ }
+}
+// Publication régulière, et une dernière fois quand l'onglet part en arrière-plan ou se ferme.
+setInterval(()=>{ try{ fbUsagePublier(); }catch(e){} }, 60000);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ try{ fbUsagePublier(true); }catch(e){} } });
+window.addEventListener('pagehide', ()=>{ try{ fbUsagePublier(true); }catch(e){} });
+
+// Lecture de tous les postes du jour — une requête de plage sur l'identifiant des documents, donc un
+// seul aller-retour quel que soit le nombre de postes.
+async function fbUsageLireEquipe(){
+  if(!firebaseReady || !db) return [];
+  const prefixe = `fbUsage:${todayStr()}:`;
+  try{
+    const snap = await db.collection('vortexnova')
+      .orderBy(firebase.firestore.FieldPath.documentId())
+      .startAt(prefixe).endAt(prefixe + '\uf8ff').get();
+    fbCompter('read', snap.size || 0);
+    const postes = [];
+    snap.forEach(doc=>{
+      try{
+        const v = JSON.parse(doc.data().value);
+        if(v && v.jour === todayStr()) postes.push(v);
+      }catch(e){}
+    });
+    return postes;
+  }catch(e){ console.warn('fbUsageLireEquipe', e); return null; }
+}
+
 async function storageGet(key){
   if(!firebaseReady) return null;
   const memo = _getRecent.get(key);
@@ -3071,6 +3211,7 @@ async function storageGet(key){
   const p = (async ()=>{
     try{
       const doc = await db.collection('vortexnova').doc(key).get();
+      fbCompter('read');   // seule lecture réellement facturée : celles servies par la mémo ne le sont pas
       return doc.exists ? { key, value: doc.data().value } : null;
     }catch(e){ console.error('storageGet error:', e); return null; }
   })();
@@ -3295,6 +3436,7 @@ async function storageSet(key, value){
   pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).set({ value });
+    fbCompter('write');
     storageForget(key); // la mémo de lecture ne doit jamais servir une valeur qu'on vient de remplacer
     return { key, value };
   }catch(e){
@@ -3313,6 +3455,7 @@ async function storageDelete(key){
   pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).delete();
+    fbCompter('del');
     storageForget(key);
     return { key, deleted: true };
   }catch(e){
@@ -3336,6 +3479,7 @@ async function storageDelete(key){
 async function logAudit(actor, action, details){
   if(!firebaseReady || !db) return;
   try{
+    fbCompter('write');
     await db.collection('vortexnova_audit').add({
       ts: Date.now(),
       dateStr: todayStr(),
@@ -3384,6 +3528,7 @@ async function checkAppVersionStatus(){
 
   try{
     db.collection('vortexnova').doc('latestAppVersion').onSnapshot(doc=>{
+      fbCompter('read');   // une écoute temps réel facture chaque document qu'elle livre
       if(!doc.exists) return;
       renderAppVersionBanner(doc.data().value);
     });
@@ -4005,7 +4150,7 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
-  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); }
+  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderFirebaseUsagePanel(); }
 }
 
 // ============================================================
@@ -4032,6 +4177,7 @@ async function renderAuditLog(){
   container.innerHTML = '<div class="empty">⏳ Chargement…</div>';
   try{
     const snap = await db.collection('vortexnova_audit').orderBy('ts', 'desc').limit(150).get();
+    fbCompter('read', snap.size || 0);   // une requête facture autant de lectures que de documents renvoyés
     if(snap.empty){ container.innerHTML = '<div class="empty">Aucune activité enregistrée pour l\'instant.</div>'; return; }
     let html = '<table><thead><tr><th>Date/heure</th><th>Acteur</th><th>Action</th><th>Détail</th></tr></thead><tbody>';
     snap.forEach(doc=>{
@@ -12587,6 +12733,7 @@ function subscribeProdPulse(){
   if(!firebaseReady || !db) return;
   if(prodPulseUnsub) return; // déjà branché : un seul abonnement suffit pour toute la session
   prodPulseUnsub = db.collection('vortexnova').doc(PROD_PULSE_KEY).onSnapshot(async doc=>{
+    fbCompter('read');
     if(!doc.exists) return;
     let payload = null;
     try{ payload = JSON.parse(doc.data().value); }catch(e){ return; }
@@ -12615,6 +12762,7 @@ function subscribeProdBoard(dateStr){
   subscribeProdPulse(); // volontairement JAMAIS coupé ensuite : un seul document minuscule, et ça permet
                         // à l'écran admin d'être prévenu lui aussi sans abonnement supplémentaire.
   prodBoardUnsub = db.collection('vortexnova').doc(prodBoardKey(dateStr)).onSnapshot(doc=>{
+    fbCompter('read');
     if(doc.exists && doc.data().value){
       try{ prodBoardCache[dateStr] = JSON.parse(doc.data().value); }catch(e){}
     }
@@ -18730,6 +18878,7 @@ async function syncBackofficeInbox(opts){
     if(db){
       try{
         const snap = await db.collection(BACKOFFICE_COLLECTION).limit(500).get();
+        fbCompter('read', snap.size || 0);
         snap.forEach(doc=>{
           if(ingest(doc.data() || {}, doc.id)) processedDocs.push(doc.ref);
         });
@@ -18885,6 +19034,7 @@ async function renderBackofficeInboxPanel(lastResult){
   if(firebaseReady && db){
     try{
       const snap = await db.collection(BACKOFFICE_COLLECTION).limit(50).get();
+      fbCompter('read', snap.size || 0);
       pending += snap.size; pendingKnown = true;
     }catch(e){}
   }
@@ -21023,6 +21173,7 @@ async function saveReturnCostPerAgent(){
 // des scripts Firebase (voir <head> et le bloc "PERF" juste avant l'init Firebase, plus haut).
 async function bootApp(){
   await firebaseAuthReady;
+  fbUsageCharger(true);   // compteur de consommation Firebase : reprend là où il en était aujourd'hui
   loadConfig();
   updateSyncIndicator();
   applyPrivacyMode();
@@ -21051,6 +21202,7 @@ let assistList = [];
 let assistMyRequestId = null;
 let assistShownId = null;
 let assistSeenAnnounced = {};
+let assistDoneAnnounced = {};
 let assistBtnResetTimer = null;
 
 // ── Le chant des grillons ──────────────────────────────────────────────────
@@ -21327,6 +21479,7 @@ function subscribeAssistPresence(){
   if(!firebaseReady || !db) return;
   if(presenceUnsub) return;
   presenceUnsub = db.collection('vortexnova').doc(PRESENCE_KEY).onSnapshot(doc=>{
+    fbCompter('read');
     try{ presenceMap = (doc.exists && doc.data().value) ? (JSON.parse(doc.data().value) || {}) : {}; }
     catch(e){ presenceMap = {}; }
     assistRenderPresenceBox();
@@ -21415,8 +21568,18 @@ async function assistanceJeSuisRevenu(){
   assistRenderPresenceBox();
   assistRenderReturnBanner();
   const moi = assistanceWhoAmI();
+
+  // ⚠️ BUG CORRIGÉ — la demande restait "active" chez l'agent qui avait appelé, même une fois
+  // l'assistance terminée : elle traînait dans la liste partagée jusqu'à la purge des 2 heures, et son
+  // bouton restait vert « Untel arrive » indéfiniment. Revenir à son poste, c'est précisément le signal
+  // que l'intervention est finie : on clôture donc la demande ici, et elle disparaît de l'écran de
+  // l'agent dans la seconde. L'historique, lui, a déjà été écrit au moment de la prise en charge.
+  if(enCours && enCours.reqId){
+    await assistMutate(l => l.filter(r => r.id !== enCours.reqId));
+  }
+
   if(enCours && moi) logAudit(moi, 'Assistance terminée — retour au poste', enCours.agent || '');
-  showToast('✅ Te voilà de nouveau disponible pour les demandes d\'assistance.', 'ok', 4000);
+  showToast('✅ Assistance terminée. Te voilà de nouveau disponible.', 'ok', 4000);
   assistProcess();
 }
 
@@ -21486,9 +21649,19 @@ function assistanceAmITarget(){ return assistanceAmITargetFor(null); }
 function assistParse(raw){
   try{ const o = JSON.parse(raw); return Array.isArray(o.list) ? o.list : []; }catch(e){ return []; }
 }
+// Une demande PRISE EN CHARGE n'a plus de raison de vivre longtemps : elle est déjà dans l'historique,
+// et tant qu'elle traîne dans la liste partagée elle continue de peser sur l'écran de l'agent. Elle
+// disparaît normalement quand l'assistant clique « Je suis de retour » ; ce filet la retire de toute
+// façon 10 minutes après la prise en charge, au cas où le clic serait oublié.
+const ASSIST_SEEN_TTL_MS = 10 * 60 * 1000;
 function assistPurge(list){
   const limite = Date.now() - ASSIST_TTL_MS;
-  return (list || []).filter(r => r && r.at && r.at > limite);
+  const limiteVue = Date.now() - ASSIST_SEEN_TTL_MS;
+  return (list || []).filter(r => {
+    if(!r || !r.at || r.at <= limite) return false;
+    if(r.status === 'seen' && (r.seenAt || r.at) <= limiteVue) return false;
+    return true;
+  });
 }
 async function assistSave(list){
   await storageSet(ASSIST_KEY, JSON.stringify({ list: assistPurge(list) }));
@@ -21569,6 +21742,11 @@ function assistRenderButton(){
 }
 
 
+
+// Le bouton de l'agent change d'état avec le TEMPS, pas seulement à l'arrivée d'un message : la mention
+// « Untel arrive » ne doit rester affichée que 25 secondes. Sans ce petit battement, elle restait figée
+// en vert tant qu'aucun autre événement ne survenait — l'agent croyait sa demande encore active.
+setInterval(()=>{ try{ assistRenderButton(); }catch(e){} }, 5000);
 
 // Une seule formule pour la file d'attente : elle était écrite à deux endroits, avec deux calculs de
 // pluriel différents — le genre de doublon qui finit toujours par diverger.
@@ -21726,6 +21904,16 @@ function assistProcess(){
       assistChime();
       showToast('✅ ' + (r.seenBy || 'Ton superviseur') + ' a vu ta demande — il arrive.', 'ok', 9000);
     });
+    // …et est-ce qu'elle vient de se CLÔTURER ? (l'assistant a cliqué « Je suis de retour »)
+    // Sans ce bloc, l'agent voyait sa demande s'effacer sans savoir pourquoi.
+    if(assistMyRequestId && !assistList.some(r => r.id === assistMyRequestId)){
+      const idClos = assistMyRequestId;
+      assistMyRequestId = null;
+      if(!assistDoneAnnounced[idClos]){
+        assistDoneAnnounced[idClos] = true;
+        showToast('✅ Ton assistance est terminée. Bon courage pour la suite !', 'ok', 6000);
+      }
+    }
   }
 
   // 2. Côté assistant : y a-t-il un appel QUI ME CONCERNE à traiter ?
@@ -21754,11 +21942,145 @@ function subscribeAssistance(){
   if(!firebaseReady || !db) return;
   if(assistUnsub) return;
   assistUnsub = db.collection('vortexnova').doc(ASSIST_KEY).onSnapshot(doc=>{
+    fbCompter('read');
     assistList = assistPurge(doc.exists && doc.data().value ? assistParse(doc.data().value) : []);
     assistProcess();
   }, err=> console.error('assistance listener:', err));
 }
 
+
+// Rafraîchi tout seul quand le panneau est à l'écran — sinon les chiffres semblent figés alors que la
+// consommation, elle, continue de monter. Ne fait rien du tout si les Réglages ne sont pas ouverts.
+// Le panneau lit maintenant les compteurs de tous les postes : on l'espace à 60 s (au lieu de 15) pour
+// que l'outil de mesure ne devienne pas lui-même un poste lourd, et on ne relance jamais un rendu si le
+// précédent n'est pas terminé.
+let fbUsagePanelBusy = false;
+setInterval(async ()=>{
+  try{
+    const el = document.getElementById('firebaseUsagePanel');
+    if(!el || el.offsetParent === null || fbUsagePanelBusy) return;
+    fbUsagePanelBusy = true;
+    try{ await renderFirebaseUsagePanel(); } finally { fbUsagePanelBusy = false; }
+  }catch(e){ fbUsagePanelBusy = false; }
+}, 60000);
+
+// ── Le compteur, en clair ──────────────────────────────────────────────────
+// Trois chiffres suffisent à décider : ce qui a été consommé aujourd'hui, à quelle vitesse ça monte,
+// et ce que ça ferait sur un mois. Le reste n'est que décor.
+async function renderFirebaseUsagePanel(){
+  const el = document.getElementById('firebaseUsagePanel');
+  if(!el) return;
+  fbUsageCharger();
+  await fbUsagePublier(true);              // mon propre compteur d'abord, pour ne pas m'oublier du total
+  let postes = await fbUsageLireEquipe();
+
+  // Mon propre poste est toujours réinjecté avec ses valeurs EN DIRECT, par-dessus la version publiée.
+  // Deux raisons : la publication date au maximum de quelques secondes mais le compteur, lui, bouge en
+  // permanence ; et si la base n'est pas encore jointe (démarrage, coupure réseau), la lecture d'équipe
+  // ne renvoie rien alors que ce poste a bel et bien consommé.
+  if(postes !== null){
+    const moiId = fbPosteId();
+    postes = postes.filter(x => x.poste !== moiId).concat([{
+      poste: moiId,
+      agent: (typeof assistanceWhoAmI === 'function' ? assistanceWhoAmI() : null) || null,
+      admin: document.getElementById('adminPanel')?.style.display === 'block',
+      jour: fbUsage.jour, reads: fbUsage.reads, writes: fbUsage.writes, deletes: fbUsage.deletes,
+      debut: fbUsage.debut, at: Date.now()
+    }]);
+  }
+
+  const fmt = (n)=> Math.round(n).toLocaleString('fr-FR');
+  const dollars = (n)=> (n > 0 && n < 0.01 ? 'moins de 0,01 $' : n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $');
+  const cout = (n, gratuit, prix)=> Math.max(0, n - gratuit) / 100000 * prix;
+
+  if(postes === null){
+    el.innerHTML = `<div class="empty">⚠️ Impossible de lire les compteurs des autres postes (connexion ?). Ce poste seul : <b>${fmt(fbUsage.reads)}</b> lectures et <b>${fmt(fbUsage.writes)}</b> écritures aujourd'hui.</div>`;
+    return;
+  }
+
+  // Totaux d'équipe. Le quota gratuit est journalier et GLOBAL au projet : c'est le total qui compte,
+  // jamais le chiffre d'un poste isolé.
+  const totalR = postes.reduce((s,p)=> s + (p.reads||0), 0);
+  const totalW = postes.reduce((s,p)=> s + (p.writes||0), 0);
+  const totalD = postes.reduce((s,p)=> s + (p.deletes||0), 0);
+
+  // Rythme d'équipe : somme des rythmes de chaque poste encore actif aujourd'hui.
+  const rythmeEquipe = postes.reduce((s,p)=>{
+    const h = Math.max(0.05, ((p.at || Date.now()) - (p.debut || Date.now())) / 3600000);
+    return s + (p.reads || 0) / h;
+  }, 0);
+
+  const pctQuota = Math.round((totalR / FB_USAGE_GRATUIT.read) * 100);
+  const couleurQuota = pctQuota >= 100 ? 'var(--red)' : (pctQuota >= 70 ? 'var(--amber)' : 'var(--green)');
+  const pctW = Math.round((totalW / FB_USAGE_GRATUIT.write) * 100);
+
+  // Coût mensuel : on projette la journée en cours sur 22 jours ouvrés, quota gratuit déduit chaque jour.
+  const coutJour = cout(totalR, FB_USAGE_GRATUIT.read, FB_USAGE_PRIX.read)
+                 + cout(totalW, FB_USAGE_GRATUIT.write, FB_USAGE_PRIX.write)
+                 + cout(totalD, FB_USAGE_GRATUIT.del, FB_USAGE_PRIX.del);
+  const coutMois = coutJour * 22;
+
+  const tuile = (label, valeur, sous, couleur)=> `
+    <div style="flex:1; min-width:190px; padding:15px 17px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700;">${label}</div>
+      <div style="font-size:26px; font-weight:900; margin-top:5px; color:${couleur || 'var(--text)'}; font-variant-numeric:tabular-nums;">${valeur}</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px; line-height:1.35;">${sous}</div>
+    </div>`;
+
+  // Combien de temps avant que TOUTE L'ÉQUIPE tape le plafond ?
+  const restant = FB_USAGE_GRATUIT.read - totalR;
+  let alerte;
+  if(restant <= 0){
+    alerte = `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.45); font-size:13px; color:var(--red); font-weight:700;">🚨 Le quota gratuit du jour est dépassé pour toute l'équipe. En forfait Spark, la base a cessé de répondre — c'est ce qui donne l'impression que le CRM « se fige ». Elle repartira vers 8h-9h demain matin. En forfait Blaze, tout continue normalement et c'est simplement facturé (voir le coût estimé).</div>`;
+  } else if(rythmeEquipe > 0){
+    const h = restant / rythmeEquipe;
+    alerte = h < 8
+      ? `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:rgba(229,168,61,0.12); border:1px solid rgba(229,168,61,0.45); font-size:13px; color:var(--amber); font-weight:700;">⚠️ Au rythme actuel de l'équipe, le plafond gratuit sera atteint dans environ ${h < 1 ? Math.round(h*60)+' minutes' : Math.round(h)+' heures'}. Ferme les écrans inutilisés, ou passe en forfait Blaze.</div>`
+      : `<div style="margin-top:12px; font-size:12.5px; color:var(--green); font-weight:700;">✅ Au rythme actuel, l'équipe tient la journée dans le quota gratuit.</div>`;
+  } else {
+    alerte = '<div style="margin-top:12px; font-size:12.5px; color:var(--muted);">Laisse les postes ouverts quelques minutes pour que le rythme se stabilise.</div>';
+  }
+
+  // Détail poste par poste — c'est là qu'on voit lequel consomme le plus, et donc lequel fermer.
+  const tries = postes.slice().sort((a,b)=> (b.reads||0) - (a.reads||0));
+  const moi = fbPosteId();
+  const lignes = tries.map(pp=>{
+    const inactifDepuis = Math.round((Date.now() - (pp.at || 0)) / 60000);
+    const actif = inactifDepuis < 12;
+    const qui = pp.admin ? '🛠️ Panneau Admin' : (pp.agent ? escapeHtml(pp.agent) : 'Poste sans nom sélectionné');
+    const part = totalR > 0 ? Math.round(((pp.reads||0) / totalR) * 100) : 0;
+    return `<tr${pp.poste === moi ? ' style="background:rgba(61,139,253,0.08);"' : ''}>
+      <td><b>${qui}</b>${pp.poste === moi ? ' <span class="tag ok" style="background:rgba(61,139,253,0.18);color:var(--accent);">ce poste</span>' : ''}</td>
+      <td style="font-variant-numeric:tabular-nums;"><b>${fmt(pp.reads||0)}</b> <span style="color:var(--muted);font-size:12px;">(${part}%)</span></td>
+      <td style="font-variant-numeric:tabular-nums; color:var(--muted);">${fmt(pp.writes||0)}</td>
+      <td style="color:${actif ? 'var(--green)' : 'var(--muted)'}; font-size:12.5px;">${actif ? 'actif' : (inactifDepuis > 600 ? 'fermé' : 'inactif depuis ' + inactifDepuis + ' min')}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      ${tuile('Lectures — TOUTE L\'ÉQUIPE', fmt(totalR), `${pctQuota}% du quota gratuit quotidien (50 000)`, couleurQuota)}
+      ${tuile('Écritures — équipe', fmt(totalW), `${pctW}% du quota (20 000)`, totalW >= FB_USAGE_GRATUIT.write ? 'var(--red)' : 'var(--text)')}
+      ${tuile('Rythme de l\'équipe', fmt(rythmeEquipe) + ' /h', `${postes.length} poste${postes.length>1?'s':''} recensé${postes.length>1?'s':''} aujourd\'hui`, 'var(--accent)')}
+      ${tuile('Coût estimé', dollars(coutMois) + ' /mois', 'toute l\'équipe, sur 22 jours ouvrés, en forfait Blaze', coutMois > 10 ? 'var(--amber)' : 'var(--green)')}
+    </div>
+    ${alerte}
+
+    <div style="overflow-x:auto; margin-top:16px;">
+      <div style="font-size:12.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px;">Qui consomme quoi, aujourd'hui</div>
+      <table class="salary-table">
+        <thead><tr><th>Poste</th><th>Lectures</th><th>Écritures</th><th>État</th></tr></thead>
+        <tbody>${lignes || '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:14px;">Aucun autre poste n\'a encore publié son compteur aujourd\'hui.</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <div class="section-sub" style="margin-top:14px;">
+      📐 Chaque poste publie son compteur toutes les 5 minutes et en quittant la page — un poste éteint depuis longtemps reste affiché avec son total de la journée, c'est normal, il a bien consommé. Tarif : 0,03 $ par tranche de 100 000 lectures, 0,09 $ pour les écritures, quota gratuit déduit chaque jour.
+    </div>
+    <div class="section-sub" style="margin-top:8px;">
+      ⚠️ Le chiffre qui fait foi reste celui de la console Firebase (Firestore → Utilisation). Celui-ci sert à comparer avant/après un réglage et à repérer quel écran coûte le plus cher.
+    </div>`;
+}
 
 // ── Réglage : qui peut assister, et qui est disponible ─────────────────────
 // Vue admin en direct : elle sert surtout à repérer le cas gênant — un seul assistant agréé, donc
