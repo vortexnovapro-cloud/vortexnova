@@ -2453,7 +2453,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-24-r128';
+const APP_VERSION = '2026-08-24-r129';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -7573,7 +7573,7 @@ const TEAM_PCT_MESSAGES_PUSH = [
   ]},
   { min: -1, msgs: [
     "🐢 Ça démarre... doucement. Très doucement.",
-    "⏰ Le temps tourne, l'objectif du jour aussi.",
+    "⏰ Le temps passe vite — l'objectif du jour ne s'atteindra pas tout seul.",
     "🚨 Il va falloir se réveiller si on veut viser l'objectif aujourd'hui.",
     "🌱 Pas encore ça, mais la journée est loin d'être finie."
   ]}
@@ -7583,31 +7583,56 @@ const TEAM_PCT_MESSAGES_BILAN = [
     "🏆 Bilan du jour : objectif explosé, journée exceptionnelle. Gardez ce rythme demain.",
     "👑 Journée bouclée : objectif largement écrasé, franchement impressionnant.",
     "🎉 Bilan : très largement au-dessus, l'équipe a été excellente aujourd'hui.",
-    "🚀 Fin de journée en beauté, objectif très largement dépassé. Bravo."
+    "🚀 Fin de journée en beauté, objectif très largement dépassé. Bravo.",
+    "🥂 Journée hors norme. Prenez deux minutes demain matin pour dire ce qui a marché.",
+    "💎 Objectif pulvérisé — ce genre de journée mérite d'être nommée devant tout le monde.",
+    "📈 Très au-dessus de l'objectif. À ce niveau, c'est le mois entier qui change de visage.",
+    "🔥 Journée de référence. Notez-la, elle servira de repère."
   ]},
   { min: 100, msgs: [
     "🏆 Bilan du jour : objectif atteint, mission accomplie.",
     "✅ Journée réussie, l'objectif est coché. Bravo à l'équipe.",
     "💯 Bilan positif : objectif tenu du début à la fin.",
-    "🥇 Journée solide, objectif atteint sans trembler."
+    "🥇 Journée solide, objectif atteint sans trembler.",
+    "👏 Objectif rempli. C'est exactement ce qu'on attend d'une journée normale — bien joué.",
+    "📗 Journée dans les clous. Rien à corriger, tout à reproduire.",
+    "🎯 Objectif du jour atteint. Demain, la même chose suffira.",
+    "✔️ Bilan propre : l'équipe a fait le travail."
   ]},
   { min: 70, msgs: [
+    // ⚠️ « On vise plus tôt demain ? » a été retiré : personne ne comprenait ce que ça voulait dire.
+    // ⚠️ ET SURTOUT : aucune phrase de cette appli ne doit suggérer d'appeler plus tôt ou plus tard que
+    // les horaires légaux de démarchage. Les créneaux d'appel sont encadrés par la loi, et ce n'est pas
+    // négociable, quel que soit le chiffre. Quand on parle de temps ici, on parle uniquement de mieux
+    // utiliser les heures autorisées : être prêt à l'ouverture, réduire les temps morts entre deux appels.
     "📋 Bilan : journée honorable, il manquait juste quelques contrats pour un sans-faute. À rattraper demain.",
-    "⚠️ Presque là — l'objectif était à portée, dommage de s'arrêter si près. On vise plus tôt demain ?",
-    "📊 Bonne journée dans l'ensemble, encore un petit effort pour viser pile l'objectif la prochaine fois.",
-    "🔎 Bilan correct, mais l'objectif méritait d'être franchi. À voir ce qui a manqué en fin de journée."
+    "⚠️ Presque là — l'objectif était à portée. Demain, soyez tous prêts à décrocher dès l'ouverture.",
+    "📊 Bonne journée dans l'ensemble. Encore quelques contrats et l'objectif était franchi.",
+    "🔎 Bilan correct, mais l'objectif méritait d'être atteint. Regardez ce qui a manqué en fin de journée.",
+    "⏱️ Objectif frôlé. Cherchez les temps morts de la journée : c'est souvent là que se perdent les contrats.",
+    "📌 Journée solide sans être complète. Un contrat de plus par personne et c'était plié.",
+    "🎯 Tout près du but. Repérez le moment de la journée où le rythme est retombé.",
+    "💬 Objectif manqué de peu — ça vaut un point rapide en équipe pour comprendre pourquoi."
   ]},
   { min: 40, msgs: [
     "📋 Bilan mitigé aujourd'hui — à mi-chemin, il faut identifier ce qui a ralenti l'équipe.",
     "⚠️ Journée en dessous du rythme attendu. À corriger dès demain matin.",
     "🔧 Bilan : peut clairement mieux faire. Un point rapide avec l'équipe serait utile.",
-    "📉 Objectif loin d'être atteint aujourd'hui — le prochain jour doit être plus solide."
+    "📉 Objectif loin d'être atteint aujourd'hui — le prochain jour doit être plus solide.",
+    "🕵️ La moitié du chemin seulement. Comparez avec une bonne journée : qu'est-ce qui a changé ?",
+    "📞 Résultat faible. Regardez d'abord le nombre d'appels passés avant de parler de technique.",
+    "🧭 Journée sans rythme. Demain, fixez un premier objectif à atteindre avant midi.",
+    "⚠️ En dessous de la moitié de l'objectif — ça ne peut pas devenir l'habitude."
   ]},
   { min: -1, msgs: [
     "🚨 Bilan alarmant : la journée n'a pas du tout suivi l'objectif fixé. À corriger sans attendre.",
     "⛔ Journée très en dessous des attentes — un vrai point s'impose avec l'équipe.",
     "📉 Objectif loin d'être atteint, une journée à ne pas reproduire demain.",
-    "🔴 Bilan préoccupant aujourd'hui. Mieux vaut comprendre ce qui a bloqué avant que ça se reproduise."
+    "🔴 Bilan préoccupant aujourd'hui. Mieux vaut comprendre ce qui a bloqué avant que ça se reproduise.",
+    "🛑 Journée quasiment blanche pour l'équipe. Cherchez une cause commune : fichier, outil, absence.",
+    "❗ Résultat très faible. Demain matin, remettez tout le monde d'accord sur l'objectif avant le premier appel.",
+    "🧯 Journée à oublier, mais pas à ignorer : identifiez UNE chose à changer dès demain.",
+    "📛 L'objectif n'a pas été approché. Un débriefing s'impose avant la fin de la journée."
   ]}
 ];
 function pickTeamPctMessage(pct, seed, isBilan){
