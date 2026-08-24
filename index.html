@@ -2186,17 +2186,6 @@ function tryDeviceGateAdmin(){
       <div class="admin-subview" id="admin-settings">
 
         <div class="settings-box">
-          <label>📊 Consommation Firebase — ce que coûte l'appli</label>
-          <div class="section-sub">Firebase facture à l'opération : chaque document lu, écrit ou supprimé. Le forfait gratuit s'arrête net à 50 000 lectures par jour — au-delà, la base ne répond plus jusqu'au lendemain (heure du Pacifique, soit vers 8h-9h du matin chez toi). Ce quota est <b>global au projet</b> : ce qui compte, c'est le total de tous les postes ouverts, pas le chiffre d'un écran isolé.</div>
-          <div class="section-sub" style="margin-top:6px;">👥 Chaque poste publie son compteur ici toutes les 5 minutes. Le tableau te montre <b>qui consomme quoi</b> — c'est ce qui te dira quel écran fermer si tu approches du plafond.</div>
-          <div id="firebaseUsagePanel" style="margin-top:14px;"></div>
-          <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-            <button onclick="renderFirebaseUsagePanel()" style="padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🔄 Actualiser le compteur</button>
-            <button onclick="fbUsageRAZ()" style="padding:8px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;" title="Repart de zéro pour mesurer l'effet d'un réglage. N'efface rien côté Firebase — c'est juste ce compteur local.">↩️ Remettre à zéro</button>
-          </div>
-        </div>
-
-        <div class="settings-box">
           <label>🆘 Bouton d'assistance</label>
           <div class="section-sub">Chaque agent a en permanence un bouton rouge <b>Assistance</b> en bas de son écran. Un clic déclenche une alarme — un chant de grillons qui monte progressivement et ne s'arrête que lorsque quelqu'un confirme. L'agent est alors prévenu de qui arrive.</div>
           <div class="section-sub" style="margin-top:8px;">📡 <b>L'appel part en cascade.</b> D'abord le superviseur choisi ci-dessous, <b>s'il est réellement disponible</b>. S'il est en pause, en ADF, en écoute, déjà parti dépanner quelqu'un, ou s'il s'est déclaré indisponible, l'alerte bascule automatiquement chez les <b>assistants agréés disponibles</b> (bouton 🤝 sur la fiche de chaque agent, plus bas dans Agents). Et si vraiment personne n'est disponible, tout le monde est alerté quand même — un appel à l'aide sans réponse est toujours le pire scénario.</div>
@@ -2464,7 +2453,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-23-r124';
+const APP_VERSION = '2026-08-24-r128';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3073,167 +3062,6 @@ const STORAGE_GET_TTL_MS = 3000;
 function storageForget(key){ _getRecent.delete(key); }
 function storageForgetAll(){ _getRecent.clear(); }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 📊 COMPTEUR DE CONSOMMATION FIREBASE
-// ═══════════════════════════════════════════════════════════════════════════
-// Firestore facture à l'opération : chaque document lu, écrit ou supprimé. Le forfait gratuit (Spark)
-// s'arrête net à 50 000 lectures, 20 000 écritures et 20 000 suppressions par jour — la base cesse
-// alors de répondre jusqu'au lendemain. Au-delà (forfait Blaze), c'est facturé au compteur.
-//
-// Le problème : ces chiffres ne se voient nulle part depuis l'appli, il faut aller les chercher dans la
-// console Google. On les compte donc ici, à la source, au moment exact où une opération part vraiment
-// sur le réseau — les lectures servies par la mémo ou par la déduplication ne sont PAS comptées,
-// puisqu'elles ne sont pas facturées non plus.
-//
-// ⚠️ Ce compteur ne connaît que CE poste. Le total facturé, c'est la somme de tous les postes ouverts.
-// Le panneau l'affiche clairement et propose une estimation d'équipe.
-const FB_USAGE_PRIX = { read: 0.03, write: 0.09, del: 0.01 };   // $ par tranche de 100 000
-const FB_USAGE_GRATUIT = { read: 50000, write: 20000, del: 20000 };  // par jour, forfait Spark
-let fbUsage = { jour: '', reads: 0, writes: 0, deletes: 0, debut: Date.now() };
-
-function fbUsageCle(){ return 'vn_fbUsage'; }
-// `force` n'est vrai qu'au tout premier appel, au démarrage. Ensuite, cette fonction ne fait plus que
-// détecter le passage à un nouveau jour : sans cette précaution, chaque affichage du panneau relisait
-// le stockage et écrasait les opérations comptées depuis la dernière sauvegarde (différée de 1,5 s) —
-// le compteur semblait alors retomber tout seul.
-function fbUsageCharger(force){
-  const aujourdhui = todayStr();
-  if(!force && fbUsage.jour === aujourdhui) return;   // déjà à jour en mémoire, rien à relire
-  if(force){
-    try{
-      const brut = JSON.parse(localStorage.getItem(fbUsageCle()) || 'null');
-      if(brut && brut.jour === aujourdhui){ fbUsage = brut; return; }
-    }catch(e){}
-  }
-  // Nouveau jour (ou premier lancement) : on repart de zéro, comme le quota Firebase lui-même.
-  fbUsage = { jour: aujourdhui, reads: 0, writes: 0, deletes: 0, debut: Date.now() };
-  fbUsageEnregistrer();
-}
-let fbUsageSaveTimer = null;
-function fbUsageEnregistrer(){
-  // Écriture différée : sans ça, on écrirait dans localStorage des centaines de fois par seconde.
-  if(fbUsageSaveTimer) return;
-  fbUsageSaveTimer = setTimeout(()=>{
-    fbUsageSaveTimer = null;
-    try{ localStorage.setItem(fbUsageCle(), JSON.stringify(fbUsage)); }catch(e){}
-  }, 1500);
-}
-function fbCompter(type, combien){
-  if(!fbUsage.jour || fbUsage.jour !== todayStr()) fbUsageCharger();
-  const n = combien == null ? 1 : combien;
-  if(type === 'read') fbUsage.reads += n;
-  else if(type === 'write') fbUsage.writes += n;
-  else if(type === 'del') fbUsage.deletes += n;
-  fbUsageEnregistrer();
-}
-function fbUsageRAZ(){
-  fbUsage = { jour: todayStr(), reads: 0, writes: 0, deletes: 0, debut: Date.now() };
-  try{ localStorage.setItem(fbUsageCle(), JSON.stringify(fbUsage)); }catch(e){}
-  if(typeof renderFirebaseUsagePanel === 'function') renderFirebaseUsagePanel();
-}
-
-// ── Le compteur d'ÉQUIPE ───────────────────────────────────────────────────
-// Le compteur ci-dessus ne connaît que le poste où il tourne. Or ce qui est facturé, et ce qui fait
-// sauter le quota gratuit, c'est le TOTAL de tous les postes ouverts. Chaque poste publie donc son
-// compteur du jour dans son propre document, et le panneau Admin les additionne.
-//
-// Un document PAR POSTE et PAR JOUR (et non un document partagé) : chacun n'écrit que le sien, donc
-// aucune relecture préalable, aucun risque d'écrasement entre deux postes, et une écriture au lieu de
-// deux. Les documents de la veille sont ignorés et disparaissent d'eux-mêmes du calcul.
-//
-// Cadence : toutes les 5 minutes, et au moment où l'on quitte la page. Soit une centaine d'écritures
-// par poste et par jour — un demi-pour-cent du quota d'écritures gratuit, pour rendre visible ce qui
-// consomme le reste.
-const FB_USAGE_SYNC_MS = 5 * 60 * 1000;
-
-// ── Le rythme, mesuré sur une fenêtre GLISSANTE ────────────────────────────
-// ⚠️ BUG CORRIGÉ (2e passage). La première correction attendait 10 minutes avant d'annoncer un rythme,
-// mais le calcul restait « total des lectures ÷ temps depuis l'ouverture ». Or l'ouverture d'un écran
-// coûte à elle seule une grosse salve (≈ 1 500 lectures pour la Vue d'ensemble). Cette salve restait
-// dans la moyenne pour toujours : après 15 minutes, l'appli annonçait encore 8 900 lectures/heure là où
-// le régime réel tournait autour de 2 500.
-// On mesure donc désormais la PENTE sur les dernières minutes, pas la moyenne depuis le début : on
-// relève le compteur chaque minute, et le rythme est la différence entre maintenant et le relevé le
-// plus ancien de la fenêtre. La salve de démarrage sort d'elle-même de la fenêtre, et le chiffre
-// affiché correspond enfin à ce que l'appli consomme en fonctionnement normal.
-const FB_RYTHME_FENETRE_MS = 15 * 60 * 1000;   // on garde 15 minutes de relevés
-const FB_RYTHME_MINI_MS = 5 * 60 * 1000;       // ...et il en faut au moins 5 pour annoncer un chiffre
-let fbEchantillons = [];
-setInterval(()=>{
-  try{
-    fbEchantillons.push({ t: Date.now(), reads: fbUsage.reads, writes: fbUsage.writes });
-    const limite = Date.now() - FB_RYTHME_FENETRE_MS;
-    fbEchantillons = fbEchantillons.filter(e => e.t >= limite);
-  }catch(e){}
-}, 60000);
-
-// Lectures par heure sur la fenêtre glissante — null tant qu'on n'a pas 5 minutes de recul.
-function fbRythmeGlissant(){
-  if(fbEchantillons.length < 2) return null;
-  const plusVieux = fbEchantillons[0];
-  const dtMs = Date.now() - plusVieux.t;
-  if(dtMs < FB_RYTHME_MINI_MS) return null;
-  const delta = fbUsage.reads - plusVieux.reads;
-  return Math.max(0, delta / (dtMs / 3600000));
-}
-function fbPosteId(){
-  try{
-    let id = localStorage.getItem('vn_posteId');
-    if(!id){ id = 'p' + Math.random().toString(36).slice(2, 9); localStorage.setItem('vn_posteId', id); }
-    return id;
-  }catch(e){ return 'p-inconnu'; }
-}
-function fbUsageDocCle(jour, poste){ return `fbUsage:${jour || todayStr()}:${poste || fbPosteId()}`; }
-
-let fbUsageDernierePublication = 0;
-let fbUsageDerniereSignature = '';
-async function fbUsagePublier(force){
-  if(!firebaseReady || !db) return;
-  const sig = `${fbUsage.reads}|${fbUsage.writes}|${fbUsage.deletes}`;
-  if(!force){
-    if(sig === fbUsageDerniereSignature) return;
-    if(Date.now() - fbUsageDernierePublication < FB_USAGE_SYNC_MS) return;
-  }
-  fbUsageDernierePublication = Date.now();
-  fbUsageDerniereSignature = sig;
-  try{
-    await db.collection('vortexnova').doc(fbUsageDocCle()).set({ value: JSON.stringify({
-      poste: fbPosteId(),
-      agent: (typeof assistanceWhoAmI === 'function' ? assistanceWhoAmI() : null) || null,
-      admin: document.getElementById('adminPanel')?.style.display === 'block',
-      jour: fbUsage.jour, reads: fbUsage.reads, writes: fbUsage.writes, deletes: fbUsage.deletes,
-      debut: fbUsage.debut, at: Date.now(),
-      rythme: fbRythmeGlissant()   // null tant que la mesure n'a pas assez de recul
-    }) });
-    fbCompter('write');
-  }catch(e){ /* jamais bloquant : ce n'est qu'un compteur */ }
-}
-// Publication régulière, et une dernière fois quand l'onglet part en arrière-plan ou se ferme.
-setInterval(()=>{ try{ fbUsagePublier(); }catch(e){} }, 60000);
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ try{ fbUsagePublier(true); }catch(e){} } });
-window.addEventListener('pagehide', ()=>{ try{ fbUsagePublier(true); }catch(e){} });
-
-// Lecture de tous les postes du jour — une requête de plage sur l'identifiant des documents, donc un
-// seul aller-retour quel que soit le nombre de postes.
-async function fbUsageLireEquipe(){
-  if(!firebaseReady || !db) return [];
-  const prefixe = `fbUsage:${todayStr()}:`;
-  try{
-    const snap = await db.collection('vortexnova')
-      .orderBy(firebase.firestore.FieldPath.documentId())
-      .startAt(prefixe).endAt(prefixe + '\uf8ff').get();
-    fbCompter('read', snap.size || 0);
-    const postes = [];
-    snap.forEach(doc=>{
-      try{
-        const v = JSON.parse(doc.data().value);
-        if(v && v.jour === todayStr()) postes.push(v);
-      }catch(e){}
-    });
-    return postes;
-  }catch(e){ console.warn('fbUsageLireEquipe', e); return null; }
-}
-
 async function storageGet(key){
   if(!firebaseReady) return null;
   const memo = _getRecent.get(key);
@@ -3243,7 +3071,6 @@ async function storageGet(key){
   const p = (async ()=>{
     try{
       const doc = await db.collection('vortexnova').doc(key).get();
-      fbCompter('read');   // seule lecture réellement facturée : celles servies par la mémo ne le sont pas
       return doc.exists ? { key, value: doc.data().value } : null;
     }catch(e){ console.error('storageGet error:', e); return null; }
   })();
@@ -3468,7 +3295,6 @@ async function storageSet(key, value){
   pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).set({ value });
-    fbCompter('write');
     storageForget(key); // la mémo de lecture ne doit jamais servir une valeur qu'on vient de remplacer
     return { key, value };
   }catch(e){
@@ -3487,7 +3313,6 @@ async function storageDelete(key){
   pendingWriteCount++; updateSyncIndicator();
   try{
     await db.collection('vortexnova').doc(key).delete();
-    fbCompter('del');
     storageForget(key);
     return { key, deleted: true };
   }catch(e){
@@ -3511,7 +3336,6 @@ async function storageDelete(key){
 async function logAudit(actor, action, details){
   if(!firebaseReady || !db) return;
   try{
-    fbCompter('write');
     await db.collection('vortexnova_audit').add({
       ts: Date.now(),
       dateStr: todayStr(),
@@ -3560,7 +3384,6 @@ async function checkAppVersionStatus(){
 
   try{
     db.collection('vortexnova').doc('latestAppVersion').onSnapshot(doc=>{
-      fbCompter('read');   // une écoute temps réel facture chaque document qu'elle livre
       if(!doc.exists) return;
       renderAppVersionBanner(doc.data().value);
     });
@@ -4182,7 +4005,7 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
-  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderFirebaseUsagePanel(); }
+  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); }
 }
 
 // ============================================================
@@ -4209,7 +4032,6 @@ async function renderAuditLog(){
   container.innerHTML = '<div class="empty">⏳ Chargement…</div>';
   try{
     const snap = await db.collection('vortexnova_audit').orderBy('ts', 'desc').limit(150).get();
-    fbCompter('read', snap.size || 0);   // une requête facture autant de lectures que de documents renvoyés
     if(snap.empty){ container.innerHTML = '<div class="empty">Aucune activité enregistrée pour l\'instant.</div>'; return; }
     let html = '<table><thead><tr><th>Date/heure</th><th>Acteur</th><th>Action</th><th>Détail</th></tr></thead><tbody>';
     snap.forEach(doc=>{
@@ -4689,8 +4511,16 @@ async function addAgent(){
   config.agents.push(name);
   const isIndep = document.getElementById('newAgentIndep').checked;
   if(isIndep) config.agentsIndep[name] = true;
+  // ⚠️ BUG CORRIGÉ — un agent ajouté n'avait AUCUNE date d'arrivée tant que l'admin ne pensait pas à
+  // cliquer 📅 sur sa fiche. Or c'est cette date qui dit à l'appli qu'il est nouveau : sans elle, une
+  // recrue de son premier jour était jugée comme un vétéran — objectif mensuel plein, conseils du
+  // matin sans indulgence, chambrage dans l'Arena, prorata de salaire non appliqué. On la pose donc
+  // automatiquement à aujourd'hui, et l'admin la corrige d'un clic si la personne a commencé avant.
+  if(!config.agentsStartDate) config.agentsStartDate = {};
+  if(!config.agentsStartDate[name]) config.agentsStartDate[name] = todayStr();
   await saveConfigSilent();
-  logAudit('Admin', `Agent ajouté : ${name}`, isIndep ? 'indépendant' : 'équipe');
+  logAudit('Admin', `Agent ajouté : ${name}`, `${isIndep ? 'indépendant' : 'équipe'} — arrivée le ${config.agentsStartDate[name]}`);
+  showToast(`✅ ${name} ajouté, arrivée notée au ${todayStr().split('-').reverse().join('/')}. S'il a commencé avant, corrige la date avec le bouton 📅 sur sa fiche — elle sert au prorata de salaire et à l'indulgence des conseils.`, 'ok', 9000);
   input.value = '';
   document.getElementById('newAgentIndep').checked = false;
   renderAgentChips();
@@ -6497,7 +6327,35 @@ const SUPERVISOR_ACTION_MSGS = {
     "🏆 Belle journée : dis-lui précisément ce qu'il a bien fait, pas juste « bravo »."
   ]
 };
+const SUPERVISOR_RECRUE_MSGS = {
+  zero: [
+    "🌱 Nouveau — pas de pression, va plutôt l'accompagner sur un appel.",
+    "🌱 Il débute : écoute un de ses appels et donne-lui UN conseil, pas trois.",
+    "🌱 Recrue à 0 — normal à ce stade. Vérifie qu'il ose décrocher.",
+    "🌱 Il apprend encore. Mets-le en binôme une heure avec un confirmé.",
+    "🌱 Débutant sans contrat : demande-lui ce qui le bloque, ne suppose pas."
+  ],
+  low: [
+    "🌱 Nouveau et déjà lancé — félicite-le, ça compte double au début.",
+    "🌱 Il démarre bien pour une recrue. Dis-le lui explicitement.",
+    "🌱 Premiers contrats : valorise-les, la confiance se construit maintenant.",
+    "🌱 Bon départ pour un débutant — encourage sans en rajouter."
+  ],
+  bon: [
+    "🌱 Excellente entrée en matière pour un nouveau — fais-le savoir.",
+    "🌱 Une recrue à ce niveau, c'est remarquable. Félicite-le devant l'équipe.",
+    "🌱 Très bon démarrage. Demande-lui déjà ce qui marche chez lui.",
+    "🌱 Il dépasse ce qu'on attend d'un débutant — note-le pour le bilan."
+  ]
+};
 function supervisorActionComment(count, agentName){
+  // 🌱 Une recrue à 0 contrat n'est pas une alerte rouge : c'est un apprentissage en cours. Envoyer
+  // « 🚨 Agent à ZÉRO — va le voir maintenant » à un superviseur au sujet de quelqu'un arrivé la veille
+  // le pousse à une pression contre-productive.
+  if(agentName && estRecrue(agentName)){
+    const cle = count <= 0 ? 'zero' : (count <= 2 ? 'low' : 'bon');
+    return seedPick(SUPERVISOR_RECRUE_MSGS[cle], `${agentName}|suprec|${cle}|${count}|${todayStr()}`);
+  }
   let key;
   // ⚠️ COHÉRENCE — la description de la page promet « félicite en vert à partir de 3 », mais le conseil
   // ne passait en mode félicitation qu'à 5 : à 3 ou 4 contrats, le superviseur lisait « encourage-le à
@@ -6522,6 +6380,11 @@ const DAILY_BADGE_WORDS = {
 };
 function dailyProgressBadge(count, agentName){
   const mot = (key)=> seedPick(DAILY_BADGE_WORDS[key], `${agentName || ''}|badge|${key}|${count}|${todayStr()}`);
+  // 🌱 Une recrue à 0 n'est pas une alerte : pas de rouge, pas de clignotement. Le superviseur doit
+  // voir « en apprentissage », pas une urgence à traiter.
+  if(count <= 0 && agentName && estRecrue(agentName)){
+    return { txt: '🌱 débute', cls: 'warn', pulse: false, title: "Nouvel arrivant — aucun contrat aujourd'hui, ce qui est normal à ce stade" };
+  }
   if(count <= 0) return { txt: `🚨 ${mot('zero')}`, cls: 'late', pulse: true, title: 'Aucun contrat réalisé aujourd\'hui' };
   if(count <= 2) return { txt: `⚡ ${count} — ${mot('low')}`, cls: 'warn', pulse: false, title: `${count} contrat${count>1?'s':''} aujourd'hui — encore un effort` };
   if(count <= 4) return { txt: `🔥 ${count} — ${mot('mid')}`, cls: 'ok', pulse: false, title: `${count} contrats aujourd'hui — bon rythme` };
@@ -10289,6 +10152,63 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   const VIOLET = '#7d739e', VIOLET_BG = 'rgba(125,115,158,0.12)';
   const ROSE = '#a5698a', ROSE_BG = 'rgba(165,105,138,0.12)';
 
+  // 0) RECRUE — un discours entièrement à part, qui remplace tout le reste.
+  // Une personne arrivée il y a trois jours n'a rien à faire dans un classement d'équipe ni face à un
+  // objectif mensuel plein : ces deux repères ne mesurent chez elle que le temps qu'elle n'a pas eu.
+  // On lui parle de SA progression, et on célèbre franchement ses premiers contrats.
+  const palierAnc = agentPalierAnciennete(agentName, refDayForSeed);
+  if(palierAnc !== 'confirme'){
+    const jours = agentAncienneteJours(agentName, refDayForSeed);
+    const aSigne = monthlyRealized > 0;
+
+    if(palierAnc === 'jour1'){
+      lines.push(aSigne
+        ? mk('🌱', seedPick([
+            `Premier jour, et déjà ${ctr(monthlyRealized)} au compteur. Franchement, c'est un très beau début — dis-toi bien que beaucoup n'y arrivent pas.`,
+            `${ctr(monthlyRealized)} dès le premier jour. Tu viens de prouver que tu peux le faire : le reste, c'est de la répétition.`,
+            `Bravo — signer le jour de son arrivée, ce n'est pas banal. Retiens ce que tu as fait aujourd'hui, c'est ta méthode.`,
+            `Premier jour, premier résultat. Ne cherche pas à faire mieux demain : cherche à refaire pareil.`
+          ], seed+'|recrue-j1-ok'), SAGE, SAGE_BG)
+        : mk('🌱', seedPick([
+            `C'est ton premier jour : personne n'attend un chiffre de toi aujourd'hui. Écoute les appels autour de toi, pose des questions, prends tes marques.`,
+            `Bienvenue. Aujourd'hui, ton seul objectif c'est de comprendre comment ça se passe ici — pas de signer.`,
+            `Premier jour : concentre-toi sur le discours et sur les outils. Les contrats viendront quand tu seras à l'aise.`,
+            `Aucun objectif aujourd'hui, c'est normal. Repère la personne à qui tu pourras poser tes questions demain.`
+          ], seed+'|recrue-j1'), BLUE, BLUE_BG));
+      return lines;
+    }
+
+    if(palierAnc === 'semaine1'){
+      lines.push(aSigne
+        ? mk('🌱', seedPick([
+            `${ctr(monthlyRealized)} en ${jours+1} jours dans la boîte. Pour une première semaine, c'est du bon travail — continue à ce rythme.`,
+            `Tu as déjà ${ctr(monthlyRealized)} alors que tu apprends encore le métier ici. C'est très encourageant.`,
+            `Première semaine et le compteur est lancé (${monthlyRealized}). L'important maintenant, c'est la régularité, pas le volume.`,
+            `${ctr(monthlyRealized)} pour tes débuts — tu es dans le bon. Note ce qui a marché, tu t'en resserviras.`
+          ], seed+'|recrue-s1-ok'), SAGE, SAGE_BG)
+        : mk('🌱', seedPick([
+            `Première semaine : le compteur n'est pas encore lancé, et c'est normal à ce stade. Vise UN contrat, pas dix.`,
+            `Tu es en apprentissage cette semaine. Concentre-toi sur le nombre d'appels passés — les contrats suivent toujours le volume.`,
+            `Pas encore de contrat : personne ne t'en tiendra rigueur en première semaine. Demande à un collègue de te faire écouter un de ses appels.`,
+            `Début de parcours. Choisis une seule chose à améliorer aujourd'hui — l'accroche, par exemple — et travaille-la sur tous tes appels.`
+          ], seed+'|recrue-s1'), BLUE, BLUE_BG));
+      return lines;
+    }
+
+    // mois1 — on compare à lui-même, jamais à l'équipe, et on introduit doucement l'objectif.
+    const rythmeRecrue = daysElapsed > 0 ? (monthlyRealized / daysElapsed) : 0;
+    lines.push(mk('🌱', seedPick([
+      `${jours+1}ᵉ jour chez nous, ${ctr(monthlyRealized)} au total (${fmtNum(rythmeRecrue)}/jour en moyenne). Tu es encore en montée en compétence : compare-toi à ta semaine dernière, pas au reste de l'équipe.`,
+      `Tu es là depuis ${jours+1} jours et tu as ${ctr(monthlyRealized)}. Ce qui compte à ce stade, c'est que la courbe monte — pas le classement.`,
+      `Premier mois en cours (${jours+1}ᵉ jour, ${monthlyRealized} contrats). Continue à construire ta régularité, l'objectif complet viendra après.`,
+      `${monthlyRealized} contrats en ${jours+1} jours. Fixe-toi un petit défi personnel cette semaine plutôt que de viser l'objectif de l'équipe.`
+    ], seed+'|recrue-m1'), TEAL, TEAL_BG));
+    if(vise > 0 && monthlyRealized >= vise){
+      lines.push(mk('🚀', `Et tu as déjà dépassé l'objectif que tu t'étais fixé (${vise}) — chapeau pour un premier mois.`, SAGE, SAGE_BG));
+    }
+    return lines;
+  }
+
   // 1) Classement / rivalité — on s'adresse directement à l'agent ("tu"), jamais à la 3e personne, et on
   // nomme le rival juste devant pour piquer la compétition. Le 1er est vraiment félicité (mérité, pas
   // juste poli) ; les autres sont poussés à aller chercher celui/celle juste devant.
@@ -10560,6 +10480,34 @@ function lastNWorkingDaysBefore(dateStr, n){
 // début réglée dans Réglages → 📅). Sans date de début réglée, on ne peut pas savoir depuis quand il/elle
 // est là — on ne le traite alors PAS comme nouveau par défaut (comportement inchangé), l'admin doit
 // régler la date de début pour activer l'indulgence "nouveau".
+// ═══════════════════════════════════════════════════════════════════════════
+// 🌱 ANCIENNETÉ — on ne parle pas à une recrue comme à un vétéran
+// ═══════════════════════════════════════════════════════════════════════════
+// Quatre paliers, calculés sur la date d'arrivée (Réglages → 📅 sur la fiche de l'agent) :
+//   • jour1     : c'est son premier jour. Aucun chiffre n'est attendu de lui.
+//   • semaine1  : jours 1 à 6. On encourage, on ne compare jamais à l'équipe.
+//   • mois1     : jours 7 à 30. On le compare à LUI-MÊME, à sa propre progression.
+//   • confirme  : au-delà, ou date d'arrivée inconnue. Régime normal.
+// Sans ces paliers, un agent arrivé le matin lisait le soir « ton objectif minimum est en danger réel,
+// c'est ton salaire qui est en jeu » — pour un mois qu'il n'a pas travaillé.
+function agentAncienneteJours(agentName, refDateStr){
+  const start = getAgentStartDate(agentName);
+  if(!start) return null;
+  const ref = refDateStr || todayStr();
+  return Math.floor((new Date(ref+'T00:00:00') - new Date(start+'T00:00:00')) / 86400000);
+}
+function agentPalierAnciennete(agentName, refDateStr){
+  const j = agentAncienneteJours(agentName, refDateStr);
+  if(j == null || j < 0) return 'confirme';
+  if(j === 0) return 'jour1';
+  if(j <= 6) return 'semaine1';
+  if(j <= 30) return 'mois1';
+  return 'confirme';
+}
+function estRecrue(agentName, refDateStr){
+  return agentPalierAnciennete(agentName, refDateStr) !== 'confirme';
+}
+
 function isNewAgent(agentName, refDateStr){
   const start = getAgentStartDate(agentName);
   if(!start) return false;
@@ -10666,6 +10614,27 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   // d'équipe, objectif du mois déjà atteint — et la variation face à hier ne devient un reproche que
   // si la journée est réellement faible. Une baisse d'un contrat sur une grosse journée n'en est pas
   // une : c'est du bruit.
+  // 🌱 Le tout premier contrat d'une recrue mérite mieux qu'un « +1 par rapport à hier ». C'est le
+  // moment le plus important de son intégration : il vient de prouver qu'il peut le faire.
+  const palierDod = agentPalierAnciennete(agentName, refDateStr);
+  if(palierDod !== 'confirme' && todayRealized > 0){
+    const premierJamais = (c.monthlyRealized || 0) <= todayRealized;
+    if(premierJamais){
+      return { text: seedPick([
+        `🎉 Ton premier contrat ici ! C'est le plus dur, et tu viens de le faire. Rappelle-toi comment tu t'y es pris.`,
+        `🎉 Premier contrat signé — ça y est, tu es lancé. Beaucoup mettent plus longtemps que toi.`,
+        `🎉 Le premier est toujours le plus difficile : il est derrière toi. Fais-toi confiance pour la suite.`,
+        `🎉 Bravo pour ce premier contrat. Note ce qui a fonctionné, c'est le début de ta méthode à toi.`
+      ], `${agentName}|premier|${refDateStr || todayStr()}`), color: GOLD_DOD, bg: GOLD_DOD_BG, critical: false };
+    }
+    return { text: seedPick([
+      `${todayRealized} contrat${todayRealized>1?'s':''} aujourd'hui, et tu débutes tout juste ici. C'est très bien — continue comme ça.`,
+      `Belle journée pour quelqu'un qui apprend encore : ${todayRealized}. Ta progression compte plus que le classement.`,
+      `${todayRealized} aujourd'hui. Pour un début de parcours, c'est du solide.`,
+      `Tu construis ton rythme, et ça se voit (${todayRealized} aujourd'hui). Reste régulier.`
+    ], `${agentName}|recrue-jour|${refDateStr || todayStr()}`), color: SAGE, bg: SAGE_BG, critical: false };
+  }
+
   const diff = todayRealized - yesterdayRealized;
   const avg = c.teamAvgToday || 0;
   const best = c.bestToday || 0;
@@ -12765,7 +12734,6 @@ function subscribeProdPulse(){
   if(!firebaseReady || !db) return;
   if(prodPulseUnsub) return; // déjà branché : un seul abonnement suffit pour toute la session
   prodPulseUnsub = db.collection('vortexnova').doc(PROD_PULSE_KEY).onSnapshot(async doc=>{
-    fbCompter('read');
     if(!doc.exists) return;
     let payload = null;
     try{ payload = JSON.parse(doc.data().value); }catch(e){ return; }
@@ -12794,7 +12762,6 @@ function subscribeProdBoard(dateStr){
   subscribeProdPulse(); // volontairement JAMAIS coupé ensuite : un seul document minuscule, et ça permet
                         // à l'écran admin d'être prévenu lui aussi sans abonnement supplémentaire.
   prodBoardUnsub = db.collection('vortexnova').doc(prodBoardKey(dateStr)).onSnapshot(doc=>{
-    fbCompter('read');
     if(doc.exists && doc.data().value){
       try{ prodBoardCache[dateStr] = JSON.parse(doc.data().value); }catch(e){}
     }
@@ -13026,6 +12993,26 @@ const DEFAULT_ARENA_MSGS = {
     "👏 Objectif atteint — c'est exactement ce qu'on attend de toi.",
     "🔓 Objectif débloqué. À partir d'ici, tout est en plus."
   ],
+  // 🌱 Deux banques réservées aux recrues (moins d'un mois d'ancienneté) : ton encourageant, jamais de
+  // comparaison au reste de l'équipe, jamais de vanne.
+  recrue: [
+    "🌱 Tu débutes et le compteur tourne déjà — continue comme ça.",
+    "🌱 Belle progression pour un début. Reste régulier, c'est ça qui paie.",
+    "🌱 Chaque contrat compte double quand on apprend : bien joué.",
+    "🌱 Tu prends tes marques et ça se voit dans les chiffres.",
+    "🌱 Bon rythme pour quelqu'un qui découvre encore le métier ici.",
+    "🌱 Tu es sur la bonne voie — ne te compare à personne, compare-toi à hier.",
+    "🌱 Ça avance. La régularité maintenant, le volume viendra tout seul.",
+    "🌱 Pour un début de parcours, c'est du solide."
+  ],
+  recrueZero: [
+    "🌱 Pas encore de contrat aujourd'hui — normal quand on débute. Enchaîne les appels.",
+    "🌱 Tu apprends : vise UN contrat aujourd'hui, pas plus.",
+    "🌱 Le compteur est à zéro, mais tu découvres encore. Demande de l'aide, c'est fait pour.",
+    "🌱 Rien pour l'instant. Fais-toi écouter par un collègue, ça débloque souvent tout.",
+    "🌱 Pas de pression aujourd'hui : concentre-toi sur le nombre d'appels passés.",
+    "🌱 Le premier contrat est le plus dur. Il arrivera — continue de décrocher."
+  ],
   zeroDay: [
     "🚨 Toujours 0 aujourd'hui. Le prochain appel est le bon.",
     "📞 Zéro au compteur — ça ne se débloque qu'en décrochant.",
@@ -13188,12 +13175,19 @@ function getArenaMessage(row, rankings){
   // recevait « 🎯 Objectif à portée — ne lâche rien ! » sous un badge rouge clignotant.
   // On aligne donc sur exactement les mêmes seuils que dailyProgressBadge : 0 = rouge, 1-2 = à pousser,
   // 3 et plus = bonne journée, et on ne chambre JAMAIS quelqu'un qui a déjà 3 contrats dans la journée.
-  const chambrageAutorise = row.realized <= 2 && (row.objective <= 0 || row.realized < row.objective);
+  // 🌱 On ne chambre jamais quelqu'un qui vient d'arriver : « Le paresseux du zoo bosse plus vite que
+  // ça » adressé à une recrue de son deuxième jour, c'est le meilleur moyen de la perdre.
+  const estNouveau = estRecrue(row.agent);
+  const chambrageAutorise = !estNouveau && row.realized <= 2 && (row.objective <= 0 || row.realized < row.objective);
   if(row.rank === 1 && row.realized > 0) return { text: pickRandomNoRepeat('top', getArenaMsgs('top')), cls: 'gold' };
   if(row.pct >= 100 && row.objective > 0) return { text: pickRandomNoRepeat('objAtteint', getArenaMsgs('objAtteint')), cls: 'encourage' };
   if(row.rank <= 3 && row.pct >= 80) return { text: pickRandomNoRepeat('top3', getArenaMsgs('top3')), cls: 'gold' };
   if((row.isIndep || row.noObjectif) && row.realized > 0) return { text: pickRandomNoRepeat('indep', getArenaMsgs('indep')), cls: 'encourage' };
-  if(row.realized <= 0) return { text: pickRandomNoRepeat('zeroDay', getArenaMsgs('zeroDay')), cls: 'roast' };
+  if(row.realized <= 0){
+    if(estNouveau) return { text: pickRandomNoRepeat('recrueZero', getArenaMsgs('recrueZero')), cls: 'encourage' };
+    return { text: pickRandomNoRepeat('zeroDay', getArenaMsgs('zeroDay')), cls: 'roast' };
+  }
+  if(estNouveau) return { text: pickRandomNoRepeat('recrue', getArenaMsgs('recrue')), cls: 'encourage' };
   if(row.rank === total && total > 2 && chambrageAutorise){
     let msg = pickRandomNoRepeat('roast', getArenaMsgs('roast'));
     msg = msg.replace('{first}', first.agent).replace('{real}', first.realized);
@@ -14873,7 +14867,12 @@ async function renderSupervision(){
         ? `<div style="font-size:10.5px; color:var(--amber); margin-top:2px;">+${r.pauseMonthEquiv} équiv. retard</div>`
         : (r.pauseOverCount > 0 ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${r.pauseOverCount} dépassement${r.pauseOverCount>1?'s':''} ce mois</div>` : '');
       return `<tr style="${rowStyle}">
-        <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}</td>
+        <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}${(()=>{
+          // 🌱 Repère visuel : sans lui, un superviseur juge une recrue exactement comme un vétéran.
+          const j = agentAncienneteJours(r.agent);
+          if(j == null || j > 30) return '';
+          return ` <span class="tag" style="background:rgba(74,152,145,0.2); color:#6fd3c4;" title="Arrivé il y a ${j} jour${j>1?'s':''} — objectifs et conseils adaptés">🌱 ${j === 0 ? '1er jour' : j+' j'}</span>`;
+        })()}</td>
         <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
         <td><span class="tag ${badge.cls}" title="${badge.title}" style="cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></td>
         <td style="font-size:12.5px; max-width:220px; ${r.dayRealized<=0?'color:var(--red); font-weight:700;':'color:var(--muted);'}">${isMe ? '' : comment}</td>
@@ -18910,7 +18909,6 @@ async function syncBackofficeInbox(opts){
     if(db){
       try{
         const snap = await db.collection(BACKOFFICE_COLLECTION).limit(500).get();
-        fbCompter('read', snap.size || 0);
         snap.forEach(doc=>{
           if(ingest(doc.data() || {}, doc.id)) processedDocs.push(doc.ref);
         });
@@ -19066,7 +19064,6 @@ async function renderBackofficeInboxPanel(lastResult){
   if(firebaseReady && db){
     try{
       const snap = await db.collection(BACKOFFICE_COLLECTION).limit(50).get();
-      fbCompter('read', snap.size || 0);
       pending += snap.size; pendingKnown = true;
     }catch(e){}
   }
@@ -21205,7 +21202,6 @@ async function saveReturnCostPerAgent(){
 // des scripts Firebase (voir <head> et le bloc "PERF" juste avant l'init Firebase, plus haut).
 async function bootApp(){
   await firebaseAuthReady;
-  fbUsageCharger(true);   // compteur de consommation Firebase : reprend là où il en était aujourd'hui
   loadConfig();
   updateSyncIndicator();
   applyPrivacyMode();
@@ -21389,7 +21385,10 @@ function assistChime(){
 // Un état plus vieux que PRESENCE_STALE_MS compte comme indisponible : c'est le cas d'un poste fermé
 // ou d'un navigateur endormi — la personne n'est de toute façon pas devant son écran.
 const PRESENCE_KEY = 'assistPresence';
-const PRESENCE_STALE_MS = 4 * 60 * 1000;
+// 6 minutes plutôt que 4 : les navigateurs ralentissent les minuteries des onglets en arrière-plan
+// (souvent à un déclenchement par minute), ce qui frôlait notre cadence de publication. Cette marge
+// évite qu'un superviseur en arrière-plan soit déclaré « poste fermé » à tort.
+const PRESENCE_STALE_MS = 6 * 60 * 1000;
 const PRESENCE_KEEPALIVE_MS = 2 * 60 * 1000;
 let presenceMap = {};
 let presenceUnsub = null;
@@ -21474,6 +21473,9 @@ function computeMyPresence(){
 async function assistPresenceSync(force){
   const moi = assistanceWhoAmI();
   if(!moi || !firebaseReady) return;
+  // Seule la disponibilité des assistants est consultée par le routage : publier celle de tout le monde
+  // ne servirait à rien et multiplierait les écritures par quatre.
+  if(!isAssistant(moi)) return;
   const p = computeMyPresence();
   if(!p) return;
   const sig = `${p.state}|${p.raison}`;
@@ -21511,13 +21513,30 @@ function subscribeAssistPresence(){
   if(!firebaseReady || !db) return;
   if(presenceUnsub) return;
   presenceUnsub = db.collection('vortexnova').doc(PRESENCE_KEY).onSnapshot(doc=>{
-    fbCompter('read');
     try{ presenceMap = (doc.exists && doc.data().value) ? (JSON.parse(doc.data().value) || {}) : {}; }
     catch(e){ presenceMap = {}; }
     assistRenderPresenceBox();
     assistProcess();   // un superviseur qui devient indisponible fait basculer l'alerte tout de suite
   }, err=> console.error('presence listener:', err));
 }
+
+// ⚠️ BUG CORRIGÉ — LES SUPERVISEURS NE RECEVAIENT PLUS LES DEMANDES D'ASSISTANCE.
+// La disponibilité n'était republiée que depuis refreshADFStatus(), qui tourne toutes les 4 secondes…
+// mais qui sort immédiatement si aucun agent n'est sélectionné sur l'écran POINTAGE.
+// Or un superviseur travaille sur l'onglet Supervision : il choisit son nom là-bas, pas sur Pointage.
+// Sa présence était donc écrite une seule fois, à sa connexion, puis n'était plus rafraîchie — et au
+// bout de 4 minutes elle était considérée comme périmée (poste fermé). Le routage le déclarait alors
+// indisponible et basculait systématiquement sur les assistants agréés, qui eux étaient sur Pointage
+// et restaient donc « frais ». D'où le symptôme exact : les agents agréés recevaient tout, jamais les
+// superviseurs.
+// Ce battement indépendant de l'écran affiché règle le problème à la racine. Il n'écrit que si l'état a
+// changé, ou toutes les 2 minutes pour signaler que le poste est toujours vivant (voir la garde dans
+// assistPresenceSync) — donc quelques centaines d'écritures par jour au maximum, et uniquement pour les
+// personnes qui peuvent réellement recevoir une demande.
+// Volontairement SANS test sur document.hidden : l'alarme d'assistance sonne aussi quand le CRM est
+// dans un onglet d'arrière-plan (son + notification système + titre qui clignote). Un superviseur passé
+// sur un autre onglet reste donc parfaitement joignable, et sa présence doit continuer d'être publiée.
+setInterval(()=>{ try{ assistPresenceSync(); }catch(e){} }, 60000);
 
 // Rappel flottant, présent sur TOUS les écrans tant que la personne n'est pas revenue à son poste.
 function assistRenderReturnBanner(){
@@ -21974,7 +21993,6 @@ function subscribeAssistance(){
   if(!firebaseReady || !db) return;
   if(assistUnsub) return;
   assistUnsub = db.collection('vortexnova').doc(ASSIST_KEY).onSnapshot(doc=>{
-    fbCompter('read');
     assistList = assistPurge(doc.exists && doc.data().value ? assistParse(doc.data().value) : []);
     assistProcess();
   }, err=> console.error('assistance listener:', err));
@@ -21983,154 +22001,6 @@ function subscribeAssistance(){
 
 // Rafraîchi tout seul quand le panneau est à l'écran — sinon les chiffres semblent figés alors que la
 // consommation, elle, continue de monter. Ne fait rien du tout si les Réglages ne sont pas ouverts.
-// Le panneau lit maintenant les compteurs de tous les postes : on l'espace à 60 s (au lieu de 15) pour
-// que l'outil de mesure ne devienne pas lui-même un poste lourd, et on ne relance jamais un rendu si le
-// précédent n'est pas terminé.
-let fbUsagePanelBusy = false;
-setInterval(async ()=>{
-  try{
-    const el = document.getElementById('firebaseUsagePanel');
-    if(!el || el.offsetParent === null || fbUsagePanelBusy) return;
-    fbUsagePanelBusy = true;
-    try{ await renderFirebaseUsagePanel(); } finally { fbUsagePanelBusy = false; }
-  }catch(e){ fbUsagePanelBusy = false; }
-}, 60000);
-
-// ── Le compteur, en clair ──────────────────────────────────────────────────
-// Trois chiffres suffisent à décider : ce qui a été consommé aujourd'hui, à quelle vitesse ça monte,
-// et ce que ça ferait sur un mois. Le reste n'est que décor.
-async function renderFirebaseUsagePanel(){
-  const el = document.getElementById('firebaseUsagePanel');
-  if(!el) return;
-  fbUsageCharger();
-  await fbUsagePublier(true);              // mon propre compteur d'abord, pour ne pas m'oublier du total
-  let postes = await fbUsageLireEquipe();
-
-  // Mon propre poste est toujours réinjecté avec ses valeurs EN DIRECT, par-dessus la version publiée.
-  // Deux raisons : la publication date au maximum de quelques secondes mais le compteur, lui, bouge en
-  // permanence ; et si la base n'est pas encore jointe (démarrage, coupure réseau), la lecture d'équipe
-  // ne renvoie rien alors que ce poste a bel et bien consommé.
-  if(postes !== null){
-    const moiId = fbPosteId();
-    postes = postes.filter(x => x.poste !== moiId).concat([{
-      poste: moiId,
-      agent: (typeof assistanceWhoAmI === 'function' ? assistanceWhoAmI() : null) || null,
-      admin: document.getElementById('adminPanel')?.style.display === 'block',
-      jour: fbUsage.jour, reads: fbUsage.reads, writes: fbUsage.writes, deletes: fbUsage.deletes,
-      debut: fbUsage.debut, at: Date.now(), rythme: fbRythmeGlissant()
-    }]);
-  }
-
-  const fmt = (n)=> Math.round(n).toLocaleString('fr-FR');
-  const dollars = (n)=> (n > 0 && n < 0.01 ? 'moins de 0,01 $' : n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $');
-  const cout = (n, gratuit, prix)=> Math.max(0, n - gratuit) / 100000 * prix;
-
-  if(postes === null){
-    el.innerHTML = `<div class="empty">⚠️ Impossible de lire les compteurs des autres postes (connexion ?). Ce poste seul : <b>${fmt(fbUsage.reads)}</b> lectures et <b>${fmt(fbUsage.writes)}</b> écritures aujourd'hui.</div>`;
-    return;
-  }
-
-  // Totaux d'équipe. Le quota gratuit est journalier et GLOBAL au projet : c'est le total qui compte,
-  // jamais le chiffre d'un poste isolé.
-  const totalR = postes.reduce((s,p)=> s + (p.reads||0), 0);
-  const totalW = postes.reduce((s,p)=> s + (p.writes||0), 0);
-  const totalD = postes.reduce((s,p)=> s + (p.deletes||0), 0);
-
-  // ⚠️ BUG CORRIGÉ — le rythme était calculé dès la première seconde, avec un plancher de 3 minutes.
-  // Or l'ouverture d'un écran coûte à elle seule un gros paquet de lectures d'un coup (le chargement
-  // initial). Divisé par 3 minutes, ça donnait des rythmes délirants — 32 000 lectures/heure affichées
-  // alors que 1 600 seulement avaient été consommées — et une fausse alerte « plafond dans 2 heures ».
-  // On n'annonce donc un rythme qu'à partir de 10 minutes d'observation, le temps que la salve de
-  // démarrage soit diluée dans le fonctionnement normal.
-  // Chaque poste publie SON rythme, mesuré chez lui sur une fenêtre glissante de 15 minutes (voir
-  // fbRythmeGlissant). Le rythme d'équipe est simplement leur somme. Un poste qui n'a pas encore assez
-  // de recul publie `rythme: null` et n'est pas compté — mieux vaut ne rien annoncer qu'annoncer faux.
-  const postesMesures = postes.filter(p => typeof p.rythme === 'number' && isFinite(p.rythme));
-  const rythmeEquipe = postesMesures.reduce((s,p)=> s + p.rythme, 0);
-  const mesureFiable = postesMesures.length > 0;
-  const attenteMin = mesureFiable ? 0 : Math.max(1, Math.ceil(5 - Math.max(...postes.map(p => ((p.at||Date.now()) - (p.debut||Date.now()))/60000), 0)));
-
-  const pctQuota = Math.round((totalR / FB_USAGE_GRATUIT.read) * 100);
-  const couleurQuota = pctQuota >= 100 ? 'var(--red)' : (pctQuota >= 70 ? 'var(--amber)' : 'var(--green)');
-  const pctW = Math.round((totalW / FB_USAGE_GRATUIT.write) * 100);
-
-  // Coût mensuel : on projette la journée en cours sur 22 jours ouvrés, quota gratuit déduit chaque jour.
-  const coutJour = cout(totalR, FB_USAGE_GRATUIT.read, FB_USAGE_PRIX.read)
-                 + cout(totalW, FB_USAGE_GRATUIT.write, FB_USAGE_PRIX.write)
-                 + cout(totalD, FB_USAGE_GRATUIT.del, FB_USAGE_PRIX.del);
-  const coutMois = coutJour * 22;
-
-  const tuile = (label, valeur, sous, couleur)=> `
-    <div style="flex:1; min-width:190px; padding:15px 17px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
-      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700;">${label}</div>
-      <div style="font-size:26px; font-weight:900; margin-top:5px; color:${couleur || 'var(--text)'}; font-variant-numeric:tabular-nums;">${valeur}</div>
-      <div style="font-size:12px; color:var(--muted); margin-top:4px; line-height:1.35;">${sous}</div>
-    </div>`;
-
-  // Combien de temps avant que TOUTE L'ÉQUIPE tape le plafond ?
-  const restant = FB_USAGE_GRATUIT.read - totalR;
-  let alerte;
-  if(!mesureFiable && restant > 0){
-    // Tant qu'on n'a pas assez de recul, on ne dit RIEN plutôt que de dire n'importe quoi.
-    alerte = `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:var(--panel2); border:1px solid var(--border); font-size:13px; color:var(--muted); font-weight:600;">⏳ Mesure en cours — encore ${attenteMin} minute${attenteMin>1?'s':''} environ. Le rythme est mesuré sur les 15 dernières minutes, pas depuis l'ouverture : l'écran de démarrage consomme une grosse salve d'un coup, qui n'a rien à voir avec le régime normal.</div>`;
-  } else if(restant <= 0){
-    alerte = `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.45); font-size:13px; color:var(--red); font-weight:700;">🚨 Le quota gratuit du jour est dépassé pour toute l'équipe. En forfait Spark, la base a cessé de répondre — c'est ce qui donne l'impression que le CRM « se fige ». Elle repartira vers 8h-9h demain matin. En forfait Blaze, tout continue normalement et c'est simplement facturé (voir le coût estimé).</div>`;
-  } else if(rythmeEquipe > 0){
-    const h = restant / rythmeEquipe;
-    alerte = h < 8
-      ? `<div style="margin-top:12px; padding:12px 14px; border-radius:9px; background:rgba(229,168,61,0.12); border:1px solid rgba(229,168,61,0.45); font-size:13px; color:var(--amber); font-weight:700;">⚠️ Au rythme actuel de l'équipe, le plafond gratuit sera atteint dans environ ${h < 1 ? Math.round(h*60)+' minutes' : Math.round(h)+' heures'}. Ferme les écrans inutilisés, ou passe en forfait Blaze.</div>`
-      : `<div style="margin-top:12px; font-size:12.5px; color:var(--green); font-weight:700;">✅ Au rythme actuel, l'équipe tient la journée dans le quota gratuit.</div>`;
-  } else {
-    alerte = '<div style="margin-top:12px; font-size:12.5px; color:var(--muted);">Laisse les postes ouverts quelques minutes pour que le rythme se stabilise.</div>';
-  }
-
-  // Détail poste par poste — c'est là qu'on voit lequel consomme le plus, et donc lequel fermer.
-  const tries = postes.slice().sort((a,b)=> (b.reads||0) - (a.reads||0));
-  const moi = fbPosteId();
-  const lignes = tries.map(pp=>{
-    const inactifDepuis = Math.round((Date.now() - (pp.at || 0)) / 60000);
-    const actif = inactifDepuis < 12;
-    const qui = pp.admin ? '🛠️ Panneau Admin' : (pp.agent ? escapeHtml(pp.agent) : 'Poste sans nom sélectionné');
-    const part = totalR > 0 ? Math.round(((pp.reads||0) / totalR) * 100) : 0;
-    const rythmePoste = (typeof pp.rythme === 'number' && isFinite(pp.rythme)) ? Math.round(pp.rythme) : null;
-    return `<tr${pp.poste === moi ? ' style="background:rgba(61,139,253,0.08);"' : ''}>
-      <td><b>${qui}</b>${pp.poste === moi ? ' <span class="tag ok" style="background:rgba(61,139,253,0.18);color:var(--accent);">ce poste</span>' : ''}</td>
-      <td style="font-variant-numeric:tabular-nums;"><b>${fmt(pp.reads||0)}</b> <span style="color:var(--muted);font-size:12px;">(${part}%)</span>${rythmePoste != null ? `<div style="font-size:11.5px;color:var(--muted);">${fmt(rythmePoste)} /h</div>` : '<div style="font-size:11.5px;color:var(--muted);">mesure en cours</div>'}</td>
-      <td style="font-variant-numeric:tabular-nums; color:var(--muted);">${fmt(pp.writes||0)}</td>
-      <td style="color:${actif ? 'var(--green)' : 'var(--muted)'}; font-size:12.5px;">${actif ? 'actif' : (inactifDepuis > 600 ? 'fermé' : 'inactif depuis ' + inactifDepuis + ' min')}</td>
-    </tr>`;
-  }).join('');
-
-  el.innerHTML = `
-    <div style="display:flex; gap:12px; flex-wrap:wrap;">
-      ${tuile('Lectures — TOUTE L\'ÉQUIPE', fmt(totalR), `${pctQuota}% du quota gratuit quotidien (50 000)`, couleurQuota)}
-      ${tuile('Écritures — équipe', fmt(totalW), `${pctW}% du quota (20 000)`, totalW >= FB_USAGE_GRATUIT.write ? 'var(--red)' : 'var(--text)')}
-      ${tuile('Rythme de l\'équipe',
-        mesureFiable ? (fmt(rythmeEquipe) + ' /h') : '⏳ …',
-        mesureFiable
-          ? `${postes.length} poste${postes.length>1?'s':''} recensé${postes.length>1?'s':''} aujourd\'hui`
-          : `mesure en cours — ${postes.length} poste${postes.length>1?'s':''} recensé${postes.length>1?'s':''}`,
-        'var(--accent)')}
-      ${tuile('Coût estimé', dollars(coutMois) + ' /mois', 'toute l\'équipe, sur 22 jours ouvrés, en forfait Blaze', coutMois > 10 ? 'var(--amber)' : 'var(--green)')}
-    </div>
-    ${alerte}
-
-    <div style="overflow-x:auto; margin-top:16px;">
-      <div style="font-size:12.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px;">Qui consomme quoi, aujourd'hui</div>
-      <table class="salary-table">
-        <thead><tr><th>Poste</th><th>Lectures</th><th>Écritures</th><th>État</th></tr></thead>
-        <tbody>${lignes || '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:14px;">Aucun autre poste n\'a encore publié son compteur aujourd\'hui.</td></tr>'}</tbody>
-      </table>
-    </div>
-
-    <div class="section-sub" style="margin-top:14px;">
-      📐 Le <b>rythme</b> est mesuré sur les 15 dernières minutes de fonctionnement — pas depuis l'ouverture de la page, sinon la salve du chargement initial fausserait la moyenne pendant des heures. Le <b>total</b>, lui, compte bien tout depuis minuit. Chaque poste publie son compteur toutes les 5 minutes et en quittant la page — un poste éteint depuis longtemps reste affiché avec son total de la journée, c'est normal, il a bien consommé. Tarif : 0,03 $ par tranche de 100 000 lectures, 0,09 $ pour les écritures, quota gratuit déduit chaque jour.
-    </div>
-    <div class="section-sub" style="margin-top:8px;">
-      ⚠️ Le chiffre qui fait foi reste celui de la console Firebase (Firestore → Utilisation). Celui-ci sert à comparer avant/après un réglage et à repérer quel écran coûte le plus cher.
-    </div>`;
-}
-
 // ── Réglage : qui peut assister, et qui est disponible ─────────────────────
 // Vue admin en direct : elle sert surtout à repérer le cas gênant — un seul assistant agréé, donc
 // aucun filet quand le superviseur est occupé.
@@ -22142,12 +22012,42 @@ function renderAssistantsPanel(){
     el.innerHTML = '<div class="empty">Aucun assistant pour l\'instant — coche « Superviseur » 📊 ou « Assistant agréé » 🤝 sur au moins un agent.</div>';
     return;
   }
+  // 🔎 DIAGNOSTIC EN DIRECT — « si une demande arrivait maintenant, elle sonnerait chez qui ? »
+  // Ajouté parce qu'un cas remonté du terrain (les superviseurs ne recevaient rien, les assistants si)
+  // ne pouvait pas être tranché en lisant le code : trop de conditions se combinent (rôle, présence,
+  // fraîcheur du poste, superviseur désigné, intervention en cours). Plutôt que de supposer, on affiche
+  // la décision réelle et le motif d'exclusion de chacun.
+  const dest = assistanceDestinataires();
+  const motifRideau = {
+    'superviseur': "chez le ou les superviseurs — c'est le fonctionnement normal",
+    'assistants': "chez les assistants agréés, parce qu'AUCUN superviseur n'est actuellement joignable",
+    'dernier-recours': "chez tout le monde, parce que personne n'est déclaré disponible",
+    'personne': "nulle part — tout le monde a passé la main sur la demande en cours"
+  }[dest.rideau] || '';
+  const designe = (config.assistanceSupervisor || '').trim();
+  const blocDiag = `
+    <div style="margin-top:12px; padding:13px 15px; border-radius:10px; background:rgba(61,139,253,0.08); border:1px solid rgba(61,139,253,0.35);">
+      <div style="font-weight:800; font-size:13.5px; color:var(--accent); margin-bottom:5px;">🔎 Si une demande d'assistance arrivait maintenant</div>
+      <div style="font-size:13.5px; line-height:1.55;">Elle sonnerait ${dest.liste.length ? `chez <b>${dest.liste.map(escapeHtml).join(', ')}</b>` : '<b>nulle part</b>'} — ${motifRideau}.</div>
+      ${designe ? `<div class="section-sub" style="margin-top:6px;">⚙️ Un superviseur précis est désigné plus haut (<b>${escapeHtml(designe)}</b>) : les autres superviseurs ne sont JAMAIS en premier rideau, même disponibles. Repasse sur « Tous les superviseurs » si ce n'est pas ce que tu veux.</div>` : ''}
+    </div>`;
+
   const lignes = liste.map(a=>{
     const st = presenceOf(a);
     const dispo = st.state === 'dispo';
     const couleur = dispo ? 'var(--green)' : (st.state === 'assiste' ? 'var(--amber)' : 'var(--muted)');
     const libelle = dispo ? 'Disponible' : (st.state === 'assiste' ? (st.raison || 'en assistance') : (st.raison || 'indisponible'));
     const source = st.perime ? 'poste fermé ou navigateur en veille' : (st.auto ? 'détecté automatiquement' : (st.manuel ? 'déclaré par lui-même' : ''));
+    // Pourquoi cette personne ne recevrait pas la demande, en une phrase claire.
+    let motifExclusion = '';
+    if(!dest.liste.includes(a)){
+      if(st.perime) motifExclusion = "sa page n'a rien publié depuis plus de 6 min — onglet fermé, ordinateur en veille, ou page pas rechargée depuis la mise à jour";
+      else if(st.state === 'assiste') motifExclusion = "déjà en intervention — il doit cliquer « Je suis de retour »";
+      else if(!dispo) motifExclusion = st.raison ? `indisponible : ${st.raison}` : 'indisponible';
+      else if(designe && isSupervisor(a) && a !== designe) motifExclusion = `disponible, mais ${escapeHtml(designe)} est le superviseur désigné pour l'assistance`;
+      else if(dest.rideau === 'superviseur' && !isSupervisor(a)) motifExclusion = 'un superviseur est disponible, il passe en premier';
+      else motifExclusion = 'pas retenu par le routage';
+    }
     // Déblocage : un clic oublié sur « Je suis de retour » ne doit jamais immobiliser tout le circuit.
     const debloquable = !dispo && !st.perime;
     return `<div style="display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:9px; background:var(--panel2); border:1px solid var(--border); margin-bottom:7px; flex-wrap:wrap;">
@@ -22156,6 +22056,9 @@ function renderAssistantsPanel(){
       ${isSupervisor(a) ? '<span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">📊 Superviseur</span>' : '<span class="tag" style="background:rgba(181,89,92,0.18);color:#e08b8e;">🤝 Assistant agréé</span>'}
       <span style="color:${couleur}; font-weight:700; font-size:13px;">${escapeHtml(libelle)}</span>
       ${source ? `<span style="font-size:11.5px; color:var(--muted);">(${escapeHtml(source)})</span>` : ''}
+      ${dest.liste.includes(a)
+        ? '<span class="tag ok" style="background:rgba(52,183,116,0.18);color:var(--green);">🔔 recevrait l\'appel</span>'
+        : `<span style="font-size:11.5px; color:var(--amber); flex-basis:100%; margin-top:2px;">🔕 ne recevrait pas — ${motifExclusion}</span>`}
       ${debloquable ? `<button onclick="assistanceForcerRetour('${a.replace(/'/g,"\\'")}')" title="Remettre cette personne disponible — utile si elle a oublié de cliquer « Je suis de retour » après une assistance" style="margin-left:auto; padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--accent); font-weight:700; font-size:11.5px; cursor:pointer;">↩️ Remettre disponible</button>` : ''}
     </div>`;
   }).join('');
@@ -22165,7 +22068,7 @@ function renderAssistantsPanel(){
     : (liste.length === 1
       ? '<div style="margin-top:8px; padding:10px 12px; border-radius:8px; background:rgba(229,168,61,0.12); border:1px solid rgba(229,168,61,0.4); font-size:12.5px; color:var(--amber); font-weight:600;">⚠️ Un seul assistant : dès qu\'il est en pause ou en intervention, il n\'y a plus de filet. Agrée au moins un deuxième agent avec le bouton 🤝.</div>'
       : `<div style="margin-top:8px; font-size:12.5px; color:var(--muted);">${dispoCount} disponible${dispoCount>1?'s':''} sur ${liste.length}.</div>`);
-  el.innerHTML = lignes + alerte;
+  el.innerHTML = blocDiag + lignes + alerte;
 }
 
 // L'admin remet quelqu'un disponible de force. Le poste de la personne concernée l'apprend au snapshot
