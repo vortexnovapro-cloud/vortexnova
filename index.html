@@ -138,6 +138,33 @@
   .vn-back__cta{ flex-shrink:0; font-size:12.5px; font-weight:900; letter-spacing:.3px;
     padding:9px 15px; border-radius:9px; background:#e8b45a; color:#2a1f08; }
   @media (max-width:700px){ .vn-back{ left:14px; right:14px; bottom:76px; max-width:none; } }
+
+  /* ═══ 🟢/🔴 « TU REÇOIS LES APPELS » / « TU NE LES REÇOIS PAS » ═══
+     La case « es-tu disponible ? » ne vivait que sur l'écran Pointage. Un superviseur travaille sur
+     Supervision : il ne voyait donc JAMAIS son propre état, et n'avait aucun moyen de savoir qu'il
+     était sorti du circuit (pause détectée, poste rendu indisponible, intervention non clôturée).
+     D'où le sentiment que le dispo/pas dispo « n'est pas clair ». Ce bandeau le suit désormais sur
+     tous les écrans, en bas à gauche comme le rappel d'assistance — les deux ne s'affichent jamais
+     en même temps, le rappel d'intervention étant prioritaire. */
+  .vn-dispo{
+    position:fixed; left:22px; bottom:22px; z-index:9989;
+    display:none; align-items:center; gap:12px; max-width:min(400px, 92vw);
+    padding:11px 16px; border-radius:14px; cursor:pointer; font-family:inherit; text-align:left;
+    border:1.5px solid; box-shadow:0 10px 28px rgba(0,0,0,.4);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .vn-dispo:hover{ transform:translateY(-2px); box-shadow:0 14px 34px rgba(0,0,0,.5); }
+  .vn-dispo.is-on { border-color:rgba(52,183,116,.55); background:linear-gradient(135deg, rgba(52,183,116,.20), rgba(52,183,116,.08)), #16211b; color:#bde9cf; }
+  .vn-dispo.is-off{ border-color:rgba(229,72,77,.55);  background:linear-gradient(135deg, rgba(229,72,77,.20), rgba(229,72,77,.08)), #241819;  color:#f2c3c4; }
+  .vn-dispo__dot{ width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+  .vn-dispo.is-on  .vn-dispo__dot{ background:#34b774; box-shadow:0 0 0 4px rgba(52,183,116,.22); }
+  .vn-dispo.is-off .vn-dispo__dot{ background:#e5484d; box-shadow:0 0 0 4px rgba(229,72,77,.22); }
+  .vn-dispo__txt{ font-size:12.5px; font-weight:600; line-height:1.35; }
+  .vn-dispo__txt b{ display:block; font-size:13.5px; font-weight:900; letter-spacing:.2px; }
+  .vn-dispo__cta{ flex-shrink:0; font-size:11.5px; font-weight:800; padding:7px 12px; border-radius:8px;
+    background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18); white-space:nowrap; }
+  @media (max-width:700px){ .vn-dispo{ left:14px; right:14px; bottom:76px; max-width:none; } }
+
   @media (prefers-reduced-motion: reduce){ .vn-sos{ animation:none; } .vn-sos:hover{ transform:none; } }
 
   /* ═══ L'ALERTE CHEZ LE SUPERVISEUR ═══
@@ -899,6 +926,14 @@ function tryDeviceGateAdmin(){
         title="Signale que tu es rentré à ton poste — tu redeviens joignable pour les demandes d'assistance">
   <span class="vn-back__txt" id="vnBackTxt"><b>Tu es parti assister</b>Clique en revenant à ton poste.</span>
   <span class="vn-back__cta">✅ Je suis de retour</span>
+</button>
+
+<!-- 🟢/🔴 Bandeau permanent de disponibilité — visible par les superviseurs et les assistants agréés
+     sur TOUS les écrans, pas seulement sur Pointage. Voir assistRenderDispoBanner(). -->
+<button id="vnDispoBtn" class="vn-dispo" type="button" onclick="assistanceBandeauClick()">
+  <span class="vn-dispo__dot"></span>
+  <span class="vn-dispo__txt" id="vnDispoTxt"><b>Disponible</b>Tu reçois les demandes d'assistance.</span>
+  <span class="vn-dispo__cta" id="vnDispoCta">Me rendre indisponible</span>
 </button>
 
 <div id="vnAssistOverlay" class="vn-assist" role="alertdialog" aria-live="assertive" aria-labelledby="vnAssistWho">
@@ -1983,6 +2018,19 @@ function tryDeviceGateAdmin(){
           <div id="paySourcePanel" style="margin-top:12px;"></div>
         </div>
 
+        <!-- 🔍 CONTRÔLE DE COMPTAGE — l'écran qui répond à « d'où vient la différence ? »
+             Tant qu'il n'existait pas, un écart entre le total du Sheet et la somme des agents ne
+             pouvait être élucidé qu'à la main, ligne par ligne. Ce panneau refait le calcul depuis la
+             seule source qui fasse foi (les contrats rangés) et affiche, poste par poste, ce qui
+             explique chaque contrat manquant : non rattaché, sans date, rangé sur un autre mois,
+             rétracté, ou signé par quelqu'un qui n'est plus dans l'équipe. -->
+        <div class="settings-box" style="border-color:rgba(61,139,253,0.45);">
+          <label>🔍 Contrôle de comptage</label>
+          <div class="section-sub">Le rapprochement complet du mois choisi plus bas : total des contrats rangés, total réparti entre les agents, et <b>le détail de chaque contrat qui manque à l'appel, avec sa cause</b>. À ouvrir dès qu'un chiffre te semble faux — plutôt que de recompter le Sheet à la main.</div>
+          <button onclick="renderComptageControl(true)" style="margin-top:10px; padding:10px 18px; border-radius:8px; border:none; background:var(--accent); color:white; font-weight:700; cursor:pointer;">🔍 Lancer le contrôle</button>
+          <div id="comptageControlPanel" style="margin-top:12px;"></div>
+        </div>
+
         <div class="settings-box">
           <label>📥 1. Production du mois — import du CSV de ton Sheet</label>
           <div class="section-sub" style="color:var(--muted);">Sert à deux choses : rattraper un mois si la réception automatique n'était pas encore branchée, et <b>importer tes anciens tableaux pour constituer ton historique</b>. Les deux méthodes remplissent le même tableau et se dédoublonnent sur le numéro de contrat — réimporter un fichier corrigé ne crée jamais de doublon.</div>
@@ -2139,7 +2187,7 @@ function tryDeviceGateAdmin(){
           </div>
           <div>
             <label style="margin-bottom:4px;">Mois de paie</label>
-            <input type="month" id="billingSheetMonth" onchange="renderBillingAgentSheet(); renderPaySourcePanel(); renderAdminIndepReturnTable(); renderUnmatchedReturnsPanel();" title="Le mois de PAIE affiché. C'est aussi lui qui pilote les blocs plus haut : source de paie, barème des indépendants, retours à trancher, et le pack patron.">
+            <input type="month" id="billingSheetMonth" onchange="renderBillingAgentSheet(); renderPaySourcePanel(); renderAdminIndepReturnTable(); renderUnmatchedReturnsPanel(); renderComptageControl();" title="Le mois de PAIE affiché. C'est aussi lui qui pilote les blocs plus haut : source de paie, barème des indépendants, retours à trancher, et le pack patron.">
           </div>
           <div>
             <label style="margin-bottom:4px;">Diviseur des retours</label>
@@ -2188,7 +2236,11 @@ function tryDeviceGateAdmin(){
         <div class="settings-box">
           <label>🆘 Bouton d'assistance</label>
           <div class="section-sub">Chaque agent a en permanence un bouton rouge <b>Assistance</b> en bas de son écran. Un clic déclenche une alarme — un chant de grillons qui monte progressivement et ne s'arrête que lorsque quelqu'un confirme. L'agent est alors prévenu de qui arrive.</div>
-          <div class="section-sub" style="margin-top:8px;">📡 <b>L'appel part en cascade.</b> D'abord le superviseur choisi ci-dessous, <b>s'il est réellement disponible</b>. S'il est en pause, en ADF, en écoute, déjà parti dépanner quelqu'un, ou s'il s'est déclaré indisponible, l'alerte bascule automatiquement chez les <b>assistants agréés disponibles</b> (bouton 🤝 sur la fiche de chaque agent, plus bas dans Agents). Et si vraiment personne n'est disponible, tout le monde est alerté quand même — un appel à l'aide sans réponse est toujours le pire scénario.</div>
+          <div class="section-sub" style="margin-top:8px;">📡 <b>L'appel part en cascade, étage par étage — jamais chez tout le monde d'un coup.</b><br>
+            <b>1. Immédiatement :</b> le superviseur choisi ci-dessous, et lui seul. On ne l'écarte que s'il est explicitement en pause, en ADF, en écoute, déjà parti dépanner quelqu'un, ou s'il s'est déclaré indisponible. Un poste simplement endormi (onglet en arrière-plan) reste appelé — c'est ce qui faisait sonner tous les postes à la moindre demande.<br>
+            <b>2. Sans réponse au bout du délai que TU fixes ci-dessous :</b> l'alerte est transmise aux <b>assistants agréés</b> (bouton 🤝 sur la fiche de chaque agent, plus bas dans Agents). Le superviseur, lui, continue de l'entendre — c'est du renfort, pas un remplacement.<br>
+            <b>3. Après le second délai :</b> et seulement là, tout le monde est alerté. Un appel à l'aide sans réponse reste le pire scénario, mais c'est le dernier recours.<br>
+            Si aucun superviseur n'est joignable au moment du clic, on saute directement à l'étape 2 : personne n'attend pour rien.</div>
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div>
               <label style="margin-bottom:4px;">Superviseur alerté</label>
@@ -2198,7 +2250,36 @@ function tryDeviceGateAdmin(){
             <button onclick="testAssistanceAlarm(this)" style="padding:10px 18px;border-radius:8px;border:1px solid var(--amber);background:transparent;color:var(--amber);font-weight:700;cursor:pointer;" title="Écouter l'alarme pendant 6 secondes pour vérifier le volume et le son.">🔊 Tester l'alarme</button>
             <div class="save-note" id="assistSaveNote"></div>
           </div>
-          <div class="section-sub" style="margin-top:12px;">💡 Laisse sur <b>Tous les superviseurs</b> si tu préfères qu'aucun appel ne se perde quand le superviseur désigné est absent. Le panneau Admin ouvert reçoit toujours les alertes, quoi qu'il arrive.</div>
+          <div class="section-sub" style="margin-top:12px;">💡 Laisse sur <b>Tous les superviseurs</b> si tu préfères qu'aucun appel ne se perde quand le superviseur désigné est absent.</div>
+
+          <!-- ⏱️ LES DEUX DÉLAIS DE LA CASCADE, RÉGLABLES ICI.
+               Ils étaient écrits en dur dans le code (20 s et 40 s), donc impossibles à changer sans
+               rouvrir le fichier. C'est un choix qui concerne l'organisation de l'équipe, pas la
+               technique : il revient au patron, pas au code. -->
+          <div style="margin-top:18px; border-top:1px solid var(--border); padding-top:16px;">
+            <label style="margin-bottom:6px;">⏱️ Combien de temps laisser au superviseur avant de transmettre</label>
+            <div class="section-sub">Ce délai ne sert que dans UN cas : le superviseur est censé être à son poste, mais il ne clique pas. Quand il est déjà marqué en pause ou indisponible, il n'y a aucune attente — l'appel part immédiatement chez les agréés.</div>
+            <div class="admin-toolbar" style="margin-top:12px; align-items:flex-end;">
+              <div>
+                <label style="margin-bottom:4px;">Puis alerter les assistants agréés au bout de</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="number" id="assistDelaiAgrees" min="0" max="300" step="5" style="width:110px;">
+                  <span style="color:var(--muted); font-size:13px;">secondes</span>
+                </div>
+              </div>
+              <div>
+                <label style="margin-bottom:4px;">Puis alerter TOUT LE MONDE au bout de</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="number" id="assistDelaiTous" min="0" max="600" step="5" style="width:110px;">
+                  <span style="color:var(--muted); font-size:13px;">secondes</span>
+                </div>
+              </div>
+              <button onclick="saveAssistanceDelais()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer les délais</button>
+              <div class="save-note" id="assistDelaiNote"></div>
+            </div>
+            <div class="section-sub" style="margin-top:10px;">Les deux délais se comptent depuis le clic de l'agent, pas l'un après l'autre. <b>0 dans la première case</b> = pas d'attente du tout : dès qu'un agent appelle, superviseur ET agréés sonnent en même temps.</div>
+            <div id="assistDelaiResume" style="margin-top:10px;"></div>
+          </div>
 
           <div style="margin-top:18px; border-top:1px solid var(--border); padding-top:16px;">
             <label style="margin-bottom:6px;">🤝 Qui peut assister — et qui est disponible en ce moment</label>
@@ -2453,7 +2534,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-24-r129';
+const APP_VERSION = '2026-08-25-r130';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2497,6 +2578,14 @@ let config = {
   // 🆘 Superviseur qui reçoit les demandes d'assistance des agents. Vide = tous les superviseurs
   // sont alertés (aucun appel ne peut se perdre si le désigné est absent).
   assistanceSupervisor: '',
+  // ⏱️ Délais de la cascade d'assistance, en SECONDES, réglables dans Réglages → Bouton d'assistance.
+  //   assistanceDelaiAgrees : temps laissé au superviseur avant d'alerter aussi les assistants agréés
+  //                           (0 = les deux sonnent en même temps, dès le clic de l'agent).
+  //   assistanceDelaiTous   : temps après lequel tout le monde est alerté, en dernier recours.
+  // Ces deux valeurs concernent l'organisation de l'équipe, pas la technique : elles n'ont donc rien
+  // à faire en dur dans le code. Voir assistDelaiAgreesMs() / assistDelaiTousMs().
+  assistanceDelaiAgrees: 20,
+  assistanceDelaiTous: 40,
   adminPassword: DEFAULT_ADMIN_PASSWORD,
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
@@ -4526,6 +4615,16 @@ async function addAgent(){
   renderAgentChips();
   populateAgentSelect();
   renderAgentPayTable();
+  // 🤖 LE MOMENT CRITIQUE. Une recrue a très souvent déjà des contrats à son nom quand on l'ajoute
+  // ici (le backoffice les a envoyés avant que l'admin ait pensé à créer la fiche). Ces contrats
+  // comptent aussitôt dans son total du mois, mais ses JOURNÉES sont restées à 0 : elles ont été
+  // écrites à une époque où ce nom n'existait pas encore. C'est exactement ce qui produisait
+  // « 2 contrats sur le mois, 0 sur le Bilan du jour ». On remet donc les journées à jour ici même,
+  // dans la foulée de l'ajout, sans que l'admin ait quoi que ce soit à faire.
+  try{
+    const n = await autoReparerJourneesSiEcart(moisAVerifier(), { forcer: true });
+    if(n) showToast(`✅ ${name} avait déjà des contrats à son nom : ses journées ont été remises à jour automatiquement.`, 'ok', 8000);
+  }catch(e){ console.warn('autoReparerJourneesSiEcart (addAgent)', e); }
 }
 // ============================================================
 // 📦 AGENTS ARCHIVÉS — ceux qui ne travaillent plus ici
@@ -4568,6 +4667,10 @@ async function unarchiveAgent(name){
   renderAgentChips();
   populateAgentSelect();
   renderAgentPayTable();
+  // 🤖 Même raison que pour un agent ajouté : il revient avec des contrats déjà rangés à son nom, et
+  // ses journées peuvent avoir été écrites pendant son absence sans lui.
+  try{ await autoReparerJourneesSiEcart(moisAVerifier(), { forcer: true }); }
+  catch(e){ console.warn('autoReparerJourneesSiEcart (unarchive)', e); }
 }
 
 function renderArchivedAgentChips(){
@@ -8017,11 +8120,22 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     monthlyByAgent[r.agent] = { monthlyRealized, mini, vise: desired || 0 };
   }));
 
-  // Historique des 5 derniers jours ouvrés AVANT dateStr — pour les séries 🔥 (sans finir à 0) et 🎯
+  // Historique des derniers jours ouvrés AVANT dateStr — pour les séries 🔥 (sans finir à 0) et 🎯
   // (objectif atteint), calculées avec les mêmes fonctions globales que le "Conseil du matin" (voir
   // computeZeroStreak/computeObjectiveStreak). Comme dateStr est déjà garanti être un jour ouvré à ce
   // stade (early-return plus haut), le jour affiché compte pleinement dans la série dès que dayIsOver.
-  const streakRecentDates = lastNWorkingDaysBefore(dateStr, 5);
+  //
+  // ⚠️ CORRIGÉ — la fenêtre était de 5 jours, donc la série était PLAFONNÉE à 5 sans que rien ne le
+  // dise. Un agent qui n'avait pas fini une seule journée à 0 depuis deux semaines lisait « 🔥 5j » :
+  // un chiffre faux, de plus affiché à côté de compteurs justes — encore une source de « l'appli
+  // compte mal ». La fenêtre passe à 20 jours ouvrés (soit un mois complet) et le badge affiche
+  // « 20j+ » quand la série dépasse ce qu'on peut voir. Coût nul en pratique : ces tableaux sont déjà
+  // tous chargés par le calcul du cumul mensuel juste au-dessus, donc servis depuis prodBoardCache.
+  // 10 jours ouvrés = deux semaines. Assez pour ne plus mentir sur une série longue (« 10j+ »), et
+  // moitié moins de journées à relire que la fenêtre de 20 que j'avais posée d'abord — celle-ci
+  // alourdissait l'ouverture du Bilan sans rien apporter de plus dans la pratique.
+  const STREAK_WINDOW_DAYS = 10;
+  const streakRecentDates = lastNWorkingDaysBefore(dateStr, STREAK_WINDOW_DAYS);
   const streakBoardsByDate = {};
   await Promise.all(streakRecentDates.map(async d=>{
     streakBoardsByDate[d] = prodBoardCache[d] || await getProdBoard(d);
@@ -8145,16 +8259,23 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
-      const monthlyBlock = (mo.mini>0 || mo.vise>0 || commentLines.length) ? `
+      // 📏 « Objectif visé » n'est affiché que s'il DIFFÈRE du minimum. Quand l'admin n'a pas fixé de
+      // visé au-dessus du minimum, les deux valent la même chose et la carte affichait deux fois la
+      // même ligne (« 16 / 20 » puis « 16 / 20 ») — de quoi faire douter n'importe qui de la fiabilité
+      // des chiffres. Une seule ligne, une seule lecture possible.
+      const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
+      const monthlyBlock = (mo.mini>0 || viseAffichable || commentLines.length) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
-          ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;"><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
-          ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+          ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
+          ${viseAffichable ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
         </div>` : '';
       const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
-      const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
+      const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
+      const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak}${zeroStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée sans finir à 0 contrat${zeroStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreakTxt}</span>` : '';
       const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], dayIsOver);
-      const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
+      const objectiveStreakTxt = streakLabel(objectiveStreak), objectiveStreakPlus = streakEstPlafonnee();
+      const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak}${objectiveStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée avec l'objectif du jour atteint${objectiveStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreakTxt}</span>` : '';
       const podiumColor = podiumBorderColor(allRankByAgent[r.agent]?.rank);
       const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}`;
       const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
@@ -8172,9 +8293,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
         </div>
         ${noObj
           ? '<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div>'
-          : `<div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
+          : `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">Contrats ${dayIsOver ? 'de la journée' : "d'aujourd'hui"}</div>
+             <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
-               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
+               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};" title="Contrats signés ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / objectif du jour — le cumul du mois est juste en dessous.">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
                <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%</span>
              </div>`}
         ${monthlyBlock}
@@ -8195,9 +8317,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${commentLinesToHtml(commentLines)}
         </div>` : '';
       const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
-      const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
+      const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
+      const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak}${zeroStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée sans finir à 0 contrat${zeroStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreakTxt}</span>` : '';
       const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], dayIsOver);
-      const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
+      const objectiveStreakTxt = streakLabel(objectiveStreak), objectiveStreakPlus = streakEstPlafonnee();
+      const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak}${objectiveStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée avec l'objectif du jour atteint${objectiveStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreakTxt}</span>` : '';
       const podiumColor = podiumBorderColor(allRankByAgent[r.agent]?.rank);
       const cardBorder = podiumColor ? `2px solid ${podiumColor}` : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(155,89,182,0.3)'}`;
       const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
@@ -8212,12 +8336,13 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
         </div>
         ${hasObj
-          ? `<div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
+          ? `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">Contrats ${dayIsOver ? 'de la journée' : "d'aujourd'hui"}</div>
+             <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
-               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
+               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};" title="Contrats signés ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / défi du jour — le cumul du mois est juste en dessous.">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
                <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%${hit?' ✅':''}</span>
              </div>
-             <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">Défi perso</div>`
+             <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">Défi perso du jour</div>`
           : `<div style="font-size:13.5px; color:var(--muted);">Pas de défi fixé ce matin</div><div style="margin-top:4px; font-size:13px;"><b style="color:var(--text); font-size:21px; font-weight:800;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui</div>`}
         ${monthlyBlock}
       </div>`;
@@ -10151,7 +10276,11 @@ function supervisorNudge(agentName){
 function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed){
   const lines = personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed);
   if(!lines) return lines;
-  return lines.map(l => ({ ...l, text: calendarizeRelativeDays(l.text, refDayForSeed) }));
+  // 🏷️ PÉRIMÈTRE EXPLICITE — voir commentLinesToHtml. Ces phrases-là parlent TOUJOURS du cumul du
+  // MOIS. Sans l'étiquette, elles se retrouvaient collées sous un gros « 0 » qui, lui, est le chiffre
+  // du JOUR : l'agent lisait « 0 » puis « 16 contrats » dans la même carte et concluait, logiquement,
+  // que l'appli comptait mal. Les deux chiffres étaient justes — c'est le cadre qui manquait.
+  return lines.map(l => ({ ...l, scope: 'mois', text: calendarizeRelativeDays(l.text, refDayForSeed) }));
 }
 function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed){
   const n = firstName(agentName);
@@ -10467,13 +10596,34 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
 // agréable à lire même quand une carte a 3 lignes. Seule la ligne "critique" (minimum vraiment en danger)
 // se détache avec un fond et une bordure, pour que l'œil aille dessus en premier sans que tout le reste
 // crie en même temps.
+// 🏷️ ÉTIQUETTE DE PÉRIMÈTRE — « Aujourd'hui » / « Ce mois » devant chaque phrase.
+// ---------------------------------------------------------------------------
+// POURQUOI. Une carte d'agent empile deux familles de commentaires qui ne parlent PAS de la même
+// période : celui de la journée (dayOverDayComment) et ceux du cumul mensuel (personalDailyComment).
+// Rien ne les distinguait à l'écran. Résultat concret remonté du terrain : une carte affichait le gros
+// « 0 » du jour, puis « 0 contrat, normal quand on démarre », puis « 14ᵉ jour, 16 contrats » — trois
+// chiffres justes, lus comme trois chiffres contradictoires. C'est CE mélange, et non le moteur de
+// calcul, qui faisait croire à une erreur de comptage.
+// L'étiquette est portée par la ligne elle-même (champ `scope`, posé dans les deux fonctions qui les
+// fabriquent), pas par l'appelant : aucune carte ne peut donc l'oublier, et les ~200 phrases existantes
+// n'ont pas eu à être réécrites une par une.
+const COMMENT_SCOPE_LABELS = {
+  jour: { txt: "Aujourd'hui", color: '#5680ab', bg: 'rgba(86,128,171,0.16)' },
+  mois: { txt: 'Ce mois',     color: '#7d739e', bg: 'rgba(125,115,158,0.16)' }
+};
+function commentScopeChip(scope){
+  const s = COMMENT_SCOPE_LABELS[scope];
+  if(!s) return '';
+  return `<span style="flex-shrink:0; font-size:9.5px; font-weight:800; letter-spacing:.3px; text-transform:uppercase; color:${s.color}; background:${s.bg}; border:1px solid ${s.color}44; border-radius:5px; padding:1.5px 6px; margin-top:1px; white-space:nowrap;">${s.txt}</span>`;
+}
 function commentLinesToHtml(commentLines){
   if(!commentLines) return '';
   const rows = commentLines.map(l=>{
+    const chip = commentScopeChip(l.scope);
     if(l.critical){
-      return `<div style="margin-top:2px; padding:9px 11px; border-radius:8px; background:${l.bg}; border:1px solid ${l.color}33; font-weight:600; font-size:13px; color:${l.color}; line-height:1.5; animation: pulseWarn 1.6s infinite;">${l.text}</div>`;
+      return `<div style="margin-top:2px; padding:9px 11px; border-radius:8px; background:${l.bg}; border:1px solid ${l.color}33; font-weight:600; font-size:13px; color:${l.color}; line-height:1.5; animation: pulseWarn 1.6s infinite;">${chip ? `<span style="display:inline-block; margin-right:6px; vertical-align:1px;">${chip}</span>` : ''}${l.text}</div>`;
     }
-    return `<div style="display:flex; align-items:flex-start; gap:7px; font-size:12.5px; color:var(--text); line-height:1.5; opacity:0.92;"><span style="color:${l.color}; font-size:8px; margin-top:5px; flex-shrink:0;">●</span><span>${l.text}</span></div>`;
+    return `<div style="display:flex; align-items:flex-start; gap:7px; font-size:12.5px; color:var(--text); line-height:1.5; opacity:0.92;"><span style="color:${l.color}; font-size:8px; margin-top:5px; flex-shrink:0;">●</span>${chip}<span>${l.text}</span></div>`;
   });
   return `<div style="margin-top:10px; display:flex; flex-direction:column; gap:7px;">${rows.join('')}</div>`;
 }
@@ -10571,7 +10721,9 @@ async function countZeroDaysThisMonthSoFar(agentName, refDateStr){
 async function dayOverDayComment(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr, ctx){
   const result = await dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr, ctx);
   if(!result) return result;
-  return { ...result, text: calendarizeRelativeDays(result.text, refDateStr) };
+  // 🏷️ Cette phrase-ci ne parle QUE de la journée en cours (voir personalDailyComment pour le pendant
+  // mensuel). Étiquetée « Aujourd'hui », elle ne peut plus être lue comme un total du mois.
+  return { ...result, scope: 'jour', text: calendarizeRelativeDays(result.text, refDateStr) };
 }
 async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized, nowHour, refDateStr, ctx){
   if(yesterdayRealized == null) return null;
@@ -10788,12 +10940,28 @@ function historyStripHtml(historyFull){
 // celle des jours ouvrés PASSÉS tant que todayCounts est faux (voir isDayOverForMessage chez l'appelant),
 // pour que l'agent voie "tu as une série de 4, ne la casse pas aujourd'hui" dès le matin plutôt que de voir
 // la flamme disparaître entre minuit et son premier contrat du jour.
+//
+// ⚠️ SÉRIE PLAFONNÉE — LE PIÈGE À CORRIGER.
+// Ces deux fonctions ne peuvent compter que ce que `historyFull` contient. Si la fenêtre fait 5 jours,
+// une série de 14 jours s'affiche « 5j » : un chiffre FAUX, posé à côté de compteurs justes, qui
+// alimentait le sentiment que l'appli comptait mal. On note donc, à chaque appel, si la série a butté
+// sur le bord de la fenêtre — `streakEstPlafonnee()` répond juste après, et le badge affiche « 20j+ »
+// au lieu de « 20j ». Le drapeau est lu immédiatement après l'appel, dans le même bloc synchrone, à
+// l'endroit où le badge est construit : aucun risque d'en lire un périmé.
+let _streakPlafonnee = false;
+function streakEstPlafonnee(){ return _streakPlafonnee; }
+// Suffixe d'affichage d'un badge de série : « 7j » si la série est complète, « 20j+ » si elle a été
+// coupée par la taille de la fenêtre d'historique. À appeler juste après computeZeroStreak /
+// computeObjectiveStreak, dont il lit le drapeau.
+function streakLabel(n){ return `${n}j${streakEstPlafonnee() ? '+' : ''}`; }
 function computeZeroStreak(todayRealized, historyFull, todayCounts){
+  _streakPlafonnee = false;
   if(!todayCounts){
     let streak = 0;
     for(const day of historyFull){
       if((day.realized||0) > 0) streak++; else break;
     }
+    if(streak === historyFull.length && streak > 0) _streakPlafonnee = true;
     return streak;
   }
   if(todayRealized <= 0) return 0;
@@ -10801,6 +10969,7 @@ function computeZeroStreak(todayRealized, historyFull, todayCounts){
   for(const day of historyFull){
     if((day.realized||0) > 0) streak++; else break;
   }
+  if(streak === historyFull.length + 1) _streakPlafonnee = true;
   return streak;
 }
 
@@ -10809,12 +10978,14 @@ function computeZeroStreak(todayRealized, historyFull, todayCounts){
 // Ne compte que les jours où un objectif avait réellement été fixé (objectif=0 = pas de repère, ignoré
 // plutôt que compté comme un échec ou une réussite). Fonction GLOBALE, même règle todayCounts que ci-dessus.
 function computeObjectiveStreak(todayRealized, todayObjective, historyFull, todayCounts){
+  _streakPlafonnee = false;
   const dayHits = day => (day.objective||0) > 0 && (day.realized||0) >= (day.objective||0);
   if(!todayCounts){
     let streak = 0;
     for(const day of historyFull){
       if(dayHits(day)) streak++; else break;
     }
+    if(streak === historyFull.length && streak > 0) _streakPlafonnee = true;
     return streak;
   }
   if(!(todayObjective > 0) || todayRealized < todayObjective) return 0;
@@ -10822,6 +10993,7 @@ function computeObjectiveStreak(todayRealized, todayObjective, historyFull, toda
   for(const day of historyFull){
     if(dayHits(day)) streak++; else break;
   }
+  if(streak === historyFull.length + 1) _streakPlafonnee = true;
   return streak;
 }
 
@@ -10837,9 +11009,18 @@ async function buildDailyBriefingHtml(baseRows){
   const dateStr = todayStr();
   const [y, m] = dateStr.split('-').map(Number);
   const remainingDays = workingDaysRemainingFrom(dateStr);
+  // Deux fenêtres, volontairement différentes :
+  //  • recentDates (5 jours) alimente le petit graphique en barres « 5 derniers jours » — au-delà, la
+  //    bande devient illisible ;
+  //  • streakDates (20 jours ouvrés, soit un mois complet) alimente UNIQUEMENT les séries 🔥 et 🎯.
+  // Avant, les deux partageaient la fenêtre de 5 jours : une série de 14 jours s'affichait « 5j ».
+  // Chiffre faux, à côté de compteurs justes — exactement le genre de détail qui fait perdre confiance
+  // dans TOUS les chiffres de l'appli. Les tableaux sont mutualisés dans boardsByDate et servis depuis
+  // prodBoardCache, donc la fenêtre plus large ne coûte quasiment rien.
   const recentDates = lastNWorkingDaysBefore(dateStr, 5);
+  const streakDates = lastNWorkingDaysBefore(dateStr, 10);
   const boardsByDate = {};
-  await Promise.all(recentDates.map(async d=>{
+  await Promise.all([...new Set([...recentDates, ...streakDates])].map(async d=>{
     boardsByDate[d] = prodBoardCache[d] || await getProdBoard(d);
     prodBoardCache[d] = boardsByDate[d];
   }));
@@ -10875,11 +11056,12 @@ async function buildDailyBriefingHtml(baseRows){
     .map(b=>{
     const yesterdayDate = recentDates[0] || null;
     const yesterdayRealized = yesterdayDate ? (getAgentProd(boardsByDate[yesterdayDate], b.agent).realized || 0) : null;
-    // historyFull garde objectif ET réalisé de chaque jour (pour calculer la série "jours sans finir à 0") ;
-    // history ne garde que le réalisé (pour le petit graphique en barres).
-    const historyFull = recentDates.map(d => getAgentProd(boardsByDate[d], b.agent));
-    const history = historyFull.map(p => p.realized || 0);
-    return { ...b, yesterdayRealized, history, historyFull };
+    // historyFull garde objectif ET réalisé de chaque jour, sur la fenêtre LARGE (20 jours ouvrés) :
+    // c'est lui qui sert au calcul des séries 🔥/🎯, qui n'ont plus à être plafonnées à 5.
+    // history ne garde que le réalisé sur la fenêtre COURTE (5 jours), pour le petit graphique en barres.
+    const historyFull = streakDates.map(d => getAgentProd(boardsByDate[d], b.agent));
+    const historyStrip = recentDates.map(d => getAgentProd(boardsByDate[d], b.agent));
+    return { ...b, yesterdayRealized, historyStrip, historyFull };
   });
 
   // Alerte "objectif du matin pas fixé" — le pire des scénarios pour le boss, c'est un agent qui démarre
@@ -10931,9 +11113,11 @@ async function buildDailyBriefingHtml(baseRows){
     // commencé — voir commentaire de computeZeroStreak plus haut).
     const todayCounts = isWorkingDay(dateStr) && isDayOverForMessage(dateStr);
     const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull, todayCounts);
-    const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak} jours ouvrés d'affilée sans finir à 0 contrat" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreak}j</span>` : '';
+    const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
+    const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak}${zeroStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée sans finir à 0 contrat${zeroStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreakTxt}</span>` : '';
     const objectiveStreak = computeObjectiveStreak(r.todayRealized, r.todayObjective, r.historyFull, todayCounts);
-    const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak} jours ouvrés d'affilée avec l'objectif du jour atteint" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreak}j</span>` : '';
+    const objectiveStreakTxt = streakLabel(objectiveStreak), objectiveStreakPlus = streakEstPlafonnee();
+    const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak}${objectiveStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée avec l'objectif du jour atteint${objectiveStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreakTxt}</span>` : '';
     // Podium : contour or/argent/bronze pour le top 3 du classement du mois — prend le pas sur le contour
     // "objectif atteint" habituel, la carte du 1er/2e/3e reste identifiable même sans objectif fixé.
     const podiumColor = podiumBorderColor(rankInfo?.rank);
@@ -10954,7 +11138,7 @@ async function buildDailyBriefingHtml(baseRows){
              <span style="font-size:13px; font-weight:700; color:${barColor};">${pct}%</span>
            </div>`
         : `<div style="font-size:12.5px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé aujourd'hui : <b style="color:var(--text); font-weight:700;">${r.todayRealized}</b></div>`}
-      ${historyStripHtml(r.historyFull)}
+      ${historyStripHtml(r.historyStrip)}
       ${allLines.length ? `<div style="margin-top:12px; padding-top:11px; border-top:1px solid rgba(255,255,255,0.07);">${commentLinesToHtml(allLines)}</div>` : ''}
     </div>`;
   }
@@ -16576,7 +16760,46 @@ function billingResolveAgent(rawName){
   const prefixMatches = agents.filter(a => norm(a).startsWith(n) || n.startsWith(norm(a)));
   if(prefixMatches.length === 1) return prefixMatches[0];
 
+  // 5) LETTRE DOUBLÉE, LETTRE OUBLIÉE, LETTRE INVERSÉE — l'erreur de saisie la plus banale du fichier,
+  //    et jusqu'ici la plus coûteuse. Cas réel du tableau de facturation : « Rosine » alors que
+  //    l'agent est enregistrée « Rosinne ». Aucune des règles ci-dessus ne l'attrape (ce n'est ni un
+  //    préfixe, ni un mot entier, ni une inversion), le contrat restait donc rattaché à PERSONNE : il
+  //    comptait dans le total du fichier mais dans le total d'aucun agent. Un écart d'un contrat que
+  //    rien n'expliquait à l'écran.
+  //    On accepte donc UNE seule opération d'écart (ajout, suppression, remplacement ou transposition
+  //    de deux lettres voisines) — et, comme partout ailleurs ici, uniquement si un SEUL agent peut
+  //    correspondre. Le seuil reste volontairement à 1 : au-delà, on devine, et on ne devine jamais
+  //    sur de l'argent. Prénoms de moins de 4 lettres exclus, où un caractère d'écart change la
+  //    personne (« Ali » / « Alia »).
+  if(n.length >= 4){
+    const proches = agents.filter(a => norm(a).length >= 4 && distanceUneFaute(norm(a), n));
+    if(proches.length === 1) return proches[0];
+  }
+
   return null;
+}
+
+// Vrai si les deux chaînes sont à une seule faute de frappe l'une de l'autre (distance
+// de Damerau-Levenshtein ≤ 1). Écrite en sortie anticipée plutôt qu'en matrice complète :
+// on n'a jamais besoin de la distance exacte, seulement de savoir si elle vaut 0 ou 1.
+function distanceUneFaute(a, b){
+  if(a === b) return true;
+  const la = a.length, lb = b.length;
+  if(Math.abs(la - lb) > 1) return false;
+  if(la === lb){
+    // Même longueur : soit une lettre remplacée, soit deux lettres voisines inversées.
+    let i = 0;
+    while(i < la && a[i] === b[i]) i++;
+    if(i === la) return true;
+    if(a.slice(i + 1) === b.slice(i + 1)) return true;                       // remplacement
+    if(a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2)) return true;  // transposition
+    return false;
+  }
+  // Longueurs différentes de 1 : une lettre en trop dans la plus longue.
+  const longue = la > lb ? a : b, courte = la > lb ? b : a;
+  let i = 0;
+  while(i < courte.length && longue[i] === courte[i]) i++;
+  return longue.slice(i + 1) === courte.slice(i);
 }
 
 // ------------------------------------------------------------
@@ -16759,6 +16982,13 @@ async function importBillingProd(text, monthVal){
     try{ await syncProdBoardRealizedForDates([...touchedDatesImport]); }
     catch(e){ console.warn('syncProdBoardRealizedForDates', e); }
   }
+  // 🤖 Puis on vérifie que TOUT le mois tombe juste, pas seulement les journées de ce fichier-ci.
+  // Un import ne contient que ce qu'il contient : si une journée plus ancienne était restée fausse
+  // (agent ajouté après coup, par exemple), rien ne l'aurait jamais rattrapée. Voir
+  // autoReparerJourneesSiEcart. `forcer` : après un import, on revérifie même si on a déjà vérifié
+  // ce mois-ci dans cette session.
+  try{ await autoReparerJourneesSiEcart(Object.keys(rowsByMonth), { forcer: true }); }
+  catch(e){ console.warn('autoReparerJourneesSiEcart (import)', e); }
 
   const rows = Object.values(rowsByMonth).flat();
   lastImportAnomalies = anomalies;
@@ -18986,6 +19216,10 @@ async function syncBackofficeInbox(opts){
     if(touchedDates.size){
       try{ await syncProdBoardRealizedForDates([...touchedDates]); }
       catch(e){ console.warn('syncProdBoardRealizedForDates', e); }
+      // 🤖 Même filet qu'à l'import CSV : on revérifie l'ENSEMBLE des mois touchés, pas seulement les
+      // journées de ce relevé-ci, pour qu'un décalage plus ancien se corrige tout seul au passage.
+      try{ await autoReparerJourneesSiEcart([...touchedDates].map(d => d.slice(0, 7)), { forcer: true }); }
+      catch(e){ console.warn('autoReparerJourneesSiEcart (backoffice)', e); }
     }
 
     // Boîte vidée : les documents rangés sont supprimés pour qu'elle reste légère et qu'aucun contrat
@@ -19278,10 +19512,27 @@ async function backofficeMonthHasData(year, month){
 // pour les contrats reçus de Pabbly que pour un import CSV — voir importBillingProd/syncBackofficeInbox).
 // Sert à réalimenter le tableau de bord quotidien (Arena, Cash, briefings, badges) une fois que plus
 // aucune donnée n'est saisie par les agents eux-mêmes : voir syncProdBoardRealizedForDates ci-dessous.
+// ⚠️ Même correction que dans syncProdBoardRealizedForDates : un contrat daté du 31 juillet peut être
+// RANGÉ dans le classeur d'août (bouton « 📅 Déplacer », très courant en fin de mois). Se limiter au
+// classeur du mois de la date faisait donc disparaître ce contrat de sa journée. On regarde le mois de
+// la date ET ses deux voisins, et on ne retient que r.date.
+function moisVoisins(monthVal){
+  const [y, m] = monthVal.split('-').map(Number);
+  const f = (yy, mm)=> `${yy}-${String(mm).padStart(2, '0')}`;
+  return [
+    m === 1 ? f(y - 1, 12) : f(y, m - 1),
+    monthVal,
+    m === 12 ? f(y + 1, 1) : f(y, m + 1)
+  ];
+}
 async function backofficeRealizedForDate(agent, dateStr){
-  const monthVal = dateStr.slice(0, 7);
-  const data = await getBillingProd(monthVal);
-  return (data.rows || []).filter(r => r.agent === agent && r.date === dateStr).length;
+  let total = 0;
+  for(const mv of moisVoisins(dateStr.slice(0, 7))){
+    let data;
+    try{ data = await getBillingProd(mv); }catch(e){ continue; }
+    total += ((data && data.rows) || []).filter(r => r.agent === agent && r.date === dateStr).length;
+  }
+  return total;
 }
 
 // Recalcule et réécrit board.agents[agent].realized pour chaque date de dateStrs, à partir des contrats
@@ -19300,16 +19551,45 @@ async function syncProdBoardRealizedForDates(dateStrs){
   // de 130 000 comparaisons, et l'écran se figeait plusieurs secondes. Maintenant on parcourt les
   // contrats UNE fois pour construire un index « agent + jour → nombre », puis chaque lecture est
   // instantanée. Résultat identique au contrat près, simplement obtenu bien plus vite.
-  const moisConcernes = [...new Set(uniqueDates.map(d => d.slice(0, 7)))];
+  //
+  // ⚠️ DEUX BUGS D'ÉCART CORRIGÉS ICI — c'est LE point où le total du mois et la somme des journées
+  // pouvaient diverger sans que rien ne le signale.
+  //
+  // 1) MOIS DE RANGEMENT ≠ MOIS DE LA DATE. On n'ouvrait que le classeur du mois de la date à
+  //    synchroniser. Or un contrat peut être RANGÉ dans le classeur d'août (mois de paie) tout en
+  //    portant la date du 31 juillet — c'est précisément ce que fait le bouton « 📅 Déplacer », et
+  //    c'est fréquent en fin de mois. En synchronisant le 31 juillet on cherchait donc dans le
+  //    classeur de juillet, où le contrat n'est plus : la journée affichait un contrat de moins que
+  //    le mois. On balaie maintenant aussi le classeur PRÉCÉDENT et le SUIVANT, et on indexe sur
+  //    r.date, jamais sur le classeur d'origine.
+  //
+  // 2) AGENTS HORS `config.agents`. La boucle d'écriture ne parcourait que les agents ACTIFS. Un
+  //    contrat rattaché à quelqu'un d'archivé (parti en cours de mois) était donc compté dans son
+  //    total mensuel — backofficeMonthlyCount lit toutes les lignes — mais n'atterrissait sur AUCUNE
+  //    journée. Total d'équipe du jour ≠ total du mois, tous les jours, sans explication visible.
+  //    On écrit désormais pour l'union « agents actifs + agents réellement présents dans les
+  //    contrats de ces journées-là ».
+  const moisConcernes = new Set();
+  uniqueDates.forEach(d=>{
+    const [y, m] = d.slice(0, 7).split('-').map(Number);
+    const ajoute = (yy, mm)=> moisConcernes.add(`${yy}-${String(mm).padStart(2, '0')}`);
+    ajoute(y, m);
+    if(m === 1) ajoute(y - 1, 12); else ajoute(y, m - 1);
+    if(m === 12) ajoute(y + 1, 1); else ajoute(y, m + 1);
+  });
   const index = Object.create(null);
+  const agentsVusParJour = Object.create(null);   // dateStr → Set d'agents ayant au moins 1 contrat ce jour
+  const datesVoulues = new Set(uniqueDates);
   for(const mv of moisConcernes){
-    const data = await getBillingProd(mv);
-    const rows = data.rows || [];
+    let data;
+    try{ data = await getBillingProd(mv); }catch(e){ continue; }
+    const rows = (data && data.rows) || [];
     for(let i = 0; i < rows.length; i++){
       const r = rows[i];
       if(!r || !r.agent || !r.date) continue;
-      const k = r.agent + '|' + r.date;
-      index[k] = (index[k] || 0) + 1;
+      if(!datesVoulues.has(r.date)) continue;      // une seule des journées demandées nous intéresse
+      index[r.agent + '|' + r.date] = (index[r.agent + '|' + r.date] || 0) + 1;
+      (agentsVusParJour[r.date] || (agentsVusParJour[r.date] = new Set())).add(r.agent);
     }
   }
 
@@ -19317,7 +19597,11 @@ async function syncProdBoardRealizedForDates(dateStrs){
     const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
     if(!board.agents) board.agents = {};
     let changed = false;
-    for(const agent of config.agents){
+    // Union : les agents actifs (pour remettre à 0 celui qui n'a rien signé ce jour-là) + tous ceux
+    // qui apparaissent réellement dans les contrats de cette journée, actifs ou non.
+    const aEcrire = new Set(config.agents);
+    (agentsVusParJour[dateStr] || []).forEach(a => aEcrire.add(a));
+    for(const agent of aEcrire){
       const count = index[agent + '|' + dateStr] || 0;
       if(!board.agents[agent]) board.agents[agent] = { objective: 0, realized: 0 };
       if(board.agents[agent].realized !== count){ board.agents[agent].realized = count; changed = true; }
@@ -19331,6 +19615,160 @@ async function syncProdBoardRealizedForDates(dateStrs){
   // y compris pour des contrats datés d'un jour PASSÉ, que le listener du tableau du jour ne voyait pas.
   // Placé ici parce que c'est le passage OBLIGÉ des deux chemins d'arrivée (Pabbly et import CSV).
   if(uniqueDates.length) await bumpProdPulse(uniqueDates);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔧 RÉPARER LES JOURNÉES D'UN MOIS — le rattrapage des tableaux déjà faussés
+// ═══════════════════════════════════════════════════════════════════════════
+// LE CAS RÉEL QUI REND FOU : un agent affiche 2 contrats sur son mois et 0 sur le Bilan du jour.
+//
+// POURQUOI ÇA ARRIVE. Le total du MOIS est recompté à la volée depuis les contrats eux-mêmes
+// (backofficeMonthlyCount lit toutes les lignes) : il est donc toujours juste. Le chiffre du JOUR, lui,
+// est un chiffre ÉCRIT une fois pour toutes dans le tableau de la journée, au moment de l'import. Si
+// l'agent n'existait pas encore dans Réglages ce jour-là — une recrue ajoutée après coup, le cas le
+// plus fréquent — l'import n'avait aucune raison de lui écrire une ligne : la journée reste donc à 0
+// pour lui, définitivement, alors que ses contrats sont bien là. Deux chiffres, deux mécaniques, et
+// c'est le plus visible des deux qui a l'air faux.
+//
+// La correction apportée à syncProdBoardRealizedForDates empêche que ça se reproduise, mais elle ne
+// répare RIEN de ce qui est déjà écrit en base : ces journées-là resteraient fausses tant que personne
+// ne réimporte le mois. D'où ce bouton, qui refait l'écriture pour TOUTES les journées du mois à partir
+// des contrats — sans rien réimporter, et sans toucher aux objectifs du jour saisis par les agents
+// (seul le champ `realized` est réécrit).
+async function reconstruireJourneesDuMois(monthVal){
+  const mv = monthVal || document.getElementById('billingSheetMonth')?.value || todayStr().slice(0, 7);
+  const [y, m] = mv.split('-').map(Number);
+  const joursDuMois = new Date(y, m, 0).getDate();
+  const dates = [];
+  for(let d = 1; d <= joursDuMois; d++) dates.push(`${mv}-${String(d).padStart(2, '0')}`);
+  // On repart d'un cache vide pour ce mois : sinon on réécrirait par-dessus les tableaux périmés
+  // qu'on a justement en mémoire.
+  dates.forEach(d => { delete prodBoardCache[d]; });
+  if(typeof billingInvalidate === 'function') billingInvalidate();
+  await syncProdBoardRealizedForDates(dates);
+  logAudit('Admin', 'Journées reconstruites depuis les contrats', billingMonthLabel(mv));
+  return dates.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🤖 REMISE À JOUR AUTOMATIQUE — l'appli se répare toute seule, sans rien cliquer
+// ═══════════════════════════════════════════════════════════════════════════
+// LA DEMANDE, telle qu'elle a été formulée : « quand le backoffice envoie sur Telegram ou quand
+// j'importe un CSV, que ce soit à jour ». Point.
+//
+// Ce qui l'empêchait : le nombre de contrats d'une JOURNÉE est une valeur écrite en base au moment où
+// les contrats arrivent. Elle ne se recalcule jamais toute seule ensuite. Donc dès que quelque chose
+// change APRÈS l'arrivée des contrats — le cas courant étant une recrue ajoutée dans Réglages après
+// coup, dont les contrats étaient déjà là — la journée reste figée sur une valeur fausse pendant que
+// le total du mois, lui, se recalcule et affiche le bon chiffre. Deux chiffres différents à l'écran,
+// pour le même agent, sans que rien ne le signale ni ne le corrige.
+//
+// Cette fonction ferme le trou définitivement : elle compare, pour chaque agent, le total du mois et
+// la somme de ses journées ; si ça ne tombe pas juste, elle réécrit les journées du mois à partir des
+// contrats. Silencieusement, sans confirmation, sans bouton. Elle est branchée sur TOUS les moments
+// où la vérité peut avoir bougé : réception Telegram/Pabbly, import CSV, ajout ou retour d'un agent,
+// et ouverture de l'appli. Le bouton manuel du Contrôle de comptage reste, mais ne devrait plus
+// jamais servir.
+//
+// Coût : une comparaison de nombres déjà en mémoire. La réécriture, elle, n'a lieu QUE s'il y a un
+// écart réel — donc quasiment jamais une fois le retard rattrapé.
+const _autoReparDejaFait = new Set();
+let _autoReparEnCours = false;
+async function autoReparerJourneesSiEcart(monthVals, opts){
+  const forcer = !!(opts && opts.forcer);
+  if(_autoReparEnCours) return 0;
+  const mois = [...new Set((Array.isArray(monthVals) ? monthVals : [monthVals]).filter(Boolean))];
+  if(!mois.length) return 0;
+  _autoReparEnCours = true;
+  let moisRepares = 0;
+  try{
+    for(const mv of mois){
+      if(!forcer && _autoReparDejaFait.has(mv)) continue;
+      const [y, m] = mv.split('-').map(Number);
+      if(!y || !m) continue;
+
+      // Total par agent, recompté depuis les contrats — la référence, toujours juste.
+      let data;
+      try{ data = await getBillingProd(mv); }catch(e){ continue; }
+      const rows = (data && data.rows) || [];
+      if(!rows.length){ _autoReparDejaFait.add(mv); continue; }
+      const isoValide = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+      const attendu = Object.create(null);
+      rows.forEach(r=>{
+        // Seuls les contrats datés d'un jour DE CE MOIS peuvent atterrir sur une journée de ce mois.
+        // Les autres (sans date, ou datés d'un autre mois) sont légitimement absents : les compter
+        // ici déclencherait une réparation en boucle qui ne corrigerait jamais rien.
+        if(!r || !r.agent || !isoValide(r.date) || r.date.slice(0, 7) !== mv) return;
+        attendu[r.agent] = (attendu[r.agent] || 0) + 1;
+      });
+
+      // Somme réellement écrite dans les journées.
+      // ⚡ LES 31 LECTURES SE FONT EN PARALLÈLE, PAS L'UNE APRÈS L'AUTRE.
+      // Première version : une boucle avec un `await` à l'intérieur — donc 31 allers-retours à la
+      // base mis bout à bout, et jusqu'à 62 sur deux mois. Chaque aller-retour ne coûte presque rien,
+      // mais additionnés en file indienne ça fait plusieurs secondes pendant lesquelles l'écran ne
+      // s'affiche pas. C'est ce qui rendait le Bilan de la journée interminable à l'ouverture.
+      // Toutes les journées sont indépendantes : on les demande donc toutes en même temps, et on
+      // attend le lot. Le temps total devient celui de la lecture la plus lente, pas leur somme.
+      const joursDuMois = new Date(y, m, 0).getDate();
+      const constate = Object.create(null);
+      const dsList = [];
+      for(let d = 1; d <= joursDuMois; d++) dsList.push(`${mv}-${String(d).padStart(2, '0')}`);
+      const lus = await Promise.all(dsList.map(async ds=>{
+        if(prodBoardCache[ds]) return prodBoardCache[ds];
+        const b = await getProdBoard(ds);
+        prodBoardCache[ds] = b;
+        return b;
+      }));
+      lus.forEach(board=>{
+        const ag = (board && board.agents) || {};
+        Object.keys(ag).forEach(a=>{ constate[a] = (constate[a] || 0) + (ag[a].realized || 0); });
+      });
+
+      const desaccord = [...new Set([...Object.keys(attendu), ...Object.keys(constate)])]
+        .filter(a => (attendu[a] || 0) !== (constate[a] || 0));
+
+      if(desaccord.length){
+        await reconstruireJourneesDuMois(mv);
+        moisRepares++;
+        console.info(`[VortexNova] Journées de ${mv} remises à jour automatiquement — ${desaccord.join(', ')}`);
+        logAudit('Système', 'Journées remises à jour automatiquement', `${billingMonthLabel(mv)} — ${desaccord.join(', ')}`);
+      }
+      _autoReparDejaFait.add(mv);
+    }
+  }catch(e){
+    console.warn('autoReparerJourneesSiEcart:', e);
+  }finally{
+    _autoReparEnCours = false;
+  }
+  return moisRepares;
+}
+
+// Le mois en cours et le précédent : les deux seuls qui peuvent encore bouger (un contrat de fin de
+// mois arrive parfois le 2 ou le 3 du mois suivant). Au-delà, plus rien n'entre.
+function moisAVerifier(){
+  const t = todayStr();
+  const [y, m] = t.slice(0, 7).split('-').map(Number);
+  const prec = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+  return [t.slice(0, 7), prec];
+}
+
+async function reparerJourneesDepuisControle(btn){
+  const mv = document.getElementById('billingSheetMonth')?.value || todayStr().slice(0, 7);
+  if(!confirm(`Reconstruire toutes les journées de ${billingMonthLabel(mv)} à partir des contrats ?\n\nChaque journée du mois est recomptée depuis les contrats rangés, puis réécrite. C'est ce qui répare un agent qui affiche un total du mois correct mais 0 sur le Bilan du jour.\n\nLes objectifs du jour saisis par les agents ne sont pas touchés — seul le nombre de contrats est réécrit.`)) return;
+  const libelle = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Reconstruction…'; }
+  try{
+    const n = await reconstruireJourneesDuMois(mv);
+    clearRenderCaches();
+    showToast(`✅ ${n} journées reconstruites depuis les contrats. Le Bilan du jour et le total du mois disent maintenant la même chose.`, 'ok', 8000);
+    await renderComptageControl(true);
+  }catch(e){
+    console.error('reparerJourneesDepuisControle:', e);
+    showToast('La reconstruction a échoué : ' + (e && e.message || e), 'err', 8000);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = libelle; }
+  }
 }
 
 // ------------------------------------------------------------
@@ -19384,6 +19822,207 @@ async function renderPaySourcePanel(){
     html += '</tbody></table></div>';
   }
   el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔍 CONTRÔLE DE COMPTAGE — « d'où vient la différence ? », répondu en une page
+// ═══════════════════════════════════════════════════════════════════════════
+// POURQUOI CE PANNEAU EXISTE.
+// Un écart entre le total du Sheet et la somme des agents n'était élucidable qu'à la main, ligne par
+// ligne, sur des centaines de contrats. Et comme les chiffres justes et les chiffres douteux se
+// ressemblent, le doute finissait par contaminer TOUS les compteurs de l'appli.
+//
+// CE QU'IL FAIT. Il repart de la seule source qui fasse foi — les contrats rangés du mois — et pose
+// l'égalité complète :
+//
+//     contrats rangés = Σ(contrats par agent) + non rattachés + sans date
+//     contrats payés  = Σ(contrats par agent) − rétractations
+//
+// Puis, pour chaque agent, il compare son total du MOIS à la somme de ses JOURNÉES (les tableaux qui
+// alimentent Arena, classements, séries et briefings). Toute ligne qui ne tombe pas juste est affichée
+// avec sa cause, jamais silencieusement absorbée. Trois causes légitimes existent et sont nommées
+// comme telles — ce ne sont PAS des bugs, mais il faut pouvoir les lire :
+//   • une rétractation retirée du mois n'est retirée d'aucune journée (elle n'a pas de date propre) ;
+//   • un contrat rangé sur ce mois-ci mais daté du mois précédent est payé ici et compté sur sa vraie
+//     journée, donc ailleurs (c'est le fonctionnement voulu du bouton « 📅 Déplacer ») ;
+//   • un contrat d'un agent archivé compte dans l'historique sans peser sur une paie en cours.
+async function renderComptageControl(forcer){
+  const el = document.getElementById('comptageControlPanel');
+  if(!el) return;
+  if(!forcer && !el.innerHTML) return;   // ne travaille que si on l'a explicitement demandé
+  const monthVal = document.getElementById('billingSheetMonth')?.value || todayStr().slice(0, 7);
+  const [y, m] = monthVal.split('-').map(Number);
+  el.innerHTML = '<div class="empty" style="padding:14px;">⏳ Rapprochement en cours…</div>';
+
+  try{
+    const data = await getBillingProd(monthVal);
+    const rows = (data && data.rows) || [];
+
+    // ── 1. Ventilation de chaque ligne rangée sur ce mois ────────────────────
+    const parAgent = Object.create(null);
+    const sansAgent = [], sansDate = [], datesHorsMois = [];
+    const isoValide = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    rows.forEach(r=>{
+      if(!r) return;
+      if(!r.agent){ sansAgent.push(r); return; }
+      parAgent[r.agent] = (parAgent[r.agent] || 0) + 1;
+      if(!isoValide(r.date)) sansDate.push(r);
+      else if(r.date.slice(0, 7) !== monthVal) datesHorsMois.push(r);
+    });
+
+    const totalRange = rows.length;
+    const totalRattache = Object.values(parAgent).reduce((s, v) => s + v, 0);
+
+    // ── 2. Somme des journées, agent par agent ──────────────────────────────
+    // On relit les tableaux du jour du mois : c'est eux, et pas le total mensuel, qui alimentent
+    // l'Arena, les classements, les séries 🔥/🎯 et les briefings. Un écart ici est exactement ce que
+    // le patron voit à l'écran sans pouvoir se l'expliquer.
+    const joursDuMois = new Date(y, m, 0).getDate();
+    const dateStrs = [];
+    for(let d = 1; d <= joursDuMois; d++) dateStrs.push(`${monthVal}-${String(d).padStart(2, '0')}`);
+    const boards = await Promise.all(dateStrs.map(async ds=>{
+      if(prodBoardCache[ds]) return prodBoardCache[ds];
+      const b = await getProdBoard(ds);
+      prodBoardCache[ds] = b;
+      return b;
+    }));
+    const sommeJours = Object.create(null);
+    boards.forEach(b=>{
+      const ag = (b && b.agents) || {};
+      Object.keys(ag).forEach(a=>{ sommeJours[a] = (sommeJours[a] || 0) + (ag[a].realized || 0); });
+    });
+
+    // ── 3. Rétractations déclarées ce mois-là ───────────────────────────────
+    const tousAgents = [...new Set([...Object.keys(parAgent), ...Object.keys(sommeJours), ...(config.agents || [])])].sort();
+    const retracts = Object.create(null);
+    await Promise.all(tousAgents.map(async a=>{ retracts[a] = await getMonthlyRetractCount(a, y, m) || 0; }));
+
+    const actifs = new Set(config.agents || []);
+    const connus = new Set(allKnownAgents());
+    const totalRetract = tousAgents.reduce((s, a) => s + (retracts[a] || 0), 0);
+
+    // ── 4. Rendu ────────────────────────────────────────────────────────────
+    const chiffre = (v, couleur)=> `<b style="font-size:19px; font-weight:800; color:${couleur || 'var(--text)'};">${v}</b>`;
+    const carte = (titre, valeur, couleur, sous)=> `
+      <div style="flex:1; min-width:150px; padding:12px 14px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:700; margin-bottom:4px;">${titre}</div>
+        ${chiffre(valeur, couleur)}
+        ${sous ? `<div style="font-size:11.5px; color:var(--muted); margin-top:3px; line-height:1.4;">${sous}</div>` : ''}
+      </div>`;
+
+    const ecartRattachement = totalRange - totalRattache;
+
+    // ── LE DIAGNOSTIC PRINCIPAL : « il a X sur son mois et 0 sur le Bilan du jour » ──────────
+    // On le calcule AVANT tout le reste et on l'affiche EN PREMIER, parce que c'est le symptôme
+    // que le patron voit à l'écran. Un agent dont le total du mois ne se retrouve pas dans la somme
+    // de ses journées a un tableau du jour faussé — et ça se répare en un clic (voir le bouton).
+    const journeesFaussees = [];
+    tousAgents.forEach(a=>{
+      const mois = parAgent[a] || 0;
+      const jours = sommeJours[a] || 0;
+      const legitime = sansDate.filter(r => r.agent === a).length + datesHorsMois.filter(r => r.agent === a).length;
+      const inexplique = (mois - jours) - legitime;
+      if(inexplique !== 0) journeesFaussees.push({ agent: a, mois, jours, inexplique });
+    });
+
+    const toutTombeJuste = ecartRattachement === 0 && !sansDate.length && !datesHorsMois.length && !journeesFaussees.length;
+
+    let html = '';
+
+    // Bandeau n°1 — le cas « 2 sur le mois, 0 sur le Bilan du jour », nommé et réparable.
+    if(journeesFaussees.length){
+      html += `
+      <div style="padding:14px 16px; border-radius:11px; margin-bottom:14px; background:rgba(229,72,77,0.12); border:1.5px solid rgba(229,72,77,0.5);">
+        <div style="font-weight:800; font-size:15px; color:var(--red);">🔴 ${journeesFaussees.length} agent(s) affichent un chiffre du jour FAUX</div>
+        <div style="font-size:13px; margin-top:6px; line-height:1.6;">
+          ${journeesFaussees.map(f => `<b>${escapeHtml(f.agent)}</b> : <b>${f.mois}</b> contrat${f.mois > 1 ? 's' : ''} sur son mois, mais seulement <b style="color:var(--red);">${f.jours}</b> réparti${f.jours > 1 ? 's' : ''} sur ses journées.`).join('<br>')}
+        </div>
+        <div style="font-size:12.5px; color:var(--muted); margin-top:9px; line-height:1.6;">
+          <b>Pourquoi :</b> le total du mois est recompté à chaque affichage depuis les contrats — il est toujours juste. Le chiffre du jour, lui, a été ÉCRIT une fois pour toutes au moment de l'import. Si l'agent n'existait pas encore dans Réglages ce jour-là (une recrue ajoutée après coup), l'import ne lui a rien écrit : sa journée est restée à 0 alors que ses contrats sont bien là. Le Bilan du jour, l'Arena, les classements et les séries lisent cette journée-là — pas le mois.
+        </div>
+        <button onclick="reparerJourneesDepuisControle(this)" style="margin-top:11px; padding:11px 20px; border-radius:9px; border:none; background:var(--red); color:#fff; font-weight:800; font-size:13.5px; cursor:pointer;">🔧 Réparer les journées de ${escapeHtml(billingMonthLabel(monthVal))}</button>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Recompte chaque journée du mois depuis les contrats et la réécrit. Rien à réimporter. Les objectifs du jour saisis par les agents ne sont pas touchés.</div>
+      </div>`;
+    }
+
+    html += `
+      <div style="padding:12px 15px; border-radius:11px; margin-bottom:14px; background:${toutTombeJuste ? 'rgba(52,183,116,0.10)' : 'rgba(185,138,66,0.10)'}; border:1px solid ${toutTombeJuste ? 'rgba(52,183,116,0.45)' : 'rgba(185,138,66,0.45)'};">
+        <div style="font-weight:800; font-size:14.5px;">${toutTombeJuste ? '✅ Tout tombe juste' : 'ℹ️ Détail du rapprochement'} — ${escapeHtml(billingMonthLabel(monthVal))}</div>
+        <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">${toutTombeJuste
+          ? `Les ${totalRange} contrats rangés sur ce mois sont tous rattachés à un agent, tous datés, et tous retrouvés sur leur journée. Le Bilan du jour et le total du mois disent la même chose pour tout le monde.`
+          : `${ecartRattachement} non rattaché(s), ${sansDate.length} sans date, ${datesHorsMois.length} daté(s) d'un autre mois. Le détail nominatif est plus bas.`}</div>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+        ${carte('Contrats rangés', totalRange, 'var(--text)', 'Toutes les lignes du mois de paie')}
+        ${carte('Rattachés à un agent', totalRattache, totalRattache === totalRange ? 'var(--green)' : 'var(--amber)', 'Ce qui alimente les compteurs')}
+        ${carte('Non rattachés', sansAgent.length, sansAgent.length ? 'var(--red)' : 'var(--muted)', 'Comptés nulle part')}
+        ${carte('Rétractations', totalRetract, totalRetract ? 'var(--amber)' : 'var(--muted)', 'Retirées du mois, pas des journées')}
+        ${carte('Payé au total', Math.max(0, totalRattache - totalRetract), 'var(--green)', 'Rattachés − rétractations')}
+      </div>`;
+
+    // ── Tableau par agent : mois vs somme des journées ──────────────────────
+    html += `<div style="font-weight:800; font-size:14px; margin:4px 0 8px;">Agent par agent — total du mois face à la somme de ses journées</div>
+      <div style="overflow-x:auto;"><table class="salary-table"><thead><tr>
+        <th>Agent</th><th>Mois (rangés)</th><th>Σ des journées</th><th>Écart</th><th>Rétract.</th><th>Explication</th>
+      </tr></thead><tbody>`;
+
+    let lignesAvecEcart = 0;
+    tousAgents.forEach(a=>{
+      const mois = parAgent[a] || 0;
+      const jours = sommeJours[a] || 0;
+      const ecart = mois - jours;
+      if(!mois && !jours) return;
+      // Les deux causes légitimes d'écart, nommées plutôt que subies.
+      const causes = [];
+      const horsMoisAgent = datesHorsMois.filter(r => r.agent === a).length;
+      const sansDateAgent = sansDate.filter(r => r.agent === a).length;
+      if(sansDateAgent) causes.push(`${sansDateAgent} sans date → compté dans le mois, sur aucune journée`);
+      if(horsMoisAgent) causes.push(`${horsMoisAgent} daté(s) d'un autre mois → payé ici, compté sur sa vraie journée`);
+      if(!actifs.has(a)) causes.push(connus.has(a) ? 'agent archivé — historique seul, jamais payé' : '⚠️ nom inconnu de Réglages');
+      const ecartInexplique = ecart - sansDateAgent - horsMoisAgent;
+      if(ecartInexplique !== 0){ lignesAvecEcart++; causes.push(`<b style="color:var(--red);">${ecartInexplique > 0 ? '+' : ''}${ecartInexplique} inexpliqué — relance une synchro depuis l'import</b>`); }
+      const couleurEcart = ecart === 0 ? 'var(--muted)' : (ecartInexplique === 0 ? 'var(--amber)' : 'var(--red)');
+      html += `<tr>
+        <td><b>${escapeHtml(a)}</b>${actifs.has(a) ? '' : ' <span class="indep-badge" style="background:var(--muted); color:#111;">archivé</span>'}</td>
+        <td style="font-weight:700;">${mois}</td>
+        <td style="font-weight:700;">${jours}</td>
+        <td style="font-weight:800; color:${couleurEcart};">${ecart === 0 ? '—' : (ecart > 0 ? '+' : '') + ecart}</td>
+        <td>${retracts[a] || '—'}</td>
+        <td style="font-size:12.5px; color:var(--muted);">${causes.length ? causes.join('<br>') : '✅ rien à signaler'}</td>
+      </tr>`;
+    });
+    html += `<tr style="border-top:2px solid var(--border);"><td><b>TOTAL</b></td><td><b>${totalRattache}</b></td><td><b>${Object.values(sommeJours).reduce((s, v) => s + v, 0)}</b></td><td colspan="3"></td></tr>`;
+    html += '</tbody></table></div>';
+
+    // ── Les lignes à trancher, nommément ────────────────────────────────────
+    const listeLignes = (titre, couleur, explication, lignes)=>{
+      if(!lignes.length) return '';
+      const apercu = lignes.slice(0, 40).map(r => `<li style="margin-bottom:3px;">n° <code>${escapeHtml(r.numContrat || r.reference || '?')}</code> — ${escapeHtml(r.nom || 'sans nom')}${r.agentRaw ? ` — écrit « <b>${escapeHtml(r.agentRaw)}</b> » dans le fichier` : ''}${r.date ? ` — ${escapeHtml(r.date)}` : ''}</li>`).join('');
+      return `<div style="margin-top:16px; padding:13px 15px; border-radius:11px; background:${couleur}18; border:1px solid ${couleur}66;">
+        <div style="font-weight:800; font-size:13.5px; color:${couleur};">${titre} — ${lignes.length}</div>
+        <div style="font-size:12.5px; color:var(--muted); margin:4px 0 8px; line-height:1.5;">${explication}</div>
+        <ul style="margin:0; padding-left:20px; font-size:12.5px; line-height:1.6;">${apercu}</ul>
+        ${lignes.length > 40 ? `<div style="font-size:12px; color:var(--muted); margin-top:6px;">…et ${lignes.length - 40} autre(s).</div>` : ''}
+      </div>`;
+    };
+
+    html += listeLignes('🔴 Contrats rattachés à personne', '#e5484d',
+      "Ces contrats existent dans le fichier mais ne comptent pour AUCUN agent : c'est la première cause d'écart entre ton total et la somme des agents. Le nom écrit dans le fichier n'a pas pu être reconnu avec certitude — va dans l'import, bouton « Rattacher », et crée l'alias une bonne fois pour toutes.",
+      sansAgent);
+    html += listeLignes('🟠 Contrats sans date exploitable', '#b98a42',
+      "Ils comptent dans le total du mois de l'agent, mais ne peuvent atterrir sur aucune journée : ils manqueront donc toujours à la somme des journées, à l'Arena et aux séries. Corrige la date sur la ligne pour qu'ils rejoignent leur journée.",
+      sansDate);
+    html += listeLignes("🔵 Contrats rangés ici mais datés d'un autre mois", '#5680ab',
+      "Comportement <b>normal et voulu</b> (bouton « 📅 Déplacer ») : ils sont payés sur ce mois-ci, et comptés sur leur vraie journée — donc sur un autre mois pour l'Arena. Aucune action nécessaire ; ils sont listés uniquement pour que l'écart s'explique tout seul.",
+      datesHorsMois);
+
+    html += `<div style="margin-top:16px; font-size:12px; color:var(--muted); line-height:1.6;">Contrôle effectué le ${new Date().toLocaleString('fr-FR')} sur ${totalRange} contrat(s) rangé(s).${lignesAvecEcart ? ` <b style="color:var(--red);">${lignesAvecEcart} agent(s) présentent un écart inexpliqué</b> — réimporte le CSV du mois : la synchronisation des journées sera refaite intégralement.` : ' Aucun écart inexpliqué.'}</div>`;
+
+    el.innerHTML = html;
+  }catch(e){
+    console.error('renderComptageControl:', e);
+    el.innerHTML = `<div class="empty" style="padding:14px;">Le contrôle n'a pas pu aller au bout : ${escapeHtml(String(e && e.message || e))}</div>`;
+  }
 }
 
 // Affiche le barème des retours à un indépendant, avec son palier du moment. Rien pour un salarié :
@@ -21232,6 +21871,21 @@ async function bootApp(){
   applyPrivacyMode();
   applySupPrivacy();
   resetPasswordFieldsMasked();
+
+  // 🤖 FILET DE SÉCURITÉ AU DÉMARRAGE. Les trois autres branchements (import CSV, réception
+  // Telegram/Pabbly, ajout d'un agent) couvrent tout ce qui arrive à partir de maintenant. Celui-ci
+  // rattrape ce qui s'est passé AVANT que cette version soit installée : les journées déjà faussées
+  // en base, que rien n'aurait jamais recorrigées. Il tourne une fois par session, sur le mois en
+  // cours et le précédent, et ne réécrit quoi que ce soit que s'il trouve un vrai écart.
+  // ⚡ Décalé à 8 secondes, et sur le MOIS EN COURS SEULEMENT.
+  // Le contrôle ne doit jamais entrer en concurrence avec l'affichage du premier écran : c'est une
+  // vérification de fond, personne ne l'attend. Le mois précédent, lui, sera vérifié au premier
+  // import ou à la première réception de contrats — les seuls moments où il peut encore bouger.
+  setTimeout(()=>{
+    autoReparerJourneesSiEcart([todayStr().slice(0, 7)])
+      .then(n => { if(n) console.info('[VortexNova] ' + n + ' mois remis à jour au démarrage.'); })
+      .catch(e => console.warn('autoReparerJourneesSiEcart (boot)', e));
+  }, 8000);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -21534,6 +22188,30 @@ function estDisponible(agent){
   return presenceOf(agent).state === 'dispo';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 📵 « JOIGNABLE » ≠ « DISPONIBLE » — la distinction qui débloque toute la cascade
+// ═══════════════════════════════════════════════════════════════════════════
+// LE BUG DE FOND, celui qui faisait sonner l'alarme chez TOUT LE MONDE à chaque appel.
+// La cascade ne retenait que les gens explicitement marqués « dispo ». Or presenceOf() renvoie
+// « inconnu / poste fermé » dès qu'un état a plus de 6 minutes — ce qui arrive en permanence pour un
+// superviseur dont l'onglet est en arrière-plan : le navigateur endort les minuteries et sa présence
+// cesse d'être republiée. Un superviseur parfaitement présent devant son écran était donc classé
+// indisponible, le 1er rideau tombait, le 2e aussi (mêmes conditions), et on atterrissait
+// systématiquement sur le 3e — « personne n'est déclaré disponible, on réveille tout le monde ».
+// D'où le symptôme exact : ça sonnait partout, tout de suite, à chaque demande.
+//
+// La règle est donc inversée, et c'est la bonne : on n'écarte quelqu'un que si on a une RAISON
+// POSITIVE de le faire — il est en pause, en ADF, en écoute, déjà parti dépanner un collègue, ou il
+// s'est déclaré indisponible lui-même. Ne rien savoir de quelqu'un n'est pas une raison de ne pas
+// l'appeler : au pire son poste est fermé, l'alarme ne sonne nulle part, et la cascade passera au
+// rideau suivant quelques secondes plus tard (voir assistDelaiAgreesMs).
+function estJoignable(agent){
+  const p = presenceOf(agent);
+  if(p.state === 'dispo') return true;
+  if(p.state === 'indispo' || p.state === 'assiste') return false;   // motif connu et explicite
+  return true;   // 'inconnu' / poste endormi → on tente, plutôt que d'écarter quelqu'un de présent
+}
+
 function subscribeAssistPresence(){
   if(!firebaseReady || !db) return;
   if(presenceUnsub) return;
@@ -21569,7 +22247,12 @@ function assistRenderReturnBanner(){
   if(!btn) return;
   const moi = assistanceWhoAmI();
   const enCours = moi ? presenceAssistingGet() : null;
-  if(!enCours){ btn.style.display = 'none'; return; }
+  if(!enCours){
+    btn.style.display = 'none';
+    // Pas d'intervention en cours : le coin se libère pour le bandeau de disponibilité.
+    assistRenderDispoBanner();
+    return;
+  }
   btn.style.display = 'flex';
   const depuis = enCours.at ? Math.round((Date.now() - enCours.at) / 60000) : 0;
   const txt = document.getElementById('vnBackTxt');
@@ -21577,9 +22260,78 @@ function assistRenderReturnBanner(){
     txt.innerHTML = `<b>Tu aides ${escapeHtml(enCours.agent || 'un collègue')}${depuis >= 1 ? ` — depuis ${depuis} min` : ''}</b>`
       + `Tant que tu n'as pas cliqué, tu restes indisponible pour les autres demandes.`;
   }
+  // Les deux bandeaux occupent le même coin : celui de l'intervention en cours est prioritaire, et
+  // assistRenderDispoBanner se masque tout seul dans ce cas (test presenceAssistingGet).
+  assistRenderDispoBanner();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🟢/🔴 BANDEAU PERMANENT DE DISPONIBILITÉ
+// ═══════════════════════════════════════════════════════════════════════════
+// POURQUOI. Le « je suis dispo / pas dispo » n'existait que dans une boîte de l'écran POINTAGE. Un
+// superviseur passe sa journée sur Supervision : il ne voyait donc jamais son propre état. Il pouvait
+// être sorti du circuit depuis deux heures — pause détectée automatiquement, intervention jamais
+// clôturée, case cochée un matin et oubliée — sans le moindre signe à l'écran. De son côté l'agent
+// appelait dans le vide. Le réglage était bien là, mais invisible : c'est exactement ce qui rend une
+// fonction « pas claire ».
+//
+// CE BANDEAU dit trois choses, en permanence et sur tous les écrans : dans quel état tu es, POURQUOI
+// (le motif exact, et depuis quand quand on le sait), et ce que ça change concrètement — tu reçois les
+// appels, ou tu ne les reçois pas. Un clic bascule l'état, sauf quand il est détecté automatiquement
+// (pause, ADF, écoute) : dans ce cas, il n'y a rien à cliquer, ça se remettra tout seul, et le bandeau
+// le dit plutôt que de proposer un bouton qui ne ferait rien.
+function assistRenderDispoBanner(){
+  const btn = document.getElementById('vnDispoBtn');
+  if(!btn) return;
+  const moi = assistanceWhoAmI();
+  const adminOuvert = document.getElementById('adminPanel')?.style.display === 'block';
+  // Ne concerne que ceux qui peuvent RECEVOIR un appel. Et jamais en même temps que le rappel
+  // « tu es parti assister quelqu'un », qui occupe le même coin et porte déjà l'information.
+  if(!moi || adminOuvert || !isAssistant(moi) || presenceAssistingGet()){ btn.style.display = 'none'; return; }
+
+  const p = computeMyPresence();
+  if(!p){ btn.style.display = 'none'; return; }
+  const dispo = p.state === 'dispo';
+  btn.style.display = 'flex';
+  btn.classList.toggle('is-on', dispo);
+  btn.classList.toggle('is-off', !dispo);
+
+  const manuel = presenceManualGet();
+  const depuisMin = (manuel && manuel.at) ? Math.round((Date.now() - manuel.at) / 60000) : 0;
+  const txt = document.getElementById('vnDispoTxt');
+  const cta = document.getElementById('vnDispoCta');
+
+  if(dispo){
+    if(txt) txt.innerHTML = `<b>🟢 Tu es DISPONIBLE</b>Les demandes d'assistance sonnent chez toi.`;
+    if(cta) cta.textContent = 'Me rendre indisponible';
+    btn.title = "Tu fais partie des personnes appelées quand un agent clique sur Assistance. Clique ici si tu ne peux pas te lever.";
+  } else if(p.auto){
+    // Détecté tout seul : aucun bouton à proposer, sinon on promet une action qui n'aura pas lieu.
+    if(txt) txt.innerHTML = `<b>🔴 INDISPONIBLE — ${escapeHtml(p.raison || '')}</b>Les appels partent chez les autres. Ça se remettra tout seul.`;
+    if(cta) cta.textContent = 'Automatique';
+    btn.title = "État détecté automatiquement (pause, ADF, écoute, journée terminée ou pointage manquant). Tu redeviendras disponible sans rien cliquer dès que tu reprendras ton poste.";
+  } else {
+    if(txt) txt.innerHTML = `<b>🔴 Tu es INDISPONIBLE${depuisMin >= 1 ? ` — depuis ${depuisMin} min` : ''}</b>${escapeHtml(p.raison || 'indisponible')} — aucune demande ne sonne chez toi.`;
+    if(cta) cta.textContent = 'Me remettre disponible';
+    btn.title = "Tu t'es déclaré indisponible : les appels à l'aide passent directement aux autres. Clique pour revenir dans le circuit.";
+  }
+}
+// Le bandeau est cliquable, sauf quand l'état est détecté automatiquement — dans ce cas on explique
+// plutôt que de faire semblant d'agir.
+async function assistanceBandeauClick(){
+  const p = computeMyPresence();
+  if(p && p.state !== 'dispo' && p.auto){
+    showToast(`Ton indisponibilité est détectée automatiquement (${p.raison}). Elle se lèvera toute seule dès que tu reprendras ton poste — rien à cliquer.`, 'warn', 6000);
+    return;
+  }
+  await assistanceToggleDispo();
+  assistRenderDispoBanner();
 }
 // Le compteur de minutes doit avancer tout seul, sinon « depuis 1 min » reste affiché une demi-heure.
+// Le même battement rafraîchit le bandeau de disponibilité, dont le motif peut changer sans qu'aucun
+// événement ne survienne (une pause qui démarre, une journée qui se termine).
 setInterval(()=>{ try{ assistRenderReturnBanner(); }catch(e){} }, 60000);
+setInterval(()=>{ try{ assistRenderDispoBanner(); }catch(e){} }, 15000);
 
 // ── La boîte « Es-tu disponible ? », visible par les assistants agréés ──────
 function assistRenderPresenceBox(){
@@ -21619,7 +22371,7 @@ function assistRenderPresenceBox(){
         ? '<span class="section-sub" style="margin:0;">Détecté automatiquement — ça se remettra tout seul quand tu reprendras ton poste.</span>'
         : `<button class="action-btn arena-btn-set" style="max-width:230px; margin:0;" onclick="assistanceToggleDispo()">${dispo ? '🚫 Me déclarer indisponible' : '✅ Me déclarer disponible'}</button>`}
     </div>
-    <div class="section-sub">Une demande d'assistance part d'abord chez le superviseur. S'il est indisponible ou déjà en train d'aider quelqu'un, elle bascule automatiquement chez les assistants agréés disponibles.</div>
+    <div class="section-sub">Une demande d'assistance sonne <b>d'abord chez le superviseur, et chez lui seul</b>. Si personne ne décroche au bout de 20 secondes, elle est transmise aux assistants agréés ; au bout de 40 secondes seulement, tout le monde est alerté. Te déclarer indisponible te sort du circuit immédiatement — l'appel part chez les autres sans attendre.</div>
     <div style="margin-top:12px;">${ligneAutres}</div>`;
 }
 
@@ -21667,20 +22419,51 @@ function assistanceWhoAmI(){
 // ═══════════════════════════════════════════════════════════════════════════
 // 📡 À QUI PART L'APPEL — routage en cascade
 // ═══════════════════════════════════════════════════════════════════════════
-// Avant : l'appel partait chez le superviseur désigné, et y restait. S'il était en pause, en ADF, en
-// écoute, ou déjà parti dépanner quelqu'un d'autre, l'agent voyait « ton superviseur arrive » pendant
-// que personne n'avait rien vu.
+// ⚠️ RÉÉCRIT — « ça sonnait directement chez tout le monde ».
 //
-// Maintenant, la cible est RECALCULÉE en permanence à partir des disponibilités partagées, jamais
-// figée dans la demande. Trois rideaux, dans cet ordre :
-//   1. Le superviseur (celui désigné dans Réglages, ou n'importe lequel si aucun n'est désigné) —
-//      à condition qu'il soit réellement disponible.
-//   2. Sinon, tous les assistants agréés disponibles. Comme la disponibilité est partagée en direct,
-//      le basculement se fait tout seul : le superviseur clique « j'y vais » pour un premier agent,
-//      son état passe à « parti assister », et l'appel suivant sonne immédiatement chez les autres.
-//   3. Si vraiment personne n'est disponible, on sonne chez TOUS les assistants, disponibles ou non.
-//      Déranger quelqu'un en pause reste infiniment moins grave qu'un appel à l'aide sans réponse.
-// Le panneau Admin ouvert reçoit toujours tout, en dernier filet de sécurité.
+// CE QUI N'ALLAIT PAS. Les trois rideaux existaient déjà, mais ils étaient franchis TOUS EN MÊME
+// TEMPS, dans la même milliseconde, sur un seul critère : « qui est marqué disponible à cet instant ».
+// Deux défauts s'additionnaient :
+//   • un superviseur dont l'onglet dormait était classé « poste fermé » donc non disponible (voir
+//     estJoignable ci-dessus) — le 1er rideau tombait presque toujours ;
+//   • le 2e rideau piochait dans listAssistants(), qui INCLUT les superviseurs (isAssistant renvoie
+//     vrai pour eux), et le 3e réveillait cette même liste entière sans condition. La fonction
+//     listAssistantsSecondRideau(), écrite exprès pour n'avoir que les agréés, n'était jamais appelée.
+// Résultat : un clic sur Assistance faisait sonner l'alarme partout, instantanément.
+//
+// LA NOUVELLE RÈGLE. Les rideaux sont franchis DANS LE TEMPS, pas d'un coup :
+//   1. t+0s   → les superviseurs de garde, sauf ceux explicitement en pause / ADF / écoute / déjà en
+//               intervention / déclarés indisponibles. Eux seuls, jamais les agréés.
+//   2. t+20s  → personne n'a décroché : on transfère aux ASSISTANTS AGRÉÉS SEULS
+//               (listAssistantsSecondRideau — plus aucun superviseur dans cette liste).
+//   3. t+40s  → toujours rien : là seulement, tout le monde, joignable ou non. Un appel à l'aide sans
+//               réponse reste le pire scénario — mais c'est devenu le dernier recours, pas le premier.
+// Si TOUS les superviseurs sont explicitement indisponibles dès le départ, le rideau 1 est vide et on
+// passe immédiatement au 2 : on ne fait pas attendre 20 secondes pour rien.
+//
+// La cible reste RECALCULÉE en permanence (jamais figée dans la demande) : un superviseur qui devient
+// indisponible fait basculer l'alerte tout de suite. Le panneau Admin ouvert reçoit toujours tout.
+// ⏱️ LES DEUX DÉLAIS SONT UN RÉGLAGE, PAS UNE DÉCISION DU CODE.
+// Ils étaient écrits en dur (20 s et 40 s) : personne ne pouvait les changer sans rouvrir le fichier,
+// et surtout personne n'avait choisi ces valeurs en connaissance de cause. Combien de temps laisser à
+// un superviseur avant d'appeler quelqu'un d'autre, c'est une question d'organisation d'équipe — elle
+// appartient au patron. Les valeurs ci-dessous ne sont donc plus que des VALEURS DE DÉPART, utilisées
+// tant qu'aucun réglage n'a été enregistré (Réglages → Bouton d'assistance → délais).
+const ASSIST_ESCALADE_DEFAUT_S = 20;
+const ASSIST_ESCALADE_TOTALE_DEFAUT_S = 40;
+// Lecture tolérante : une valeur absente, vide ou aberrante retombe sur la valeur de départ, pour
+// qu'un réglage mal saisi ne puisse jamais casser la chaîne d'alerte.
+function assistDelaiAgreesMs(){
+  const v = config.assistanceDelaiAgrees;
+  return (typeof v === 'number' && isFinite(v) && v >= 0) ? v * 1000 : ASSIST_ESCALADE_DEFAUT_S * 1000;
+}
+function assistDelaiTousMs(){
+  const v = config.assistanceDelaiTous;
+  const ms = (typeof v === 'number' && isFinite(v) && v >= 0) ? v * 1000 : ASSIST_ESCALADE_TOTALE_DEFAUT_S * 1000;
+  // Le second délai ne peut pas être plus court que le premier : sinon l'étape « tout le monde »
+  // arriverait AVANT l'étape « agréés », et le second rideau ne servirait jamais à rien.
+  return Math.max(ms, assistDelaiAgreesMs());
+}
 function superviseursDeGarde(){
   const designe = (config.assistanceSupervisor || '').trim();
   const sups = listSupervisors();
@@ -21689,30 +22472,54 @@ function superviseursDeGarde(){
 
 // Renvoie la liste des personnes qui doivent voir l'alerte, à cet instant précis.
 // `req` est facultatif : quand il est fourni, on exclut ceux qui ont explicitement passé la main sur
-// CETTE demande-là (bouton « Je ne suis pas disponible » de l'alerte). Passer la main ne vaut que pour
-// la demande en cours — la personne reste dans le circuit pour les suivantes si elle redevient
-// disponible.
+// CETTE demande-là (bouton « Je ne suis pas disponible » de l'alerte), et son horodatage `at` sert à
+// savoir quel rideau est ouvert. Passer la main ne vaut que pour la demande en cours — la personne
+// reste dans le circuit pour les suivantes si elle redevient disponible.
 function assistanceDestinataires(req){
   const passes = (req && Array.isArray(req.declinedBy)) ? req.declinedBy : [];
   const retenus = (liste)=> liste.filter(a => !passes.includes(a));
-  const supsDispo = retenus(superviseursDeGarde().filter(estDisponible));
-  if(supsDispo.length) return { rideau: 'superviseur', liste: supsDispo };
-  const assistantsDispo = retenus(listAssistants().filter(estDisponible));
-  if(assistantsDispo.length) return { rideau: 'assistants', liste: assistantsDispo };
+  const attente = (req && req.at) ? (Date.now() - req.at) : 0;
+
+  // ── Rideau 1 : les superviseurs, et personne d'autre ──────────────────────
+  const sups = retenus(superviseursDeGarde().filter(estJoignable));
+  const supsExistent = retenus(superviseursDeGarde()).length > 0;
+  if(sups.length && attente < assistDelaiAgreesMs()){
+    return { rideau: 'superviseur', liste: sups, attente };
+  }
+
+  // ── Rideau 2 : les assistants agréés SEULS (jamais les superviseurs) ──────
+  // On y arrive soit parce que le délai est passé, soit parce qu'aucun superviseur n'est joignable —
+  // dans ce dernier cas, immédiatement, sans faire patienter l'agent pour rien.
+  const agrees = retenus(listAssistantsSecondRideau().filter(estJoignable));
+  if(agrees.length && attente < assistDelaiTousMs()){
+    // Les superviseurs joignables restent dans la boucle une fois le délai écoulé : ils ne perdent pas
+    // l'appel, on ajoute simplement du renfort.
+    const liste = attente >= assistDelaiAgreesMs() ? [...new Set([...sups, ...agrees])] : agrees;
+    return { rideau: 'assistants', liste, attente, supsExistent };
+  }
+
+  // ── Rideau 3 : dernier recours, tout le monde ─────────────────────────────
   const tous = retenus(listAssistants());
-  if(tous.length) return { rideau: 'dernier-recours', liste: tous };
+  if(tous.length) return { rideau: 'dernier-recours', liste: tous, attente };
+
   // Tout le monde a passé la main : on ne réveille personne de force (l'alarme viendrait de repartir
   // chez quelqu'un qui vient tout juste de dire non). L'agent, lui, est prévenu clairement côté bouton,
   // et le panneau Admin continue de tout recevoir.
-  return { rideau: 'personne', liste: [] };
+  return { rideau: 'personne', liste: [], attente };
 }
 
 function assistanceAmITargetFor(req){
   const moi = assistanceWhoAmI();
   // J'ai déjà passé la main sur cette demande : elle ne doit plus jamais resonner chez moi.
   if(req && moi && Array.isArray(req.declinedBy) && req.declinedBy.includes(moi)) return false;
-  const adminOuvert = document.getElementById('adminPanel')?.style.display === 'block';
-  if(adminOuvert) return true;
+  // ⚠️ CORRIGÉ — L'ADMIN NE DOIT PLUS RECEVOIR L'ALARME.
+  // Avant : `if(adminOuvert) return true;` — le panneau Admin recevait TOUTES les demandes, en
+  // « filet de sécurité ». En pratique c'est le patron qui se prend le chant de grillons à chaque
+  // fois qu'un agent appelle son superviseur, alors qu'il n'a jamais eu vocation à se lever pour
+  // aller dépanner quelqu'un : ce n'est ni un superviseur ni un assistant agréé.
+  // Le filet de sécurité reste, mais SANS SON et SANS plein écran : les demandes en attente
+  // continuent d'apparaître dans l'historique d'assistance des Réglages, où il peut les consulter
+  // quand il le veut. Une alarme sert à faire venir quelqu'un ; personne n'attend l'admin.
   if(!moi || !isAssistant(moi)) return false;
   // Quelqu'un déjà parti assister ne doit pas recevoir une deuxième alerte en pleine intervention.
   if(presenceAssistingGet()) return false;
@@ -21773,12 +22580,19 @@ async function assistanceButtonClick(){
   }
   const id = 'a' + Date.now().toString(36) + Math.floor(performance.now() % 1000).toString(36);
   assistMyRequestId = id;
-  const cible = assistanceDestinataires();
-  await assistMutate(l => l.concat([{ id, agent: moi, at: Date.now(), status: 'pending', seenBy: null, seenAt: null, rideau: cible.rideau }]));
-  logAudit(moi, 'Demande assistance', cible.rideau === 'superviseur' ? 'Appel superviseur' : `Superviseur indisponible — appel transmis à ${cible.liste.join(', ') || 'personne'}`);
+  const maintenant = Date.now();
+  // La cible est calculée avec l'horodatage de la demande qu'on est en train de créer : au moment du
+  // clic l'attente vaut 0, donc c'est bien le rideau 1 (superviseurs) qui s'ouvre en premier.
+  const cible = assistanceDestinataires({ at: maintenant });
+  await assistMutate(l => l.concat([{ id, agent: moi, at: maintenant, status: 'pending', seenBy: null, seenAt: null, rideau: cible.rideau }]));
+  logAudit(moi, 'Demande assistance', cible.rideau === 'superviseur'
+    ? `Appel superviseur — ${cible.liste.join(', ')}`
+    : `Aucun superviseur joignable — appel transmis d'emblée à ${cible.liste.join(', ') || 'personne'}`);
   showToast(cible.rideau === 'superviseur'
-    ? '🆘 Ton superviseur est prévenu. Reste à ton poste, il arrive.'
-    : '🆘 Ton superviseur n\'est pas disponible — ta demande part chez les assistants agréés. Reste à ton poste.', 'ok', 7000);
+    ? `🆘 Ça sonne chez ${cible.liste.join(', ')}. Reste à ton poste. Sans réponse de sa part, ta demande partira toute seule chez les assistants agréés.`
+    : (cible.liste.length
+        ? `🆘 Aucun superviseur n'est joignable — ta demande part directement chez ${cible.liste.join(', ')}. Reste à ton poste.`
+        : "🆘 Personne n'est joignable pour l'instant. Ta demande est enregistrée et l'Admin la voit — va aussi chercher quelqu'un de vive voix."), 'ok', 8000);
   assistRenderButton();
 }
 
@@ -21805,10 +22619,17 @@ function assistRenderButton(){
       lab.textContent = 'Personne de dispo…';
       btn.title = "Tous les assistants ont passé la main ou sont occupés. Va chercher quelqu'un de vive voix — ta demande reste enregistrée, et le panneau Admin la voit toujours.";
     } else {
-      btn.title = (dest.rideau === 'superviseur'
-        ? 'Ton superviseur est prévenu. '
-        : (dest.liste.join(', ') + ' ' + (dest.liste.length>1?'sont prévenus':'est prévenu') + '. '))
-        + 'Clique à nouveau pour annuler ta demande.';
+      // On NOMME les personnes chez qui l'alarme sonne à cette seconde, et on dit où en est la
+      // cascade. « Ton superviseur est prévenu » était rassurant mais creux : l'agent n'avait aucun
+      // moyen de savoir si son appel était vraiment parti quelque part.
+      const qui = dest.liste.join(', ');
+      const etape = {
+        'superviseur': `🧑‍💼 Ça sonne chez ${qui}. Si personne ne décroche, ta demande partira toute seule chez les assistants agréés dans quelques secondes.`,
+        'assistants': `🤝 Ton superviseur n'a pas décroché — ça sonne maintenant chez ${qui}.`,
+        'dernier-recours': `📣 Personne n'a répondu : l'alerte part chez TOUT LE MONDE (${qui}). Quelqu'un va venir.`
+      }[dest.rideau] || `Ça sonne chez ${qui}.`;
+      lab.textContent = dest.rideau === 'superviseur' ? 'Demande envoyée…' : (dest.rideau === 'assistants' ? 'Transmis aux agréés…' : 'Alerte générale…');
+      btn.title = etape + ' Clique à nouveau pour annuler ta demande.';
     }
   } else {
     btn.classList.add('is-seen');
@@ -22023,6 +22844,20 @@ function subscribeAssistance(){
   }, err=> console.error('assistance listener:', err));
 }
 
+// ⏱️ LE BATTEMENT QUI FAIT AVANCER LA CASCADE.
+// Les rideaux se franchissent maintenant avec le TEMPS (voir assistDelaiAgreesMs). Or le listener
+// Firestore ne se réveille que si le document CHANGE — et un appel qui reste sans réponse ne change
+// rien. Sans ce battement, une demande non décrochée resterait éternellement au rideau 1 : le
+// transfert aux agréés n'aurait jamais lieu, ce qui serait pire que l'ancien comportement.
+// Il ne tourne que s'il y a réellement une demande en attente, et ne fait que redemander « à qui
+// l'alerte doit-elle sonner maintenant ? » — aucune lecture ni écriture réseau.
+setInterval(()=>{
+  try{
+    if(!assistList || !assistList.some(r => r.status === 'pending')) return;
+    assistProcess();
+  }catch(e){}
+}, 3000);
+
 
 // Rafraîchi tout seul quand le panneau est à l'écran — sinon les chiffres semblent figés alors que la
 // consommation, elle, continue de monter. Ne fait rien du tout si les Réglages ne sont pas ouverts.
@@ -22044,16 +22879,22 @@ function renderAssistantsPanel(){
   // la décision réelle et le motif d'exclusion de chacun.
   const dest = assistanceDestinataires();
   const motifRideau = {
-    'superviseur': "chez le ou les superviseurs — c'est le fonctionnement normal",
-    'assistants': "chez les assistants agréés, parce qu'AUCUN superviseur n'est actuellement joignable",
-    'dernier-recours': "chez tout le monde, parce que personne n'est déclaré disponible",
+    'superviseur': "chez le ou les superviseurs, et chez eux seuls — c'est le fonctionnement normal",
+    'assistants': "directement chez les assistants agréés, parce qu'AUCUN superviseur n'est joignable en ce moment",
+    'dernier-recours': "chez tout le monde — plus aucun superviseur ni agréé n'est joignable",
     'personne': "nulle part — tout le monde a passé la main sur la demande en cours"
   }[dest.rideau] || '';
   const designe = (config.assistanceSupervisor || '').trim();
+  const agrees = listAssistantsSecondRideau();
   const blocDiag = `
     <div style="margin-top:12px; padding:13px 15px; border-radius:10px; background:rgba(61,139,253,0.08); border:1px solid rgba(61,139,253,0.35);">
       <div style="font-weight:800; font-size:13.5px; color:var(--accent); margin-bottom:5px;">🔎 Si une demande d'assistance arrivait maintenant</div>
       <div style="font-size:13.5px; line-height:1.55;">Elle sonnerait ${dest.liste.length ? `chez <b>${dest.liste.map(escapeHtml).join(', ')}</b>` : '<b>nulle part</b>'} — ${motifRideau}.</div>
+      <div class="section-sub" style="margin-top:8px; line-height:1.6;">⏱️ <b>La cascade se déroule dans le temps, plus d'un seul coup.</b><br>
+        • <b>Tout de suite</b> → les superviseurs${designe ? ` (ici : ${escapeHtml(designe)})` : ''}, eux seuls.<br>
+        • <b>Après 20 secondes sans réponse</b> → transfert aux assistants agréés${agrees.length ? ` (${agrees.map(escapeHtml).join(', ')})` : ' — <b style="color:var(--amber);">aucun n\'est désigné pour l\'instant</b>'}.<br>
+        • <b>Après 40 secondes</b> → alerte générale, en dernier recours seulement.</div>
+      <div class="section-sub" style="margin-top:6px;">Un poste dont on n'a pas de nouvelles (onglet en arrière-plan) est considéré comme <b>joignable</b> : on ne l'écarte que s'il est explicitement en pause, en ADF, en écoute, déjà en intervention, ou déclaré indisponible.</div>
       ${designe ? `<div class="section-sub" style="margin-top:6px;">⚙️ Un superviseur précis est désigné plus haut (<b>${escapeHtml(designe)}</b>) : les autres superviseurs ne sont JAMAIS en premier rideau, même disponibles. Repasse sur « Tous les superviseurs » si ce n'est pas ce que tu veux.</div>` : ''}
     </div>`;
 
@@ -22140,7 +22981,60 @@ async function assistanceReinitialiserPresences(){
   }catch(e){ console.warn('assistanceReinitialiserPresences', e); showToast("⚠️ La réinitialisation n'a pas abouti — vérifie ta connexion.", 'warn', 5000); }
 }
 
+// ⏱️ Les deux délais de la cascade — remplissage du formulaire, enregistrement, et surtout une
+// phrase en clair qui dit ce que le réglage produit concrètement. Un champ « 20 » tout seul ne veut
+// rien dire ; « ça sonne chez le superviseur, puis 20 s plus tard aussi chez les agréés » se relit.
+function renderAssistanceDelais(){
+  const a = document.getElementById('assistDelaiAgrees');
+  const t = document.getElementById('assistDelaiTous');
+  if(a) a.value = Math.round(assistDelaiAgreesMs() / 1000);
+  if(t) t.value = Math.round(assistDelaiTousMs() / 1000);
+  const el = document.getElementById('assistDelaiResume');
+  if(!el) return;
+  const sa = Math.round(assistDelaiAgreesMs() / 1000);
+  const st = Math.round(assistDelaiTousMs() / 1000);
+  const etapes = sa === 0
+    ? [`<b>Dès le clic de l'agent :</b> le superviseur ET les assistants agréés sonnent en même temps.`]
+    : [`<b>Dès le clic de l'agent :</b> ça sonne chez le superviseur, et chez lui seul.`,
+       `<b>${sa} secondes plus tard,</b> s'il n'a toujours pas cliqué : ça sonne aussi chez les assistants agréés.`];
+  if(st > sa) etapes.push(`<b>${st} secondes après le clic,</b> si personne n'a répondu : tout le monde est alerté.`);
+  el.innerHTML = `<div style="padding:12px 14px; border-radius:10px; background:rgba(61,139,253,0.08); border:1px solid rgba(61,139,253,0.35); font-size:13px; line-height:1.7;">
+    <div style="font-weight:800; color:var(--accent); margin-bottom:5px;">Avec ces réglages, voilà ce qui se passe</div>
+    ${etapes.map(e => '• ' + e).join('<br>')}
+    <div style="color:var(--muted); font-size:12.5px; margin-top:7px;">Rappel : si le superviseur est déjà marqué en pause ou indisponible, rien de tout ça ne s'applique — l'appel part chez les agréés immédiatement.</div>
+  </div>`;
+}
+
+async function saveAssistanceDelais(){
+  const a = document.getElementById('assistDelaiAgrees');
+  const t = document.getElementById('assistDelaiTous');
+  if(!a || !t) return;
+  const va = Math.max(0, Math.min(300, parseInt(a.value, 10)));
+  const vt = Math.max(0, Math.min(600, parseInt(t.value, 10)));
+  if(!isFinite(va) || !isFinite(vt)){
+    showToast('Saisis un nombre de secondes dans les deux cases.', 'warn', 5000);
+    return;
+  }
+  if(vt < va){
+    // On le dit plutôt que de corriger en douce : le patron doit savoir ce qui a été enregistré.
+    showToast("Le second délai ne peut pas être plus court que le premier — sinon l'étape « tout le monde » arriverait avant l'étape « agréés ».", 'warn', 7000);
+    return;
+  }
+  config.assistanceDelaiAgrees = va;
+  config.assistanceDelaiTous = vt;
+  await saveConfig();
+  logAudit('Admin', "Délais de la cascade d'assistance modifiés", `agréés à ${va} s, tout le monde à ${vt} s`);
+  const note = document.getElementById('assistDelaiNote');
+  if(note){ note.textContent = 'Enregistré ✓'; setTimeout(()=> note.textContent = '', 2500); }
+  renderAssistanceDelais();
+  renderAssistantsPanel();
+  showToast(va === 0
+    ? '✅ Enregistré. Superviseur et assistants agréés sonneront maintenant en même temps, dès le clic.'
+    : `✅ Enregistré. Le superviseur a ${va} secondes pour répondre avant que les agréés soient alertés.`, 'ok', 7000);
+}
+
 function renderAssistanceSupervisorSelect(){
+  renderAssistanceDelais();
   const sel = document.getElementById('assistSupervisorSelect');
   if(!sel) return;
   const sups = (config.agents || []).filter(a => isSupervisor(a));
