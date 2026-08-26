@@ -625,7 +625,10 @@
   }
   .cash-period-card .cp-sub{ font-size:11.5px; color:var(--muted); margin-top:6px; }
   .cash-breakdown{ text-align:left; margin-top:14px; padding-top:12px; border-top:1px dashed var(--border); font-size:12px; }
-  .cash-breakdown div{ display:flex; justify-content:space-between; padding:3px 0; color:var(--muted); }
+  .cash-breakdown div{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; padding:3px 0; color:var(--muted); }
+  /* Sous-ligne d'explication : le chiffre seul ne dit pas D'OÙ il sort. Écrite en clair sous le
+     libellé, jamais dans une infobulle — une infobulle n'existe pas sur un téléphone. */
+  .cash-breakdown div span small{ display:block; font-size:11px; line-height:1.5; opacity:0.75; margin-top:2px; }
   .cash-breakdown div b{ color:var(--text); }
   .cash-breakdown div.hit b{ color: var(--green); }
   .cash-breakdown div.miss b{ color: var(--muted); }
@@ -1452,7 +1455,7 @@ function tryDeviceGateAdmin(){
           <div id="bossRevenuePanel" class="money-sensitive"></div>
 
           <div class="section-title">💼 Masse salariale prévisionnelle du mois</div>
-          <div class="section-sub">Ce que l'équipe va coûter au total ce mois-ci, si tout continue au même rythme jusqu'à la fin.</div>
+          <div class="section-sub">Ce que l'équipe coûtera à la paie de fin de mois : le fixe complet du mois (réduit au prorata pour une embauche ou un départ en cours de mois) + les commissions et primes <b>réellement acquises à ce jour</b>. Aucun contrat futur n'est deviné : ce total ne monte que quand de vrais contrats rentrent. Pour « combien je dois si je m'arrête maintenant », c'est 💸 Dépenses temps réel plus haut.</div>
           <div id="payrollSummaryPanel" class="money-sensitive"></div>
 
           <div class="section-title">🧾 Bilan net du mois</div>
@@ -2281,6 +2284,26 @@ function tryDeviceGateAdmin(){
             <div id="assistDelaiResume" style="margin-top:10px;"></div>
           </div>
 
+          <!-- 🛡️ QUOTA ANTI-ABUS — combien d'assistances chacun a le droit de consommer par jour. -->
+          <div style="margin-top:18px; border-top:1px solid var(--border); padding-top:16px;">
+            <label style="margin-bottom:6px;">🛡️ Nombre d'assistances autorisées par agent et par jour</label>
+            <div class="section-sub">Au-delà de ce nombre, le bouton Assistance refuse la demande et invite l'agent à aller voir son superviseur de vive voix. Sa tentative reste enregistrée dans l'historique, tu la vois. <b>0 = illimité</b> (aucun blocage, comportement d'origine). Seules les demandes <b>réellement prises en charge</b> consomment le quota : une demande annulée par l'agent ne compte pas.</div>
+            <div class="admin-toolbar" style="margin-top:12px; align-items:flex-end;">
+              <div>
+                <label style="margin-bottom:4px;">Maximum par jour (tout le monde)</label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="number" id="assistMaxParJour" min="0" max="50" step="1" style="width:110px;">
+                  <span style="color:var(--muted); font-size:13px;">par agent et par jour</span>
+                </div>
+              </div>
+              <button onclick="saveAssistanceMaxParJour()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer le maximum</button>
+              <button onclick="renderAssistanceQuotaPanel()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">🔄 Actualiser le compteur du jour</button>
+              <div class="save-note" id="assistMaxNote"></div>
+            </div>
+            <div class="section-sub" style="margin-top:10px;">Le tableau ci-dessous compte les assistances <b>d'aujourd'hui</b>, agent par agent. La colonne « Limite perso » permet de donner un nombre différent à quelqu'un — une recrue en formation a besoin de plus d'aide qu'un ancien. Laisse la case vide pour qu'il suive le maximum général.</div>
+            <div id="assistQuotaPanel" style="margin-top:12px;"></div>
+          </div>
+
           <div style="margin-top:18px; border-top:1px solid var(--border); padding-top:16px;">
             <label style="margin-bottom:6px;">🤝 Qui peut assister — et qui est disponible en ce moment</label>
             <div class="section-sub">Un superviseur est assistant d'office. Pour ajouter quelqu'un d'autre, va dans <b>Agents</b> plus bas et clique le bouton 🤝 sur sa fiche. Chacun voit sur son écran de pointage une case pour se déclarer indisponible, et l'appli détecte toute seule les pauses, ADF, écoutes et fins de journée.</div>
@@ -2534,7 +2557,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-25-r130';
+const APP_VERSION = '2026-08-26-r131';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2586,6 +2609,14 @@ let config = {
   // à faire en dur dans le code. Voir assistDelaiAgreesMs() / assistDelaiTousMs().
   assistanceDelaiAgrees: 20,
   assistanceDelaiTous: 40,
+  // 🛡️ QUOTA D'ASSISTANCES PAR JOUR (anti-abus). 0 = illimité (comportement d'origine, aucun blocage).
+  //   assistanceMaxParJour  : plafond par AGENT et par jour, valable pour tout le monde par défaut.
+  //   assistanceMaxParAgent : exception nommée { "Nom": 5 } — une recrue en formation a besoin de plus
+  //                           d'aide qu'un ancien, la même limite pour tous serait injuste.
+  // Seules les demandes réellement PRISES EN CHARGE consomment le quota : un agent qui annule tout de
+  // suite (fausse manip, problème réglé seul) ne perd rien. Voir assistanceComptageDuJour().
+  assistanceMaxParJour: 0,
+  assistanceMaxParAgent: {},
   adminPassword: DEFAULT_ADMIN_PASSWORD,
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
@@ -3639,7 +3670,8 @@ async function loadConfig(){
 // travail de l'autre. Seule une vraie modification concurrente de LA MÊME clé peut encore se
 // « perdre » (cas rare, et c'est alors la dernière écriture qui gagne, comme avant ce correctif).
 const CONFIG_MERGE_DICT_FIELDS = ['agentsTerminated','agentsIndep','agentsSupervisor','agentsNoObjectif',
-  'agentsStatusLabel','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate'];
+  'agentsStatusLabel','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate',
+  'assistanceMaxParAgent'];
 const CONFIG_MERGE_ARRAY_FIELDS = ['archivedAgents'];
 
 function mergeConfigDictField(baseline, mine, theirs){
@@ -4094,7 +4126,7 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); }
-  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); }
+  if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderAssistanceQuotaPanel(); }
 }
 
 // ============================================================
@@ -8894,8 +8926,23 @@ async function renderBossRevenue(force){
   bossRevenueLastComputed = Date.now();
   bossRevenueLastRangeKey = rangeKey;
 
+  // ⚠️ DEUX CA DIFFÉRENTS SUR LA MÊME PAGE — CORRIGÉ (26/08/2026).
+  // getTotalContractsForDateRange compte les contrats jour par jour dans les tableaux de bord, SANS
+  // retirer les rétractations du mois. 🧾 Bilan net du mois, lui, passe par getTotalContractsMonth qui
+  // les retire. Sur la période « depuis le 1er du mois », les deux panneaux de la MÊME page affichaient
+  // donc deux chiffres d'affaires différents pour le même mois, sans rien pour l'expliquer — et le
+  // panneau CA était toujours le plus optimiste des deux.
+  // Dès que la période choisie couvre exactement le mois en cours du 1er à aujourd'hui, on prend la MÊME
+  // source que le bilan : les deux chiffres ne peuvent plus diverger. Sur une période plus courte, les
+  // rétractations (comptées au mois, jamais datées) ne peuvent pas être réparties par jour : le chiffre
+  // reste brut, et c'est écrit noir sur blanc dans la carte au lieu d'être passé sous silence.
+  const nowForRevenue = nowMA();
+  const firstOfCurrentMonth = `${nowForRevenue.getFullYear()}-${String(nowForRevenue.getMonth()+1).padStart(2,'0')}-01`;
+  const isMonthToDateRange = (expenseFrom === firstOfCurrentMonth && expenseTo === todayStr());
   const [periodTotal, expense] = await Promise.all([
-    getTotalContractsForDateRange(expenseFrom, expenseTo),
+    isMonthToDateRange
+      ? getTotalContractsMonth(nowForRevenue.getFullYear(), nowForRevenue.getMonth()+1)
+      : getTotalContractsForDateRange(expenseFrom, expenseTo),
     computeRealTimeExpenseForRange(expenseFrom, expenseTo)
   ]);
   const periodCalc = computeBossRevenue(periodTotal);
@@ -8912,7 +8959,8 @@ async function renderBossRevenue(force){
       <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-bottom:6px;">📈 ${label}</div>
       <div style="font-size:30px; font-weight:900; color:var(--gold);">${Math.round(calc.total).toLocaleString('fr-FR')} DH</div>
       <div class="cash-breakdown" style="margin-top:12px;">
-        <div><span>Contrats bruts</span><b>${calc.totalContracts}</b></div>
+        <div title="${isMonthToDateRange ? 'Contrats du mois, rétractations déjà déduites — exactement la même source que le 🧾 Bilan net du mois plus bas.' : 'Contrats comptés jour par jour sur la période choisie. Les rétractations sont un compteur MENSUEL, non daté : elles ne peuvent pas être rattachées à une journée, elles ne sont donc pas déduites ici. Choisis « ↺ Depuis le 1er du mois » pour un chiffre net de rétractations.'}"><span>Contrats ${isMonthToDateRange ? 'nets' : 'bruts'}</span><b>${calc.totalContracts}</b></div>
+        ${!isMonthToDateRange ? `<div class="miss"><span>⚠️ Rétractations du mois</span><b>non déduites</b></div>` : ''}
         <div><span>Effectifs (-${config.bossReturnRatePct||0}% retour estimé)</span><b>${Math.round(calc.effectiveContracts*10)/10}</b></div>
         <div><span>Commission de base</span><b>${Math.round(calc.base).toLocaleString('fr-FR')} DH</b></div>
         ${config.bossBonusPct>0 ? `<div class="hit"><span>Bonus (+${config.bossBonusPct}%)</span><b>+${Math.round(calc.bonus).toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -8995,7 +9043,7 @@ async function renderBossRevenue(force){
       <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.6;">Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.<br><span style="opacity:0.85;">💡 La prime d'assiduité (si acquise) suit la même règle : elle grandit chaque jour avec le fixe, sans jamais atteindre son plein montant avant la fin du mois — survole <b>ⓘ</b> dans l'en-tête pour le détail agent par agent.</span></div>
       <div style="overflow-x:auto;">
         <table class="salary-table">
-          <thead><tr><th>Agent</th><th>Contrats réalisés</th><th>Fixe (prorata) <span title="Salaire de base + prime fixe mensuelle + prime d'assiduité (si acquise), le tout au prorata des jours ouvrés déjà écoulés ce mois-ci — même la prime d'assiduité monte progressivement au fil du mois, elle n'apparaît jamais en entier avant que le mois ne soit terminé." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
+          <thead><tr><th>Agent</th><th title="Contrats réellement payés sur la période : signés moins rétractations moins retours clients convertis en contrats. Même base que la paie de fin de mois.">Contrats payés</th><th>Fixe (prorata) <span title="Salaire de base + prime fixe mensuelle + prime d'assiduité (si acquise), le tout au prorata des jours ouvrés déjà écoulés ce mois-ci — même la prime d'assiduité monte progressivement au fil du mois, elle n'apparaît jamais en entier avant que le mois ne soit terminé." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
           <tbody>${detailRows}${chargesRow}</tbody>
         </table>
       </div>
@@ -9108,7 +9156,9 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     monthlyDeductions(agent, year, month, dateRange),
     realizedContractsForDateRange(agent, dateRange.from, dateRange.to),
     isFullMonthToDate ? supervisorMonthlyBonus(year, month) : supervisorBonusForDates(dateStrsInRange(dateRange.from, dateRange.to)),
-    isFullMonthToDate ? Promise.resolve(null) : monthlyRealizedContracts(agent, year, month),
+    // (devenu inutile depuis que le palier se calcule sur payableContractsBreakdown plus bas — on ne
+    //  relit plus le mois une 2e fois pour rien)
+    Promise.resolve(null),
     todayIncludedInRange ? getDayLog(agent, todayStr()) : Promise.resolve(null)
   ]);
   const clockedInToday = todayLog && todayLog.events && todayLog.events.length > 0;
@@ -9160,7 +9210,21 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   // Palier objectif (voir contractEarnings) : sur la fenêtre standard, realizedCount = déjà le total du
   // mois, donc la répartition est exacte. Sur une fenêtre plus courte, on situe cette fenêtre par rapport
   // au total du mois (monthToDateRealized) pour savoir quelle part tombe avant/après le mini obligatoire.
-  const contractPart = contractEarnings(pay, isFullMonthToDate ? realizedCount : monthToDateRealized, realizedCount).total;
+  // ⚠️ COHÉRENCE AVEC LA PAIE — CORRIGÉ (26/08/2026). On payait ici la commission sur les contrats BRUTS
+  // du tableau de bord, alors que la paie de fin de mois (estimateSalaryMonthReal) la paie sur les
+  // contrats PAYABLES = bruts − rétractations − retours convertis en contrats. Le même agent, le même
+  // jour, affichait donc dans « Ton salaire réel, maintenant » et dans « Dépenses temps réel » un
+  // montant SUPÉRIEUR à ce qu'il touchera : une promesse que la paie ne tient pas côté agent, et une
+  // dépense sous-estimée côté patron. On repasse par la MÊME décomposition que la paie.
+  const brRT = await payableContractsBreakdown(agent, year, month);
+  const payableMonth = brRT.payable;
+  // Fenêtre standard (1er → aujourd'hui) : la fenêtre EST le mois, on prend directement le payable.
+  // Fenêtre plus courte (ex. « aujourd'hui » seul) : les retours ne sont pas datés, donc impossible de
+  // les rattacher à un jour. On garde le compte brut de la fenêtre, plafonné au payable du mois pour ne
+  // jamais afficher plus que ce que la paie versera.
+  const windowCount = isFullMonthToDate ? payableMonth : Math.min(realizedCount, payableMonth);
+  const ceRT = contractEarnings(pay, payableMonth, windowCount);
+  const contractPart = ceRT.total;
 
   // Primes d'objectif et primes manuelles : ce sont des paliers MENSUELS (atteint ou pas, comme la prime
   // d'assiduité en plus haut), jamais des montants qui se répartissent jour par jour. Sur la fenêtre
@@ -9177,12 +9241,15 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
       // de mois (estimateSalaryMonthReal) la calcule sur les contrats PAYABLES (après retours convertis).
       // Un agent à 32 signés / 27 payés pour un mini de 30 voyait donc "ton salaire réel, maintenant"
       // inclure une prime de 500 DH qu'il ne toucherait jamais — 800 DH d'écart mesuré avec sa paie.
-      const brRT = await payableContractsBreakdown(agent, year, month);
-      const stFull = await monthlyObjectifStatus(agent, year, month, brRT.payable);
+      const stFull = await monthlyObjectifStatus(agent, year, month, payableMonth);
       objectifPrimes = (stFull.primeObjectif||0) + (stFull.primeExtra||0);
     }
     const manualPrimes = await getManualPrimes(agent, year, month);
-    manualPrimesTotal = computeManualPrimesTotal(manualPrimes, realizedCount);
+    // ⚠️ MÊME CORRECTION QUE LA PRIME D'OBJECTIF (26/08/2026) — une prime manuelle « conditionnelle »
+    // (versée si l'agent atteint N contrats) était évaluée ICI sur le réalisé BRUT et À LA PAIE sur le
+    // PAYABLE. Un agent à 32 signés / 27 payés, condition à 30 : prime affichée puis retirée le jour de
+    // la paie, sans explication. Une seule base désormais : payableMonth.
+    manualPrimesTotal = computeManualPrimesTotal(manualPrimes, payableMonth);
   }
   const supervisorBonusAmt = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
 
@@ -9192,7 +9259,14 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     total: Math.round(total),
     fixedProrated: Math.round(fixedProrated), fixedFull: Math.round(fixedFull),
     baseFixedProrated: Math.round(baseFixedProrated), assiduiteProrated: Math.round(assiduiteProrated),
-    contractPart: Math.round(contractPart), contractsRealized: realizedCount,
+    // contractsRealized = ce qui est réellement PAYÉ sur la fenêtre (après rétractations et retours) —
+    // c'est ce chiffre qui doit s'afficher à côté d'un montant en DH. contractsBrut garde le nombre de
+    // contrats signés, pour pouvoir montrer l'écart à l'agent au lieu de le lui cacher.
+    // contractDetail = la répartition avant/au-delà de l'objectif, telle qu'elle a servi à calculer le
+    // montant. L'écran s'en sert pour ÉCRIRE le calcul sous la ligne au lieu d'un chiffre tout seul.
+    contractPart: Math.round(contractPart), contractDetail: ceRT,
+    contractsRealized: windowCount, contractsBrut: realizedCount,
+    returnsDeducted: brRT.returnsDeducted, retractions: brRT.retractions,
     objectifPrimes: Math.round(objectifPrimes),
     deductionsTotal: ded.total || 0,
     manualPrimesTotal: manualPrimesTotal || 0,
@@ -12264,10 +12338,18 @@ function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
   const pay = getAgentPay(agent, y, m);
   const daysMonth = workingDaysInMonth(y, m);
 
-  // Le taux journalier reste basé sur le fixe PLEIN divisé par le nombre de jours ouvrés du mois entier
-  // (constant, quelle que soit la date d'embauche — voir proratedMonthFactor) ; seul le SEUIL de palier
-  // (objectif mensuel) est réduit au prorata pour un agent embauché en cours de mois.
-  const dailyBase = (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth;
+  // ⚠️ DOUBLE-PRORATA CORRIGÉ (26/08/2026) — le taux journalier doit partir du fixe PLEIN divisé par les
+  // jours ouvrés du mois ENTIER : c'est ce que dit le commentaire d'origine, c'est ce que fait déjà
+  // monthlyDeductions pour la retenue d'une journée, et c'est la seule valeur qui redonne exactement la
+  // paie du mois quand on additionne les journées. `pay` est DÉJÀ réduit par proratedMonthFactor
+  // (embauche/départ en cours de mois) : rediviser ce fixe déjà réduit par le mois entier appliquait la
+  // réduction UNE DEUXIÈME fois.
+  //   Cas réel : embauche le 20/08 (8 jours ouvrés sur 21), 3000 DH de fixe.
+  //   Correct : 3000/21 = 142,9 DH/jour × 8 = 1143 DH  → exactement son fixe proratisé du mois.
+  //   Avant   : (3000×8/21)/21 = 54,4 DH/jour × 8 = 435 DH → la recrue voyait 2,6× moins que sa paie.
+  // Le SEUIL de palier (objectif mensuel), lui, reste bien proratisé : c'est effectiveObjectifMensuel.
+  const payFull = getAgentPay(agent);
+  const dailyBase = (payFull.baseSalary + payFull.primeFixeMensuelle) / daysMonth;
   const objectif = effectiveObjectifMensuel(agent, y, m);
   const isAtteint = objectif > 0 && monthContracts >= objectif;
 
@@ -12295,12 +12377,13 @@ function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month
   const now = nowMA();
   const y = year || now.getFullYear();
   const m = month || (now.getMonth()+1);
-  // Même correction que calculateDailySalary ci-dessus : le fixe doit être celui du mois demandé,
-  // prorata d'embauche compris, sinon le détail affiché ne fait pas la somme du total.
+  // Même correction que calculateDailySalary ci-dessus (double-prorata) : le taux journalier part du
+  // fixe PLEIN ÷ jours ouvrés du mois entier ; `pay` proratisé ne sert qu'au seuil de palier.
   const pay = getAgentPay(agent, y, m);
+  const payFull = getAgentPay(agent);
   const daysMonth = workingDaysInMonth(y, m);
 
-  const dailyBase = (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth;
+  const dailyBase = (payFull.baseSalary + payFull.primeFixeMensuelle) / daysMonth;
   const daysWeek = daysElapsedOverride != null ? daysElapsedOverride : (pc.daysPerWeek || 5);
   const objectif = effectiveObjectifMensuel(agent, y, m);
   const isAtteint = objectif > 0 && monthContracts >= objectif;
@@ -14341,11 +14424,33 @@ async function renderCash(){
   const hero = document.getElementById('cashHero');
 
   const rt = realTimeSalary;
+
+  // ── D'OÙ SORT LE MONTANT DE LA COMMISSION ──────────────────────────────────
+  // Un agent qui lit « 200 DH » sans savoir pourquoi croit à une erreur, et vient te voir. On écrit
+  // donc le calcul complet sous la ligne : combien de contrats payés, combien sont absorbés par le
+  // fixe (l'objectif minimum), combien dépassent et à quel tarif.
+  const cdRT = rt.contractDetail || null;
+  const objMiniRT = (monthRes && monthRes.status && monthRes.status.objectif) || 0;
+  let explicationCommission = '';
+  if(cdRT){
+    const pre = Math.round(cdRT.preCount), post = Math.round(cdRT.postCount);
+    if(cdRT.preRate > 0 && pre > 0){
+      // L'admin paie aussi les contrats d'avant l'objectif : les deux tranches sont détaillées.
+      explicationCommission = `${rt.contractsRealized} payé${rt.contractsRealized>1?'s':''} · ${pre} × ${cdRT.preRate} DH avant l'objectif` + (post > 0 ? ` + ${post} × ${cdRT.postRate} DH au-delà` : '');
+    } else if(pre > 0 && post > 0){
+      explicationCommission = `${rt.contractsRealized} payé${rt.contractsRealized>1?'s':''} · les ${pre} premiers sont couverts par ton fixe (objectif ${objMiniRT || pre}) · ${post} × ${cdRT.postRate} DH au-delà`;
+    } else if(pre > 0 && post === 0){
+      explicationCommission = `${rt.contractsRealized} payé${rt.contractsRealized>1?'s':''} sur un objectif de ${objMiniRT || pre} : ils sont couverts par ton fixe. La commission démarre au contrat suivant l'objectif.`;
+    } else if(post > 0){
+      explicationCommission = `${post} × ${cdRT.postRate} DH`;
+    }
+  }
+
   if(pay.isIndep && monthRes){
     hero.innerHTML = `
       <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ton salaire brut réel, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} × ${pay.perContract} DH${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''} · <b>brut, avant retour client éventuel</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) retirés au titre des retours clients.">(sur ${rt.contractsBrut} signés)</b>` : ''}${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''} · <b>retours clients déjà déduits</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
@@ -14360,12 +14465,12 @@ async function renderCash(){
     hero.innerHTML = `
       <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 Ton salaire brut réel, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''} · <b>brut, avant retour client éventuel</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) retirés au titre des retours clients.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''} · <b>retours clients déjà déduits</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div><span>Fixe + prime fixe (prorata ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>
         <div class="${assiduiteAcquise?'hit':'miss'}"><span>Prime assiduité</span><b>${assiduiteAcquise ? 'incluse ci-dessus' : 'Perdue (retards)'}</b></div>
-        ${pay.perContract>0 ? `<div><span>${rt.contractsRealized} × ${pay.perContract} DH</span><b>${(rt.contractsRealized*pay.perContract).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${(pay.perContract>0 || rt.contractPart>0) ? `<div><span>Commission contrats${explicationCommission ? `<small>${explicationCommission}</small>` : ''}</span><b>${rt.contractPart.toLocaleString('fr-FR')} DH</b></div>` : ''}
         <div class="${rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif (${monthRes.status.objectif||'—'})</span><b>${rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : (monthRes.status.objectif ? 'Pas encore atteint' : 'Non réglé')}</b></div>
         ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -22578,6 +22683,25 @@ async function assistanceButtonClick(){
     assistRenderButton();
     return;
   }
+  // 🛡️ QUOTA DU JOUR — on relit l'historique PARTAGÉ avant de décider : un agent peut très bien avoir
+  // consommé ses demandes depuis un autre poste, et une limite qui se contourne en changeant d'écran ne
+  // sert à rien. Si le patron n'a rien réglé (0 = illimité), on ne relit rien et rien ne change.
+  const maxJour = assistanceMaxPourAgent(moi);
+  if(maxJour > 0){
+    try{ await assistHistLoad(); }catch(e){}
+    const dejaFait = assistanceComptageDuJour(moi);
+    if(dejaFait >= maxJour){
+      // La tentative est TRACÉE, pas effacée : un agent bloqué qui disparaîtrait des radars, c'est
+      // précisément le moment où le patron doit savoir qu'il a eu besoin d'aide et ne l'a pas eue.
+      // cancelled:true → cette ligne ne consomme jamais de quota à son tour.
+      assistHistAdd({ id: 'r' + Date.now().toString(36), agent: moi, at: Date.now(), seenBy: null, seenAt: null, waitMs: 0, cancelled: true, refusedQuota: true });
+      logAudit(moi, 'Assistance refusée (quota du jour atteint)', `${dejaFait}/${maxJour} assistance(s) déjà prises en charge aujourd'hui`);
+      showToast(`🛑 Tu as déjà utilisé tes ${maxJour} assistance${maxJour > 1 ? 's' : ''} d'aujourd'hui (${dejaFait} prise${dejaFait > 1 ? 's' : ''} en charge). Va voir ton superviseur de vive voix — ta tentative est enregistrée et l'Admin la voit.`, 'warn', 9000);
+      assistRenderButton();
+      return;
+    }
+  }
+
   const id = 'a' + Date.now().toString(36) + Math.floor(performance.now() % 1000).toString(36);
   assistMyRequestId = id;
   const maintenant = Date.now();
@@ -23033,6 +23157,98 @@ async function saveAssistanceDelais(){
     : `✅ Enregistré. Le superviseur a ${va} secondes pour répondre avant que les agréés soient alertés.`, 'ok', 7000);
 }
 
+// ============================================================
+// 🛡️ RÉGLAGE DU QUOTA — écran Admin
+// ============================================================
+// Le compteur du jour est relu depuis l'historique PARTAGÉ à chaque affichage : un agent qui a appelé
+// depuis un autre poste apparaît ici tout de suite, sinon la limite se contournerait en changeant d'écran.
+async function renderAssistanceQuotaPanel(){
+  const input = document.getElementById('assistMaxParJour');
+  if(input) input.value = Math.max(0, parseInt(config.assistanceMaxParJour, 10) || 0);
+  const el = document.getElementById('assistQuotaPanel');
+  if(!el) return;
+  if(!config.agents || config.agents.length === 0){
+    el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>';
+    return;
+  }
+  try{ await assistHistLoad(); }catch(e){}
+  const jour = todayStr();
+  const map = assistanceComptageEquipeDuJour(jour);
+  const general = Math.max(0, parseInt(config.assistanceMaxParJour, 10) || 0);
+  const persos = config.assistanceMaxParAgent || {};
+
+  const lignes = [...config.agents].sort((a, b)=>{
+    const pa = (map[a] && map[a].prises) || 0, pb = (map[b] && map[b].prises) || 0;
+    if(pb !== pa) return pb - pa;                 // le plus demandeur en premier
+    return a.localeCompare(b);
+  }).map(agent=>{
+    const d = map[agent] || { prises: 0, annulees: 0, refusees: 0 };
+    const max = assistanceMaxPourAgent(agent);
+    const persoVal = (persos[agent] !== undefined && persos[agent] !== null && persos[agent] !== '') ? persos[agent] : '';
+    const atteint = max > 0 && d.prises >= max;
+    const proche = max > 0 && !atteint && d.prises >= max - 1;
+    const couleur = atteint ? 'var(--red)' : (proche ? 'var(--amber)' : 'var(--text)');
+    return `<tr>
+      <td><b>${escapeHtml(agent)}</b>${atteint ? ' <span class="tag warn">quota atteint</span>' : ''}</td>
+      <td style="color:${couleur}; font-weight:800;">${d.prises}${max > 0 ? ` <span style="color:var(--muted); font-weight:400;">/ ${max}</span>` : ''}</td>
+      <td style="color:var(--muted);">${d.annulees || '—'}</td>
+      <td style="color:${d.refusees ? 'var(--amber)' : 'var(--muted)'};">${d.refusees || '—'}</td>
+      <td><input type="number" min="0" max="50" step="1" style="width:90px;" value="${persoVal}" placeholder="${general > 0 ? general : '∞'}" data-agent="${escapeHtml(agent)}" onchange="saveAssistanceMaxAgent(this.dataset.agent, this.value)" title="Limite propre à cet agent. Vide = il suit le maximum général (${general > 0 ? general + '/jour' : 'illimité'})."></td>
+    </tr>`;
+  }).join('');
+
+  const totalPrises = Object.values(map).reduce((s, d)=> s + d.prises, 0);
+  const totalRefus = Object.values(map).reduce((s, d)=> s + d.refusees, 0);
+
+  el.innerHTML = `
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">
+      Journée du <b style="color:var(--text);">${jour.split('-').reverse().join('/')}</b> — <b style="color:var(--text);">${totalPrises}</b> assistance${totalPrises > 1 ? 's' : ''} prise${totalPrises > 1 ? 's' : ''} en charge${totalRefus > 0 ? ` · <b style="color:var(--amber);">${totalRefus}</b> refusée${totalRefus > 1 ? 's' : ''} faute de quota` : ''}.
+      ${general === 0 ? '<br>⚠️ Maximum général réglé sur <b>0 = illimité</b> : aucun agent n\'est bloqué pour l\'instant.' : ''}
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="salary-table">
+        <thead><tr>
+          <th>Agent</th>
+          <th title="Demandes réellement prises en charge par un assistant aujourd'hui. Ce sont elles, et elles seules, qui consomment le quota.">Aujourd'hui</th>
+          <th title="Demandes que l'agent a annulées lui-même — elles ne consomment aucun quota.">Annulées</th>
+          <th title="Demandes refusées parce que l'agent avait déjà atteint son maximum du jour.">Refusées</th>
+          <th title="Vide = cet agent suit le maximum général. Un nombre = sa limite à lui, ce jour et les suivants.">Limite perso</th>
+        </tr></thead>
+        <tbody>${lignes}</tbody>
+      </table>
+    </div>`;
+}
+
+async function saveAssistanceMaxParJour(){
+  const el = document.getElementById('assistMaxParJour');
+  if(!el) return;
+  const v = parseInt(el.value, 10);
+  if(isNaN(v) || v < 0){ showToast('Saisis un nombre (0 = illimité).', 'warn', 5000); return; }
+  config.assistanceMaxParJour = Math.min(50, v);
+  await saveConfig();
+  logAudit('Admin', "Maximum d'assistances par jour modifié", config.assistanceMaxParJour === 0 ? 'illimité' : `${config.assistanceMaxParJour} par agent et par jour`);
+  const note = document.getElementById('assistMaxNote');
+  if(note){ note.textContent = 'Enregistré ✓'; setTimeout(()=> note.textContent = '', 2500); }
+  renderAssistanceQuotaPanel();
+}
+
+async function saveAssistanceMaxAgent(agent, val){
+  if(!agent) return;
+  if(!config.assistanceMaxParAgent) config.assistanceMaxParAgent = {};
+  const brut = String(val == null ? '' : val).trim();
+  if(brut === ''){
+    delete config.assistanceMaxParAgent[agent];               // retour au maximum général
+  } else {
+    const v = parseInt(brut, 10);
+    if(isNaN(v) || v < 0){ showToast('Saisis un nombre, ou laisse vide pour suivre le maximum général.', 'warn', 5000); return; }
+    config.assistanceMaxParAgent[agent] = Math.min(50, v);
+  }
+  await saveConfig();
+  logAudit('Admin', "Limite d'assistances d'un agent modifiée",
+    brut === '' ? `${agent} : suit désormais le maximum général` : `${agent} : ${config.assistanceMaxParAgent[agent]} par jour`);
+  renderAssistanceQuotaPanel();
+}
+
 function renderAssistanceSupervisorSelect(){
   renderAssistanceDelais();
   const sel = document.getElementById('assistSupervisorSelect');
@@ -23107,6 +23323,55 @@ function assistHistFmt(ms){
   if(s < 60) return s + ' s';
   const m = Math.floor(s / 60);
   return m + ' min ' + String(s % 60).padStart(2, '0') + ' s';
+}
+
+// ============================================================
+// 🛡️ QUOTA D'ASSISTANCES PAR JOUR — anti-abus
+// ============================================================
+// Le principe : chaque agent a droit à un nombre maximum d'assistances PAR JOUR. 0 = illimité, c'est le
+// réglage par défaut — tant que le patron n'a rien réglé, rien ne change pour personne.
+//
+// Ce qui consomme le quota : uniquement une demande réellement PRISE EN CHARGE par un assistant. Un
+// agent qui annule sa demande tout de suite (fausse manip, problème résolu seul) ne perd rien. Le quota
+// mesure l'aide réellement consommée, pas les clics.
+//
+// ⚠️ Le jour est calculé à l'heure du Maroc (nowMA), comme partout ailleurs dans l'appli — jamais
+// l'heure du navigateur, sinon un poste réglé sur un autre fuseau ouvrirait un quota neuf en pleine
+// journée de travail.
+function assistJourMA(ts){
+  try{ return todayStr(new Date(new Date(ts).toLocaleString('en-US', { timeZone: 'Africa/Casablanca' }))); }
+  catch(e){ return todayStr(new Date(ts)); }
+}
+
+// Plafond applicable à UN agent : son exception nommée si elle existe, sinon le plafond général.
+// 0 = pas de limite. Une recrue en formation a besoin de plus d'aide qu'un ancien : la même limite pour
+// tout le monde serait une fausse égalité.
+function assistanceMaxPourAgent(agent){
+  const perso = (config.assistanceMaxParAgent || {})[agent];
+  if(perso !== undefined && perso !== null && perso !== '' && !isNaN(perso)) return Math.max(0, parseInt(perso, 10));
+  const g = parseInt(config.assistanceMaxParJour, 10);
+  return isNaN(g) ? 0 : Math.max(0, g);
+}
+
+// Nombre d'assistances déjà CONSOMMÉES par un agent ce jour-là (annulations exclues).
+function assistanceComptageDuJour(agent, dateStr){
+  const jour = dateStr || todayStr();
+  return (assistHist || []).filter(r => r && r.agent === agent && r.at && !r.cancelled && assistJourMA(r.at) === jour).length;
+}
+
+// Tableau complet de la journée, agent par agent : pris en charge / annulés / refusés faute de quota.
+function assistanceComptageEquipeDuJour(dateStr){
+  const jour = dateStr || todayStr();
+  const map = Object.create(null);
+  const ligne = a => (map[a] || (map[a] = { prises: 0, annulees: 0, refusees: 0 }));
+  (assistHist || []).forEach(r => {
+    if(!r || !r.agent || !r.at) return;
+    if(assistJourMA(r.at) !== jour) return;
+    if(r.refusedQuota) ligne(r.agent).refusees++;
+    else if(r.cancelled) ligne(r.agent).annulees++;
+    else ligne(r.agent).prises++;
+  });
+  return map;
 }
 
 // ── Le tableau de bord ─────────────────────────────────────────────────────
@@ -23219,7 +23484,7 @@ async function renderAssistanceHistory(){
         <tbody>${rows.slice(0, 15).map(r=>`<tr>
           <td style="color:var(--muted);">${new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</td>
           <td><b>${escapeHtml(r.agent || '?')}</b></td>
-          <td>${r.cancelled ? '<span style="color:var(--red);">annulé</span>' : assistHistFmt(r.waitMs || 0)}</td>
+          <td>${r.refusedQuota ? '<span style="color:var(--amber);" title="Demande refusée : l\'agent avait déjà atteint son nombre maximum d\'assistances pour la journée.">🛑 quota atteint</span>' : (r.cancelled ? '<span style="color:var(--red);">annulé</span>' : assistHistFmt(r.waitMs || 0))}</td>
           <td>${r.cancelled ? '<span style="color:var(--red);">personne</span>' : escapeHtml(r.seenBy || '—')}</td>
           <td style="color:var(--amber); font-size:12.5px;">${(r.declinedBy && r.declinedBy.length) ? escapeHtml(r.declinedBy.join(', ')) : '<span style="color:var(--muted);">—</span>'}</td>
         </tr>`).join('')}</tbody>
