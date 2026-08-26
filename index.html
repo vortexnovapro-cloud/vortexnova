@@ -1433,10 +1433,11 @@ function tryDeviceGateAdmin(){
                  celui qui donne UNE image nette est en premier, en couleur, parce que c'est celui que
                  l'admin veut dans 9 cas sur 10. -->
             <div style="padding:14px 16px; border-radius:11px; background:rgba(52,183,116,0.09); border:1px solid rgba(52,183,116,0.4); margin-bottom:12px;">
-              <div style="font-weight:800; color:var(--green); font-size:13.5px; margin-bottom:4px;">✅ UNE SEULE IMAGE, NETTE MÊME EN ZOOMANT</div>
+              <div style="font-weight:800; color:var(--green); font-size:13.5px; margin-bottom:4px;">✅ UNE SEULE IMAGE, ENVOYÉE EN PHOTO NORMALE</div>
               <div style="font-size:12.5px; color:var(--muted); line-height:1.75; margin-bottom:11px;">
-                Une image PNG avec tout le monde dessus. Elle s'ouvre sur <b style="color:var(--text);">n'importe quel téléphone</b>, aucun lecteur particulier n'est nécessaire.<br>
-                <b style="color:var(--text);">La seule règle : dans WhatsApp, 📎 → Document.</b> Jamais la Galerie ni l'appareil photo — c'est ce passage-là qui garde l'image nette.
+                Tout le monde dessus, conseils compris. Elle s'affiche <b style="color:var(--text);">directement dans la conversation</b> : rien à ouvrir, rien à cliquer. Tu l'envoies comme une photo ordinaire.<br>
+                <b style="color:var(--red);">⚠️ À faire UNE SEULE FOIS sur ton téléphone :</b> WhatsApp → Réglages → <b style="color:var(--text);">Stockage et données</b> → <b style="color:var(--text);">Qualité d'envoi des médias</b> → <b style="color:var(--text);">HD</b>.<br>
+                Sans ce réglage, WhatsApp divise l'image par deux et elle redevient floue. Avec, elle passe intacte. C'est le seul geste qui compte.
               </div>
               <button type="button" id="objSnapExportBtnHQ" onclick="exportObjectifSnapshotImage(true)" style="padding:11px 18px; border-radius:9px; border:none; background:var(--green); color:#fff; font-weight:800; font-size:13px; cursor:pointer;">🖼️ Générer l'image unique</button>
               <button type="button" id="objSnapExportBtnPDF" onclick="exportObjectifSnapshotPDF()" title="Même contenu, en PDF multi-pages. Utile seulement si l'image te paraît trop haute — mais le destinataire doit avoir un lecteur PDF." style="margin-left:8px; padding:11px 16px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🧾 Ou en PDF</button>
@@ -1444,9 +1445,10 @@ function tryDeviceGateAdmin(){
             <div style="font-size:12px; color:var(--muted); margin-bottom:7px; opacity:0.9;">Ou, si tu tiens à l'envoyer en photo normale — WhatsApp la compressera, donc plusieurs images plus petites :</div>
             <button type="button" id="objSnapExportBtn" onclick="exportObjectifSnapshotImage()" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer en photos (plusieurs images)</button>
             <div style="margin-top:11px; padding:11px 13px; border-radius:9px; background:rgba(61,139,253,0.07); border:1px solid rgba(61,139,253,0.28); font-size:12px; line-height:1.75; color:var(--muted);">
-              <b style="color:var(--accent);">Pourquoi le passage par « Document » est obligatoire</b><br>
-              WhatsApp réduit <b>toute photo</b> à environ 1600 pixels sur son côté le plus long, puis la compresse. Les pixels supprimés ne reviennent pas : zoomer sur une photo reçue ne la rendra jamais nette. C'est WhatsApp, aucun réglage du CRM ne peut le contourner.<br>
-              Envoyée en <b>Document</b>, la même image arrive <b>intacte</b> — le destinataire zoome autant qu'il veut, chaque carte reste nette.
+              <b style="color:var(--accent);">Pourquoi le réglage HD change tout</b><br>
+              En qualité normale, WhatsApp ramène toute photo à environ <b>1600 pixels</b> sur son côté le plus long. En <b>HD</b>, il en laisse passer près du double. C'est exactement la place qui manquait pour afficher tous les agents.<br>
+              L'image est aussi mise en page <b>en carré</b> plutôt qu'en bande verticale : comme WhatsApp borne le côté le plus LONG, une image carrée conserve des cartes bien plus grandes qu'une image haute. Le nombre de colonnes est recalculé à chaque export selon le nombre d'agents.<br>
+              <span style="opacity:0.85;">Le réglage HD est à faire une fois, il s'applique ensuite à tous tes envois. Il n'y a rien à cocher au moment d'envoyer.</span>
             </div>
           </div>
           <div id="objectifSnapshot"></div>
@@ -2592,7 +2594,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r148';
+const APP_VERSION = '2026-08-26-r149';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -8075,18 +8077,30 @@ async function exportObjectifSnapshotImage(hq){
       // compresse pas. Le découpage en plusieurs images n'existe que pour contourner la compression des
       // PHOTOS — ici il n'a aucune raison d'être. On sort donc tout le monde sur une seule image, en
       // 3 colonnes (cartes larges), calée sur la largeur : la hauteur peut filer, personne ne la réduit.
-      // Nombre de colonnes : compromis entre la NETTETÉ d'une carte et la HAUTEUR de l'image.
-      // La largeur finale est fixée (3000 px), donc plus il y a de colonnes, plus chaque carte est
-      // étroite — mais plus l'image est courte. Une image de 11 000 px de haut est parfaitement nette,
-      // seulement certaines galeries de téléphone la réduisent AVANT de l'afficher. À 4 colonnes,
-      // l'image tombe à ~7 000 px de haut et chaque carte fait encore ~718 px de large, soit plus du
-      // double de ce qu'on voit à l'écran du CRM. C'est le meilleur équilibre.
-      const colsHQ = cartes.length >= 8 ? 4 : (cartes.length >= 4 ? 3 : Math.max(1, cartes.length));
+      // ═══ MISE EN PAGE LA PLUS CARRÉE POSSIBLE ═══════════════════════════════════════════════════
+      // WhatsApp borne une photo sur son CÔTÉ LE PLUS LONG. La netteté d'une carte vaut donc :
+      //     largeur de carte × (plafond ÷ côté le plus long de l'image)
+      // Pour que les cartes soient les plus grandes possible, il faut donc rendre le côté le plus long
+      // AUSSI PETIT QUE POSSIBLE — autrement dit une image carrée, jamais une bande.
+      // C'est contre-intuitif : ajouter des colonnes élargit l'image mais la raccourcit encore plus,
+      // et le résultat est meilleur. On essaie donc toutes les dispositions de 2 à 8 colonnes et on
+      // garde celle dont le plus grand côté est le plus petit. Les hauteurs sont MESURÉES sur le
+      // contenu réel, jamais estimées.
+      const BANDEAU_HQ = 240;
+      let meilleurHQ = null;
+      for(let c = 2; c <= 8; c++){
+        if(c > cartes.length) break;
+        const w = c * 350 + 64;
+        const h = mesurerBlocExport(ouvrir + cartes.join('') + '</div>', w, c) + BANDEAU_HQ;
+        const cotePlusLong = Math.max(w, h);
+        if(!meilleurHQ || cotePlusLong < meilleurHQ.cotePlusLong) meilleurHQ = { c, w, cotePlusLong };
+      }
+      const colsHQ = meilleurHQ ? meilleurHQ.c : Math.max(1, Math.min(3, cartes.length));
       await captureBlockToImage({
         innerHTML: avantGrille + ouvrir + cartes.join('') + '</div>',
         width: colsHQ * 350 + 64,
         gridCols: colsHQ,
-        fitBy: 'width',
+        fitBy: 'long',
         title: 'Bilan de la journée',
         badge: 'Bilan du jour',
         badgeColor: '#c9a870',
@@ -8094,7 +8108,7 @@ async function exportObjectifSnapshotImage(hq){
         hq: true,
         filename: `bilan_du_jour_${dateForFile}_HD.png`
       });
-      showToast("✅ Une seule image, en haute définition. Dans WhatsApp : 📎 → Document (pas Galerie) — elle ne sera ni réduite ni compressée.", 'ok', 10000);
+      showToast("✅ Une seule image, mise en page pour WhatsApp. ⚠️ Vérifie une fois pour toutes que WhatsApp est réglé en HD : Réglages → Stockage et données → Qualité d'envoi des médias → HD. Sans ce réglage, WhatsApp la réduira de moitié.", 'ok', 13000);
     } else {
       const pages = planifierPagesExport(cartes, ouvrir, '</div>');
       for(let i = 0; i < pages.length; i++){
