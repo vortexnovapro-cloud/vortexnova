@@ -2566,7 +2566,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r132';
+const APP_VERSION = '2026-08-26-r134';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9024,10 +9024,34 @@ async function renderBossRevenue(force){
     const fixedTip = assiduiteFullAmt>0
       ? `Fixe + prime fixe : ${fixedOnlyFull.toLocaleString('fr-FR')} DH plein → prorata inclus ci-contre.\nPrime assiduité : ${assiduiteFullAmt.toLocaleString('fr-FR')} DH plein (${d.assiduiteAcquise?'acquise':'perdue ce mois-ci'}), elle aussi au prorata des jours écoulés — pas versée en entier avant la fin du mois.\nMontant plein (fixe + prime fixe + assiduité) si le mois était déjà terminé : ${d.fixedFull.toLocaleString('fr-FR')} DH.`
       : `Fixe plein (fixe + prime fixe) : ${d.fixedFull.toLocaleString('fr-FR')} DH — au prorata des jours ouvrés déjà écoulés ce mois-ci.`;
+    // ⚠️ COLONNES MANQUANTES — CORRIGÉ. La ligne affichait le fixe, les retenues, les primes manuelles et
+    // la prime de supervision… mais PAS la commission au contrat ni la prime d'objectif, qui sont souvent
+    // la plus grosse part du total. Résultat : « Total réel » ne faisait pas la somme des colonnes
+    // visibles (ex. fixe 24 DH → total 1 524 DH), impossible à vérifier, donc impossible à croire.
+    const cdd = d.contractDetail || null;
+    const objRegle = (payD.objectifMensuel || 0) > 0;
+    // Un agent SALARIÉ sans objectif mensuel réglé n'a pas de palier : il touche le plein tarif dès son
+    // 1er contrat. C'est rarement voulu, et ça coûte cher sans prévenir — on le signale en clair.
+    const objManquant = !d.isIndep && !d.noObjectif && !objRegle;
+    let commTip;
+    if(!cdd || (cdd.preCount === 0 && cdd.postCount === 0)){
+      commTip = 'Aucun contrat payé sur la période choisie.';
+    } else if(objManquant){
+      commTip = `⚠️ AUCUN OBJECTIF MENSUEL RÉGLÉ pour ${d.agent} dans Réglages → Rémunération par agent.\nSans objectif, il n'y a pas de palier : il est payé ${cdd.postRate} DH dès le 1er contrat.\nCalcul appliqué : ${Math.round(cdd.postCount)} × ${cdd.postRate} DH = ${d.contractPart.toLocaleString('fr-FR')} DH.`;
+    } else if(cdd.preCount > 0 && cdd.preRate === 0){
+      commTip = `${Math.round(cdd.preCount)} contrat(s) couvert(s) par le fixe (objectif minimum ${payD.objectifMensuel}), ${Math.round(cdd.postCount)} au-delà × ${cdd.postRate} DH.`;
+    } else if(cdd.preCount > 0){
+      commTip = `${Math.round(cdd.preCount)} × ${cdd.preRate} DH avant l'objectif + ${Math.round(cdd.postCount)} × ${cdd.postRate} DH au-delà.`;
+    } else {
+      commTip = `${Math.round(cdd.postCount)} × ${cdd.postRate} DH${d.isIndep ? ' (indépendant : payé dès le 1er contrat)' : (d.noObjectif ? ' (sans objectif : payé dès le 1er contrat)' : '')}.`;
+    }
+
     return `<tr>
-      <td><b>${d.agent}</b>${catTag}</td>
+      <td><b>${d.agent}</b>${catTag}${objManquant ? ' <span class="tag warn" style="background:rgba(229,72,77,0.18); color:var(--red); border-color:rgba(229,72,77,0.45);" title="Cet agent est salarié mais aucun objectif mensuel n\'est réglé pour lui. Il touche donc le plein tarif par contrat dès le premier, sans minimum à atteindre. À corriger dans Réglages → Rémunération par agent.">⚠️ objectif non réglé</span>' : ''}</td>
       <td>${d.contractsRealized}</td>
       <td title="${fixedTip}" style="cursor:help;">${d.fixedProrated.toLocaleString('fr-FR')} DH</td>
+      <td title="${commTip}" style="cursor:help;">${d.contractPart>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${d.contractPart.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
+      <td>${d.objectifPrimes>0 ? `<span style="color:var(--green);">+${d.objectifPrimes.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.deductionsTotal>0 ? `<span style="color:var(--red);">-${d.deductionsTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
       <td>${d.manualPrimesTotal>0 ? `<span style="color:var(--gold);">+${d.manualPrimesTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.supervisorBonus>0 ? `<span style="color:var(--gold);">+${d.supervisorBonus.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
@@ -9040,7 +9064,7 @@ async function renderBossRevenue(force){
       <td><b>🏢 Charges (loyers, lignes, internet...)</b></td>
       <td>—</td>
       <td title="Charges pleines du mois : ${chargesFullAmt.toLocaleString('fr-FR')} DH">${expense.chargesProrated.toLocaleString('fr-FR')} DH</td>
-      <td>—</td><td>—</td><td>—</td>
+      <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
       <td><b style="color:var(--red);">${expense.chargesProrated.toLocaleString('fr-FR')} DH</b></td>
     </tr>` : '';
 
@@ -9052,7 +9076,7 @@ async function renderBossRevenue(force){
       <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.6;">Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.<br><span style="opacity:0.85;">💡 La prime d'assiduité (si acquise) suit la même règle : elle grandit chaque jour avec le fixe, sans jamais atteindre son plein montant avant la fin du mois — survole <b>ⓘ</b> dans l'en-tête pour le détail agent par agent.</span></div>
       <div style="overflow-x:auto;">
         <table class="salary-table">
-          <thead><tr><th>Agent</th><th title="Contrats réellement payés sur la période : signés moins rétractations moins retours clients convertis en contrats. Même base que la paie de fin de mois.">Contrats payés</th><th>Fixe (prorata) <span title="Salaire de base + prime fixe mensuelle + prime d'assiduité (si acquise), le tout au prorata des jours ouvrés déjà écoulés ce mois-ci — même la prime d'assiduité monte progressivement au fil du mois, elle n'apparaît jamais en entier avant que le mois ne soit terminé." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
+          <thead><tr><th>Agent</th><th title="Contrats réellement payés sur la période : signés moins rétractations moins retours clients convertis en contrats. Même base que la paie de fin de mois.">Contrats payés</th><th>Fixe (prorata) <span title="Salaire de base + prime fixe mensuelle + prime d'assiduité (si acquise), le tout au prorata des jours ouvrés déjà écoulés ce mois-ci — même la prime d'assiduité monte progressivement au fil du mois, elle n'apparaît jamais en entier avant que le mois ne soit terminé." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Commission contrats <span title="Ce que les contrats de la période rapportent à l'agent, règle du palier appliquée. Survole le montant de chaque ligne pour voir le calcul exact." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th title="Prime versée quand l'objectif mensuel est atteint. Affichée uniquement sur la période « depuis le 1er du mois » : c'est un palier mensuel, l'attribuer à une seule journée n'aurait aucun sens.">Prime objectif</th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
           <tbody>${detailRows}${chargesRow}</tbody>
         </table>
       </div>
@@ -12277,6 +12301,15 @@ function getAgentPay(agent, year, month){
       pay.primeFixeMensuelle = Math.round(pay.primeFixeMensuelle * factor);
       pay.primeAssiduite = Math.round(pay.primeAssiduite * factor);
       if(pay.objectifMensuel > 0) pay.objectifMensuel = Math.max(1, Math.round(pay.objectifMensuel * factor));
+      // ⚖️ ÉQUITÉ — PRIME D'OBJECTIF PRORATISÉE (26/08/2026, décision du patron).
+      // Avant : seul le SEUIL était réduit, la prime restait pleine. Une recrue arrivée le 20 touchait
+      // les 500 DH entiers pour 11 contrats, quand un ancien devait en faire 30 pour la même somme —
+      // soit 45 DH par contrat contre 17 DH. Le nouveau était mieux payé que l'ancien sur cette ligne.
+      // Désormais la prime suit le même facteur que le seuil : 500 × 8/21 = 190 DH pour 11 contrats,
+      // soit 17 DH par contrat, exactement le même taux que l'ancien. Vaut aussi pour un départ en
+      // cours de mois. Le tarif PAR CONTRAT (perContract, primeExtraContrat) n'est jamais proratisé :
+      // ce sont des montants à l'unité, pas des enveloppes mensuelles.
+      pay.primeObjectifJour = Math.round(pay.primeObjectifJour * factor);
     }
   }
   return pay;
