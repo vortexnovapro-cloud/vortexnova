@@ -2297,8 +2297,17 @@ function tryDeviceGateAdmin(){
                 </div>
               </div>
               <button onclick="saveAssistanceMaxParJour()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer le maximum</button>
-              <button onclick="renderAssistanceQuotaPanel()" style="padding:10px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">🔄 Actualiser le compteur du jour</button>
               <div class="save-note" id="assistMaxNote"></div>
+            </div>
+            <div class="admin-toolbar" style="margin-top:6px; align-items:flex-end;">
+              <div>
+                <label style="margin-bottom:4px;">📅 Voir la journée du</label>
+                <input type="date" id="assistQuotaDate" onchange="renderAssistanceQuotaPanel()">
+              </div>
+              <button onclick="assistQuotaToday()" style="padding:10px 16px;border-radius:8px;border:1px solid var(--gold);background:rgba(255,215,0,0.08);color:var(--gold);font-weight:700;font-size:12.5px;cursor:pointer;">Aujourd'hui</button>
+              <button onclick="assistQuotaShiftDay(-1)" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer;">◀ Jour précédent</button>
+              <button onclick="assistQuotaShiftDay(1)" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer;">Jour suivant ▶</button>
+              <button onclick="renderAssistanceQuotaPanel()" style="padding:10px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer;">🔄 Actualiser</button>
             </div>
             <div class="section-sub" style="margin-top:10px;">Le tableau ci-dessous compte les assistances <b>d'aujourd'hui</b>, agent par agent. La colonne « Limite perso » permet de donner un nombre différent à quelqu'un — une recrue en formation a besoin de plus d'aide qu'un ancien. Laisse la case vide pour qu'il suive le maximum général.</div>
             <div id="assistQuotaPanel" style="margin-top:12px;"></div>
@@ -2557,7 +2566,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r131';
+const APP_VERSION = '2026-08-26-r132';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -23172,7 +23181,12 @@ async function renderAssistanceQuotaPanel(){
     return;
   }
   try{ await assistHistLoad(); }catch(e){}
-  const jour = todayStr();
+  // 📅 Journée consultée : par défaut aujourd'hui, mais l'admin peut remonter n'importe quel jour passé
+  // pour voir qui a demandé combien d'assistances ce jour-là.
+  const dateEl = document.getElementById('assistQuotaDate');
+  if(dateEl && !dateEl.value) dateEl.value = todayStr();
+  const jour = (dateEl && dateEl.value) ? dateEl.value : todayStr();
+  const estAujourdhui = (jour === todayStr());
   const map = assistanceComptageEquipeDuJour(jour);
   const general = Math.max(0, parseInt(config.assistanceMaxParJour, 10) || 0);
   const persos = config.assistanceMaxParAgent || {};
@@ -23202,14 +23216,14 @@ async function renderAssistanceQuotaPanel(){
 
   el.innerHTML = `
     <div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">
-      Journée du <b style="color:var(--text);">${jour.split('-').reverse().join('/')}</b> — <b style="color:var(--text);">${totalPrises}</b> assistance${totalPrises > 1 ? 's' : ''} prise${totalPrises > 1 ? 's' : ''} en charge${totalRefus > 0 ? ` · <b style="color:var(--amber);">${totalRefus}</b> refusée${totalRefus > 1 ? 's' : ''} faute de quota` : ''}.
+      ${estAujourdhui ? "Aujourd'hui" : 'Journée du'} <b style="color:var(--text);">${jour.split('-').reverse().join('/')}</b>${estAujourdhui ? '' : ' <span style="color:var(--gold);">(journée passée)</span>'} — <b style="color:var(--text);">${totalPrises}</b> assistance${totalPrises > 1 ? 's' : ''} prise${totalPrises > 1 ? 's' : ''} en charge${totalRefus > 0 ? ` · <b style="color:var(--amber);">${totalRefus}</b> refusée${totalRefus > 1 ? 's' : ''} faute de quota` : ''}.
       ${general === 0 ? '<br>⚠️ Maximum général réglé sur <b>0 = illimité</b> : aucun agent n\'est bloqué pour l\'instant.' : ''}
     </div>
     <div style="overflow-x:auto;">
       <table class="salary-table">
         <thead><tr>
           <th>Agent</th>
-          <th title="Demandes réellement prises en charge par un assistant aujourd'hui. Ce sont elles, et elles seules, qui consomment le quota.">Aujourd'hui</th>
+          <th title="Demandes réellement prises en charge par un assistant ce jour-là. Ce sont elles, et elles seules, qui consomment le quota.">${estAujourdhui ? "Aujourd'hui" : 'Ce jour-là'}</th>
           <th title="Demandes que l'agent a annulées lui-même — elles ne consomment aucun quota.">Annulées</th>
           <th title="Demandes refusées parce que l'agent avait déjà atteint son maximum du jour.">Refusées</th>
           <th title="Vide = cet agent suit le maximum général. Un nombre = sa limite à lui, ce jour et les suivants.">Limite perso</th>
@@ -23217,6 +23231,25 @@ async function renderAssistanceQuotaPanel(){
         <tbody>${lignes}</tbody>
       </table>
     </div>`;
+}
+
+// Revenir sur la journée en cours en un clic.
+function assistQuotaToday(){
+  const el = document.getElementById('assistQuotaDate');
+  if(el) el.value = todayStr();
+  renderAssistanceQuotaPanel();
+}
+
+// Reculer ou avancer d'une journée. Jamais au-delà d'aujourd'hui : une journée future n'a rien à montrer.
+function assistQuotaShiftDay(delta){
+  const el = document.getElementById('assistQuotaDate');
+  if(!el) return;
+  const base = el.value || todayStr();
+  const d = new Date(base + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  const suivant = todayStr(d);
+  el.value = suivant > todayStr() ? todayStr() : suivant;
+  renderAssistanceQuotaPanel();
 }
 
 async function saveAssistanceMaxParJour(){
