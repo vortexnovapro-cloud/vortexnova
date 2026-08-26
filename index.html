@@ -1429,12 +1429,24 @@ function tryDeviceGateAdmin(){
             </div>
           </div>
           <div style="margin-bottom:14px;">
-            <button type="button" id="objSnapExportBtn" onclick="exportObjectifSnapshotImage()" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (bilan du jour)</button>
-            <button type="button" id="objSnapExportBtnHQ" onclick="exportObjectifSnapshotImage(true)" title="UNE SEULE image, en haute définition, tous les agents dessus. À envoyer dans WhatsApp via 📎 → Document (pas la Galerie) : ni réduite ni compressée, lisible au zoom même sur un petit écran." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max — 1 seule image (à envoyer en Document)</button>
-            <div style="margin-top:10px; padding:11px 13px; border-radius:9px; background:rgba(61,139,253,0.08); border:1px solid rgba(61,139,253,0.3); font-size:12.5px; line-height:1.7; color:var(--muted);">
-              <b style="color:var(--accent);">Pour que ce soit net sur WhatsApp</b><br>
-              S'il y a beaucoup d'agents, le bouton du haut génère <b>plusieurs images numérotées</b> (« image 1/4 », « 2/4 »…) au lieu d'une seule bande verticale. WhatsApp réduit toute photo à environ 1600 px sur son côté le plus long : une image très haute perd les trois quarts de sa largeur, et le texte devient illisible. Plusieurs images larges restent nettes.<br>
-              <span style="opacity:0.9;">Le bouton <b>Qualité max</b>, lui, produit <b>UNE SEULE image</b> avec tout le monde dessus. Envoie-la dans WhatsApp par <b>📎 → Document</b> (pas par la Galerie) : elle n'est alors <b>ni réduite ni compressée</b>, quelle que soit sa hauteur.</span>
+            <!-- ⚠️ Deux boutons, deux usages qu'il ne faut surtout pas confondre. L'ordre est volontaire :
+                 celui qui donne UNE image nette est en premier, en couleur, parce que c'est celui que
+                 l'admin veut dans 9 cas sur 10. -->
+            <div style="padding:14px 16px; border-radius:11px; background:rgba(52,183,116,0.09); border:1px solid rgba(52,183,116,0.4); margin-bottom:12px;">
+              <div style="font-weight:800; color:var(--green); font-size:13.5px; margin-bottom:4px;">✅ UNE SEULE IMAGE, NETTE MÊME EN ZOOMANT</div>
+              <div style="font-size:12.5px; color:var(--muted); line-height:1.75; margin-bottom:11px;">
+                Une image PNG avec tout le monde dessus. Elle s'ouvre sur <b style="color:var(--text);">n'importe quel téléphone</b>, aucun lecteur particulier n'est nécessaire.<br>
+                <b style="color:var(--text);">La seule règle : dans WhatsApp, 📎 → Document.</b> Jamais la Galerie ni l'appareil photo — c'est ce passage-là qui garde l'image nette.
+              </div>
+              <button type="button" id="objSnapExportBtnHQ" onclick="exportObjectifSnapshotImage(true)" style="padding:11px 18px; border-radius:9px; border:none; background:var(--green); color:#fff; font-weight:800; font-size:13px; cursor:pointer;">🖼️ Générer l'image unique</button>
+              <button type="button" id="objSnapExportBtnPDF" onclick="exportObjectifSnapshotPDF()" title="Même contenu, en PDF multi-pages. Utile seulement si l'image te paraît trop haute — mais le destinataire doit avoir un lecteur PDF." style="margin-left:8px; padding:11px 16px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🧾 Ou en PDF</button>
+            </div>
+            <div style="font-size:12px; color:var(--muted); margin-bottom:7px; opacity:0.9;">Ou, si tu tiens à l'envoyer en photo normale — WhatsApp la compressera, donc plusieurs images plus petites :</div>
+            <button type="button" id="objSnapExportBtn" onclick="exportObjectifSnapshotImage()" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer en photos (plusieurs images)</button>
+            <div style="margin-top:11px; padding:11px 13px; border-radius:9px; background:rgba(61,139,253,0.07); border:1px solid rgba(61,139,253,0.28); font-size:12px; line-height:1.75; color:var(--muted);">
+              <b style="color:var(--accent);">Pourquoi le passage par « Document » est obligatoire</b><br>
+              WhatsApp réduit <b>toute photo</b> à environ 1600 pixels sur son côté le plus long, puis la compresse. Les pixels supprimés ne reviennent pas : zoomer sur une photo reçue ne la rendra jamais nette. C'est WhatsApp, aucun réglage du CRM ne peut le contourner.<br>
+              Envoyée en <b>Document</b>, la même image arrive <b>intacte</b> — le destinataire zoome autant qu'il veut, chaque carte reste nette.
             </div>
           </div>
           <div id="objectifSnapshot"></div>
@@ -2580,7 +2592,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r145';
+const APP_VERSION = '2026-08-26-r148';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -7912,6 +7924,98 @@ function onObjSnapModeChange(){
   renderObjectifSnapshot();
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 🧾 EXPORT PDF DU BILAN DU JOUR — un seul fichier, plusieurs pages, net à n'importe quel zoom
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Pourquoi le PDF bat le PNG pour WhatsApp :
+//   • UN SEUL fichier à envoyer, quel que soit le nombre d'agents — la vue d'ensemble reste entière.
+//   • Envoyé en pièce jointe, WhatsApp ne le compresse pas et ne le redimensionne pas.
+//   • Il s'ouvre dans le lecteur PDF du téléphone : zoom et défilement fluides, alors qu'un PNG de
+//     11 000 px de haut est souvent réduit par la galerie AVANT même d'être affiché.
+//   • Le découpage en pages est naturel dans un PDF — personne ne reçoit « 7 fichiers à ouvrir ».
+async function exportObjectifSnapshotPDF(){
+  const btn = document.getElementById('objSnapExportBtnPDF');
+  const source = document.getElementById('objectifSnapshot');
+  if(!source || !source.innerHTML.trim()){ alert('Rien à exporter pour le moment.'); return; }
+
+  const mode = document.getElementById('objSnapMode')?.value || 'single';
+  let caption = '';
+  if(mode === 'single'){
+    const d = document.getElementById('objSnapDate')?.value || todayStr();
+    caption = new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  } else {
+    const from = document.getElementById('objSnapDateFrom')?.value, to = document.getElementById('objSnapDateTo')?.value;
+    if(from && to){
+      caption = `Du ${new Date(from+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long'})} au ${new Date(to+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})}`;
+    }
+  }
+  const dateForFile = mode === 'single'
+    ? (document.getElementById('objSnapDate')?.value || todayStr())
+    : `${document.getElementById('objSnapDateFrom')?.value||''}_au_${document.getElementById('objSnapDateTo')?.value||''}`;
+
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Préparation...'; }
+  try{
+    await ensureJsPDF();
+    const cartes = Array.from(source.querySelectorAll('.objsnap-card')).map(c => c.outerHTML);
+    const grilleEl = source.querySelector('div[style*="grid-template-columns"]');
+    const ouvrir = grilleEl ? `<div style="${grilleEl.getAttribute('style')}">` : '<div style="display:grid; gap:14px;">';
+    const avantGrille = (grilleEl && grilleEl.previousElementSibling) ? grilleEl.previousElementSibling.outerHTML : '';
+
+    // 3 colonnes. Point important : la NETTETÉ d'une carte ne dépend PAS du nombre de colonnes — elle
+    // dépend de la densité de rendu (2,4×) appliquée à sa largeur de mise en page (380 px), soit 912 px
+    // par carte quoi qu'il arrive. Le nombre de colonnes ne change que la FORME de la page et le nombre
+    // de pages. On en met donc 3 : la page reste proche d'un A4 portrait, et il y a moins de pages à
+    // faire défiler, sans perdre un seul pixel de lisibilité.
+    const cols = cartes.length >= 6 ? 3 : Math.max(1, Math.min(3, cartes.length));
+    const width = cols * 380 + 64;
+    const pages = [];
+    if(cartes.length === 0){
+      pages.push({ html: source.innerHTML, cols: null, width: 900 });
+    } else {
+      // 6 cartes par page (3 colonnes x 2 rangées).
+      const parPage = cols * 2;
+      for(let i = 0; i < cartes.length; i += parPage){
+        pages.push({ html: (i === 0 ? avantGrille : '') + ouvrir + cartes.slice(i, i + parPage).join('') + '</div>', cols, width });
+      }
+    }
+
+    const { jsPDF } = window.jspdf;
+    let pdf = null;
+    for(let i = 0; i < pages.length; i++){
+      if(btn) btn.textContent = `⏳ Page ${i+1}/${pages.length}...`;
+      const canvas = await capturerPageEnCanvas({
+        innerHTML: pages[i].html,
+        width: pages[i].width,
+        gridCols: pages[i].cols,
+        title: 'Bilan de la journée',
+        badge: 'Bilan du jour',
+        badgeColor: '#c9a870',
+        caption,
+        pageInfo: pages.length > 1 ? `page ${i+1}/${pages.length}` : '',
+        densite: 2.4
+      });
+      // JPEG qualité 0,94 : sur un fond sombre plein de dégradés, le PNG produit un fichier énorme
+      // (plusieurs dizaines de Mo) que WhatsApp refuse. À cette qualité, l'œil ne voit pas la
+      // différence, et le fichier reste envoyable.
+      const img = canvas.toDataURL('image/jpeg', 0.94);
+      const w = canvas.width, h = canvas.height;
+      if(i === 0){
+        pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
+      } else {
+        pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait');
+      }
+      pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
+    }
+    pdf.save(`bilan_du_jour_${dateForFile}.pdf`);
+    showToast(`✅ PDF généré (${pages.length} page${pages.length>1?'s':''}). Dans WhatsApp : 📎 → Document. Il ne sera ni réduit ni compressé, et se zoome sans devenir flou.`, 'ok', 11000);
+  } catch(err){
+    console.error('Export PDF:', err);
+    alert("Erreur lors de la génération du PDF. Vérifie ta connexion internet (la première génération télécharge une petite librairie), puis réessaie.");
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '🧾 Générer le PDF (recommandé)'; }
+  }
+}
+
 async function exportObjectifSnapshotImage(hq){
   const btn = document.getElementById('objSnapExportBtn');
   const source = document.getElementById('objectifSnapshot');
@@ -7971,7 +8075,13 @@ async function exportObjectifSnapshotImage(hq){
       // compresse pas. Le découpage en plusieurs images n'existe que pour contourner la compression des
       // PHOTOS — ici il n'a aucune raison d'être. On sort donc tout le monde sur une seule image, en
       // 3 colonnes (cartes larges), calée sur la largeur : la hauteur peut filer, personne ne la réduit.
-      const colsHQ = Math.min(3, Math.max(1, cartes.length));
+      // Nombre de colonnes : compromis entre la NETTETÉ d'une carte et la HAUTEUR de l'image.
+      // La largeur finale est fixée (3000 px), donc plus il y a de colonnes, plus chaque carte est
+      // étroite — mais plus l'image est courte. Une image de 11 000 px de haut est parfaitement nette,
+      // seulement certaines galeries de téléphone la réduisent AVANT de l'afficher. À 4 colonnes,
+      // l'image tombe à ~7 000 px de haut et chaque carte fait encore ~718 px de large, soit plus du
+      // double de ce qu'on voit à l'écran du CRM. C'est le meilleur équilibre.
+      const colsHQ = cartes.length >= 8 ? 4 : (cartes.length >= 4 ? 3 : Math.max(1, cartes.length));
       await captureBlockToImage({
         innerHTML: avantGrille + ouvrir + cartes.join('') + '</div>',
         width: colsHQ * 350 + 64,
@@ -16089,6 +16199,76 @@ async function ensureHtml2Canvas(){
     s.onerror = reject;
     document.head.appendChild(s);
   });
+}
+
+// jsPDF, chargé à la demande comme html2canvas : rien n'est téléchargé tant que personne ne clique
+// sur « Générer le PDF ».
+async function ensureJsPDF(){
+  if(window.jspdf && window.jspdf.jsPDF) return;
+  await new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 🧾 CAPTURE D'UNE PAGE EN CANVAS — brique commune au PNG et au PDF
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Même mise en page que captureBlockToImage (logo, titre, date), mais on rend le canvas au lieu de
+// déclencher un téléchargement : le PDF a besoin des pages une par une pour les assembler.
+async function capturerPageEnCanvas(opts){
+  const {
+    innerHTML, width = 900, title = '', badge = '', badgeColor = '#c9a870',
+    caption = '', background = '#151d27', gridCols = null, pageInfo = '', densite = 2.4
+  } = opts;
+
+  await ensureHtml2Canvas();
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `position:fixed; left:-9999px; top:0; width:${width}px; background:${background}; padding:32px; font-family:'Inter',sans-serif; box-sizing:border-box; color:#e8edf2; font-size:15.5px; line-height:1.55; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;`;
+  wrap.innerHTML = `
+    <div style="display:flex; align-items:center; gap:13px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.08);">
+      ${vnLogoSrc() ? `<img src="${vnLogoSrc()}" style="width:44px; height:44px; object-fit:contain; flex-shrink:0;">` : ''}
+      <div style="line-height:1.15; text-align:left;">
+        <div style="font-size:17px; font-weight:900; color:#eaf2ff; letter-spacing:2px; text-transform:uppercase;">Vortex Nova</div>
+        <div style="font-size:9.5px; font-weight:600; color:#6f8199; letter-spacing:2.2px; text-transform:uppercase; margin-top:3px;">One call. New universe.</div>
+      </div>
+    </div>
+    <div style="text-align:center; margin:22px 0 24px; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08);">
+      ${badge ? `<div style="display:inline-flex; align-items:center; gap:7px; padding:5px 14px; border-radius:20px; background:${badgeColor}22; border:1px solid ${badgeColor}55; margin-bottom:13px;">
+        <span style="font-size:10.5px; font-weight:700; color:${badgeColor}; letter-spacing:0.5px; text-transform:uppercase;">${badge}</span>
+      </div>` : ''}
+      <div style="font-size:23px; font-weight:800; color:#f0f3f6; letter-spacing:-0.3px;">${title}${pageInfo ? ` <span style="font-size:16px; color:#8b98a6; font-weight:700;">— ${pageInfo}</span>` : ''}</div>
+      ${caption ? `<div style="font-size:14.5px; font-weight:500; color:#8b98a6; margin-top:6px; text-transform:capitalize;">${caption}</div>` : ''}
+    </div>
+    <div>${innerHTML}</div>
+  `;
+  document.body.appendChild(wrap);
+  if(gridCols){
+    const g = wrap.querySelector('div[style*="grid-template-columns"]');
+    if(g) g.style.gridTemplateColumns = `repeat(${gridCols}, 1fr)`;
+  }
+  if(document.fonts && document.fonts.ready){ try{ await document.fonts.ready; }catch(e){} }
+
+  const cssW = wrap.offsetWidth || width;
+  const cssH = wrap.offsetHeight || width;
+  // Densité fixe (et non une cible en pixels) : dans un PDF, la page a la taille qu'on veut et le
+  // lecteur zoome dedans. Ce qui compte est le nombre de pixels par point de mise en page.
+  let scale = densite;
+  const AIRE_MAX = 40e6;
+  if(cssW * cssH * scale * scale > AIRE_MAX) scale = Math.max(1, Math.sqrt(AIRE_MAX / (cssW * cssH)));
+
+  try{
+    return await html2canvas(wrap, {
+      backgroundColor: background, scale, useCORS: true, logging: false,
+      windowWidth: width + 100, imageTimeout: 0
+    });
+  } finally {
+    document.body.removeChild(wrap);
+  }
 }
 
 // Réduction progressive : diviser par 2 tant qu'on est à plus du double de la cible, puis finir en un
