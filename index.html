@@ -2566,7 +2566,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r136';
+const APP_VERSION = '2026-08-26-r139';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9039,6 +9039,11 @@ async function renderBossRevenue(force){
     // Un agent SALARIÉ sans objectif mensuel réglé n'a pas de palier : il touche le plein tarif dès son
     // 1er contrat. C'est rarement voulu, et ça coûte cher sans prévenir — on le signale en clair.
     const objManquant = !d.isIndep && !d.noObjectif && !objRegle;
+    // Ce que les contrats de la période rapportent VRAIMENT : la commission au contrat (perContract,
+    // règle du palier) PLUS le bonus par contrat au-delà de l'objectif (primeExtraContrat). Ce sont
+    // deux réglages distincts dans « Rémunération par agent » ; beaucoup n'en remplissent qu'un des
+    // deux. Les afficher ensemble évite un « 0 DH » incompréhensible quand seul le second est réglé.
+    const gainContrats = (d.contractPart || 0) + (d.extraPart || 0);
     let commTip;
     if(objRegle && d.resteAvantCommission > 0){
       // LE cas qui fait croire a un bug : 0 DH alors que l'agent a signe des contrats aujourd'hui.
@@ -9050,7 +9055,11 @@ async function renderBossRevenue(force){
     } else if(objManquant){
       commTip = `⚠️ AUCUN OBJECTIF MENSUEL RÉGLÉ pour ${d.agent} dans Réglages → Rémunération par agent.\nSans objectif, il n'y a pas de palier : il est payé ${cdd.postRate} DH dès le 1er contrat.\nCalcul appliqué : ${Math.round(cdd.postCount)} × ${cdd.postRate} DH = ${d.contractPart.toLocaleString('fr-FR')} DH.`;
     } else if(cdd.preCount > 0 && cdd.preRate === 0){
-      commTip = `${Math.round(cdd.preCount)} contrat(s) couvert(s) par le fixe (objectif minimum ${payD.objectifMensuel}), ${Math.round(cdd.postCount)} au-delà × ${cdd.postRate} DH.`;
+      const tarifTotal = (cdd.postRate || 0) + (d.primeExtraContrat || 0);
+      commTip = `${Math.round(cdd.preCount)} contrat(s) couvert(s) par le fixe (objectif minimum ${payD.objectifMensuel}).\n${Math.round(cdd.postCount)} contrat(s) au-delà de l'objectif sur cette période.` +
+        ((cdd.postRate||0) > 0 ? `\n  · commission : ${Math.round(cdd.postCount)} × ${cdd.postRate} DH = ${d.contractPart.toLocaleString('fr-FR')} DH` : '\n  · commission (DH/contrat) : non réglée pour cet agent') +
+        ((d.primeExtraContrat||0) > 0 ? `\n  · bonus par contrat : ${Math.round(cdd.postCount)} × ${d.primeExtraContrat} DH = ${d.extraPart.toLocaleString('fr-FR')} DH` : '') +
+        (tarifTotal > 0 ? `\nSoit ${tarifTotal} DH par contrat au-delà de l'objectif.` : '');
     } else if(cdd.preCount > 0){
       commTip = `${Math.round(cdd.preCount)} × ${cdd.preRate} DH avant l'objectif + ${Math.round(cdd.postCount)} × ${cdd.postRate} DH au-delà.`;
     } else {
@@ -9061,7 +9070,7 @@ async function renderBossRevenue(force){
       <td><b>${d.agent}</b>${catTag}${objManquant ? ' <span class="tag warn" style="background:rgba(229,72,77,0.18); color:var(--red); border-color:rgba(229,72,77,0.45);" title="Cet agent est salarié mais aucun objectif mensuel n\'est réglé pour lui. Il touche donc le plein tarif par contrat dès le premier, sans minimum à atteindre. À corriger dans Réglages → Rémunération par agent.">⚠️ objectif non réglé</span>' : ''}</td>
       <td>${d.contractsRealized}</td>
       <td title="${fixedTip}" style="cursor:help;">${d.fixedProrated.toLocaleString('fr-FR')} DH</td>
-      <td title="${commTip}" style="cursor:help;">${d.contractPart>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${d.contractPart.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}${objRegle ? `<div style="font-size:11px; margin-top:2px; color:${d.resteAvantCommission>0 ? 'var(--amber)' : 'var(--green)'};">${d.payableMonth}/${payD.objectifMensuel} ce mois${d.resteAvantCommission>0 ? ` · encore ${d.resteAvantCommission}` : ' · objectif dépassé'}</div>${objReduit ? `<div style="font-size:10.5px; margin-top:1px; color:var(--accent);" title="Cet agent n'a pas travaillé le mois entier (embauche ou départ en cours de mois). Son objectif minimum est réduit dans la même proportion que son salaire fixe : ${objBrut} × ${Math.round(payD.prorationFactor*100)}% = ${payD.objectifMensuel}. On ne lui demande pas les contrats d'un mois complet pour une partie de mois.">objectif réduit ${objBrut} → ${payD.objectifMensuel} (${Math.round(payD.prorationFactor*100)}% du mois)</div>` : ''}` : ''}</td>
+      <td title="${commTip}" style="cursor:help;">${gainContrats>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${gainContrats.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}${(d.contractPart>0 && d.extraPart>0) ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">dont ${d.contractPart.toLocaleString('fr-FR')} DH commission + ${d.extraPart.toLocaleString('fr-FR')} DH bonus/contrat</div>` : (d.extraPart>0 ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">bonus par contrat au-delà de l'objectif</div>` : '')}${objRegle ? `<div style="font-size:11px; margin-top:2px; color:${d.resteAvantCommission>0 ? 'var(--amber)' : 'var(--green)'};">${d.payableMonth}/${payD.objectifMensuel} ce mois${d.resteAvantCommission>0 ? ` · encore ${d.resteAvantCommission}` : ' · objectif dépassé'}</div>${objReduit ? `<div style="font-size:10.5px; margin-top:1px; color:var(--accent);" title="Cet agent n'a pas travaillé le mois entier (embauche ou départ en cours de mois). Son objectif minimum est réduit dans la même proportion que son salaire fixe : ${objBrut} × ${Math.round(payD.prorationFactor*100)}% = ${payD.objectifMensuel}. On ne lui demande pas les contrats d'un mois complet pour une partie de mois.">objectif réduit ${objBrut} → ${payD.objectifMensuel} (${Math.round(payD.prorationFactor*100)}% du mois)</div>` : ''}` : ''}</td>
       <td>${d.objectifPrimes>0 ? `<span style="color:var(--green);">+${d.objectifPrimes.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.deductionsTotal>0 ? `<span style="color:var(--red);">-${d.deductionsTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
       <td>${d.manualPrimesTotal>0 ? `<span style="color:var(--gold);">+${d.manualPrimesTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
@@ -9267,7 +9276,22 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   // les rattacher à un jour. On garde le compte brut de la fenêtre, plafonné au payable du mois pour ne
   // jamais afficher plus que ce que la paie versera.
   const windowCount = isFullMonthToDate ? payableMonth : Math.min(realizedCount, payableMonth);
-  const ceRT = contractEarnings(pay, payableMonth, windowCount);
+  // 📍 POSITION CHRONOLOGIQUE DE LA FENÊTRE DANS LE MOIS (voir contractEarnings).
+  // Combien de contrats l'agent avait-il DÉJÀ signés avant que cette fenêtre ne commence ? C'est la
+  // seule donnée qui permet de savoir si les contrats de la fenêtre servent encore à atteindre
+  // l'objectif ou s'ils sont déjà au-delà. Sans elle, une journée d'un agent à 122 contrats sur un
+  // objectif de 30 se voyait attribuer une part des 30 contrats absorbés par le fixe — absurde, il a
+  // dépassé son objectif depuis des semaines.
+  let monthBeforeWindow = 0;
+  if(!isFullMonthToDate){
+    const veille = new Date(((dateRange && dateRange.from) || firstOfMonthStr) + 'T00:00:00');
+    veille.setDate(veille.getDate() - 1);
+    const veilleStr = todayStr(veille);
+    monthBeforeWindow = (veilleStr < firstOfMonthStr)
+      ? 0
+      : await realizedContractsForDateRange(agent, firstOfMonthStr, veilleStr);
+  }
+  const ceRT = contractEarnings(pay, payableMonth, windowCount, monthBeforeWindow);
   const contractPart = ceRT.total;
 
   // Primes d'objectif et primes manuelles : ce sont des paliers MENSUELS (atteint ou pas, comme la prime
@@ -9286,7 +9310,13 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
       // Un agent à 32 signés / 27 payés pour un mini de 30 voyait donc "ton salaire réel, maintenant"
       // inclure une prime de 500 DH qu'il ne toucherait jamais — 800 DH d'écart mesuré avec sa paie.
       const stFull = await monthlyObjectifStatus(agent, year, month, payableMonth);
-      objectifPrimes = (stFull.primeObjectif||0) + (stFull.primeExtra||0);
+      // ⚠️ NE GARDER ICI QUE LE PALIER MENSUEL (primeObjectif). Le bonus par contrat au-delà de
+      // l'objectif (primeExtra) était additionné ici avec lui : il disparaissait donc COMPLÈTEMENT dès
+      // que l'admin regardait autre chose que « depuis le 1er du mois » — une seule journée, par
+      // exemple. Un agent à 122 contrats sur un objectif de 30, 5 contrats signés aujourd'hui,
+      // affichait 0 DH. Ce bonus est un montant À L'UNITÉ, pas un palier : il se répartit sur la
+      // fenêtre comme la commission. Il est donc calculé plus bas, pour TOUTES les fenêtres.
+      objectifPrimes = (stFull.primeObjectif||0);
     }
     const manualPrimes = await getManualPrimes(agent, year, month);
     // ⚠️ MÊME CORRECTION QUE LA PRIME D'OBJECTIF (26/08/2026) — une prime manuelle « conditionnelle »
@@ -9295,9 +9325,19 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     // la paie, sans explication. Une seule base désormais : payableMonth.
     manualPrimesTotal = computeManualPrimesTotal(manualPrimes, payableMonth);
   }
+  // 🎯 BONUS PAR CONTRAT AU-DELÀ DE L'OBJECTIF (primeExtraContrat) — calculé pour TOUTES les fenêtres.
+  // ceRT.postCount est déjà le nombre de contrats de la fenêtre qui tombent au-delà de l'objectif
+  // mensuel (même répartition que la commission, donc jour + jour + … = le mois exact). Sur la fenêtre
+  // « mois complet », postCount vaut exactement le nombre de contrats au-delà : identique à ce que paie
+  // estimateSalaryMonthReal, aucun double compte possible.
+  // Réservé aux agents À PALIER : un indépendant ou un agent sans objectif n'a pas de "au-delà", et la
+  // paie ne leur verse jamais ce bonus — le leur afficher créerait un écart avec leur fiche.
+  const hasPalierRT = !pay.isIndep && !pay.noObjectif && (pay.objectifMensuel || 0) > 0;
+  const extraPart = hasPalierRT ? Math.round((ceRT.postCount || 0) * (pay.primeExtraContrat || 0)) : 0;
+
   const supervisorBonusAmt = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
 
-  const total = fixedProrated + contractPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt - (ded.total||0);
+  const total = fixedProrated + contractPart + extraPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt - (ded.total||0);
   return {
     agent, isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif,
     total: Math.round(total),
@@ -9309,12 +9349,14 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     // contractDetail = la répartition avant/au-delà de l'objectif, telle qu'elle a servi à calculer le
     // montant. L'écran s'en sert pour ÉCRIRE le calcul sous la ligne au lieu d'un chiffre tout seul.
     contractPart: Math.round(contractPart), contractDetail: ceRT,
+    // Bonus par contrat au-delà de l'objectif, part de la fenêtre affichée.
+    extraPart, primeExtraContrat: pay.primeExtraContrat || 0,
     contractsRealized: windowCount, contractsBrut: realizedCount,
     // Position dans le MOIS par rapport a l'objectif. La commission est une regle MENSUELLE : tant que
     // l'agent n'a pas depasse son objectif du mois, elle vaut 0, meme s'il a signe des contrats
     // aujourd'hui. Sans ces deux chiffres a l'ecran, un « 0 DH » ressemble a un bug alors que c'est la
     // regle qui s'applique — c'est exactement la question posee par le patron le 26/08.
-    payableMonth, objectifMensuel: pay.objectifMensuel || 0,
+    payableMonth, objectifMensuel: pay.objectifMensuel || 0, monthBeforeWindow,
     resteAvantCommission: (!pay.isIndep && !pay.noObjectif && (pay.objectifMensuel||0) > 0)
       ? Math.max(0, pay.objectifMensuel - payableMonth) : 0,
     returnsDeducted: brRT.returnsDeducted, retractions: brRT.retractions,
@@ -9438,6 +9480,34 @@ async function renderNetBalance(force){
   const net = revenue.total - charges - payroll.grandTotal;
   const positive = net >= 0;
 
+  // ═══ RAPPROCHEMENT AVEC « 💰 GAINS NET » (carte du haut) ═══════════════════════════════════════
+  // Les deux cartes partent du MÊME chiffre d'affaires mais ne comptent pas les mêmes dépenses :
+  //   • Gains Net       = CA − ce qui est réellement dû À DATE (fixe et charges au prorata des jours).
+  //   • Bilan net       = CA − les charges du MOIS COMPLET − la masse salariale de FIN DE MOIS.
+  // Elles diffèrent donc forcément tant que le mois n'est pas terminé, et l'écart vaut exactement le
+  // fixe et les charges qui ne sont pas encore courus. Deux totaux différents sans explication, sur la
+  // même page, c'est exactement ce qui a fait croire au patron qu'un des deux était faux — on écrit
+  // donc le rapprochement noir sur blanc, avec les chiffres.
+  const nowNB = nowMA();
+  const estMoisEnCours = (year === nowNB.getFullYear() && month === nowNB.getMonth() + 1);
+  let ecartHtml = '';
+  if(estMoisEnCours){
+    const totalWD = workingDaysInMonth(year, month);
+    const elapsedWD = workingDaysElapsedInMonth();
+    const joursRestants = Math.max(0, totalWD - elapsedWD);
+    if(joursRestants > 0 && totalWD > 0){
+      const chargesNonCourues = Math.round(charges * (joursRestants / totalWD));
+      ecartHtml = `<div style="margin-top:14px; padding:12px 14px; border-radius:9px; background:rgba(61,139,253,0.08); border:1px solid rgba(61,139,253,0.3); font-size:12.5px; line-height:1.75; color:var(--muted);">
+        <b style="color:var(--accent);">Pourquoi ce chiffre diffère de « 💰 Gains Net » plus haut ?</b><br>
+        Les deux partent du même chiffre d'affaires, mais pas des mêmes dépenses — et aucun des deux n'est faux :<br>
+        • <b style="color:var(--text);">Gains Net</b> = ce que tu as en poche <b>si tu t'arrêtes aujourd'hui</b> : fixe et charges comptés au prorata de ${elapsedWD}/${totalWD} jours ouvrés.<br>
+        • <b style="color:var(--text);">Bilan net</b> (ici) = où tu atterris <b>à la fin du mois</b> : charges du mois complet et paie complète, avec les contrats déjà rentrés.<br>
+        L'écart entre les deux, c'est ce qui n'est pas encore couru : <b style="color:var(--text);">${joursRestants} jour${joursRestants>1?'s':''} ouvré${joursRestants>1?'s':''}</b> de fixe, plus <b style="color:var(--text);">${chargesNonCourues.toLocaleString('fr-FR')} DH</b> de charges. Le 31 au soir, les deux se rejoignent tout seuls.<br>
+        <span style="opacity:0.85;">⚠️ Ce bilan est volontairement prudent : il compte des charges et des salaires de mois COMPLET face à un chiffre d'affaires arrêté à aujourd'hui. Chaque contrat des ${joursRestants} jour${joursRestants>1?'s':''} restant${joursRestants>1?'s':''} le fera monter sans rien coûter de plus en fixe.</span>
+      </div>`;
+    }
+  }
+
   const chargesDetail = [];
   const c = config.charges || {};
   if(c.lignes>0) chargesDetail.push(`Lignes : ${c.lignes.toLocaleString('fr-FR')} DH`);
@@ -9458,6 +9528,7 @@ async function renderNetBalance(force){
         <span>💼 Masse salariale : <b style="color:var(--red);">-${Math.round(payroll.grandTotal).toLocaleString('fr-FR')} DH</b></span>
       </div>
       ${chargesDetail.length ? `<div style="margin-top:12px; font-size:11.5px; color:var(--muted);">Détail charges : ${chargesDetail.join(' · ')}</div>` : ''}
+      ${ecartHtml}
     </div>`;
 }
 
@@ -12360,26 +12431,60 @@ function effectiveObjectifMensuel(agent, year, month){
 // et "après" objectif PROPORTIONNELLEMENT à sa part du mois — même convention que le bonus extra existant
 // (primeExtraContrat), pour rester cohérent partout dans l'appli. Sur le mois entier (fenêtre = mois),
 // cette répartition est exacte, pas une approximation.
-function contractEarnings(pay, monthToDateRealized, windowRealized){
+// ⚠️ RÉÉCRIT LE 26/08/2026 — LE COMPTAGE ÉTAIT PROPORTIONNEL, IL EST MAINTENANT CHRONOLOGIQUE.
+//
+// L'ancienne version répartissait les contrats de l'objectif au PRORATA sur tout le mois : chaque
+// journée se voyait attribuer la même fraction de contrats « absorbés par le fixe ». Résultat absurde,
+// signalé par le patron : Ghita, 122 contrats payés dans le mois pour un objectif de 30, signe 5
+// contrats aujourd'hui → le calcul en comptait 1 comme « couvert par le fixe » et 3,8 au-delà, alors
+// qu'elle a dépassé son objectif depuis des semaines : ses 5 contrats du jour sont TOUS au-delà.
+// Il affichait en prime « 4 × 100 DH = 380 DH », un calcul qui ne tombe même pas juste, parce que les
+// compteurs étaient des nombres à virgule arrondis pour l'affichage seulement.
+//
+// La règle réelle est chronologique : les contrats du mois se suivent dans l'ordre. Les `objectif`
+// PREMIERS sont couverts par le fixe, tous les suivants rapportent. Pour savoir ce que rapporte une
+// fenêtre (une journée, une semaine), il suffit de savoir combien de contrats l'agent avait DÉJÀ faits
+// avant cette fenêtre : `monthBeforeWindow`.
+//   Ghita : 117 contrats avant aujourd'hui, objectif 30 → l'objectif est loin derrière, les 5 du jour
+//           sont tous au-delà → 5 × 100 = 500 DH.
+//   Allan : 56 avant, objectif 60, 3 aujourd'hui → les 3 servent encore à atteindre l'objectif → 0 DH.
+// Les compteurs sont des ENTIERS : plus de « 3,8 contrats », et la somme des journées du mois retombe
+// exactement sur le total du mois, sans dérive d'arrondi.
+//
+// monthBeforeWindow non fourni (null/undefined) = ancien comportement proportionnel, conservé
+// UNIQUEMENT pour le simulateur « à ce rythme » de Mon argent, où la question posée est « que vaut une
+// journée MOYENNE ? » et non « que vaut cette journée précise ? ».
+function contractEarnings(pay, monthToDateRealized, windowRealized, monthBeforeWindow){
   const hasPalier = !pay.isIndep && !pay.noObjectif && (pay.objectifMensuel||0) > 0;
   if(!hasPalier){
     const rate = pay.perContract||0;
-    return { preCount:0, preRate:0, preAmt:0, postCount:windowRealized, postRate:rate, postAmt: Math.round(windowRealized*rate), total: Math.round(windowRealized*rate) };
+    return { preCount:0, preRate:0, preAmt:0, postCount:windowRealized, postRate:rate, postAmt: Math.round(windowRealized*rate), total: Math.round(windowRealized*rate), chronologique:true };
   }
   const objectif = pay.objectifMensuel;
-  const monthPreCount = Math.min(monthToDateRealized, objectif);
-  const monthPostCount = Math.max(0, monthToDateRealized - objectif);
-  const ratio = monthToDateRealized > 0 ? (windowRealized / monthToDateRealized) : 0;
-  const preCount = monthPreCount * ratio;
-  const postCount = monthPostCount * ratio;
   const preRate = pay.perContractBeforeObjectif || 0;
   const postRate = pay.perContract || 0;
+  let preCount, postCount, chronologique;
+  if(monthBeforeWindow != null && isFinite(monthBeforeWindow)){
+    // Position réelle dans le mois : combien de contrats restait-il à faire avant d'atteindre
+    // l'objectif au moment où cette fenêtre a commencé ?
+    const dejaFait = Math.max(0, monthBeforeWindow);
+    const restantAvantObjectif = Math.max(0, objectif - dejaFait);
+    preCount = Math.min(windowRealized, restantAvantObjectif);
+    postCount = Math.max(0, windowRealized - preCount);
+    chronologique = true;
+  } else {
+    // Répartition proportionnelle (simulation d'une journée moyenne).
+    const ratio = monthToDateRealized > 0 ? (windowRealized / monthToDateRealized) : 0;
+    preCount = Math.min(monthToDateRealized, objectif) * ratio;
+    postCount = Math.max(0, monthToDateRealized - objectif) * ratio;
+    chronologique = false;
+  }
   const preAmt = preCount * preRate;
   const postAmt = postCount * postRate;
   return {
     preCount: Math.round(preCount*10)/10, preRate, preAmt: Math.round(preAmt),
     postCount: Math.round(postCount*10)/10, postRate, postAmt: Math.round(postAmt),
-    total: Math.round(preAmt + postAmt)
+    total: Math.round(preAmt + postAmt), chronologique
   };
 }
 
@@ -12414,16 +12519,13 @@ function calculateDailySalary(agent, dayContracts, monthContracts, year, month){
   const isAtteint = objectif > 0 && monthContracts >= objectif;
 
   // Les contrats du jour ne rapportent le bonus extra que si l'objectif mensuel est atteint
-  let extra = 0;
-  if(isAtteint && pay.primeExtraContrat > 0){
-    const totalExtra = Math.max(0, monthContracts - objectif);
-    // Proportion des contrats du jour par rapport au total du mois
-    const ratio = monthContracts > 0 ? dayContracts / monthContracts : 0;
-    extra = Math.round(ratio * totalExtra * pay.primeExtraContrat);
-  }
-
+  // Position réelle : les contrats du mois AVANT aujourd'hui. La journée en cours est forcément la
+  // dernière comptée, donc « avant » = total du mois − ceux d'aujourd'hui.
   const payForTier = objectif === pay.objectifMensuel ? pay : { ...pay, objectifMensuel: objectif };
-  const ce = contractEarnings(payForTier, monthContracts, dayContracts);
+  const ce = contractEarnings(payForTier, monthContracts, dayContracts, Math.max(0, monthContracts - dayContracts));
+  // Bonus par contrat au-delà de l'objectif : mêmes contrats que ceux comptés « au-delà » ci-dessus.
+  // Avant, un ratio séparé était recalculé ici et pouvait diverger du montant de la ligne commission.
+  const extra = (isAtteint && pay.primeExtraContrat > 0) ? Math.round((ce.postCount||0) * pay.primeExtraContrat) : 0;
   return Math.round(dailyBase + ce.total + extra);
 }
 
@@ -12448,15 +12550,10 @@ function calculateWeeklySalary(agent, weekContracts, monthContracts, year, month
   const objectif = effectiveObjectifMensuel(agent, y, m);
   const isAtteint = objectif > 0 && monthContracts >= objectif;
 
-  let extra = 0;
-  if(isAtteint && pay.primeExtraContrat > 0){
-    const totalExtra = Math.max(0, monthContracts - objectif);
-    const ratio = monthContracts > 0 ? weekContracts / monthContracts : 0;
-    extra = Math.round(ratio * totalExtra * pay.primeExtraContrat);
-  }
-
+  // Même logique que la journée : la semaine en cours se termine aujourd'hui.
   const payForTier = objectif === pay.objectifMensuel ? pay : { ...pay, objectifMensuel: objectif };
-  const ce = contractEarnings(payForTier, monthContracts, weekContracts);
+  const ce = contractEarnings(payForTier, monthContracts, weekContracts, Math.max(0, monthContracts - weekContracts));
+  const extra = (isAtteint && pay.primeExtraContrat > 0) ? Math.round((ce.postCount||0) * pay.primeExtraContrat) : 0;
   return Math.round(dailyBase * daysWeek + ce.total + extra);
 }
 
@@ -12474,15 +12571,9 @@ function estimateSalary(agent, contracts, monthContracts, year, month){
   const objectif = effectiveObjectifMensuel(agent, y, m);
   const isAtteint = objectif > 0 && mc >= objectif;
 
-  let extra = 0;
-  if(isAtteint && pay.primeExtraContrat > 0){
-    const totalExtra = Math.max(0, mc - objectif);
-    const ratio = mc > 0 ? contracts / mc : 0;
-    extra = Math.round(ratio * totalExtra * pay.primeExtraContrat);
-  }
-
   const payForTier = objectif === pay.objectifMensuel ? pay : { ...pay, objectifMensuel: objectif };
-  const ce = contractEarnings(payForTier, mc, contracts);
+  const ce = contractEarnings(payForTier, mc, contracts, Math.max(0, mc - contracts));
+  const extra = (isAtteint && pay.primeExtraContrat > 0) ? Math.round((ce.postCount||0) * pay.primeExtraContrat) : 0;
   return Math.round(dailyBase + ce.total + extra);
 }
 
@@ -13006,7 +13097,7 @@ async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
   if(pay.isIndep){
     // Un indépendant ne pointe pas, donc sa prime d'assiduité (si l'admin lui en a réglé une) est toujours acquise.
     let brut = pay.baseSalary + pay.primeFixeMensuelle + pay.primeAssiduite;
-    brut += contractEarnings(pay, br.payable, br.payable).total;
+    brut += contractEarnings(pay, br.payable, br.payable, 0).total;
     const manualPrimes = await getManualPrimes(agent, year, month);
     const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, br.payable);
     brut += manualPrimesTotal;
@@ -13023,7 +13114,7 @@ async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
   // Palier objectif : contrats jusqu'au mini obligatoire au taux "avant objectif" (0 par défaut), contrats
   // au-delà au taux "DH/contrat" normal — voir contractEarnings(). primeExtra (primeExtraContrat) reste un
   // bonus supplémentaire séparé, réglable par l'admin en plus, inchangé.
-  brut += contractEarnings(pay, br.payable, br.payable).total;
+  brut += contractEarnings(pay, br.payable, br.payable, 0).total;
   brut += st.primeObjectif + st.primeExtra;
   const manualPrimes = await getManualPrimes(agent, year, month);
   const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, br.payable);
@@ -14439,8 +14530,10 @@ async function renderCash(){
   // Détail palier objectif (voir contractEarnings) pour l'affichage — même répartition que celle utilisée
   // dans daySal/weekSal ci-dessus, pour que le détail ligne par ligne corresponde toujours exactement au
   // montant affiché en gros (jamais deux calculs séparés qui pourraient diverger).
-  const ceDay = contractEarnings(pay, monthContracts, todayCount);
-  const ceWeek = contractEarnings(pay, monthContracts, weekData.total);
+  // Position chronologique réelle (voir contractEarnings) — la journée et la semaine en cours se
+  // terminent aujourd'hui, donc « avant la fenêtre » = total du mois moins la fenêtre.
+  const ceDay = contractEarnings(pay, monthContracts, todayCount, Math.max(0, monthContracts - todayCount));
+  const ceWeek = contractEarnings(pay, monthContracts, weekData.total, Math.max(0, monthContracts - weekData.total));
 
   // "Aujourd'hui"/"Cette semaine" doivent refléter ce qui est VRAIMENT acquis, pas juste un brut théorique :
   // si l'agent a un retard >10min ou une absence ce jour précis, sa quote-part fixe du jour est retenue
@@ -20438,7 +20531,7 @@ async function renderHistoryStats(){
         const n = (prod.rows || []).filter(x => x.agent === a && !x.retracted).length;
         if(!n && !p.baseSalary) return;
         let brut = p.baseSalary + p.primeFixeMensuelle + p.primeAssiduite;  // assiduité acquise : aucun retard
-        brut += contractEarnings(p, n, n).total;
+        brut += contractEarnings(p, n, n, 0).total;
         if(!p.isIndep && !p.noObjectif && p.objectifMensuel > 0 && n >= p.objectifMensuel){
           brut += p.primeObjectifJour + Math.max(0, n - p.objectifMensuel) * p.primeExtraContrat;
         }
