@@ -2566,7 +2566,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r134';
+const APP_VERSION = '2026-08-26-r136';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9019,6 +9019,12 @@ async function renderBossRevenue(force){
   const detailRows = sortedDetails.map(d=>{
     const catTag = d.isIndep ? ' <span class="tag independant">Indé</span>' : (d.noObjectif ? ` <span class="tag warn">${getNoObjectifLabelGeneric()}</span>` : '');
     const payD = getAgentPay(d.agent, expYear, expMonth);
+    // Objectif tel que REGLE par l'admin (sans prorata) — sert uniquement a montrer « 30 → 11 » quand
+    // l'agent est arrive ou parti en cours de mois. Sans ca, l'admin lit « 14/11 » alors qu'il a saisi
+    // 30 dans les reglages, et croit a une erreur de l'appli.
+    const payBrut = getAgentPay(d.agent);
+    const objBrut = payBrut.objectifMensuel || 0;
+    const objReduit = (payD.prorationFactor != null && payD.prorationFactor < 1 && objBrut > 0 && payD.objectifMensuel < objBrut);
     const fixedOnlyFull = Math.round((payD.baseSalary||0) + (payD.primeFixeMensuelle||0));
     const assiduiteFullAmt = Math.round(payD.primeAssiduite||0);
     const fixedTip = assiduiteFullAmt>0
@@ -9034,7 +9040,12 @@ async function renderBossRevenue(force){
     // 1er contrat. C'est rarement voulu, et ça coûte cher sans prévenir — on le signale en clair.
     const objManquant = !d.isIndep && !d.noObjectif && !objRegle;
     let commTip;
-    if(!cdd || (cdd.preCount === 0 && cdd.postCount === 0)){
+    if(objRegle && d.resteAvantCommission > 0){
+      // LE cas qui fait croire a un bug : 0 DH alors que l'agent a signe des contrats aujourd'hui.
+      commTip = `${d.payableMonth} contrat(s) payé(s) ce mois sur un objectif de ${payD.objectifMensuel}.` +
+        (objReduit ? `\nObjectif réduit au prorata : ${objBrut} réglés dans Réglages × ${Math.round(payD.prorationFactor*100)}% du mois travaillé = ${payD.objectifMensuel}.` : '') +
+        `\nLa commission de ${payD.perContract} DH ne démarre qu'APRÈS l'objectif : les contrats jusqu'au minimum sont couverts par le salaire fixe.\nIl manque encore ${d.resteAvantCommission} contrat(s) avant que la commission commence à tomber.`;
+    } else if(!cdd || (cdd.preCount === 0 && cdd.postCount === 0)){
       commTip = 'Aucun contrat payé sur la période choisie.';
     } else if(objManquant){
       commTip = `⚠️ AUCUN OBJECTIF MENSUEL RÉGLÉ pour ${d.agent} dans Réglages → Rémunération par agent.\nSans objectif, il n'y a pas de palier : il est payé ${cdd.postRate} DH dès le 1er contrat.\nCalcul appliqué : ${Math.round(cdd.postCount)} × ${cdd.postRate} DH = ${d.contractPart.toLocaleString('fr-FR')} DH.`;
@@ -9050,7 +9061,7 @@ async function renderBossRevenue(force){
       <td><b>${d.agent}</b>${catTag}${objManquant ? ' <span class="tag warn" style="background:rgba(229,72,77,0.18); color:var(--red); border-color:rgba(229,72,77,0.45);" title="Cet agent est salarié mais aucun objectif mensuel n\'est réglé pour lui. Il touche donc le plein tarif par contrat dès le premier, sans minimum à atteindre. À corriger dans Réglages → Rémunération par agent.">⚠️ objectif non réglé</span>' : ''}</td>
       <td>${d.contractsRealized}</td>
       <td title="${fixedTip}" style="cursor:help;">${d.fixedProrated.toLocaleString('fr-FR')} DH</td>
-      <td title="${commTip}" style="cursor:help;">${d.contractPart>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${d.contractPart.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
+      <td title="${commTip}" style="cursor:help;">${d.contractPart>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${d.contractPart.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}${objRegle ? `<div style="font-size:11px; margin-top:2px; color:${d.resteAvantCommission>0 ? 'var(--amber)' : 'var(--green)'};">${d.payableMonth}/${payD.objectifMensuel} ce mois${d.resteAvantCommission>0 ? ` · encore ${d.resteAvantCommission}` : ' · objectif dépassé'}</div>${objReduit ? `<div style="font-size:10.5px; margin-top:1px; color:var(--accent);" title="Cet agent n'a pas travaillé le mois entier (embauche ou départ en cours de mois). Son objectif minimum est réduit dans la même proportion que son salaire fixe : ${objBrut} × ${Math.round(payD.prorationFactor*100)}% = ${payD.objectifMensuel}. On ne lui demande pas les contrats d'un mois complet pour une partie de mois.">objectif réduit ${objBrut} → ${payD.objectifMensuel} (${Math.round(payD.prorationFactor*100)}% du mois)</div>` : ''}` : ''}</td>
       <td>${d.objectifPrimes>0 ? `<span style="color:var(--green);">+${d.objectifPrimes.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.deductionsTotal>0 ? `<span style="color:var(--red);">-${d.deductionsTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
       <td>${d.manualPrimesTotal>0 ? `<span style="color:var(--gold);">+${d.manualPrimesTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
@@ -9073,7 +9084,7 @@ async function renderBossRevenue(force){
     </div>
     <div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${expenseCard}${netCard}</div>
     <div id="expenseDetailPanel" style="display:${detailWasOpen?'block':'none'}; margin-top:14px; padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.25);">
-      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.6;">Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.<br><span style="opacity:0.85;">💡 La prime d'assiduité (si acquise) suit la même règle : elle grandit chaque jour avec le fixe, sans jamais atteindre son plein montant avant la fin du mois — survole <b>ⓘ</b> dans l'en-tête pour le détail agent par agent.</span></div>
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.6;"><b style="color:var(--gold);">💡 Commission à 0 DH ?</b> C'est normal tant que l'agent n'a pas <b>dépassé son objectif du mois</b> : les contrats jusqu'au minimum sont déjà payés par son salaire fixe. Le petit compteur sous chaque montant (ex. <b>12/30 ce mois</b>) te dit où il en est. Le compteur est <b>mensuel</b> même quand tu regardes une seule journée — la règle du palier se joue sur le mois entier.<br><br>Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.<br><span style="opacity:0.85;">💡 La prime d'assiduité (si acquise) suit la même règle : elle grandit chaque jour avec le fixe, sans jamais atteindre son plein montant avant la fin du mois — survole <b>ⓘ</b> dans l'en-tête pour le détail agent par agent.</span></div>
       <div style="overflow-x:auto;">
         <table class="salary-table">
           <thead><tr><th>Agent</th><th title="Contrats réellement payés sur la période : signés moins rétractations moins retours clients convertis en contrats. Même base que la paie de fin de mois.">Contrats payés</th><th>Fixe (prorata) <span title="Salaire de base + prime fixe mensuelle + prime d'assiduité (si acquise), le tout au prorata des jours ouvrés déjà écoulés ce mois-ci — même la prime d'assiduité monte progressivement au fil du mois, elle n'apparaît jamais en entier avant que le mois ne soit terminé." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th>Commission contrats <span title="Ce que les contrats de la période rapportent à l'agent, règle du palier appliquée. Survole le montant de chaque ligne pour voir le calcul exact." style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span></th><th title="Prime versée quand l'objectif mensuel est atteint. Affichée uniquement sur la période « depuis le 1er du mois » : c'est un palier mensuel, l'attribuer à une seule journée n'aurait aucun sens.">Prime objectif</th><th>Retenues règlement</th><th>Primes manuelles</th><th>Prime supervision</th><th>Total réel</th></tr></thead>
@@ -9299,6 +9310,13 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     // montant. L'écran s'en sert pour ÉCRIRE le calcul sous la ligne au lieu d'un chiffre tout seul.
     contractPart: Math.round(contractPart), contractDetail: ceRT,
     contractsRealized: windowCount, contractsBrut: realizedCount,
+    // Position dans le MOIS par rapport a l'objectif. La commission est une regle MENSUELLE : tant que
+    // l'agent n'a pas depasse son objectif du mois, elle vaut 0, meme s'il a signe des contrats
+    // aujourd'hui. Sans ces deux chiffres a l'ecran, un « 0 DH » ressemble a un bug alors que c'est la
+    // regle qui s'applique — c'est exactement la question posee par le patron le 26/08.
+    payableMonth, objectifMensuel: pay.objectifMensuel || 0,
+    resteAvantCommission: (!pay.isIndep && !pay.noObjectif && (pay.objectifMensuel||0) > 0)
+      ? Math.max(0, pay.objectifMensuel - payableMonth) : 0,
     returnsDeducted: brRT.returnsDeducted, retractions: brRT.retractions,
     objectifPrimes: Math.round(objectifPrimes),
     deductionsTotal: ded.total || 0,
