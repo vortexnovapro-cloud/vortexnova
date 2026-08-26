@@ -2575,7 +2575,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r141';
+const APP_VERSION = '2026-08-26-r142';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -15005,6 +15005,12 @@ async function renderSupervision(){
 
   let totalDayReal=0, totalDayObj=0, totalWeekReal=0, totalWeekObj=0, totalMonthReal=0, totalMonthObj=0, totalSalaryTeam=0, totalSalaryIndep=0, teamMonthContracts=0;
   let behindCount=0;
+  // 👤 QUI, pas seulement COMBIEN. « 1 agent en dessous de son objectif » sans le nommer oblige le
+  // superviseur à parcourir tout le tableau pour trouver de qui il s'agit — c'est le premier geste
+  // qu'il fait en voyant l'alerte, autant le lui donner directement.
+  const enRetardRows = [];   // < 70 % du mini  → alerte rouge
+  const presqueRows  = [];   // 70 à 99 % du mini → à surveiller, pas encore alarmant
+  const sousViseRows = [];   // ont atteint leur mini mais pas ce qu'ils s'étaient promis
   // 🎯 OBJECTIF VISÉ DE L'ÉQUIPE — le total de ce que les agents se sont fixé EUX-MÊMES (Arena),
   // à côté du mini obligatoire. Le mini dit « ce qu'on doit », le visé dit « ce qu'on s'est promis » :
   // une équipe à 174 % de son mini peut très bien être en retard sur ce qu'elle visait vraiment.
@@ -15101,7 +15107,13 @@ async function renderSupervision(){
       // jamais être inférieur au total obligatoire.
       totalMonthDesired += (r.desiredObj > 0 ? r.desiredObj : r.monthObj);
       if(r.desiredObj > 0) nbDesiredSet++;
-      if(r.monthObj > 0 && !r.atteint && r.pctMonth < 70) behindCount++;
+      if(r.monthObj > 0 && !r.atteint){
+        if(r.pctMonth < 70){ behindCount++; enRetardRows.push(r); }
+        else presqueRows.push(r);
+      }
+      // Sous son objectif VISÉ alors que son mini est déjà atteint : ce n'est pas une alerte, c'est le
+      // sujet d'un briefing. On le garde à part pour ne pas noyer les vraies alertes.
+      if(r.desiredObj > 0 && r.monthReal < r.desiredObj && r.atteint) sousViseRows.push(r);
       totalSalaryTeam += r.salaryMonth;
     } else {
       totalSalaryIndep += r.salaryMonth;
@@ -15160,6 +15172,23 @@ async function renderSupervision(){
   // tien + ceux des autres s'il y en a), qui ne comptent jamais dans ta prime.
   const allSupervisorsPersonal = Math.max(0, totalMonthReal - totalBasePool);
 
+  // ── Nommer les agents concernés, avec le détail chiffré en survol ────────────────────────────────
+  // Les infobulles utilisent &#10; (retour à la ligne en attribut HTML) : un \n brut casserait
+  // l'attribut title dans une chaîne de template.
+  const ligneAgent = r => `${escapeHtml(r.agent)} ${r.monthReal}/${r.monthObj} (${r.pctMonth}%, encore ${Math.max(0, r.monthObj - r.monthReal)})`;
+  const ligneVise  = r => `${escapeHtml(r.agent)} ${r.monthReal}/${r.desiredObj} (encore ${Math.max(0, r.desiredObj - r.monthReal)})`;
+  // Liste courte affichée à l'écran : les noms seuls, tronqués au-delà de 4 pour ne pas casser la carte.
+  const nomsCourts = (arr, max)=>{
+    const noms = arr.map(r => escapeHtml(r.agent));
+    if(noms.length <= max) return noms.join(', ');
+    return noms.slice(0, max).join(', ') + ` +${noms.length - max}`;
+  };
+  const infobulle = (arr, fn, entete)=> entete + '&#10;&#10;' + arr.map(r => '• ' + fn(r)).join('&#10;');
+
+  const alerteHtml = enRetardRows.length ? `<span style="color:var(--red);font-weight:700;" title="${infobulle(enRetardRows, ligneAgent, 'Moins de 70 % de leur objectif minimum du mois. Format : réalisé / minimum (pourcentage, contrats restants).')}">🚨 En retard : ${nomsCourts(enRetardRows, 4)}</span>` : '';
+  const presqueHtml = presqueRows.length ? `<div class="sub" style="margin-top:5px;font-size:11px;color:var(--amber);" title="${infobulle(presqueRows, ligneAgent, 'Entre 70 % et 99 % de leur minimum : en bonne voie, mais pas encore au but. Format : réalisé / minimum (pourcentage, contrats restants).')}">⏳ Bientôt au mini : ${nomsCourts(presqueRows, 4)} <span style="opacity:0.7;cursor:help;">ⓘ</span></div>` : '';
+  const sousViseHtml = sousViseRows.length ? `<div class="sub" style="margin-top:5px;font-size:11px;" title="${infobulle(sousViseRows, ligneVise, "Ils ont atteint leur minimum obligatoire, mais pas l'objectif qu'ils se sont fixé eux-mêmes dans l'Arena. Ce n'est pas une faute — c'est le sujet d'un briefing. Format : réalisé / visé (contrats restants).")}">🎯 Sous leur visé : ${nomsCourts(sousViseRows, 4)} <span style="opacity:0.7;cursor:help;">ⓘ</span></div>` : '';
+
   // 🎯 Bloc « objectif visé par l'équipe ». Affiché juste sous la barre du mini obligatoire, avec sa
   // propre barre : deux repères distincts, jamais mélangés. N'apparaît que si au moins un agent a fixé
   // un objectif visé — sinon il répéterait bêtement le mini.
@@ -15168,16 +15197,15 @@ async function renderSupervision(){
   const viseHtml = (nbDesiredSet > 0 && totalMonthDesired > 0) ? `
       <div style="margin-top:12px; padding-top:11px; border-top:1px dashed var(--border);">
         <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-          <span style="font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; font-weight:700;">🎯 Objectif visé par l'équipe</span>
-          <span style="font-family:inherit; font-weight:900; font-size:19px; color:${visePct>=100?'var(--gold)':'var(--text)'};">${totalMonthReal}<span style="font-size:14px; color:var(--muted); font-weight:700;"> / ${totalMonthDesired}</span></span>
+          <span style="font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; font-weight:700; cursor:help;" title="Somme de ce que chaque agent s'est promis lui-même dans l'Arena.&#10;Le minimum au-dessus est ce que TU imposes ; celui-ci est ce que l'ÉQUIPE s'engage à faire.&#10;Un agent qui n'a rien visé compte pour son minimum, donc ce total ne peut jamais être inférieur à l'obligatoire.">🎯 Objectif visé par l'équipe <span style="opacity:0.7;">ⓘ</span></span>
+          <span style="font-family:inherit; font-weight:900; font-size:19px; color:${visePct>=100?'var(--gold)':'var(--text)'}; cursor:help;" title="Mêmes contrats réalisés qu'en haut (${totalMonthReal}) — seul le repère change : ${totalMonthDesired} visés au lieu de ${totalMonthObj} obligatoires, soit ${totalMonthDesired - totalMonthObj} de plus que le minimum.">${totalMonthReal}<span style="font-size:14px; color:var(--muted); font-weight:700;"> / ${totalMonthDesired}</span></span>
         </div>
         <div class="supervision-progress" style="margin-top:7px;"><div class="fill ${visePct>=100?'over':(visePct<50?'under':'')}" style="width:${Math.min(100,visePct)}%;"></div></div>
         <div class="sub" style="margin-top:6px; font-size:11px;">
-          ${visePct}% du visé · ${resteVise > 0
-            ? `<b style="color:var(--gold);">encore ${resteVise} contrat${resteVise>1?'s':''}</b> pour y être`
+          <span title="Contrats réalisés ÷ objectif visé de l'équipe." style="cursor:help;">${visePct}% du visé</span> · ${resteVise > 0
+            ? `<b style="color:var(--gold);" title="Ce qu'il reste à signer, tous agents confondus, pour que l'équipe tienne sa propre promesse. C'est le chiffre à annoncer en briefing." >encore ${resteVise} contrat${resteVise>1?'s':''}</b> pour y être`
             : `<b style="color:var(--gold);">visé atteint 🎉</b>`}
-          · ${nbDesiredSet} agent${nbDesiredSet>1?'s':''} sur ${config.agents.filter(a=>!isIndependant(a)).length} ${nbDesiredSet>1?'ont':'a'} fixé le leur
-          <span title="Le mini obligatoire (${totalMonthObj}) est ce que tu imposes. Le visé (${totalMonthDesired}) est ce que les agents se sont promis eux-mêmes dans l'Arena. Un agent qui n'a rien visé compte ici pour son mini, pour que le total visé ne puisse jamais être inférieur à l'obligatoire." style="cursor:help; opacity:0.7;">ⓘ</span>
+          · <span title="Les agents qui n'ont pas fixé d'objectif visé dans l'Arena comptent pour leur minimum obligatoire dans ce total." style="cursor:help;">${nbDesiredSet} agent${nbDesiredSet>1?'s':''} sur ${config.agents.filter(a=>!isIndependant(a)).length} ${nbDesiredSet>1?'ont':'a'} fixé le leur ⓘ</span>
         </div>
       </div>` : '';
 
@@ -15185,11 +15213,13 @@ async function renderSupervision(){
   dashboard.innerHTML = `
     <div class="supervision-card">
       <div class="label">👥 Équipe — objectif du mois</div>
-      <div class="big ${teamPct>=100?'gold':(teamPct>=50?'green':'red')}">${totalMonthReal}<span style="font-size:20px;color:var(--muted);"> / ${totalMonthObj||'—'}</span></div>
-      <div class="sub">${totalMonthObj>0 ? `${teamPct}% de l'objectif d'équipe` : "Objectifs individuels non réglés"}${behindCount>0 ? ` · <span style="color:var(--red);font-weight:700;">🚨 ${behindCount} agent(s) en dessous de leur objectif</span>` : ''}</div>
+      <div class="big ${teamPct>=100?'gold':(teamPct>=50?'green':'red')}" title="À gauche : les contrats réellement signés par l'équipe ce mois-ci (rétractations déjà retirées).&#10;À droite : la somme des objectifs MINIMUM que tu imposes à chaque agent.&#10;C'est le seuil obligatoire, pas une ambition — l'objectif visé par l'équipe est juste en dessous." style="cursor:help;">${totalMonthReal}<span style="font-size:20px;color:var(--muted);"> / ${totalMonthObj||'—'}</span></div>
+      <div class="sub">${totalMonthObj>0 ? `<span title="Contrats réalisés ÷ somme des minimums obligatoires. Au-dessus de 100 %, l'équipe a dépassé le seuil que tu imposes." style="cursor:help;">${teamPct}% de l'objectif d'équipe</span>` : `<span title="Aucun agent n'a d'objectif mensuel réglé dans Réglages → Rémunération par agent. Sans objectif, il n'y a ni seuil ni commission au palier." style="cursor:help;">Objectifs individuels non réglés ⓘ</span>`}${alerteHtml ? ' · ' + alerteHtml : ''}</div>
       <div class="supervision-progress"><div class="fill ${teamPct>=100?'over':(teamPct<50?'under':'')}" style="width:${Math.min(100,teamPct)}%;"></div></div>
+      ${presqueHtml}
       ${viseHtml}
-      <div class="sub" style="margin-top:8px;font-size:11px;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}.</div>
+      ${sousViseHtml}
+      <div class="sub" style="margin-top:8px;font-size:11px;" title="Les ${totalBasePool} contrats des agents de base sont les seuls qui alimentent ta prime de supervision.&#10;Les ${allSupervisorsPersonal} contrats personnels des superviseurs (les tiens compris) comptent pour l'équipe, mais JAMAIS dans la prime — personne ne se paie une prime sur ses propres ventes." style="cursor:help;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}. <span style="opacity:0.7;">ⓘ</span></div>
     </div>
     <div class="supervision-card sup-perso-block">
       <div class="label">📊 Ta prime de supervision</div>
