@@ -112,6 +112,15 @@
   .vn-sos.is-waiting{ background:linear-gradient(135deg,#eab543 0%,#e5a83d 45%,#b07d19 100%); animation:none; }
   .vn-sos.is-seen{ background:linear-gradient(135deg,#4ad18a 0%,#34b774 45%,#1c7d4c 100%); animation:none; }
   .vn-sos__dot{ width:9px; height:9px; border-radius:50%; background:#fff; opacity:.9; flex-shrink:0; }
+  /* 🛡️ Compteur de quota d'assistance, dans le bouton lui-même : l'agent doit savoir combien il lui
+     reste AVANT de cliquer, pas au moment où on le lui refuse. */
+  .vn-sos__quota{
+    display:none; margin-left:4px; padding:3px 10px; border-radius:999px;
+    font-size:12px; font-weight:800; letter-spacing:.2px; white-space:nowrap;
+    background:rgba(255,255,255,.24); color:#fff;
+  }
+  .vn-sos__quota.is-last{ background:#ffd76a; color:#4a3400; }
+  .vn-sos__quota.is-empty{ background:rgba(0,0,0,.38); color:#ffd9d6; }
   @keyframes vnSosBreathe{
     0%,100%{ box-shadow:0 12px 34px rgba(229,72,77,.45), 0 0 0 0 rgba(229,72,77,.5); }
     50%    { box-shadow:0 12px 34px rgba(229,72,77,.45), 0 0 0 16px rgba(229,72,77,0); }
@@ -922,7 +931,7 @@ function tryDeviceGateAdmin(){
 <!-- ═══ 🆘 ASSISTANCE ═══ Bouton toujours visible pour l'agent, et l'alerte plein écran du superviseur. -->
 <button id="vnSosBtn" class="vn-sos" type="button" onclick="assistanceButtonClick()"
         title="Prévenir ton superviseur que tu as besoin d'aide">
-  <span class="vn-sos__dot"></span><span id="vnSosLabel">Assistance</span>
+  <span class="vn-sos__dot"></span><span id="vnSosLabel">Assistance</span><span id="vnSosQuota" class="vn-sos__quota"></span>
 </button>
 
 <button id="vnBackBtn" class="vn-back" type="button" onclick="assistanceJeSuisRevenu()"
@@ -2566,7 +2575,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r139';
+const APP_VERSION = '2026-08-26-r140';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -22820,6 +22829,44 @@ async function assistMutate(fn){
   await assistSave(suivant);
 }
 
+// ============================================================
+// 🛡️ COMPTEUR DE QUOTA CÔTÉ AGENT
+// ============================================================
+// L'agent doit savoir AVANT de cliquer combien d'assistances il lui reste — pas au moment où on les
+// lui refuse. Un quota invisible passe pour de l'arbitraire ; un quota affiché est une règle.
+//
+// L'historique est relu au plus une fois par minute (il sert à compter les demandes déjà prises en
+// charge), et forcé après chaque évènement qui peut le changer. Sans cette limite, le bouton se
+// redessinant toutes les 5 secondes relirait l'historique partagé 12 fois par minute et par poste.
+const ASSIST_QUOTA_TTL_MS = 60000;
+let assistQuotaState = { agent: null, max: 0, used: 0, reste: 0, at: 0, chargement: false };
+
+async function assistQuotaRefreshMe(force){
+  const moi = assistanceWhoAmI();
+  if(!moi){ assistQuotaState = { agent: null, max: 0, used: 0, reste: 0, at: 0, chargement: false }; return; }
+  const max = assistanceMaxPourAgent(moi);
+  if(max <= 0){ assistQuotaState = { agent: moi, max: 0, used: 0, reste: 0, at: Date.now(), chargement: false }; return; }
+  const perime = (Date.now() - assistQuotaState.at) > ASSIST_QUOTA_TTL_MS || assistQuotaState.agent !== moi;
+  if(!force && !perime) return;
+  if(assistQuotaState.chargement) return;
+  assistQuotaState.chargement = true;
+  try{ await assistHistLoad(); }catch(e){}
+  const used = assistanceComptageDuJour(moi);
+  assistQuotaState = { agent: moi, max, used, reste: Math.max(0, max - used), at: Date.now(), chargement: false };
+  try{ assistRenderButton(); }catch(e){}
+}
+
+// Texte complet, réutilisé dans l'infobulle du bouton et dans les messages.
+function assistQuotaPhrase(){
+  const q = assistQuotaState;
+  if(!q.max) return '';
+  return `Tu as droit à ${q.max} assistance${q.max>1?'s':''} par jour.\n` +
+         `Utilisées aujourd'hui : ${q.used}.\n` +
+         `Il t'en reste ${q.reste}.\n` +
+         `Seules les demandes réellement prises en charge comptent — une demande que tu annules ne t'enlève rien.\n` +
+         `Le compteur repart à ${q.max} demain matin.`;
+}
+
 // ── Côté agent : le bouton ─────────────────────────────────────────────────
 async function assistanceButtonClick(){
   const moi = assistanceWhoAmI();
@@ -22832,7 +22879,8 @@ async function assistanceButtonClick(){
     assistMyRequestId = null;
     // Un appel annulé est un agent resté seul : il a autant sa place dans l'historique qu'un appel pris.
     assistHistAdd({ id: enCours.id, agent: moi, at: enCours.at, seenBy: null, seenAt: null, waitMs: Date.now() - enCours.at, cancelled: true });
-    showToast('Demande annulée.', 'ok', 3000);
+    showToast(`Demande annulée. ${assistQuotaState.max > 0 ? `Elle ne t'a rien coûté : il te reste toujours ${assistQuotaState.reste} assistance${assistQuotaState.reste>1?'s':''} aujourd'hui.` : ''}`, 'ok', 5000);
+    assistQuotaRefreshMe(true);
     assistRenderButton();
     return;
   }
@@ -22850,6 +22898,7 @@ async function assistanceButtonClick(){
       assistHistAdd({ id: 'r' + Date.now().toString(36), agent: moi, at: Date.now(), seenBy: null, seenAt: null, waitMs: 0, cancelled: true, refusedQuota: true });
       logAudit(moi, 'Assistance refusée (quota du jour atteint)', `${dejaFait}/${maxJour} assistance(s) déjà prises en charge aujourd'hui`);
       showToast(`🛑 Tu as déjà utilisé tes ${maxJour} assistance${maxJour > 1 ? 's' : ''} d'aujourd'hui (${dejaFait} prise${dejaFait > 1 ? 's' : ''} en charge). Va voir ton superviseur de vive voix — ta tentative est enregistrée et l'Admin la voit.`, 'warn', 9000);
+      assistQuotaRefreshMe(true);
       assistRenderButton();
       return;
     }
@@ -22870,6 +22919,15 @@ async function assistanceButtonClick(){
     : (cible.liste.length
         ? `🆘 Aucun superviseur n'est joignable — ta demande part directement chez ${cible.liste.join(', ')}. Reste à ton poste.`
         : "🆘 Personne n'est joignable pour l'instant. Ta demande est enregistrée et l'Admin la voit — va aussi chercher quelqu'un de vive voix."), 'ok', 8000);
+  // Rappel du quota juste après l'envoi, sans noyer le message principal : deuxième bulle, plus courte.
+  if(maxJour > 0){
+    const resteApres = Math.max(0, maxJour - assistQuotaState.used - 1);
+    setTimeout(()=>{
+      try{
+        showToast(`🛡️ Si quelqu'un prend cette demande en charge, il te restera ${resteApres} assistance${resteApres>1?'s':''} sur tes ${maxJour} d'aujourd'hui.`, 'warn', 7000);
+      }catch(e){}
+    }, 1200);
+  }
   assistRenderButton();
 }
 
@@ -22881,9 +22939,32 @@ function assistRenderButton(){
   // Le patron dans l'Admin n'a personne à appeler : on lui épargne le bouton.
   if(!moi || adminOuvert){ btn.style.display = 'none'; return; }
   btn.style.display = 'inline-flex';
+
+  // 🛡️ Compteur de quota. assistQuotaRefreshMe s'auto-limite (1 lecture par minute max) : on peut donc
+  // l'appeler à chaque rendu du bouton sans coût. Le rendu se fait sur l'état déjà en mémoire.
+  assistQuotaRefreshMe();
+  const qEl = document.getElementById('vnSosQuota');
+  if(qEl){
+    const q = assistQuotaState;
+    if(q.max > 0 && q.agent === moi){
+      qEl.style.display = 'inline-block';
+      qEl.textContent = `reste ${q.reste}/${q.max}`;
+      qEl.className = 'vn-sos__quota' + (q.reste === 0 ? ' is-empty' : (q.reste === 1 ? ' is-last' : ''));
+    } else {
+      qEl.style.display = 'none';
+    }
+  }
   const mien = assistList.find(r => r.agent === moi && (r.status === 'pending' || (r.status === 'seen' && Date.now() - (r.seenAt || 0) < 25000)));
   btn.classList.remove('is-waiting', 'is-seen');
-  if(!mien){ lab.textContent = 'Assistance'; btn.title = "Prévenir ton superviseur que tu as besoin d'aide"; return; }
+  if(!mien){
+    lab.textContent = 'Assistance';
+    const phrase = assistQuotaPhrase();
+    btn.title = "Prévenir ton superviseur que tu as besoin d'aide." + (phrase ? "\n\n" + phrase : '');
+    if(assistQuotaState.max > 0 && assistQuotaState.reste === 0){
+      lab.textContent = 'Quota du jour atteint';
+    }
+    return;
+  }
   if(mien.status === 'pending'){
     btn.classList.add('is-waiting');
     lab.textContent = 'Demande envoyée…';
@@ -23077,6 +23158,10 @@ function assistProcess(){
       if(Date.now() - (r.seenAt || 0) > 60000) return;   // vieille demande relue au chargement : on ne rejoue rien
       assistChime();
       showToast('✅ ' + (r.seenBy || 'Ton superviseur') + ' a vu ta demande — il arrive.', 'ok', 9000);
+      // C'est CE moment précis qui consomme le quota (une demande prise en charge, pas un clic).
+      // On recompte tout de suite pour que le compteur du bouton descende sous les yeux de l'agent,
+      // au lieu d'attendre le prochain cycle d'une minute.
+      assistQuotaRefreshMe(true);
     });
     // …et est-ce qu'elle vient de se CLÔTURER ? (l'assistant a cliqué « Je suis de retour »)
     // Sans ce bloc, l'agent voyait sa demande s'effacer sans savoir pourquoi.
