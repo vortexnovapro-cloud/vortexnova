@@ -2575,7 +2575,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r140';
+const APP_VERSION = '2026-08-26-r141';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -15005,6 +15005,11 @@ async function renderSupervision(){
 
   let totalDayReal=0, totalDayObj=0, totalWeekReal=0, totalWeekObj=0, totalMonthReal=0, totalMonthObj=0, totalSalaryTeam=0, totalSalaryIndep=0, teamMonthContracts=0;
   let behindCount=0;
+  // 🎯 OBJECTIF VISÉ DE L'ÉQUIPE — le total de ce que les agents se sont fixé EUX-MÊMES (Arena),
+  // à côté du mini obligatoire. Le mini dit « ce qu'on doit », le visé dit « ce qu'on s'est promis » :
+  // une équipe à 174 % de son mini peut très bien être en retard sur ce qu'elle visait vraiment.
+  // Un agent qui n'a rien visé compte pour son mini, sinon le total viserait moins que l'obligatoire.
+  let totalMonthDesired = 0, nbDesiredSet = 0;
 
   // Tous les agents sont traités en parallèle (au lieu d'un par un) : c'est ce qui rendait la page très lente
   // à charger dès qu'il y avait plusieurs agents, puisque chaque agent déclenche une vingtaine de lectures.
@@ -15092,6 +15097,10 @@ async function renderSupervision(){
       totalDayReal += r.dayRealized; totalDayObj += r.dayObjective;
       totalWeekReal += r.weekReal; totalWeekObj += r.weekObjective;
       totalMonthReal += r.monthReal; totalMonthObj += r.monthObj;
+      // Visé de l'agent s'il en a fixé un, sinon son mini obligatoire : le total visé ne peut donc
+      // jamais être inférieur au total obligatoire.
+      totalMonthDesired += (r.desiredObj > 0 ? r.desiredObj : r.monthObj);
+      if(r.desiredObj > 0) nbDesiredSet++;
       if(r.monthObj > 0 && !r.atteint && r.pctMonth < 70) behindCount++;
       totalSalaryTeam += r.salaryMonth;
     } else {
@@ -15151,6 +15160,27 @@ async function renderSupervision(){
   // tien + ceux des autres s'il y en a), qui ne comptent jamais dans ta prime.
   const allSupervisorsPersonal = Math.max(0, totalMonthReal - totalBasePool);
 
+  // 🎯 Bloc « objectif visé par l'équipe ». Affiché juste sous la barre du mini obligatoire, avec sa
+  // propre barre : deux repères distincts, jamais mélangés. N'apparaît que si au moins un agent a fixé
+  // un objectif visé — sinon il répéterait bêtement le mini.
+  const visePct = totalMonthDesired > 0 ? Math.round((totalMonthReal / totalMonthDesired) * 100) : 0;
+  const resteVise = Math.max(0, totalMonthDesired - totalMonthReal);
+  const viseHtml = (nbDesiredSet > 0 && totalMonthDesired > 0) ? `
+      <div style="margin-top:12px; padding-top:11px; border-top:1px dashed var(--border);">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <span style="font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; font-weight:700;">🎯 Objectif visé par l'équipe</span>
+          <span style="font-family:inherit; font-weight:900; font-size:19px; color:${visePct>=100?'var(--gold)':'var(--text)'};">${totalMonthReal}<span style="font-size:14px; color:var(--muted); font-weight:700;"> / ${totalMonthDesired}</span></span>
+        </div>
+        <div class="supervision-progress" style="margin-top:7px;"><div class="fill ${visePct>=100?'over':(visePct<50?'under':'')}" style="width:${Math.min(100,visePct)}%;"></div></div>
+        <div class="sub" style="margin-top:6px; font-size:11px;">
+          ${visePct}% du visé · ${resteVise > 0
+            ? `<b style="color:var(--gold);">encore ${resteVise} contrat${resteVise>1?'s':''}</b> pour y être`
+            : `<b style="color:var(--gold);">visé atteint 🎉</b>`}
+          · ${nbDesiredSet} agent${nbDesiredSet>1?'s':''} sur ${config.agents.filter(a=>!isIndependant(a)).length} ${nbDesiredSet>1?'ont':'a'} fixé le leur
+          <span title="Le mini obligatoire (${totalMonthObj}) est ce que tu imposes. Le visé (${totalMonthDesired}) est ce que les agents se sont promis eux-mêmes dans l'Arena. Un agent qui n'a rien visé compte ici pour son mini, pour que le total visé ne puisse jamais être inférieur à l'obligatoire." style="cursor:help; opacity:0.7;">ⓘ</span>
+        </div>
+      </div>` : '';
+
   // ---- Vue d'équipe + prime de supervision ----
   dashboard.innerHTML = `
     <div class="supervision-card">
@@ -15158,6 +15188,7 @@ async function renderSupervision(){
       <div class="big ${teamPct>=100?'gold':(teamPct>=50?'green':'red')}">${totalMonthReal}<span style="font-size:20px;color:var(--muted);"> / ${totalMonthObj||'—'}</span></div>
       <div class="sub">${totalMonthObj>0 ? `${teamPct}% de l'objectif d'équipe` : "Objectifs individuels non réglés"}${behindCount>0 ? ` · <span style="color:var(--red);font-weight:700;">🚨 ${behindCount} agent(s) en dessous de leur objectif</span>` : ''}</div>
       <div class="supervision-progress"><div class="fill ${teamPct>=100?'over':(teamPct<50?'under':'')}" style="width:${Math.min(100,teamPct)}%;"></div></div>
+      ${viseHtml}
       <div class="sub" style="margin-top:8px;font-size:11px;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}.</div>
     </div>
     <div class="supervision-card sup-perso-block">
