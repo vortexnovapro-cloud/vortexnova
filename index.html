@@ -2594,7 +2594,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r149';
+const APP_VERSION = '2026-08-26-r150';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -7209,7 +7209,11 @@ let _lastMonthlyStats = [];
 let exploSelectedAgents = new Set(); // vide = "tous les agents"
 
 function getExploSelectedAgents(){
-  return exploSelectedAgents.size === 0 ? config.agents.slice() : config.agents.filter(a=>exploSelectedAgents.has(a));
+  // « Aucune sélection » veut dire TOUS — y compris les archivés, sinon le total de la page ne
+  // correspond plus au nombre de contrats réellement importés (voir getTotalContractsMonth).
+  return exploSelectedAgents.size === 0
+    ? allKnownAgents().slice()
+    : allKnownAgents().filter(a=>exploSelectedAgents.has(a));
 }
 
 function renderExploAgentChips(){
@@ -9043,8 +9047,34 @@ async function getTotalContractsToday(){
 }
 
 async function getTotalContractsMonth(year, month){
-  const totals = await Promise.all(config.agents.map(agent=> monthlyRealizedContracts(agent, year, month)));
+  // ⚠️ allKnownAgents() ET NON config.agents — CORRIGÉ le 26/08/2026.
+  // Archiver un agent le retire de config.agents. Tous les totaux d'équipe faisaient la somme sur
+  // cette seule liste : les contrats d'un agent licencié puis archivé DISPARAISSAIENT du chiffre
+  // d'affaires, alors qu'ils ont bien été vendus, que le client paie et que le patron encaisse.
+  // Cas constaté : 788 contrats importés, 774 comptés — 14 contrats d'ex-agents envolés, soit environ
+  // 3 500 DH de CA invisible sur le mois.
+  // Un contrat vendu reste vendu, quel que soit le sort de celui qui l'a signé. Les rétractations et
+  // les retours de ces contrats sont eux aussi retrouvés : billingResolveAgent inclut déjà les
+  // archivés, et monthlyRealizedContracts retire leurs rétractations comme pour n'importe qui.
+  // ⚠️ La MASSE SALARIALE, elle, continue volontairement de tourner sur config.agents seul : archiver
+  // signifie « son solde est payé », le réintégrer ferait repayer des gens.
+  const totals = await Promise.all(allKnownAgents().map(agent=> monthlyRealizedContracts(agent, year, month)));
   return totals.reduce((s,x)=> s+x, 0);
+}
+
+// Détail du même total, séparé entre agents en poste et ex-agents archivés — pour pouvoir afficher
+// l'égalité « X en poste + Y ex-agents = Z » au lieu d'un écart inexpliqué.
+async function getTotalContractsMonthDetail(year, month){
+  const actifs = config.agents || [];
+  const archives = archivedAgents();
+  const [tActifs, tArchives] = await Promise.all([
+    Promise.all(actifs.map(a=> monthlyRealizedContracts(a, year, month))),
+    Promise.all(archives.map(a=> monthlyRealizedContracts(a, year, month)))
+  ]);
+  const enPoste = tActifs.reduce((s,x)=> s+x, 0);
+  const parArchive = archives.map((a,i)=> ({ agent: a, n: tArchives[i] })).filter(x=> x.n > 0);
+  const exAgents = parArchive.reduce((s,x)=> s+x.n, 0);
+  return { enPoste, exAgents, parArchive, total: enPoste + exAgents };
 }
 
 function computeBossRevenue(totalContracts){
@@ -9086,7 +9116,9 @@ function initExpenseDateDefaults(){
 // Total des contrats bruts (toute l'équipe + indépendants) sur une période libre — même logique que
 // getTotalContractsToday/getTotalContractsMonth mais pour n'importe quelle plage de dates choisie.
 async function getTotalContractsForDateRange(fromDateStr, toDateStr){
-  const totals = await Promise.all(config.agents.map(agent=> realizedContractsForDateRange(agent, fromDateStr, toDateStr)));
+  // Même correction que getTotalContractsMonth : les contrats d'un ex-agent comptent dans le chiffre
+  // d'affaires de la période où ils ont été signés.
+  const totals = await Promise.all(allKnownAgents().map(agent=> realizedContractsForDateRange(agent, fromDateStr, toDateStr)));
   return totals.reduce((s,x)=> s+x, 0);
 }
 
@@ -9128,11 +9160,16 @@ async function renderBossRevenue(force){
   const nowForRevenue = nowMA();
   const firstOfCurrentMonth = `${nowForRevenue.getFullYear()}-${String(nowForRevenue.getMonth()+1).padStart(2,'0')}-01`;
   const isMonthToDateRange = (expenseFrom === firstOfCurrentMonth && expenseTo === todayStr());
-  const [periodTotal, expense] = await Promise.all([
+  const [periodTotal, expense, detailArchives] = await Promise.all([
     isMonthToDateRange
       ? getTotalContractsMonth(nowForRevenue.getFullYear(), nowForRevenue.getMonth()+1)
       : getTotalContractsForDateRange(expenseFrom, expenseTo),
-    computeRealTimeExpenseForRange(expenseFrom, expenseTo)
+    computeRealTimeExpenseForRange(expenseFrom, expenseTo),
+    // Répartition en poste / ex-agents : un total qui inclut les archivés doit dire qu'il les inclut,
+    // sinon le patron cherche d'où sortent des contrats qu'il n'attribue à personne.
+    isMonthToDateRange
+      ? getTotalContractsMonthDetail(nowForRevenue.getFullYear(), nowForRevenue.getMonth()+1)
+      : Promise.resolve(null)
   ]);
   const periodCalc = computeBossRevenue(periodTotal);
   const isSingleDay = expenseFrom === expenseTo;
@@ -9150,6 +9187,7 @@ async function renderBossRevenue(force){
       <div class="cash-breakdown" style="margin-top:12px;">
         <div title="${isMonthToDateRange ? 'Contrats du mois, rétractations déjà déduites — exactement la même source que le 🧾 Bilan net du mois plus bas.' : 'Contrats comptés jour par jour sur la période choisie. Les rétractations sont un compteur MENSUEL, non daté : elles ne peuvent pas être rattachées à une journée, elles ne sont donc pas déduites ici. Choisis « ↺ Depuis le 1er du mois » pour un chiffre net de rétractations.'}"><span>Contrats ${isMonthToDateRange ? 'nets' : 'bruts'}</span><b>${calc.totalContracts}</b></div>
         ${!isMonthToDateRange ? `<div class="miss"><span>⚠️ Rétractations du mois</span><b>non déduites</b></div>` : ''}
+        ${(detailArchives && detailArchives.exAgents > 0) ? `<div title="Contrats signés par des agents depuis archivés (${detailArchives.parArchive.map(x=> x.agent + ' : ' + x.n).join(' · ')}).&#10;Ils comptent dans ton chiffre d'affaires : le contrat est vendu, le client paie.&#10;Ils n'entrent pas dans la masse salariale — archiver veut dire que leur solde est payé."><span>dont ex-agents archivés</span><b style="color:var(--gold);">${detailArchives.exAgents}</b></div>` : ''}
         <div><span>Effectifs (-${config.bossReturnRatePct||0}% retour estimé)</span><b>${Math.round(calc.effectiveContracts*10)/10}</b></div>
         <div><span>Commission de base</span><b>${Math.round(calc.base).toLocaleString('fr-FR')} DH</b></div>
         ${config.bossBonusPct>0 ? `<div class="hit"><span>Bonus (+${config.bossBonusPct}%)</span><b>+${Math.round(calc.bonus).toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -17691,10 +17729,39 @@ async function importBillingProd(text, monthVal){
     ${shiftedCount ? `<div style="font-size:12.5px; color:#7aa7d9; margin-top:6px;">🔀 <b>${shiftedCount} contrat${shiftedCount>1?'s':''} rattaché${shiftedCount>1?'s':''} malgré une ligne décalée</b> — la colonne Agent contenait autre chose (une virgule non protégée dans l'adresse décale toute la fin de ligne), le nom du vendeur a été retrouvé ailleurs dans la ligne.</div>` : ''}
     <div style="font-size:12px; color:var(--muted); margin-top:5px;">Chaque contrat va au mois de <b>sa</b> date — tu peux donc importer un fichier contenant plusieurs mois d'un coup.${undatedCount ? ` ${undatedCount} ligne(s) sans date lisible ont été placées dans ${escapeHtml(billingMonthLabel(monthVal))}.` : ''}</div>
   </div>`;
+  // ═══ RAPPROCHEMENT « OÙ SONT PASSÉS MES CONTRATS ? » ═══════════════════════════════════════════
+  // Le nombre de lignes importées et le total affiché ailleurs dans l'appli ne coïncident pas toujours,
+  // et l'écart n'était expliqué nulle part — de quoi douter de tous les chiffres.
+  // Trois raisons possibles, ici écrites noir sur blanc :
+  //   • des contrats d'agents ARCHIVÉS (licenciés) — ils comptent bien, mais ils ne sont plus dans les
+  //     listes d'agents en poste ;
+  //   • des contrats NON RATTACHÉS (nom absent des Réglages, faute de frappe) — ceux-là ne comptent
+  //     nulle part tant que le nom n'est pas corrigé ou ajouté en alias ;
+  //   • des rétractations, retirées ensuite des compteurs.
+  const setArchives = new Set(archivedAgents());
+  const nArchives = Object.keys(byAgent).filter(a => setArchives.has(a)).reduce((n,a)=> n + byAgent[a], 0);
+  const nomsArchives = Object.keys(byAgent).filter(a => setArchives.has(a));
+  const nOrphelins = Object.keys(byAgent).filter(a => a.startsWith('⚠️')).reduce((n,a)=> n + byAgent[a], 0);
+  const nEnPoste = rowsTotal - nArchives - nOrphelins;
+  if(nArchives > 0 || nOrphelins > 0){
+    html += `<div style="margin-top:12px; padding:13px 15px; border-radius:10px; background:rgba(61,139,253,0.08); border:1px solid rgba(61,139,253,0.32); font-size:12.5px; line-height:1.85;">
+      <div style="font-weight:800; color:var(--accent); margin-bottom:6px;">🔎 Où vont ces ${rowsTotal} contrats</div>
+      <div style="font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums;">
+        <div><b style="color:var(--text);">${String(nEnPoste).padStart(4,' ')}</b> &nbsp;agents en poste</div>
+        ${nArchives > 0 ? `<div><b style="color:var(--gold);">${String(nArchives).padStart(4,' ')}</b> &nbsp;ex-agents archivés <span style="color:var(--muted); font-family:inherit;">(${nomsArchives.map(escapeHtml).join(', ')})</span></div>` : ''}
+        ${nOrphelins > 0 ? `<div><b style="color:var(--red);">${String(nOrphelins).padStart(4,' ')}</b> &nbsp;non rattachés — nom absent des Réglages</div>` : ''}
+        <div style="border-top:1px solid var(--border); margin-top:5px; padding-top:5px;"><b style="color:var(--text);">${String(rowsTotal).padStart(4,' ')}</b> &nbsp;au total</div>
+      </div>
+      ${nArchives > 0 ? `<div style="margin-top:8px; color:var(--muted);">✅ Les contrats des ex-agents <b style="color:var(--text);">comptent bien</b> dans ton chiffre d'affaires et dans les totaux d'équipe. Leurs rétractations et leurs retours sont retrouvés normalement. Ils n'entrent pas dans la masse salariale : archiver veut dire « son solde est payé ».</div>` : ''}
+      ${nOrphelins > 0 ? `<div style="margin-top:8px; color:var(--red);">⚠️ Les contrats non rattachés ne comptent <b>nulle part</b> tant que le nom n'est pas reconnu. Corrige l'orthographe dans ton fichier, ou ajoute un alias dans les Réglages.</div>` : ''}
+    </div>`;
+  }
+
   html += '<table class="salary-table" style="margin-top:12px;"><thead><tr><th>Agent</th><th>Contrats importés</th></tr></thead><tbody>';
   Object.keys(byAgent).sort((a,b)=> byAgent[b]-byAgent[a]).forEach(a=>{
     const bad = a.startsWith('⚠️');
-    html += `<tr><td${bad ? ' style="color:var(--red);font-weight:700;"' : ''}>${escapeHtml(a)}</td><td><b>${byAgent[a]}</b></td></tr>`;
+    const arch = setArchives.has(a);
+    html += `<tr><td${bad ? ' style="color:var(--red);font-weight:700;"' : ''}>${escapeHtml(a)}${arch ? ' <span class="tag warn" title="Agent archivé. Ses contrats comptent dans le chiffre d\'affaires et les totaux d\'équipe, mais il n\'est plus dans la masse salariale.">ex-agent</span>' : ''}</td><td><b>${byAgent[a]}</b></td></tr>`;
   });
   html += '</tbody></table>';
   if(fixesLog.length){
