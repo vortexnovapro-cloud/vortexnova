@@ -2372,7 +2372,7 @@ function tryDeviceGateAdmin(){
           <div class="agent-list" id="agentList"></div>
 
           <label style="margin:22px 0 6px;">📦 Anciens agents (archivés)</label>
-          <div class="section-sub">Ils ne travaillent plus ici : retirés du pointage, de l'Arena, des classements, des briefings et de la paie du mois en cours. Mais leur passé reste entier — leurs contrats des mois écoulés comptent toujours dans tes statistiques, et un retour tardif sur l'un d'eux sera reconnu. Clique ↩️ pour réintégrer quelqu'un.</div>
+          <div class="section-sub">Ils ne travaillent plus ici : retirés du pointage, de l'Arena, des classements, des briefings et de la paie du mois en cours. Mais leur passé reste entier — <b>leurs contrats comptent toujours dans ton chiffre d'affaires et dans les totaux d'équipe</b>, et un retour tardif sur l'un d'eux sera reconnu. En revanche on ne leur compte plus d'objectif : ils ne sont plus là pour l'atteindre.<br>Clique <b>↩️</b> pour réintégrer quelqu'un. S'il était licencié, le CRM te demandera s'il reprend vraiment le travail — auquel cas son licenciement est annulé et il retrouve son salaire plein.</div>
           <div class="agent-list" id="archivedAgentList" style="margin-top:10px;"></div>
           <div class="add-agent-row">
             <input type="text" id="newAgentName" placeholder="Nom de l'agent" onkeydown="if(event.key==='Enter')addAgent()">
@@ -2594,7 +2594,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r150';
+const APP_VERSION = '2026-08-26-r152';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2654,6 +2654,11 @@ let config = {
   // suite (fausse manip, problème réglé seul) ne perd rien. Voir assistanceComptageDuJour().
   assistanceMaxParJour: 0,
   assistanceMaxParAgent: {},
+  // 📆 PÉRIODES HORS CONTRAT — un agent parti puis revenu. { "Nom": [{from:"AAAA-MM-JJ", to:"AAAA-MM-JJ"}] }
+  // Pendant ces jours-là il n'est ni payé ni sanctionné : il n'était pas là, et il n'était pas censé
+  // l'être. Rempli uniquement par la réintégration d'un agent licencié — vide pour tout le monde
+  // tant que personne n'a été réintégré.
+  agentsGaps: {},
   adminPassword: DEFAULT_ADMIN_PASSWORD,
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
@@ -3708,7 +3713,7 @@ async function loadConfig(){
 // « perdre » (cas rare, et c'est alors la dernière écriture qui gagne, comme avant ce correctif).
 const CONFIG_MERGE_DICT_FIELDS = ['agentsTerminated','agentsIndep','agentsSupervisor','agentsNoObjectif',
   'agentsStatusLabel','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate',
-  'assistanceMaxParAgent'];
+  'assistanceMaxParAgent','agentsGaps'];
 const CONFIG_MERGE_ARRAY_FIELDS = ['archivedAgents'];
 
 function mergeConfigDictField(baseline, mine, theirs){
@@ -4384,6 +4389,44 @@ function getAgentTermination(agent){
   return (config.agentsTerminated && config.agentsTerminated[agent]) || null;
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 📆 PÉRIODES HORS CONTRAT — l'agent parti puis revenu
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Licencié le 14, réintégré le 26 : du 15 au 25 il n'était pas salarié.
+//   • Il n'est PAS payé pour ces jours    → retirés du prorata de son fixe et de son objectif mini.
+//   • Il n'est PAS sanctionné pour ces jours → ce ne sont ni des absences ni des retards, il n'était
+//     pas censé être là. Les compter serait une double peine absurde.
+// Ses contrats d'avant le départ lui restent acquis : une période hors contrat ne touche jamais à la
+// production, seulement à la paie et à la discipline.
+function agentGaps(agent){
+  const g = (config.agentsGaps || {})[agent];
+  return Array.isArray(g) ? g.filter(x => x && x.from && x.to && x.from <= x.to) : [];
+}
+
+// Cette date tombe-t-elle dans une période où l'agent n'était pas sous contrat ?
+function estHorsContrat(agent, dateStr){
+  if(!dateStr) return false;
+  return agentGaps(agent).some(g => dateStr >= g.from && dateStr <= g.to);
+}
+
+// Jours OUVRÉS hors contrat tombant dans le mois demandé — à retirer du prorata de paie.
+function joursOuvresHorsContrat(agent, year, month){
+  const gaps = agentGaps(agent);
+  if(!gaps.length) return 0;
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthStart = `${monthPrefix}01`;
+  const monthEnd = `${monthPrefix}${String(daysInMonth).padStart(2,'0')}`;
+  let total = 0;
+  gaps.forEach(g=>{
+    const from = g.from > monthStart ? g.from : monthStart;
+    const to = g.to < monthEnd ? g.to : monthEnd;
+    if(from > to) return;                      // cette période ne touche pas ce mois
+    total += workingDaysInDateRange(from, to);
+  });
+  return total;
+}
+
 // Date à partir de laquelle un agent licencié ne doit plus jamais être compté (retard, absence, jour
 // attendu) — le jour même du départ compte normalement (il a pu travailler une partie de la journée),
 // c'est le lendemain qui devient hors-jeu. Symétrique de disciplineFrom (borne basse).
@@ -4726,11 +4769,70 @@ async function archiveAgent(name){
 }
 
 async function unarchiveAgent(name){
-  if(!confirm(`Réintégrer ${name} dans l'équipe active ?`)) return;
+  // ⚠️ ARCHIVAGE ET LICENCIEMENT SONT DEUX CHOSES DIFFÉRENTES, et la réintégration ne levait que la
+  // première. Un agent licencié PUIS archivé revenait dans la liste en gardant sa date de dernier jour
+  // travaillé : son salaire restait réduit au prorata jusqu'à cette date, il n'était plus attendu au
+  // pointage, et aucun retard ne lui était compté. Autrement dit il « revenait » sans revenir.
+  //
+  // Ce qu'il faut vraiment enregistrer, c'est la PÉRIODE PENDANT LAQUELLE IL N'ÉTAIT PAS LÀ :
+  //   parti le 14, revenu le 26  →  du 15 au 25 il n'est ni payé, ni sanctionné.
+  // Le mettre au « salaire plein » serait le payer pour des jours non travaillés ; garder son
+  // licenciement serait ne pas le payer pour les jours qu'il refait. Les deux sont faux.
+  const term = getAgentTermination(name);
+  const dateFin = term && term.lastDay ? term.lastDay : null;
+  const dateFinFr = dateFin ? dateFin.split('-').reverse().join('/') : null;
+  let repriseISO = null;
+
+  if(dateFin){
+    const saisie = window.prompt(
+      `Réintégrer ${name}.\n\n` +
+      `Il est enregistré comme licencié, dernier jour travaillé le ${dateFinFr}.\n\n` +
+      `À quelle date reprend-il le travail ? (JJ/MM/AAAA, ex: ${todayStr().split('-').reverse().join('/')})\n\n` +
+      `Les jours entre le ${dateFinFr} et cette date seront comptés comme HORS CONTRAT :\n` +
+      `  • pas de salaire pour ces jours-là (son fixe et son objectif sont réduits d'autant)\n` +
+      `  • aucune absence ni retard retenus contre lui — il n'était pas censé être là\n\n` +
+      `Laisse vide pour le réintégrer SANS lever son licenciement (cas d'un archivage par erreur).`,
+      todayStr().split('-').reverse().join('/')
+    );
+    if(saisie === null) return;                      // Annuler : on ne touche à rien
+    const trimmed = String(saisie).trim();
+    if(trimmed){
+      repriseISO = parseAdminDateInput(trimmed);
+      if(!repriseISO){
+        alert(`Date illisible : « ${trimmed} ». Utilise JJ/MM/AAAA (ex: 26/08/2026) ou AAAA-MM-JJ. Rien n'a été enregistré — recommence.`);
+        return;
+      }
+      if(repriseISO <= dateFin){
+        alert(`La reprise (${repriseISO.split('-').reverse().join('/')}) doit être APRÈS le dernier jour travaillé (${dateFinFr}). Rien n'a été enregistré.`);
+        return;
+      }
+    }
+  } else {
+    if(!confirm(`Réintégrer ${name} dans l'équipe active ?`)) return;
+  }
+
   config.archivedAgents = archivedAgents().filter(a => a !== name);
   if(!(config.agents || []).includes(name)) config.agents = (config.agents || []).concat([name]);
+
+  if(repriseISO){
+    // Période hors contrat = du lendemain du départ à la veille de la reprise.
+    const veille = new Date(repriseISO + 'T00:00:00'); veille.setDate(veille.getDate() - 1);
+    const lendemain = new Date(dateFin + 'T00:00:00'); lendemain.setDate(lendemain.getDate() + 1);
+    const gapFrom = todayStr(lendemain), gapTo = todayStr(veille);
+    if(!config.agentsGaps) config.agentsGaps = {};
+    const listes = Array.isArray(config.agentsGaps[name]) ? config.agentsGaps[name] : [];
+    if(gapFrom <= gapTo) config.agentsGaps[name] = listes.concat([{ from: gapFrom, to: gapTo, motif: 'licenciement puis réintégration' }]);
+    if(config.agentsTerminated) delete config.agentsTerminated[name];
+    const nbJours = gapFrom <= gapTo ? workingDaysInDateRange(gapFrom, gapTo) : 0;
+    showToast(
+      `✅ ${name} est réintégré à partir du ${repriseISO.split('-').reverse().join('/')}.\n` +
+      `${nbJours} jour${nbJours>1?'s':''} ouvré${nbJours>1?'s':''} hors contrat (${gapFrom.split('-').reverse().join('/')} → ${gapTo.split('-').reverse().join('/')}) : ni payés, ni sanctionnés.\n` +
+      `Vérifie sa rémunération dans Réglages avant la prochaine paie.`, 'ok', 13000);
+  }
+
   await saveConfigSilent();
-  logAudit('Admin', `Agent réintégré : ${name}`, '');
+  logAudit('Admin', `Agent réintégré : ${name}`,
+    repriseISO ? `reprise le ${repriseISO} — hors contrat depuis le ${dateFin}` : (dateFin ? `reste licencié au ${dateFin}` : ''));
   billingInvalidate();
   clearRenderCaches();
   renderAgentChips();
@@ -4752,7 +4854,7 @@ function renderArchivedAgentChips(){
   }
   list.innerHTML = arr.map(name=>`<div class="agent-chip" style="opacity:0.75;">
     <span>${escapeHtml(name)} <span class="indep-badge" style="background:var(--muted);color:#111;">Ancien</span></span>
-    <button onclick="unarchiveAgent('${name.replace(/'/g,"\\'")}')" title="Réintégrer dans l'équipe active">↩️</button>
+    <button onclick="unarchiveAgent('${name.replace(/'/g,"\\'")}')" title="Réintégrer dans l'équipe active. S'il était licencié, le CRM te demandera s'il reprend vraiment le travail (licenciement annulé, salaire plein) ou s'il reste licencié.">↩️</button>
   </div>`).join('');
 }
 
@@ -7119,6 +7221,8 @@ async function monthlyStatsCompute(agent, year, month){
   const agentEndDate = disciplineUntil(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
   if(agentEndDate) dateStrs = dateStrs.filter(ds => ds < agentEndDate);
+  // Parti puis revenu : les jours entre les deux ne sont ni des absences ni des retards.
+  dateStrs = dateStrs.filter(ds => !estHorsContrat(agent, ds));
   const dayData = await Promise.all(dateStrs.map(async dateStr=>{
     const [log, infr, board] = await Promise.all([
       getDayLog(agent, dateStr),
@@ -7365,7 +7469,7 @@ async function renderExploMonthlySummary(agents, dateList){
       else desiredBadge = `<span class="tag ${hitDesired?'ok':'warn'}">${hitDesired?'🟢':'🟠'} ${realized} / ${desired}</span>`;
 
       html += `<div class="agent-chip" style="padding:10px 14px; flex-direction:column; align-items:flex-start; align-self:flex-start; gap:5px; height:auto;">
-        <div><b>${agent}</b>${isIndep?' <span class="tag independant">Indé</span>':''}</div>
+        <div><b>${agent}</b>${isIndep?' <span class="tag independant">Indé</span>':''}${estArchive?' <span class="tag warn">ex-agent</span>':''}</div>
         <div style="font-size:12px; color:var(--muted);">Mini obligatoire : ${miniBadge}</div>
         <div style="font-size:12px; color:var(--muted);">Visé (agent) : ${desiredBadge}</div>
         <div style="font-size:12px; color:var(--muted);">Réalisé : <b style="color:var(--green);">${realized}</b></div>
@@ -11467,6 +11571,7 @@ async function buildDailyBriefingHtml(baseRows){
     // puisse relire, a posteriori, pourquoi il a été licencié — seul CE panneau (conseil du matin) le
     // masque, à partir du lendemain de son départ (voir disciplineUntil).
     .filter(b => { const du = disciplineUntil(b.agent); return !du || dateStr < du; })
+    .filter(b => !estHorsContrat(b.agent, dateStr))
     .map(b=>{
     const yesterdayDate = recentDates[0] || null;
     const yesterdayRealized = yesterdayDate ? (getAgentProd(boardsByDate[yesterdayDate], b.agent).realized || 0) : null;
@@ -11895,6 +12000,7 @@ async function weekRealizedTotalsForMonday(monday, limitDays){
     const agentEndDate = disciplineUntil(agent);
     let agentDates = agentStartDate ? wDates.filter(ds=>ds>=agentStartDate) : wDates;
     if(agentEndDate) agentDates = agentDates.filter(ds=>ds<agentEndDate);
+    agentDates = agentDates.filter(ds => !estHorsContrat(agent, ds));
     totals[agent] = agentDates.reduce((s,d)=> s + (getAgentProd(boards[d], agent).realized || 0), 0);
   });
   return { weekDates: wDates, totals, daysUsed: wDates.length };
@@ -11959,6 +12065,7 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     const agentEndDate = disciplineUntil(agent);
     let agentWorkingDates = agentStartDate ? workingDates.filter(ds => ds >= agentStartDate) : workingDates;
     if(agentEndDate) agentWorkingDates = agentWorkingDates.filter(ds => ds < agentEndDate);
+    agentWorkingDates = agentWorkingDates.filter(ds => !estHorsContrat(agent, ds));
     await Promise.all(agentWorkingDates.map(async d=>{
       const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
       weekRealized += realized;
@@ -12446,7 +12553,10 @@ function proratedMonthFactor(agent, year, month){
   const startDate = getAgentStartDate(agent);
   const term = getAgentTermination(agent);
   const lastDay = term ? term.lastDay : null;
-  if(!startDate && !lastDay) return 1;
+  // ⚠️ La sortie anticipée doit AUSSI tenir compte des périodes hors contrat. Un agent réintégré n'a
+  // plus ni date de départ ni date d'arrivée particulière — sans ce test, il repassait à 100 % du mois
+  // et se retrouvait payé pour les jours où il n'était pas là.
+  if(!startDate && !lastDay && joursOuvresHorsContrat(agent, year, month) === 0) return 1;
   const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
   const monthStartStr = `${monthPrefix}01`;
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -12460,14 +12570,17 @@ function proratedMonthFactor(agent, year, month){
   if(effectiveStart > effectiveEnd) return 0;
   const totalWD = workingDaysInMonth(year, month);
   if(totalWD <= 0) return 1;
-  if(effectiveStart <= monthStartStr && effectiveEnd >= monthEndStr) return 1; // mois plein, aucune borne active
+  // ⚠️ Le raccourci « mois plein » ne vaut QUE s'il n'y a aucune période hors contrat dans ce mois :
+  // un agent parti le 14 et revenu le 26 a bien travaillé le 1er et le 31, mais pas entre les deux.
+  const horsContratMois = joursOuvresHorsContrat(agent, year, month);
+  if(effectiveStart <= monthStartStr && effectiveEnd >= monthEndStr && horsContratMois === 0) return 1;
   const fromStart = workingDaysInMonthFrom(year, month, effectiveStart);
   const fromZeroToEnd = workingDaysInMonthUntil(year, month, effectiveEnd);
   const fullMonthWD = totalWD;
   // Jours ouvrés dans l'intersection [effectiveStart, effectiveEnd] = (jours jusqu'à la fin du mois
   // depuis effectiveStart) - (jours après effectiveEnd jusqu'à la fin du mois) = fromStart -
-  // (fullMonthWD - fromZeroToEnd).
-  const workedWD = fromStart - (fullMonthWD - fromZeroToEnd);
+  // (fullMonthWD - fromZeroToEnd). Moins les jours où il n'était pas sous contrat.
+  const workedWD = fromStart - (fullMonthWD - fromZeroToEnd) - horsContratMois;
   return Math.max(0, Math.min(1, workedWD / totalWD));
 }
 
@@ -12505,7 +12618,14 @@ function proratedMonthFactorAsOf(agent, year, month, asOfDateStr){
   const fromStart = workingDaysInMonthFrom(year, month, effectiveStart);
   const fromZeroToEnd = workingDaysInMonthUntil(year, month, effectiveEnd);
   const fullMonthWD = totalWD;
-  const workedWD = fromStart - (fullMonthWD - fromZeroToEnd);
+  // Jours hors contrat déjà écoulés à la date de référence (jamais ceux encore à venir).
+  let horsContratEcoule = 0;
+  agentGaps(agent).forEach(g=>{
+    const f = g.from > effectiveStart ? g.from : effectiveStart;
+    const t = g.to < effectiveEnd ? g.to : effectiveEnd;
+    if(f <= t) horsContratEcoule += workingDaysInDateRange(f, t);
+  });
+  const workedWD = fromStart - (fullMonthWD - fromZeroToEnd) - horsContratEcoule;
   return Math.max(0, Math.min(1, workedWD / totalWD));
 }
 function proratedMonthFactorAsOfToday(agent, year, month){
@@ -12541,7 +12661,14 @@ function proratedMonthFactorForRange(agent, year, month, fromDateStr, toDateStr)
   if(lastDay && lastDay < monthStartStr) return 0;
   const totalWD = workingDaysInMonth(year, month);
   if(totalWD <= 0) return 1;
-  return Math.max(0, Math.min(1, workingDaysInDateRange(s, e) / totalWD));
+  // Retirer les jours hors contrat qui tombent DANS la fenêtre demandée.
+  let horsContrat = 0;
+  agentGaps(agent).forEach(g=>{
+    const f = g.from > s ? g.from : s;
+    const t = g.to < e ? g.to : e;
+    if(f <= t) horsContrat += workingDaysInDateRange(f, t);
+  });
+  return Math.max(0, Math.min(1, (workingDaysInDateRange(s, e) - horsContrat) / totalWD));
 }
 
 // getAgentPay(agent) seul (sans année/mois) renvoie toujours les valeurs BRUTES telles que réglées par
@@ -12932,6 +13059,8 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   const agentEndDate = disciplineUntil(agent);
   if(agentStartDate) dateStrs = dateStrs.filter(ds => ds >= agentStartDate);
   if(agentEndDate) dateStrs = dateStrs.filter(ds => ds < agentEndDate);
+  // Parti puis revenu : les jours entre les deux ne sont ni des absences ni des retards.
+  dateStrs = dateStrs.filter(ds => !estHorsContrat(agent, ds));
 
   // (La mise en service du pointage est déjà prise en compte : disciplineFrom() ci-dessus retient la
   // plus tardive entre l'arrivée de l'agent et la date de mise en service. Un second filtrage ici
