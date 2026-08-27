@@ -2594,7 +2594,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r153';
+const APP_VERSION = '2026-08-26-r154';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -7433,6 +7433,11 @@ async function renderExploMonthlySummary(agents, dateList){
 
     let totalMini = 0, totalDesired = 0, totalDesiredTeam = 0, totalDesiredIndep = 0, totalRealizedTeam = 0, totalRealizedIndep = 0;
     let nbMiniHit = 0, nbMiniSet = 0, nbDesiredHit = 0, nbDesiredSet = 0;
+    // 📦 Les ex-agents ne prennent PAS une carte chacun : avec du turnover, la liste deviendrait
+    // interminable et noierait les agents en poste, qui sont les seuls sur lesquels on peut agir.
+    // Leurs contrats comptent quand même dans les totaux — on les regroupe sur une ligne repliée
+    // sous la liste, et on ne nomme que ceux qui ont réellement produit ce mois-là.
+    const exAgentsMois = [];
 
     // Classé du plus au moins de contrats réalisés ce mois-ci (alphabétique si égalité) — coup d'œil
     // direct sur qui produit le plus, sans avoir à comparer chaque carte une par une.
@@ -7464,26 +7469,42 @@ async function renderExploMonthlySummary(agents, dateList){
         if(isIndep) totalDesiredIndep += desiredCompte; else totalDesiredTeam += desiredCompte;
       }
 
+      // Ex-agent : ses contrats sont déjà comptés juste au-dessus. On le met de côté et on passe au
+      // suivant, sans lui dessiner de carte.
+      if(estArchive){ exAgentsMois.push({ agent, realized }); continue; }
+
       // Badges couleur par métrique — .tag.ok (vert) / .tag.warn (orange) / .tag.late (rouge) / .tag.absent (gris)
       let miniBadge;
-      if(estArchive) miniBadge = '<span class="tag absent" title="Agent archivé : ses contrats comptent dans les totaux et dans le chiffre d\'affaires, mais on ne lui compte plus d\'objectif — il n\'est plus là pour l\'atteindre.">📦 Ex-agent — hors objectifs</span>';
-      else if(isIndep) miniBadge = '<span class="tag absent">🧑‍💼 Indépendant</span>';
+      if(isIndep) miniBadge = '<span class="tag absent">🧑‍💼 Indépendant</span>';
       else if(noObj) miniBadge = `<span class="tag warn">${getNoObjectifLabel(agent)}</span>`;
       else if(mini===0) miniBadge = '<span class="tag absent">Non réglé</span>';
       else miniBadge = `<span class="tag ${hitMini?'ok':'late'}">${hitMini?'🟢':'🔴'} ${realized} / ${mini}</span>`;
 
       let desiredBadge;
-      if(estArchive) desiredBadge = '<span class="tag absent" title="Non compté dans l\'objectif visé de l\'équipe.">hors total</span>';
-      else if(desired===0) desiredBadge = '<span class="tag absent">Non fixé</span>';
+      if(desired===0) desiredBadge = '<span class="tag absent">Non fixé</span>';
       else desiredBadge = `<span class="tag ${hitDesired?'ok':'warn'}">${hitDesired?'🟢':'🟠'} ${realized} / ${desired}</span>`;
 
-      html += `<div class="agent-chip" style="padding:10px 14px; flex-direction:column; align-items:flex-start; align-self:flex-start; gap:5px; height:auto;${estArchive ? ' opacity:0.72;' : ''}">
-        <div><b>${agent}</b>${isIndep?' <span class="tag independant">Indé</span>':''}${estArchive?' <span class="tag warn">ex-agent</span>':''}</div>
+      html += `<div class="agent-chip" style="padding:10px 14px; flex-direction:column; align-items:flex-start; align-self:flex-start; gap:5px; height:auto;">
+        <div><b>${agent}</b>${isIndep?' <span class="tag independant">Indé</span>':''}</div>
         <div style="font-size:12px; color:var(--muted);">Mini obligatoire : ${miniBadge}</div>
         <div style="font-size:12px; color:var(--muted);">Visé (agent) : ${desiredBadge}</div>
         <div style="font-size:12px; color:var(--muted);">Réalisé : <b style="color:var(--green);">${realized}</b></div>
       </div>`;
     }
+    // 📦 Ligne repliée des ex-agents, juste sous la liste. Un seul agent nommé par ligne, et
+    // uniquement ceux qui ont produit : un ex-agent à 0 contrat n'apprend rien à personne.
+    const exAvecContrats = exAgentsMois.filter(x => x.realized > 0).sort((a,b)=> b.realized - a.realized);
+    const exTotal = exAgentsMois.reduce((n,x)=> n + x.realized, 0);
+    const exBlocId = `exAgents-${ym}`;
+    const exHtml = exAgentsMois.length ? `
+      <div style="margin-top:10px; padding:9px 13px; border-radius:9px; background:var(--panel2); border:1px solid var(--border); font-size:12.5px; color:var(--muted);">
+        <span title="Ils ne sont plus dans l'équipe. Leurs contrats restent comptés dans les totaux et dans ton chiffre d'affaires, mais on ne leur compte plus d'objectif — ils ne sont plus là pour l'atteindre. Ils n'ont pas de carte pour ne pas allonger la liste au fil du turnover.">📦 <b style="color:var(--text);">${exAgentsMois.length} ex-agent${exAgentsMois.length>1?'s':''}</b> ce mois-ci — <b style="color:${exTotal>0?'var(--green)':'var(--muted)'};">${exTotal} contrat${exTotal>1?'s':''}</b> comptés dans les totaux, aucun objectif</span>
+        ${exAvecContrats.length ? `<button onclick="const d=document.getElementById('${exBlocId}'); const v=d.style.display==='none'; d.style.display=v?'block':'none'; this.textContent=v?'masquer':'qui ?';" style="margin-left:8px; padding:2px 9px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">qui ?</button>
+        <div id="${exBlocId}" style="display:none; margin-top:7px; padding-top:7px; border-top:1px dashed var(--border);">
+          ${exAvecContrats.map(x=> `<div style="display:flex; justify-content:space-between; gap:14px; padding:2px 0;"><span>${escapeHtml(x.agent)}</span><b style="color:var(--text);">${x.realized} contrat${x.realized>1?'s':''}</b></div>`).join('')}
+        </div>` : ''}
+      </div>` : '';
+
     html += '</div>'; // fin de la liste des agents — la ligne d'en-dessous (résumé) est un container À PART,
     // pour que les 2 anneaux restent toujours groupés côte à côte, jamais séparés par le retour à la ligne
     // imprévisible d'une grille d'agents (largeur variable selon le nombre d'agents affichés).
@@ -7513,6 +7534,7 @@ async function renderExploMonthlySummary(agents, dateList){
       </div>
     </div>`;
 
+    html += exHtml;
     html += `<div class="section-sub" style="margin:14px 0 8px; font-weight:700; color:var(--text); opacity:0.85;">📊 Résumé du groupe</div><div style="display:flex; flex-wrap:wrap; gap:16px;">`;
     const teamPctMini = totalMini>0 ? Math.round((totalRealizedTeam/totalMini)*100) : null;
     const teamRingColor = teamPctMini==null ? 'var(--muted)' : (teamPctMini>=100?'var(--green)':(teamPctMini>=50?'var(--amber)':'var(--red)'));
