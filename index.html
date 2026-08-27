@@ -2594,7 +2594,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r154';
+const APP_VERSION = '2026-08-26-r156';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4425,6 +4425,35 @@ function joursOuvresHorsContrat(agent, year, month){
     total += workingDaysInDateRange(from, to);
   });
   return total;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 👤 CETTE PERSONNE ÉTAIT-ELLE SOUS CONTRAT CE JOUR-LÀ ?
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Réponse unique pour tous les écrans qui listent « qui devait être là ». Un ex-agent affiché
+// « Absent » trois mois après son départ est une information fausse : il n'était pas absent, il ne
+// travaillait plus ici. Quatre raisons de ne pas être sous contrat un jour donné :
+//   • pas encore arrivé (date d'embauche postérieure)
+//   • parti (licenciement enregistré, dernier jour dépassé)
+//   • période hors contrat (parti puis revenu — voir agentGaps)
+//   • archivé sans date de départ : on ne sait pas quand il est parti, donc on ne le suppose présent
+//     aucun jour où il n'a laissé AUCUNE trace (ni pointage, ni contrat). Ses journées réellement
+//     travaillées, elles, restent visibles — l'historique n'est jamais effacé.
+function estSousContrat(agent, dateStr, aLaisseUneTrace){
+  if(!dateStr) return true;
+  const debut = getAgentStartDate(agent);
+  if(debut && dateStr < debut) return false;
+  const term = getAgentTermination(agent);
+  if(term && term.lastDay){
+    // Date de départ connue : elle répond seule à la question, avant comme après. Un agent licencié
+    // le 31/07 travaillait bien le 15/07 — sa ligne de ce jour-là doit rester normale.
+    return dateStr <= term.lastDay && !estHorsContrat(agent, dateStr);
+  }
+  if(estHorsContrat(agent, dateStr)) return false;
+  // Archivé SANS date de départ : on ignore quand il est parti. On ne le suppose donc présent aucun
+  // jour où il n'a laissé aucune trace — mais ses journées réellement travaillées restent visibles.
+  if(archivedAgents().includes(agent) && !aLaisseUneTrace) return false;
+  return true;
 }
 
 // Date à partir de laquelle un agent licencié ne doit plus jamais être compté (retard, absence, jour
@@ -7620,6 +7649,14 @@ async function renderExploDailyDetail(agents, dateList, force){
       const p = getAgentProd(board, agent);
       const objJour = p.objective || 0;
       const realJour = p.realized || 0;
+      // ⚠️ Un ex-agent ne doit JAMAIS apparaître « Absent » : il ne travaillait plus ici. On ne garde
+      // sa ligne que pour les journées où il a laissé une trace réelle (pointage ou contrat), ce qui
+      // conserve tout son historique sans inventer des absences après son départ.
+      const d0 = details[`${dateStr}::${agent}`] || {};
+      const aLaisseUneTrace = realJour > 0 || objJour > 0
+        || !!(d0.log && d0.log.events && d0.log.events.length)
+        || !!(d0.infr && d0.infr.length);
+      if(!estSousContrat(agent, dateStr, aLaisseUneTrace)) continue;
       let statusHtml = '', rowCls = '', lockoutHtml = '—';
 
             if(!isWorkingDay(dateStr)){
