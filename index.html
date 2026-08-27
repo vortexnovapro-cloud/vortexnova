@@ -2594,7 +2594,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r152';
+const APP_VERSION = '2026-08-26-r153';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -7446,29 +7446,38 @@ async function renderExploMonthlySummary(agents, dateList){
       const pay = getAgentPay(agent, y, m);
       const noObj = pay.noObjectif;
       const { realized, desired } = monthAgentData[`${ym}::${agent}`];
-      const mini = (isIndep || noObj) ? 0 : (pay.objectifMensuel || 0);
+      // 📦 AGENT ARCHIVÉ : ses CONTRATS comptent (ils sont vendus, le client paie), mais ses OBJECTIFS
+      // ne comptent pas. On ne peut pas demander à quelqu'un qui n'est plus là d'atteindre un mini ni
+      // de tenir un objectif qu'il s'était fixé : les additionner gonflerait le dénominateur d'un
+      // objectif que personne ne peut plus aller chercher, et ferait baisser le pourcentage de toute
+      // l'équipe sans qu'elle y soit pour rien.
+      const estArchive = archivedAgents().includes(agent);
+      const mini = (isIndep || noObj || estArchive) ? 0 : (pay.objectifMensuel || 0);
+      const desiredCompte = estArchive ? 0 : desired;   // affiché sur sa fiche, jamais dans le total
       const hitMini = mini>0 && realized>=mini;
-      const hitDesired = desired>0 && realized>=desired;
+      const hitDesired = desiredCompte>0 && realized>=desiredCompte;
 
       if(isIndep) totalRealizedIndep += realized;
       else { totalRealizedTeam += realized; if(mini>0){ totalMini += mini; nbMiniSet++; if(hitMini) nbMiniHit++; } }
-      if(desired>0){
-        totalDesired += desired; nbDesiredSet++; if(hitDesired) nbDesiredHit++;
-        if(isIndep) totalDesiredIndep += desired; else totalDesiredTeam += desired;
+      if(desiredCompte>0){
+        totalDesired += desiredCompte; nbDesiredSet++; if(hitDesired) nbDesiredHit++;
+        if(isIndep) totalDesiredIndep += desiredCompte; else totalDesiredTeam += desiredCompte;
       }
 
       // Badges couleur par métrique — .tag.ok (vert) / .tag.warn (orange) / .tag.late (rouge) / .tag.absent (gris)
       let miniBadge;
-      if(isIndep) miniBadge = '<span class="tag absent">🧑‍💼 Indépendant</span>';
+      if(estArchive) miniBadge = '<span class="tag absent" title="Agent archivé : ses contrats comptent dans les totaux et dans le chiffre d\'affaires, mais on ne lui compte plus d\'objectif — il n\'est plus là pour l\'atteindre.">📦 Ex-agent — hors objectifs</span>';
+      else if(isIndep) miniBadge = '<span class="tag absent">🧑‍💼 Indépendant</span>';
       else if(noObj) miniBadge = `<span class="tag warn">${getNoObjectifLabel(agent)}</span>`;
       else if(mini===0) miniBadge = '<span class="tag absent">Non réglé</span>';
       else miniBadge = `<span class="tag ${hitMini?'ok':'late'}">${hitMini?'🟢':'🔴'} ${realized} / ${mini}</span>`;
 
       let desiredBadge;
-      if(desired===0) desiredBadge = '<span class="tag absent">Non fixé</span>';
+      if(estArchive) desiredBadge = '<span class="tag absent" title="Non compté dans l\'objectif visé de l\'équipe.">hors total</span>';
+      else if(desired===0) desiredBadge = '<span class="tag absent">Non fixé</span>';
       else desiredBadge = `<span class="tag ${hitDesired?'ok':'warn'}">${hitDesired?'🟢':'🟠'} ${realized} / ${desired}</span>`;
 
-      html += `<div class="agent-chip" style="padding:10px 14px; flex-direction:column; align-items:flex-start; align-self:flex-start; gap:5px; height:auto;">
+      html += `<div class="agent-chip" style="padding:10px 14px; flex-direction:column; align-items:flex-start; align-self:flex-start; gap:5px; height:auto;${estArchive ? ' opacity:0.72;' : ''}">
         <div><b>${agent}</b>${isIndep?' <span class="tag independant">Indé</span>':''}${estArchive?' <span class="tag warn">ex-agent</span>':''}</div>
         <div style="font-size:12px; color:var(--muted);">Mini obligatoire : ${miniBadge}</div>
         <div style="font-size:12px; color:var(--muted);">Visé (agent) : ${desiredBadge}</div>
@@ -7511,7 +7520,7 @@ async function renderExploMonthlySummary(agents, dateList){
       title: '🎯 Mini obligatoire',
       num: totalRealizedTeam, denom: totalMini>0?totalMini:'—',
       pct: teamPctMini, ringPct: teamPctMini==null?0:Math.min(100,teamPctMini), color: teamRingColor,
-      sub: `${nbMiniSet} agent${nbMiniSet>1?'s':''} réglé${nbMiniSet>1?'s':''} · équipe uniquement`,
+      sub: `${nbMiniSet} agent${nbMiniSet>1?'s':''} réglé${nbMiniSet>1?'s':''} · équipe en poste`,
       detailId: `detailMini-${ym}`,
       detailHtml: `${statLine('Réalisé équipe', totalRealizedTeam, 'var(--green)')}${statLine('Mini cumulé', totalMini>0?totalMini:'—')}${statLine('Mini atteint(s)', `${nbMiniHit}/${nbMiniSet||0}`)}`
     });
@@ -7523,7 +7532,7 @@ async function renderExploMonthlySummary(agents, dateList){
       title: '🚀 Objectif visé',
       num: grandTotalRealized, denom: totalDesired>0?totalDesired:'—',
       pct: visePct, ringPct: visePct==null?0:Math.min(100,visePct), color: viseRingColor,
-      sub: `${nbDesiredSet} agent${nbDesiredSet>1?'s':''} · équipe + indépendants`,
+      sub: `${nbDesiredSet} agent${nbDesiredSet>1?'s':''} en poste · équipe + indépendants`,
       detailId: `detailVise-${ym}`,
       detailHtml: `
         ${statLine('Réalisé équipe', totalRealizedTeam, 'var(--green)')}
