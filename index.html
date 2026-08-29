@@ -2080,6 +2080,7 @@ function tryDeviceGateAdmin(){
           <div class="section-sub" style="margin-top:10px;">…ou colle directement le contenu (Ctrl+A / Ctrl+C depuis Google Sheets) :</div>
           <textarea id="billingProdPaste" rows="4" placeholder="Date&#9;Date Propre&#9;Produit&#9;Référence&#9;Nom&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
           <button onclick="importBillingProdFromPaste()" title="Importe la production collée ci-dessus. Un contrat déjà présent n'est pas compté deux fois : la déduplication se fait sur le numéro de contrat." style="margin-top:10px; padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Importer la production</button>
+          <div id="billingUndoPanel" style="margin-bottom:14px;"></div>
           <div id="billingProdReport" style="margin-top:14px;"></div>
           <div id="importAnomaliesPanel" style="margin-top:14px;"></div>
         </div>
@@ -2594,7 +2595,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r156';
+const APP_VERSION = '2026-08-26-r157';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4152,6 +4153,7 @@ function showAdminSub(sub){
   });
   if(sub==='billing'){
     initBillingDefaults();
+    renderUndoPanel();          // ↩️ rappelle qu'un import est encore annulable
     renderBackofficeInboxPanel();
     renderPaySourcePanel();
     renderReturnCostPerAgent();
@@ -5359,6 +5361,7 @@ async function getMonthlyRetractCount(agent, year, month){
 }
 async function saveMonthlyRetractCount(agent, year, month, count){
   const key = `retract:${year}-${String(month).padStart(2,'0')}:${agent}`;
+  await undoNoter(key);
   const val = Math.max(0, count);
   await storageSet(key, String(val));
   retractCache[`${year}-${month}:${agent}`] = val;
@@ -16776,6 +16779,91 @@ async function captureBlockToImage(opts){
 // pas au mois d'origine des contrats. Les mois déjà payés ne bougent jamais rétroactivement.
 // ============================================================
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ↩️ ANNULER LE DERNIER IMPORT — le filet de sécurité
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Un import de facturation touche à plusieurs endroits d'un coup : il marque des contrats comme
+// rétractés dans le classeur de LEUR mois de signature (jusqu'à 24 mois en arrière), range les impayés
+// dans un ou plusieurs mois de paie, recale des compteurs de rétractations, et met de côté les lignes
+// dont le contrat n'a pas été retrouvé. Si le fichier est mauvais — mauvaise colonne, mauvais mois,
+// doublon — défaire tout ça à la main est impossible en pratique.
+//
+// Principe retenu : avant CHAQUE écriture, on note la valeur qu'avait la clé AVANT (une seule fois par
+// clé, la première). Annuler consiste alors à réécrire ces valeurs telles quelles. Une clé qui
+// n'existait pas avant est supprimée. C'est un retour à l'état exact d'avant l'import, pas une
+// tentative de « défaire » opération par opération.
+//
+// Une seule sauvegarde est conservée : celle du dernier import. Un nouvel import remplace la
+// précédente — on ne remonte jamais deux imports en arrière, ce serait une illusion de sécurité.
+const BILLING_UNDO_KEY = 'billingUndoSnapshot';
+let undoEnCours = null;
+
+function undoDemarrer(libelle){
+  undoEnCours = { at: new Date().toISOString(), libelle, keys: {} };
+}
+
+// Appelée juste avant chaque écriture. Ne note QUE la première fois : si la même clé est réécrite
+// trois fois pendant l'import, c'est bien la valeur d'origine qu'il faut garder, pas l'intermédiaire.
+async function undoNoter(key){
+  if(!undoEnCours) return;
+  if(Object.prototype.hasOwnProperty.call(undoEnCours.keys, key)) return;
+  let val = null;
+  try{ const res = await storageGet(key); val = (res && res.value != null) ? res.value : null; }catch(e){}
+  undoEnCours.keys[key] = val;   // null = la clé n'existait pas
+}
+
+async function undoTerminer(resume){
+  if(!undoEnCours) return;
+  undoEnCours.resume = resume || '';
+  const nb = Object.keys(undoEnCours.keys).length;
+  try{ await storageSet(BILLING_UNDO_KEY, JSON.stringify(undoEnCours)); }catch(e){ console.warn('undoTerminer', e); }
+  undoEnCours = null;
+  return nb;
+}
+
+async function undoLire(){
+  try{
+    const res = await storageGet(BILLING_UNDO_KEY);
+    if(res && res.value) return JSON.parse(res.value);
+  }catch(e){}
+  return null;
+}
+
+async function annulerDernierImport(){
+  const snap = await undoLire();
+  if(!snap || !snap.keys || !Object.keys(snap.keys).length){
+    alert("Aucun import à annuler.");
+    return;
+  }
+  const quand = new Date(snap.at).toLocaleString('fr-FR');
+  const nb = Object.keys(snap.keys).length;
+  if(!confirm(
+    `Annuler le dernier import ?\n\n` +
+    `${snap.libelle || 'Import'}\n` +
+    `Effectué le ${quand}\n` +
+    `${snap.resume ? snap.resume + '\n' : ''}\n` +
+    `${nb} enregistrement${nb>1?'s':''} vont être remis exactement dans l'état où ils étaient AVANT cet import : ` +
+    `contrats rétractés, impayés, compteurs de rétractations, lignes en attente.\n\n` +
+    `⚠️ Tout ce que tu as modifié à la main DEPUIS cet import sur ces mêmes données sera perdu aussi. ` +
+    `Cette annulation n'est pas réversible.`)) return;
+
+  let remises = 0, supprimees = 0, erreurs = 0;
+  for(const key of Object.keys(snap.keys)){
+    const avant = snap.keys[key];
+    try{
+      if(avant === null) { await storageDelete(key); supprimees++; }
+      else { await storageSet(key, avant); remises++; }
+    }catch(e){ erreurs++; console.warn('annulerDernierImport', key, e); }
+  }
+  try{ await storageDelete(BILLING_UNDO_KEY); }catch(e){}
+  billingInvalidate();
+  clearRenderCaches();
+  retractCache = {};
+  logAudit('Admin', 'Import annulé', `${snap.libelle || ''} — ${remises} restaurés, ${supprimees} supprimés${erreurs ? `, ${erreurs} en échec` : ''}`);
+  alert(`✅ Import annulé.\n\n${remises} enregistrement(s) remis dans leur état d'avant, ${supprimees} supprimé(s).${erreurs ? `\n\n⚠️ ${erreurs} n'ont pas pu être restaurés — vérifie ta connexion et recommence.` : ''}\n\nLa page va se recharger.`);
+  location.reload();
+}
+
 const BILLING_CACHE = {};
 
 function billingProdKey(monthVal){ return `billingProd:${monthVal}`; }
@@ -16797,10 +16885,31 @@ async function billingLoad(key, fallback){
   return out;
 }
 async function billingSave(key, obj){
+  await undoNoter(key);   // filet de sécurité : on garde la valeur d'avant (voir annulerDernierImport)
   BILLING_CACHE[key] = obj;
   if(typeof boCountInvalidate === 'function') boCountInvalidate();  // les contrats changent : le décompte aussi
   await storageSet(key, JSON.stringify(obj));
 }
+// Panneau permanent : rappelle en haut de Facturation & Paie qu'un import est encore annulable.
+// Le rapport d'import disparaît dès qu'on change d'onglet ; ce panneau, lui, reste tant qu'un nouvel
+// import n'a pas remplacé la sauvegarde.
+async function renderUndoPanel(){
+  const el = document.getElementById('billingUndoPanel');
+  if(!el) return;
+  const snap = await undoLire();
+  if(!snap || !snap.keys || !Object.keys(snap.keys).length){ el.innerHTML = ''; return; }
+  const quand = new Date(snap.at).toLocaleString('fr-FR', { weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit' });
+  const nb = Object.keys(snap.keys).length;
+  el.innerHTML = `<div style="padding:13px 15px; border-radius:11px; background:rgba(61,139,253,0.08); border:1px solid rgba(61,139,253,0.35); display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:260px; font-size:12.5px; line-height:1.7;">
+      <div style="font-weight:800; color:var(--accent);">↩️ Dernier import annulable</div>
+      <div style="color:var(--muted);">${escapeHtml(snap.libelle || 'Import')}${snap.resume ? ` — ${escapeHtml(snap.resume)}` : ''}<br>
+      ${escapeHtml(quand)} · ${nb} enregistrement${nb>1?'s':''} sauvegardé${nb>1?'s':''}</div>
+    </div>
+    <button onclick="annulerDernierImport()" style="padding:9px 16px; border-radius:9px; border:1px solid var(--red); background:rgba(229,72,77,0.10); color:var(--red); font-weight:800; font-size:12.5px; cursor:pointer;">↩️ Annuler cet import</button>
+  </div>`;
+}
+
 function billingInvalidate(){
   Object.keys(BILLING_CACHE).forEach(k=> delete BILLING_CACHE[k]);
   billingDivisorCache = {};
@@ -17732,6 +17841,8 @@ async function importBillingProd(text, monthVal){
     if(reportEl) reportEl.innerHTML = '<div class="empty">Aucune ligne lisible dans ce fichier.</div>';
     return;
   }
+  // ↩️ Sauvegarde d'avant-import ouverte ici, avant toute écriture (voir annulerDernierImport).
+  undoDemarrer(`Import de production — fichier de ${parsed.rows.length} ligne${parsed.rows.length>1?'s':''}`);
 
   // ═══ CHAQUE CONTRAT VA AU MOIS DE SA PROPRE DATE ═══
   // Avant, tout l'import atterrissait dans le mois choisi dans le menu, quelles que soient les dates
@@ -17912,7 +18023,8 @@ async function importBillingProd(text, monthVal){
   const rows = Object.values(rowsByMonth).flat();
   lastImportAnomalies = anomalies;
   billingContractIndexCache = null;
-  logAudit('Admin', 'Import production', `${rowsTotal} contrats — ${Object.keys(perMonthCount).map(m=>`${m}: ${perMonthCount[m]}`).join(', ')}`);
+  const nbSauvegardesProd = await undoTerminer(`${rowsTotal} contrats importés`);
+  logAudit('Admin', 'Import production', `${rowsTotal} contrats — ${Object.keys(perMonthCount).map(m=>`${m}: ${perMonthCount[m]}`).join(', ')} — annulable (${nbSauvegardesProd} enregistrements sauvegardés)`);
 
   // Rapport d'import : combien par agent, et surtout ce qui n'a PAS été reconnu.
   const byAgent = {};
@@ -17921,6 +18033,10 @@ async function importBillingProd(text, monthVal){
   let html = `<div style="padding:12px 14px; border-radius:10px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35);">
     <div style="font-weight:700; color:var(--green);">✅ ${rowsTotal} contrat${rowsTotal>1?'s':''} importé${rowsTotal>1?'s':''}</div>
     <div style="font-size:13px; margin-top:7px;">📅 Rangés dans : ${months.map(m=> `<b>${escapeHtml(billingMonthLabel(m))}</b> (${perMonthCount[m]})`).join(' · ')}</div>
+    <div style="margin-top:11px; padding-top:10px; border-top:1px dashed rgba(52,183,116,0.35); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <button onclick="annulerDernierImport()" style="padding:8px 15px; border-radius:9px; border:1px solid var(--red); background:rgba(229,72,77,0.10); color:var(--red); font-weight:800; font-size:12.5px; cursor:pointer;">↩️ Annuler cet import</button>
+      <span style="font-size:12px; color:var(--muted); flex:1; min-width:220px;">Remet tout dans l'état d'avant. Disponible tant que tu n'as pas fait un autre import.</span>
+    </div>
     ${duplicatesInFile.length ? `<div style="font-size:12.5px; color:var(--amber); margin-top:6px;">👯 <b>${duplicatesInFile.length} ligne${duplicatesInFile.length>1?'s':''} en double dans ton fichier</b> — une seule a été conservée pour chacune. Vérifie ton Sheet : ces lignes y sont recopiées deux fois.<br><span style="color:var(--muted);">${duplicatesInFile.slice(0,8).map(escapeHtml).join(' · ')}${duplicatesInFile.length>8 ? ' …' : ''}</span></div>` : ''}
     ${moved.length ? `<div style="font-size:12.5px; color:#7aa7d9; margin-top:6px;">📦 <b>${moved.length} contrat${moved.length>1?'s':''} déplacé${moved.length>1?'s':''} de mois</b> — leur date a changé depuis le dernier import, l'exemplaire de l'ancien mois a été retiré pour éviter tout doublon.<br><span style="color:var(--muted);">${moved.slice(0,8).map(escapeHtml).join(' · ')}${moved.length>8 ? ' …' : ''}</span></div>` : ''}
     ${shiftedCount ? `<div style="font-size:12.5px; color:#7aa7d9; margin-top:6px;">🔀 <b>${shiftedCount} contrat${shiftedCount>1?'s':''} rattaché${shiftedCount>1?'s':''} malgré une ligne décalée</b> — la colonne Agent contenait autre chose (une virgule non protégée dans l'adresse décale toute la fin de ligne), le nom du vendeur a été retrouvé ailleurs dans la ligne.</div>` : ''}
@@ -18497,6 +18613,10 @@ async function confirmReturnsImport(){
   const el = document.getElementById('billingRetReport');
   if(el) el.innerHTML = '<div class="empty">⏳ Enregistrement…</div>';
 
+  // ↩️ On ouvre la sauvegarde AVANT la première écriture : tout ce qui va être modifié en dessous sera
+  // noté dans son état d'origine, et « Annuler le dernier import » saura tout remettre en place.
+  undoDemarrer(`Import du tableau de facturation — ${items.length} ligne${items.length>1?'s':''}`);
+
   // ---- Rétractations : marquer le contrat dans SON mois, puis recaler le compteur ----
   let retractApplied = 0, retractNotFound = 0;
   const touched = {};
@@ -18585,8 +18705,10 @@ async function confirmReturnsImport(){
     });
   }
 
+  const nbSauvegardes = await undoTerminer(
+    `${retractApplied} rétractation(s) appliquée(s), impayés répartis sur ${Object.keys(byMonth).length} mois`);
   logAudit('Admin', 'Import du tableau de facturation validé',
-    `${items.length} lignes — ${retractApplied} rétractations appliquées, impayés répartis sur ${Object.keys(byMonth).length} mois`);
+    `${items.length} lignes — ${retractApplied} rétractations appliquées, impayés répartis sur ${Object.keys(byMonth).length} mois — annulable (${nbSauvegardes} enregistrements sauvegardés)`);
   billingInvalidate();
   clearRenderCaches();
   pendingReturnsImport = null;
@@ -18601,6 +18723,10 @@ async function confirmReturnsImport(){
         ${recalced.length ? `<br>🔄 Compteurs recalés : <span style="color:var(--muted);">${recalced.slice(0,8).map(escapeHtml).join(' · ')}</span>` : ''}
       </div>
       <div style="font-size:12px; color:var(--muted); margin-top:9px;">${retractNotFound ? "Les contrats introuvables sont ceux dont le mois de signature n'a pas encore été importé — ils sont conservés dans « ⏳ Rétractations en attente » ci-dessous, rien n'est perdu. Importe la Production du bon mois, puis clique « Réessayer » là-bas." : "Vérifie le tableau d'un agent avant de figer quoi que ce soit." }</div>
+      <div style="margin-top:12px; padding-top:11px; border-top:1px dashed rgba(52,183,116,0.35); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <button onclick="annulerDernierImport()" style="padding:9px 16px; border-radius:9px; border:1px solid var(--red); background:rgba(229,72,77,0.10); color:var(--red); font-weight:800; font-size:12.5px; cursor:pointer;">↩️ Annuler cet import</button>
+        <span style="font-size:12px; color:var(--muted); flex:1; min-width:220px;">Remet <b style="color:var(--text);">tout</b> exactement dans l'état d'avant : contrats rétractés, impayés, compteurs, lignes en attente. Vérifie d'abord un ou deux tableaux d'agents — le bouton reste disponible dans <b style="color:var(--text);">Facturation &amp; Paie</b> tant que tu n'as pas fait un autre import.</span>
+      </div>
     </div>`;
   }
   renderBillingImportSummary();
