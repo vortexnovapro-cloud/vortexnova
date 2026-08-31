@@ -2108,6 +2108,9 @@ function tryDeviceGateAdmin(){
           </div>
           <div class="section-sub" style="margin-top:12px; padding:11px 14px; border-radius:9px; background:var(--panel2); border:1px solid var(--border);">
             🔍 <b>Rien n'est enregistré directement.</b> Le fichier est d'abord analysé : pour chaque ligne, le CRM te propose l'agent et le mois de paie, avec son degré de certitude — et t'explique sur quoi il s'est basé. Tu corriges ce que tu veux, tu écartes ce qui ne va pas, puis tu valides. Les doublons déjà importés sont repérés et ignorés tout seuls.
+            <div style="margin-top:9px; padding-top:9px; border-top:1px dashed rgba(255,255,255,0.12);">
+              ↩️ <b style="color:var(--green);">Et même après avoir validé, tu peux tout annuler.</b> Un bouton <b>« Annuler cet import »</b> apparaîtra à la fin du rapport et en haut de cette page. Il remet contrats, impayés et compteurs exactement dans l'état d'avant. Prends le temps de vérifier deux ou trois tableaux d'agents : tant que tu n'as pas lancé un autre import, le retour en arrière reste possible.
+            </div>
           </div>
           <div class="section-sub" style="margin-top:10px;">…ou colle directement le contenu :</div>
           <textarea id="billingRetPaste" rows="4" placeholder="Agent&#9;Numéro de contrat&#9;Nom&#9;Produit&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
@@ -2595,7 +2598,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r157';
+const APP_VERSION = '2026-08-26-r158';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -14896,6 +14899,17 @@ async function renderCash(){
   const weekData = await weekRealizedContracts(agent);
   const monthContracts = await monthlyRealizedContracts(agent, now.getFullYear(), now.getMonth()+1);
   const monthRetractions = await monthlyRetractions(agent, now.getFullYear(), now.getMonth()+1);
+  // BRUT ESTIMÉ vs NET : tant que l'admin n'a pas importé les retours de facturation de CE mois de
+  // paie (ils arrivent en général ~2 mois après la signature), le montant affiché peut encore baisser
+  // — c'est une ESTIMATION, pas un salaire arrêté. Une fois l'import fait, on l'affiche comme NET
+  // (sous réserve d'une rétractation tardive, toujours possible dans le délai légal de 14 jours).
+  const currentPayMonthVal = billingMonthVal(now.getFullYear(), now.getMonth()+1);
+  const retMonthDataForStatus = await getBillingReturns(currentPayMonthVal);
+  const retoursImportedForMonth = !!(retMonthDataForStatus && retMonthDataForStatus.importedAt);
+  const retoursImportedAtLabel = retoursImportedForMonth ? new Date(retMonthDataForStatus.importedAt).toLocaleDateString('fr-FR') : null;
+  const statutRetoursBanner = retoursImportedForMonth
+    ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.4); font-size:12.5px; color:var(--green); font-weight:600; text-align:left;">✅ Retours de facturation importés le ${retoursImportedAtLabel} pour ce mois — ce montant est déjà NET (sauf nouvelle rétractation d'ici la fin du mois).</div>`
+    : `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.45); font-size:12.5px; color:var(--text); font-weight:600; text-align:left; line-height:1.6;">⏳ <b>Estimation</b> — les retours de facturation de ce mois ne sont pas encore importés par l'admin (ils arrivent en général ~2 mois après la signature du contrat) et de nouvelles rétractations peuvent encore arriver (délai légal 14 jours). Ce montant peut donc encore baisser avant la paie. <span title="Un retour = un contrat sur lequel l'entreprise n'a finalement pas été payée par le client (impayé). Une rétractation = un client qui annule dans son délai légal de 14 jours. Les deux réduisent le nombre de contrats qui te sont payés — mais seulement une fois traités par l'admin dans le CRM." style="cursor:help; text-decoration:underline dotted; opacity:0.85;">en savoir plus ⓘ</span></div>`;
   const desiredObjective = await getMonthlyDesiredObjective(agent, now.getFullYear(), now.getMonth()+1);
 
   // Si cet agent est lui-même superviseur, sa prime de supervision (sur les contrats de l'équipe de base,
@@ -14964,7 +14978,7 @@ async function renderCash(){
   const daySalNet = Math.max(0, Math.round(daySal - todayDeduction));
   const weekSalNet = Math.max(0, Math.round(weekSal - weekDeduction));
 
-  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, weekSalNet, daySalNet, todayDeduction, weekDeduction, ceDay, ceWeek, monthStats, monthRes, realTimeSalary, totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus, contractsUnderSupervisionDay, supervisorBonusDay, contractsUnderSupervisionWeek, supervisorBonusWeek, supIneligReason };
+  cashRealCache = { agent, pay, todayCount, weekData, weekSal, daySal, weekSalNet, daySalNet, todayDeduction, weekDeduction, ceDay, ceWeek, monthStats, monthRes, realTimeSalary, totalWorkingDaysThisMonth, elapsedWorkingDaysThisMonth, assiduiteAcquise, isIndep: pay.isIndep, monthContracts, monthRetractions, desiredObjective, isSupervisorAgent, contractsUnderSupervision, supervisorBonus, contractsUnderSupervisionDay, supervisorBonusDay, contractsUnderSupervisionWeek, supervisorBonusWeek, supIneligReason, retoursImportedForMonth, retoursImportedAtLabel };
   const cashRetractEl = document.getElementById('cashRetractCount');
   if(cashRetractEl){
     const grossForIndicator = monthContracts + monthRetractions;
@@ -15019,7 +15033,7 @@ async function renderCash(){
 
   if(pay.isIndep && monthRes){
     hero.innerHTML = `
-      <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ton salaire brut réel, maintenant</div>
+      <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ${retoursImportedForMonth ? 'ton salaire NET réel' : 'ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) retirés au titre des retours clients.">(sur ${rt.contractsBrut} signés)</b>` : ''}${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''} · <b>retours clients déjà déduits</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
@@ -15031,10 +15045,11 @@ async function renderCash(){
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
+      ${statutRetoursBanner}
       ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
   } else if(monthRes){
     hero.innerHTML = `
-      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 Ton salaire brut réel, maintenant</div>
+      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 ${retoursImportedForMonth ? 'Ton salaire NET réel' : 'Ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) retirés au titre des retours clients.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''} · <b>retours clients déjà déduits</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
@@ -15048,6 +15063,7 @@ async function renderCash(){
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
+      ${statutRetoursBanner}
       ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
   }
 
@@ -15058,7 +15074,7 @@ async function renderCash(){
 
 // Classement "argent réel" partagé entre le hero (rang affiché) et la liste du classement, pour que
 // les deux soient toujours parfaitement cohérents (même calcul, même total, même ordre).
-// ⚠️ Utilise EXACTEMENT le même moteur que le hero Cash "Ton salaire brut réel, maintenant"
+// ⚠️ Utilise EXACTEMENT le même moteur que le hero Cash "Ton salaire NET réel, maintenant"
 // (computeAgentRealTimeSalary, fixe au prorata des jours ouvrés déjà écoulés) — avant, ce classement
 // utilisait estimateSalaryMonthReal (fixe en entier, comme si le mois était déjà terminé), ce qui
 // affichait un montant différent de celui du haut de la page pour la même personne. Les deux montrent
@@ -15124,7 +15140,7 @@ function renderCashObjectifsRecap(){
 
 function renderCashRealGrid(){
   if(!cashRealCache) return;
-  const { pay, todayCount, weekData, weekSal, daySal, weekSalNet, daySalNet, todayDeduction, weekDeduction, ceDay, ceWeek, monthRes, isIndep, monthContracts } = cashRealCache;
+  const { pay, todayCount, weekData, weekSal, daySal, weekSalNet, daySalNet, todayDeduction, weekDeduction, ceDay, ceWeek, monthRes, isIndep, monthContracts, retoursImportedForMonth, retoursImportedAtLabel } = cashRealCache;
   const hasPalier = !pay.isIndep && !pay.noObjectif && (pay.objectifMensuel||0) > 0;
   const contractLinesFor = (ce, countLabel)=>{
     if(!hasPalier){
@@ -15203,7 +15219,7 @@ function renderCashRealGrid(){
     </div>
     <div class="cash-period-card" style="border-color:rgba(255,215,0,0.35); background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015));">
       <div class="cp-label">🗓️ Ton salaire du mois, en détail</div>
-      <div class="cp-sub" style="margin-bottom:12px;">Depuis le 1er du mois, brut (avant tout retour client éventuel). C'est le même total qu'en haut de page — juste expliqué ligne par ligne.</div>
+      <div class="cp-sub" style="margin-bottom:12px;">${retoursImportedForMonth ? `Depuis le 1er du mois, déjà NET — retours de facturation importés le ${retoursImportedAtLabel} et rétractations déjà déduits.` : `Depuis le 1er du mois — ⏳ ESTIMATION : les retours de facturation de ce mois ne sont pas encore importés par l'admin, ce total peut encore baisser.`} C'est le même total qu'en haut de page, juste expliqué ligne par ligne.</div>
       <div class="cash-breakdown">
         <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:2px 0 4px;">📅 Fixe & primes (hors contrats)</div>
         <div><span>Fixe + prime fixe (${elapsedWorkingDays}/${totalWorkingDaysThisMonth}j travaillés)</span><b>${fixedOnlyToDate.toLocaleString('fr-FR')} DH</b></div>
@@ -15211,8 +15227,8 @@ function renderCashRealGrid(){
         <div class="${rt && rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif</span><b>${rt && rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : 'Pas encore atteint'}</b></div>
         <div style="border-top:1px dashed var(--border); margin-top:4px; padding-top:6px;"><span>Sous-total fixe & primes</span><b>${subtotalFixedPrimes.toLocaleString('fr-FR')} DH</b></div>
 
-        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:12px 0 4px;">🤝 Tes contrats (${monthContracts} ce mois)</div>
-        ${contractLinesFor(contractEarnings(pay, monthContracts, monthContracts), `${monthContracts} contrat${monthContracts>1?'s':''}`)}
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:12px 0 4px;">🤝 Tes contrats (${rt ? rt.contractsRealized : monthContracts} payé${(rt ? rt.contractsRealized : monthContracts)>1?'s':''} ce mois${rt && rt.contractsBrut>rt.contractsRealized ? ` <span title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) de retour déjà retirés — ${rt.contractsBrut} signés au total." style="cursor:help; opacity:0.7;">(sur ${rt.contractsBrut} signés) ⓘ</span>` : ''})</div>
+        ${contractLinesFor(rt ? rt.contractDetail : contractEarnings(pay, monthContracts, monthContracts), `${rt ? rt.contractsRealized : monthContracts} contrat${(rt ? rt.contractsRealized : monthContracts)>1?'s':''}`)}
         ${rt && rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt && rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt && rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement (mois)</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -19120,6 +19136,59 @@ function indepReturnScaleHTML(contracts, opts){
   </div>`;
 }
 
+// Encart explicatif du barème SALARIÉ (retards + absences du mois -> diviseur des retours), miroir de
+// indepReturnScaleHTML mais basé sur la discipline plutôt que le volume. Toujours accompagné d'un
+// message de félicitation (meilleur palier, ÷3) ou d'une petite remontrance (pire palier, 1:1), pour
+// que l'agent comprenne l'enjeu sans avoir à déchiffrer un tableau froid — même esprit que le barème
+// indépendant, avec la bonne variable (retards/absences au lieu de contrats).
+function salarieReturnScaleHTML(count, opts){
+  const o = opts || {};
+  const divisor = count >= 6 ? 1 : (count >= 5 ? 2 : 3);
+  const TIERS = [
+    { min: 0, max: 4, divisor: 3, label: '÷3' },
+    { min: 5, max: 5, divisor: 2, label: '÷2' },
+    { min: 6, max: Infinity, divisor: 1, label: '1:1' }
+  ];
+  const rows = TIERS.map(t=>{
+    const active = t.divisor === divisor;
+    const range = t.max === Infinity ? `${t.min} retards/absences ou plus` : (t.min === t.max ? `${t.min} retards/absences` : `${t.min} à ${t.max} retards/absences`);
+    const activeColor = t.divisor === 1 ? 'var(--red)' : 'var(--green)';
+    const activeBg = t.divisor === 1 ? 'rgba(229,72,77,0.14)' : 'rgba(52,183,116,0.14)';
+    const activeBorder = t.divisor === 1 ? 'rgba(229,72,77,0.4)' : 'rgba(52,183,116,0.45)';
+    return `<div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 12px; border-radius:9px; margin-bottom:6px;
+      background:${active ? activeBg : 'var(--panel2)'}; border:1px solid ${active ? activeBorder : 'var(--border)'};">
+      <div style="font-size:13px; font-weight:${active ? '800' : '600'}; color:${active ? activeColor : 'var(--text)'};">${range}</div>
+      <div style="display:flex; align-items:center; gap:9px;">
+        <span style="font-size:14px; font-weight:800; color:${active ? activeColor : 'var(--muted)'};">${t.label}</span>
+        ${active ? `<span style="font-size:11px; font-weight:800; background:${activeColor}; color:#0d1117; border-radius:20px; padding:2px 9px;">TOI</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  let messageHtml;
+  if(divisor === 3){
+    messageHtml = `<div style="font-size:13px; margin-top:10px; line-height:1.6; padding:10px 12px; border-radius:9px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.35);">
+      🎉 <b style="color:var(--green);">Bravo</b> — ${count===0 ? 'aucun retard/absence' : `seulement ${count} retard${count>1?'s':''}/absence${count>1?'s':''}`} ce mois-ci : tu es au meilleur palier. Chaque retour ne te coûte qu'<b>un tiers</b> de son prix. Continue comme ça.
+    </div>`;
+  } else if(divisor === 2){
+    messageHtml = `<div style="font-size:13px; margin-top:10px; line-height:1.6; padding:10px 12px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4);">
+      ⚠️ Attention : <b>${count} retards/absences</b> ce mois t'ont fait passer à <b>÷2</b> — un retour te coûte déjà le double du meilleur palier. Un retard/absence de plus (le 6e) et tu tombes au pire palier, 1:1 (plein tarif). Redresse la barre d'ici la fin du mois.
+    </div>`;
+  } else {
+    messageHtml = `<div style="font-size:13px; margin-top:10px; line-height:1.6; padding:10px 12px; border-radius:9px; background:rgba(229,72,77,0.12); border:1px solid rgba(229,72,77,0.4);">
+      😕 <b>${count} retards/absences</b> ce mois-ci : tu es au <b style="color:var(--red);">pire palier, 1:1</b> — chaque retour te coûte désormais plein tarif, sans aucune réduction. Ce n'est pas une fatalité : ce palier se recalcule chaque mois selon ta discipline, redresse ta ponctualité pour repasser sous ÷3.
+    </div>`;
+  }
+
+  return `<div class="settings-box" style="border-color:${divisor === 1 ? 'rgba(229,72,77,0.35)' : 'rgba(52,183,116,0.35)'}; ${o.compact ? 'margin-top:14px;' : ''}">
+    <label>📐 Tes retours — barème salarié</label>
+    <div class="section-sub">Ton barème de retours dépend de ta discipline ce mois-ci (retards + absences cumulés), pas de ton volume de contrats. Plus tu es ponctuel, moins un retour te coûte cher.</div>
+    <div style="margin-top:12px;">${rows}</div>
+    ${messageHtml}
+    <div style="font-size:11.5px; color:var(--muted); margin-top:10px; line-height:1.6;">Un « retour » est un contrat sur lequel l'entreprise n'a finalement pas été payée (impayé client). Ils arrivent environ 2 mois après la signature et sont retenus sur la paie du mois où ils sont reçus. Le montant d'un retour est réglé par l'administration.</div>
+  </div>`;
+}
+
 // Retenue "retours" d'un agent sur un mois de paie donné.
 // count × coût unitaire ÷ diviseur, arrondi à l'unité. Appelée par monthlyDeductions (donc visible
 // partout où le salaire est affiché : Cash de l'agent, Admin, exports) et par le tableau détaillé.
@@ -19734,7 +19803,13 @@ function billingAgentSheetHTML(d, forImage){
   const supBonus = d.salary.supervisorBonus || 0;
   if(!st.isIndep){
     line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0) - supBonus), { plus: true });
-    if(st.primeObjectif) line('Prime objectif atteint', st.primeObjectif, { plus: true, color: 'var(--green)' });
+    if(st.objectif > 0){
+      const manquantObj = Math.max(0, st.objectif - (br ? br.payable : st.realized));
+      const tipObj = `Calculé sur les contrats PAYÉS (après rétractations et retours), pas sur les contrats signés — un agent qui tombe sous son minimum à cause de ses retours perd cette prime, même s'il a signé plus que l'objectif.`;
+      line(`Prime objectif (${st.objectif} contrats payés) <span title="${tipObj}" style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span>${st.atteint ? ' — atteint' : ` — pas encore atteint (${br ? br.payable : st.realized}/${st.objectif}, ${manquantObj} manquant${manquantObj>1?'s':''})`}`, st.atteint ? st.primeObjectif : 0, { plus: true, color: st.atteint ? 'var(--green)' : 'var(--muted)' });
+    } else {
+      line('Prime objectif — non réglé pour cet agent', 0, { color: 'var(--muted)' });
+    }
     if(st.primeExtra) line(`Bonus ${st.extraCount} contrat${st.extraCount>1?'s':''} au-delà de l'objectif`, st.primeExtra, { plus: true, color: 'var(--green)' });
   } else {
     line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0) - supBonus, { plus: true });
@@ -21099,15 +21174,23 @@ async function renderComptageControl(forcer){
   }
 }
 
-// Affiche le barème des retours à un indépendant, avec son palier du moment. Rien pour un salarié :
-// son barème à lui est déjà expliqué dans le bloc « Retards et Absences ».
+// Affiche le barème des retours de l'agent affiché, avec son palier du moment — indépendant (volume de
+// contrats) ou salarié (retards/absences). Avant, rien n'était montré pour un salarié : son palier était
+// seulement cité en une ligne dans le bloc « Retards et Absences », sans comparatif ni message clair.
+// Demande du patron (31/08/2026) : que l'agent voie explicitement son palier actuel parmi les 3
+// possibles, avec une félicitation au meilleur palier (÷3) et une remontrance au pire (1:1).
 async function renderIndepReturnScale(containerId, agent, year, month){
   const el = document.getElementById(containerId);
   if(!el) return;
-  if(!agent || !isIndependant(agent)){ el.innerHTML = ''; return; }
+  if(!agent){ el.innerHTML = ''; return; }
   try{
-    const contracts = await monthlyRealizedContracts(agent, year, month);
-    el.innerHTML = indepReturnScaleHTML(contracts, { compact: true });
+    if(isIndependant(agent)){
+      const contracts = await monthlyRealizedContracts(agent, year, month);
+      el.innerHTML = indepReturnScaleHTML(contracts, { compact: true });
+    } else {
+      const stats = await monthlyStats(agent, year, month);
+      el.innerHTML = salarieReturnScaleHTML(stats.retardsCumules || 0, { compact: true });
+    }
   }catch(e){ el.innerHTML = ''; }
 }
 
