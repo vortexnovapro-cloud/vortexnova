@@ -2598,7 +2598,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-26-r158';
+const APP_VERSION = '2026-08-31-r159';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9756,6 +9756,7 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     resteAvantCommission: (!pay.isIndep && !pay.noObjectif && (pay.objectifMensuel||0) > 0)
       ? Math.max(0, pay.objectifMensuel - payableMonth) : 0,
     returnsDeducted: brRT.returnsDeducted, retractions: brRT.retractions,
+    returnsCount: brRT.returnsCount, returnsDivisor: brRT.returnsDivisor,
     objectifPrimes: Math.round(objectifPrimes),
     deductionsTotal: ded.total || 0,
     manualPrimesTotal: manualPrimesTotal || 0,
@@ -15035,7 +15036,7 @@ async function renderCash(){
     hero.innerHTML = `
       <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ${retoursImportedForMonth ? 'ton salaire NET réel' : 'ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) retirés au titre des retours clients.">(sur ${rt.contractsBrut} signés)</b>` : ''}${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''} · <b>retours clients déjà déduits</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''} · <b>retours clients déjà déduits</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
@@ -15043,6 +15044,7 @@ async function renderCash(){
         ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
+        ${rt.returnsDeducted>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
       ${statutRetoursBanner}
@@ -15051,7 +15053,7 @@ async function renderCash(){
     hero.innerHTML = `
       <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 ${retoursImportedForMonth ? 'Ton salaire NET réel' : 'Ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) retirés au titre des retours clients.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''} · <b>retours clients déjà déduits</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${rt.contractsBrut!==rt.contractsRealized ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''} · <b>retours clients déjà déduits</b></div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div><span>Fixe + prime fixe (prorata ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>
@@ -15061,6 +15063,7 @@ async function renderCash(){
         ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
+        ${rt.returnsDeducted>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
       ${statutRetoursBanner}
@@ -15227,7 +15230,7 @@ function renderCashRealGrid(){
         <div class="${rt && rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif</span><b>${rt && rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : 'Pas encore atteint'}</b></div>
         <div style="border-top:1px dashed var(--border); margin-top:4px; padding-top:6px;"><span>Sous-total fixe & primes</span><b>${subtotalFixedPrimes.toLocaleString('fr-FR')} DH</b></div>
 
-        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:12px 0 4px;">🤝 Tes contrats (${rt ? rt.contractsRealized : monthContracts} payé${(rt ? rt.contractsRealized : monthContracts)>1?'s':''} ce mois${rt && rt.contractsBrut>rt.contractsRealized ? ` <span title="${rt.retractions} rétractation(s) et ${rt.returnsDeducted} contrat(s) de retour déjà retirés — ${rt.contractsBrut} signés au total." style="cursor:help; opacity:0.7;">(sur ${rt.contractsBrut} signés) ⓘ</span>` : ''})</div>
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:12px 0 4px;">🤝 Tes contrats (${rt ? rt.contractsRealized : monthContracts} payé${(rt ? rt.contractsRealized : monthContracts)>1?'s':''} ce mois${rt && rt.contractsBrut>rt.contractsRealized ? ` <span title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés — ${rt.contractsBrut} signés au total." style="cursor:help; opacity:0.7;">(sur ${rt.contractsBrut} signés) ⓘ</span>` : ''})</div>
         ${contractLinesFor(rt ? rt.contractDetail : contractEarnings(pay, monthContracts, monthContracts), `${rt ? rt.contractsRealized : monthContracts} contrat${(rt ? rt.contractsRealized : monthContracts)>1?'s':''}`)}
         ${rt && rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt && rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
