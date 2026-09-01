@@ -1899,8 +1899,8 @@ function tryDeviceGateAdmin(){
         </div>
 
         <div class="settings-box">
-          <label>🎁 Primes manuelles</label>
-          <div class="section-sub">Ajoute une prime OU une retenue libre : nom et montant de ton choix (montant négatif = retenue, ex: -200 pour retirer 200 DH). Cooptation, challenge gagné, prime exceptionnelle, commission de supervision à ajuster... Elle s'applique automatiquement au salaire du <b>mois que tu choisis</b> — y compris un mois passé — et apparaît partout où le salaire est affiché : Mon argent côté agent, tableau des objectifs, masse salariale et fiche de paie.</div>
+          <label>🎁 Primes manuelles (ou commissions superviseur, ou retenue)</label>
+          <div class="section-sub">👉 <b>C'est ICI</b> que tu ajoutes ou retires une commission à un superviseur (choisis son nom dans « Agent » ci-dessous, montant positif pour ajouter, <b>négatif pour retirer</b> — ex: -300 pour enlever 300 DH). Sert aussi pour toute prime OU retenue libre sur n'importe quel agent : cooptation, challenge gagné, prime exceptionnelle... Elle s'applique automatiquement au salaire du <b>mois que tu choisis</b> — y compris un mois passé — et apparaît partout où le salaire est affiché : Mon argent côté agent, tableau des objectifs, masse salariale et fiche de paie.</div>
           <div class="section-sub" style="margin-top:6px;">👥 Tu peux viser <b>un agent</b>, ou d'un coup <b>tous les agents</b>, tous les salariés, ou tous les indépendants — pratique pour un challenge collectif. Chaque agent reçoit sa propre copie, supprimable individuellement ensuite.</div>
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
@@ -2623,7 +2623,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r162';
+const APP_VERSION = '2026-09-01-r163';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -6727,7 +6727,18 @@ const SUPERVISOR_RECRUE_MSGS = {
     "🌱 Il dépasse ce qu'on attend d'un débutant — note-le pour le bilan."
   ]
 };
-function supervisorActionComment(count, agentName){
+function supervisorActionComment(count, agentName, justifiedAbsence){
+  // 🗓️ Agent en absence aujourd'hui — dire au superviseur « va le voir maintenant » ou « fonce
+  // l'aider » au sujet de quelqu'un en arrêt maladie ou en congé payé n'a aucun sens : il n'est
+  // simplement pas là. Le conseil reflète le vrai statut du jour, sans jugement sur l'activité.
+  if(justifiedAbsence){
+    const jaMeta = JUSTIFIED_ABSENCE_TYPES[justifiedAbsence];
+    const lbl = justifiedAbsenceLabel(justifiedAbsence, true);
+    if(jaMeta && !jaMeta.justified && jaMeta.counted){
+      return `🚫 ${lbl} — aucun justificatif : à traiter avec lui/elle dès son retour, pas aujourd'hui.`;
+    }
+    return `🗓️ ${lbl} — rien à faire aujourd'hui, l'agent n'est pas censé travailler.`;
+  }
   // 🌱 Une recrue à 0 contrat n'est pas une alerte rouge : c'est un apprentissage en cours. Envoyer
   // « 🚨 Agent à ZÉRO — va le voir maintenant » à un superviseur au sujet de quelqu'un arrivé la veille
   // le pousse à une pression contre-productive.
@@ -6757,8 +6768,16 @@ const DAILY_BADGE_WORDS = {
   mid:   ['motivé', 'bon rythme', 'ça tourne', 'dans le bon sens'],
   good:  ['lancé', 'en feu', 'grosse journée', 'au-dessus du lot']
 };
-function dailyProgressBadge(count, agentName){
+function dailyProgressBadge(count, agentName, justifiedAbsence){
   const mot = (key)=> seedPick(DAILY_BADGE_WORDS[key], `${agentName || ''}|badge|${key}|${count}|${todayStr()}`);
+  // 🗓️ Agent en absence (justifiée, congé, autorisée...) aujourd'hui : pas d'alerte rouge clignotante
+  // pour un 0 qui n'en est pas un — le badge reflète le vrai statut du jour, comme la colonne "Statut".
+  if(justifiedAbsence){
+    const jaMeta = JUSTIFIED_ABSENCE_TYPES[justifiedAbsence];
+    const lbl = justifiedAbsenceLabel(justifiedAbsence, true);
+    const grave = jaMeta && (!jaMeta.justified && jaMeta.counted);
+    return { txt: `${jaMeta?jaMeta.icon:'🗓️'} ${lbl}`, cls: grave ? 'late' : 'independant', pulse: false, title: `${lbl} aujourd'hui — pas de jugement sur l'activité du jour` };
+  }
   // 🌱 Une recrue à 0 n'est pas une alerte : pas de rouge, pas de clignotement. Le superviseur doit
   // voir « en apprentissage », pas une urgence à traiter.
   if(count <= 0 && agentName && estRecrue(agentName)){
@@ -8587,12 +8606,16 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   const monthlyByAgent = {};
   await Promise.all(allDayRows.map(async r=>{
     const pay = getAgentPay(r.agent, y, m);
-    const [monthlyRealized, desired] = await Promise.all([
+    const [monthlyRealized, desired, dayLog] = await Promise.all([
       monthlyRealizedContracts(r.agent, y, m),
-      getMonthlyDesiredObjective(r.agent, y, m)
+      getMonthlyDesiredObjective(r.agent, y, m),
+      r.isIndep ? Promise.resolve(null) : getDayLog(r.agent, dateStr)
     ]);
     const mini = pay.isIndep || pay.noObjectif ? 0 : (pay.objectifMensuel || 0);
-    monthlyByAgent[r.agent] = { monthlyRealized, mini, vise: desired || 0 };
+    // Statut spécial du jour (absence justifiée/injustifiée, congé, mise à pied...) — pour que le
+    // commentaire "aujourd'hui vs hier" (dayOverDayComment) ne traite jamais une absence comme un
+    // relâchement, ni une absence VRAIMENT injustifiée comme un simple mauvais jour anodin.
+    monthlyByAgent[r.agent] = { monthlyRealized, mini, vise: desired || 0, justifiedAbsence: dayLog ? (dayLog.justifiedAbsence || null) : null };
   }));
 
   // Historique des derniers jours ouvrés AVANT dateStr — pour les séries 🔥 (sans finir à 0) et 🎯
@@ -8718,7 +8741,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       total: (allRankByAgent[r.agent] || {}).total,
       teamAvgToday, bestToday,
       monthlyRealized: mo.monthlyRealized || 0,
-      mini: mo.mini || 0
+      mini: mo.mini || 0,
+      justifiedAbsence: mo.justifiedAbsence || null
     });
   }));
 
@@ -11184,17 +11208,37 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
           `Presque le bon rythme pour ton objectif minimum. Un ou deux contrats de plus et c'est bouclé.`
         ], seed+'|mini'), AMBER, AMBER_BG));
       } else if(neededPace - currentPace <= 2.5){
-        lines.push(mk('📌', seedPick([
-          `Le rythme est en dessous de ce qu'il faut pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). Il faut réagir aujourd'hui, pas la semaine prochaine.`,
-          `Attention : au rythme actuel, ton objectif minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}/jour — accélère.`,
-          `Ton objectif minimum s'éloigne un peu. Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
-        ], seed+'|mini'), TERRACOTTA, TERRACOTTA_BG));
+        // ⚠️ DÉBUT DE MOIS — un rythme calculé sur 1 ou 2 jours n'a aucune valeur statistique (0 ou 1
+        // contrat le jour 1 fait mécaniquement chuter "currentPace" à 0, même pour un excellent agent).
+        // Avant, ça déclenchait "il faut réagir aujourd'hui" ou pire "danger réel, ton salaire est en
+        // jeu" dès le 1er ou le 2e jour ouvré du mois — un signal d'alarme totalement prématuré, avant
+        // même que l'agent ait eu le temps de démontrer quoi que ce soit. On attend au moins 3 jours
+        // ouvrés écoulés avant d'employer un ton alarmant ; avant ça, le rappel reste factuel et calme.
+        if(daysElapsed <= 2){
+          lines.push(mk('📌', seedPick([
+            `Le mois vient de commencer (jour ${daysElapsed} sur les jours ouvrés) — rythme à tenir pour ton objectif minimum : ${fmtNum(neededPace)} contrat/jour. Encore largement le temps.`,
+            `Trop tôt pour s'inquiéter, le mois démarre à peine. Vise ${fmtNum(neededPace)} contrat/jour en moyenne pour ton objectif minimum et tout ira bien.`
+          ], seed+'|miniDebut'), SLATE, SLATE_BG));
+        } else {
+          lines.push(mk('📌', seedPick([
+            `Le rythme est en dessous de ce qu'il faut pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). Il faut réagir aujourd'hui, pas la semaine prochaine.`,
+            `Attention : au rythme actuel, ton objectif minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}/jour — accélère.`,
+            `Ton objectif minimum s'éloigne un peu. Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
+          ], seed+'|mini'), TERRACOTTA, TERRACOTTA_BG));
+        }
       } else {
-        lines.push(mk('📌', seedPick([
-          `Ton objectif minimum est en danger réel. Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Bouge-toi maintenant.`,
-          `Alerte objectif minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
-          `C'est du sérieux : à ce rythme, ton objectif minimum du mois ne sera pas atteint. Il faut un vrai sursaut, maintenant, pas dans trois jours.`
-        ], seed+'|mini'), CRITICAL, CRITICAL_BG, true));
+        if(daysElapsed <= 2){
+          lines.push(mk('📌', seedPick([
+            `Le mois vient tout juste de commencer — pas d'alerte à ce stade. Objectif minimum : ${fmtNum(neededPace)} contrat/jour en moyenne sur le mois, largement jouable avec le temps restant.`,
+            `Jour ${daysElapsed} du mois, un seul chiffre encore peu représentatif. Garde en tête ${fmtNum(neededPace)} contrat/jour pour ton objectif minimum et prends ton rythme.`
+          ], seed+'|miniDebut'), SLATE, SLATE_BG));
+        } else {
+          lines.push(mk('📌', seedPick([
+            `Ton objectif minimum est en danger réel. Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Bouge-toi maintenant.`,
+            `Alerte objectif minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
+            `C'est du sérieux : à ce rythme, ton objectif minimum du mois ne sera pas atteint. Il faut un vrai sursaut, maintenant, pas dans trois jours.`
+          ], seed+'|mini'), CRITICAL, CRITICAL_BG, true));
+        }
       }
     }
   }
@@ -11370,7 +11414,15 @@ async function countZeroDaysThisMonthSoFar(agentName, refDateStr){
     if(!isDayOverForMessage(ds)) continue;
     const board = prodBoardCache[ds] || await getProdBoard(ds);
     prodBoardCache[ds] = board;
-    if((getAgentProd(board, agentName).realized || 0) === 0) count++;
+    if((getAgentProd(board, agentName).realized || 0) === 0){
+      // Un 0 dû à une absence justifiée, un congé payé ou une absence autorisée "hors compteur" ne doit
+      // pas alourdir le ton du lendemain (dayOverDayComment) — même logique que l'escalade retard/absence
+      // de la prime d'assiduité (JUSTIFIED_ABSENCE_TYPES.counted). Seule une absence injustifiée ou une
+      // mise à pied continue de compter : c'est bien un vrai 0 imputable à l'agent.
+      const dayLog = await getDayLog(agentName, ds);
+      const jaMeta = dayLog && dayLog.justifiedAbsence ? JUSTIFIED_ABSENCE_TYPES[dayLog.justifiedAbsence] : null;
+      if(!jaMeta || jaMeta.counted) count++;
+    }
   }
   return count;
 }
@@ -11407,6 +11459,32 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   // ferme + conseil, 3e et plus = sérieux, mais un conseil concret reste toujours présent).
   if(todayRealized === 0){
     const dateForCount = refDateStr || todayStr();
+
+    // ⚠️ ABSENCE DU JOUR — un 0 contrat parce que l'agent était en arrêt maladie, en congé payé ou
+    // en absence autorisée n'est PAS un relâchement : lui servir « il faut réagir maintenant » ou
+    // « 2e journée à 0 ce mois » n'a aucun sens et passe pour un manque total de considération. On
+    // sort donc ici avec un ton adapté au VRAI statut du jour, avant même de regarder l'historique.
+    // Seule une absence INJUSTIFIÉE (l'agent ne s'est pas présenté sans motif) garde un ton ferme —
+    // c'est la même distinction que pour l'escalade retard/absence (JUSTIFIED_ABSENCE_TYPES.counted).
+    const jaMeta = c.justifiedAbsence ? JUSTIFIED_ABSENCE_TYPES[c.justifiedAbsence] : null;
+    if(jaMeta){
+      const lbl = justifiedAbsenceLabel(c.justifiedAbsence, true);
+      if(jaMeta.justified || !jaMeta.counted){
+        // Justifiée, congé payé, ou absence autorisée hors compteur : bienveillant, jamais culpabilisant.
+        return { text: seedPick([
+          `${lbl} aujourd'hui — pas de contrat, et c'est normal : ce n'était pas un jour de travail pour toi. On se retrouve à ton retour.`,
+          `Journée d'absence (${lbl.toLowerCase()}), rien à signaler côté contrats. Prends soin de toi, la reprise se fera tranquillement.`,
+          `${lbl} : ce 0 ne compte pas contre toi. À bientôt pour la suite.`
+        ], `${agentName}|absjust|${refDateStr || todayStr()}`), color: SLATE, bg: SLATE_BG, critical: false };
+      }
+      // Absence injustifiée ou mise à pied : le 0 est réel et pèse, mais on nomme le vrai motif au lieu
+      // de parler de « journée blanche » comme si l'agent avait juste mal travaillé.
+      return { text: seedPick([
+        `${lbl} aujourd'hui — 0 contrat parce que tu ne t'es pas présenté sans motif. Ce n'est pas négociable : un point ${escalationWith(agentName)} s'impose avant ton prochain jour de travail.`,
+        `${lbl} : aucune activité, aucun justificatif. C'est le règlement qui s'applique — vois ${escalationWith(agentName).replace('avec ','')} pour régulariser au plus vite.`
+      ], `${agentName}|absinj|${refDateStr || todayStr()}`), color: CRITICAL, bg: CRITICAL_BG, critical: true };
+    }
+
     const newAgent = isNewAgent(agentName, dateForCount);
     const zeroCount = await countZeroDaysThisMonthSoFar(agentName, dateForCount);
 
@@ -14881,6 +14959,57 @@ async function supervisorMonthlyBonus(year, month){
 // prochain rendu complet de la page.
 let tickerPoolCache = { dynamicLines: [], staticPool: [] };
 
+// ═══ RECORDS — "chiffre groupe" (total équipe/mois) et records individuels ═══════════════════════
+// Balaie les 24 derniers mois COMPLETS (comme renderBillingHistory/downloadSalaryHistoryCSV, même
+// horizon) pour connaître : le meilleur total d'équipe jamais fait sur un mois, le meilleur score
+// jamais fait par CHAQUE agent, et le meilleur score jamais fait par N'IMPORTE QUEL agent (le "record
+// de tous les agents"). Le mois EN COURS n'est jamais inclus dans le calcul du record — sinon un agent
+// "battrait son propre record" par définition dès son premier contrat du mois, ce qui n'aurait aucun
+// sens. Mis en cache pour la journée : coûteux (24 mois × tous les agents), mais le record lui-même
+// (hors mois en cours) ne peut de toute façon pas changer plus d'une fois par jour.
+let allTimeRecordsCache = null;
+let allTimeRecordsCacheDay = null;
+async function getAllTimeRecords(now){
+  const today = todayStr(now);
+  if(allTimeRecordsCache && allTimeRecordsCacheDay === today) return allTimeRecordsCache;
+  let teamBest = { value: 0, monthVal: null };
+  const personalBest = {};
+  config.agents.forEach(a=>{ personalBest[a] = { value: 0, monthVal: null }; });
+  let allAgentsBest = { value: 0, monthVal: null, agent: null };
+  for(let i=1; i<=24; i++){
+    const dt = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const y = dt.getFullYear(), m = dt.getMonth()+1;
+    const mv = billingMonthVal(y, m);
+    let teamTotal = 0;
+    const perAgent = await Promise.all(config.agents.map(async a=>({ a, v: await monthlyRealizedContracts(a, y, m) })));
+    perAgent.forEach(({a, v})=>{
+      teamTotal += v;
+      if(v > personalBest[a].value){ personalBest[a] = { value: v, monthVal: mv }; }
+      if(v > allAgentsBest.value){ allAgentsBest = { value: v, monthVal: mv, agent: a }; }
+    });
+    if(teamTotal > teamBest.value) teamBest = { value: teamTotal, monthVal: mv };
+  }
+  allTimeRecordsCache = { teamBest, personalBest, allAgentsBest };
+  allTimeRecordsCacheDay = today;
+  return allTimeRecordsCache;
+}
+
+const RECORD_TEAM_MSGS = [
+  "🎉 RECORD D'ÉQUIPE ! {score} contrats ce mois-ci — jamais fait aussi bien en 2 ans. Bravo à tous !",
+  "🏆 Nouveau record du groupe : {score} contrats ce mois-ci, du jamais vu. L'équipe entière peut être fière.",
+  "🚀 L'équipe explose son propre record avec {score} contrats ce mois-ci !"
+];
+const RECORD_PERSONAL_MSGS = [
+  "🏆 {agent} bat son record personnel avec {score} contrats ce mois-ci — bravo !",
+  "🎉 Nouveau record perso pour {agent} : {score} contrats, jamais fait mieux !",
+  "🔥 {agent} explose son meilleur mois avec {score} contrats — quelle performance !"
+];
+const RECORD_ALLAGENTS_MSGS = [
+  "👑 {agent} bat le record de TOUS les agents avec {score} contrats ce mois-ci — du jamais vu chez nous !",
+  "👑 RECORD ABSOLU : {agent} atteint {score} contrats, le meilleur score jamais réalisé par qui que ce soit ici !",
+  "👑 {agent} entre dans l'histoire avec {score} contrats — personne n'avait fait aussi bien avant."
+];
+
 async function refreshTickerPool(now){
   const allRankings = await Promise.all(config.agents.map(a=> monthlyObjectifStatus(a, now.getFullYear(), now.getMonth()+1)));
   allRankings.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
@@ -14935,6 +15064,30 @@ async function refreshTickerPool(now){
   Object.entries(tieGroups).forEach(([score, names])=>{
     if(names.length > 1) pousser(remplirTicker('tickerTie', names[0], score, names.slice(1).join(' & ')));
   });
+
+  // 🏆 RECORDS — chiffre groupe (équipe) et records individuels. On ne félicite que s'il existait déjà
+  // un historique à dépasser (record.value > 0) — sinon le tout premier mois d'utilisation du CRM
+  // "battrait un record" pour tout le monde, ce qui n'a aucun sens. Un agent qui bat le record de TOUS
+  // les agents reçoit uniquement le message le plus fort (il bat forcément aussi son propre record en
+  // même temps) — jamais les deux annonces pour la même personne.
+  try{
+    const records = await getAllTimeRecords(now);
+    const totalTeamThisMonth = allRankings.reduce((s,r)=> s + (r.realized||0), 0);
+    if(records.teamBest.value > 0 && totalTeamThisMonth > records.teamBest.value){
+      pousser(pickRandom(RECORD_TEAM_MSGS).replace(/\{score\}/g, totalTeamThisMonth));
+    }
+    allRankings.forEach(r=>{
+      if(!r.realized || r.realized <= 0) return;
+      const pb = records.personalBest[r.agent];
+      const isAllAgentsRecord = records.allAgentsBest.value > 0 && r.realized > records.allAgentsBest.value;
+      const isPersonalRecord = pb && pb.value > 0 && r.realized > pb.value;
+      if(isAllAgentsRecord){
+        pousser(pickRandom(RECORD_ALLAGENTS_MSGS).replace(/\{agent\}/g, r.agent).replace(/\{score\}/g, r.realized));
+      } else if(isPersonalRecord){
+        pousser(pickRandom(RECORD_PERSONAL_MSGS).replace(/\{agent\}/g, r.agent).replace(/\{score\}/g, r.realized));
+      }
+    });
+  }catch(e){ console.warn('records ticker', e); }
 
   // On mélange 1-2 annonces dynamiques (basées sur les vrais chiffres du jour) avec des phrases piochées
   // dans le pool éditable ; {first} et {last} y sont remplacés par le nom du leader / du dernier du mois.
@@ -15667,7 +15820,8 @@ async function renderSupervision(){
       desiredObj, desiredPct,
       pauseTodayMin, pauseTodayBudget, pauseTodayOver,
       pauseOverCount: monthStats ? monthStats.pauseOver : 0,
-      pauseMonthEquiv: monthStats ? monthStats.pauseOverEquivalentRetards : 0
+      pauseMonthEquiv: monthStats ? monthStats.pauseOverEquivalentRetards : 0,
+      justifiedAbsence: (!isIndep && log) ? (log.justifiedAbsence || null) : null
     };
   }));
 
@@ -15963,9 +16117,9 @@ async function renderSupervision(){
     const rowsHtml = await Promise.all(teamRows.map(async r=>{
       const isMe = r.agent === supervisor;
       const pctCls = r.pctMonth >= 100 ? 'good' : (r.pctMonth >= 50 ? 'mid' : 'bad');
-      const badge = dailyProgressBadge(r.dayRealized, r.agent);
-      const rowStyle = (r.monthObj>0 && !r.atteint && r.pctMonth<70) || r.dayRealized<=0 ? 'background:var(--red-bg);' : '';
-      const comment = supervisorActionComment(r.dayRealized, r.agent);
+      const badge = dailyProgressBadge(r.dayRealized, r.agent, r.justifiedAbsence);
+      const rowStyle = ((r.monthObj>0 && !r.atteint && r.pctMonth<70) || r.dayRealized<=0) && !r.justifiedAbsence ? 'background:var(--red-bg);' : '';
+      const comment = supervisorActionComment(r.dayRealized, r.agent, r.justifiedAbsence);
       const proj = await computeMonthProjection(r.agent, now.getFullYear(), now.getMonth()+1);
       const projHtml = proj
         ? `<span class="tag ${proj.onTrack?'ok':'late'}" title="Rythme ${proj.pace}/jour, ${proj.remainingWorkingDays}j restants">${proj.onTrack?'✅':'⚠️'} ${proj.projected}</span>`
@@ -20417,7 +20571,7 @@ async function syncBackofficeInbox(opts){
 
   // Transforme une ligne brute (quelle que soit sa provenance) en contrat rangeable, ou l'écarte
   // proprement. Une seule règle de lecture pour les deux boîtes : impossible qu'elles divergent.
-  const ingest = (data, idForLog)=>{
+  const ingest = (data, idForLog, source)=>{
     const r = backofficeReadFields(data || {});
     if(!r.dateISO){
       result.badDate.push({
@@ -20425,7 +20579,9 @@ async function syncBackofficeInbox(opts){
         numContrat: r.numContrat || '',
         nom: r.nom || '',
         agent: r.agent || '',
-        rawDate: (r.date || r.datePropre || '').toString().trim() || '(champ date vide)'
+        rawDate: (r.date || r.datePropre || '').toString().trim() || '(champ date vide)',
+        key: idForLog,
+        source: source || 'rtdb'
       });
       return false;
     }
@@ -20472,7 +20628,7 @@ async function syncBackofficeInbox(opts){
         const val = snapR.val();
         if(val){
           Object.keys(val).forEach(key=>{
-            if(ingest(val[key], key)) processedKeys.push(key);
+            if(ingest(val[key], key, 'rtdb')) processedKeys.push(key);
           });
         }
       }catch(e){
@@ -20487,7 +20643,7 @@ async function syncBackofficeInbox(opts){
       try{
         const snap = await db.collection(BACKOFFICE_COLLECTION).limit(500).get();
         snap.forEach(doc=>{
-          if(ingest(doc.data() || {}, doc.id)) processedDocs.push(doc.ref);
+          if(ingest(doc.data() || {}, doc.id, 'firestore')) processedDocs.push(doc.ref);
         });
       }catch(e){ console.warn('inbox Firestore:', e); }
     }
@@ -20634,6 +20790,28 @@ async function corrigerDateContratVersAujourdhui(numContrat, ancienneDate, btn){
       await renderBillingImportSummary();
     }catch(e){}
   }
+}
+
+// Retire définitivement un contrat coincé dans la boîte (date illisible, jamais corrigée à la source)
+// — à utiliser une fois qu'il a été traité autrement (ex: importé à la main via un CSV corrigé), sinon
+// il resterait signalé indéfiniment à chaque relevé sans qu'aucune correction Pabbly ne puisse jamais
+// l'effacer tout seul (une donnée illisible n'est par définition jamais "corrigée" automatiquement).
+async function discardBackofficeInboxItem(key, source, label){
+  if(!confirm(`Retirer définitivement ce contrat de la boîte d'attente ?\n\n${label}\n\nÀ faire UNIQUEMENT si tu l'as déjà rangé autrement (import CSV corrigé, saisie manuelle...) — sinon il sera perdu.`)) return;
+  try{
+    if(source === 'firestore' && db){
+      await db.collection(BACKOFFICE_COLLECTION).doc(key).delete();
+    } else if(rtdb){
+      await rtdb.ref(`${BACKOFFICE_RTDB_PATH}/${key}`).remove();
+    }
+    logAudit('Admin', 'Contrat retiré manuellement de la boîte d\'attente', label);
+    showToast('🗑️ Retiré de la boîte.', 'ok', 4000);
+  }catch(e){
+    alert('Erreur en retirant ce contrat : ' + (e && e.message ? e.message : e));
+    return;
+  }
+  await syncBackofficeInbox({ manual: true });
+  renderBackofficeInboxPanel();
 }
 
 async function renderBackofficeInboxPanel(lastResult){
@@ -20785,10 +20963,12 @@ async function renderBackofficeInboxPanel(lastResult){
   if(r && r.badDate && r.badDate.length){
     html += `<div style="margin-top:10px; padding:12px 14px; border-radius:10px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4);">
       <div style="font-weight:800; color:var(--amber); margin-bottom:6px;">⚠️ ${r.badDate.length} contrat${r.badDate.length>1?'s':''} sans date lisible</div>
-      <div style="font-size:12.5px; color:var(--muted); line-height:1.8;">${r.badDate.slice(0,15).map(x=>
-        `<b>${escapeHtml(x.numContrat || x.nom || x.id)}</b>${x.nom && x.numContrat ? ` — ${escapeHtml(x.nom)}` : ''}${x.agent ? ` (${escapeHtml(x.agent)})` : ''} — date reçue : « ${escapeHtml(x.rawDate)} »`
-      ).join('<br>')}${r.badDate.length>15 ? `<br>… et ${r.badDate.length-15} de plus` : ''}</div>
-      <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Ils restent en attente. Vérifie que Pabbly envoie bien le champ <b>date</b> au format 10/08/2026 ou 2026-08-10 pour ce(s) contrat(s) précis.</div>
+      <div style="font-size:12.5px; color:var(--muted); line-height:2.1;">${r.badDate.slice(0,15).map(x=>{
+        const label = `${x.numContrat || x.nom || x.id}${x.nom && x.numContrat ? ' — '+x.nom : ''}${x.agent ? ' ('+x.agent+')' : ''} — date reçue « ${x.rawDate} »`;
+        return `<span><b>${escapeHtml(x.numContrat || x.nom || x.id)}</b>${x.nom && x.numContrat ? ` — ${escapeHtml(x.nom)}` : ''}${x.agent ? ` (${escapeHtml(x.agent)})` : ''} — date reçue : « ${escapeHtml(x.rawDate)} »
+          <button onclick="discardBackofficeInboxItem('${x.key.replace(/'/g,"\\'")}', '${x.source}', '${label.replace(/'/g,"\\'").replace(/\n/g,' ')}')" title="Retirer définitivement — à utiliser seulement si ce contrat est déjà rangé autrement (ex: import CSV corrigé)." style="margin-left:8px; padding:2px 8px; border-radius:6px; border:1px solid var(--red); background:transparent; color:var(--red); font-size:11px; cursor:pointer;">🗑️ Retirer</button></span>`;
+      }).join('<br>')}${r.badDate.length>15 ? `<br>… et ${r.badDate.length-15} de plus` : ''}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Ils restent en attente <b>indéfiniment</b> tant que rien n'est fait — une date illisible ne se corrige jamais toute seule. Corrige le champ <b>date</b> dans Pabbly (10/08/2026 ou 2026-08-10) pour les prochains contrats, et retire ceux déjà présents si tu les as importés autrement (ex: CSV corrigé) — sinon ils resteront affichés ici à chaque relevé.</div>
     </div>`;
   }
   el.innerHTML = html;
