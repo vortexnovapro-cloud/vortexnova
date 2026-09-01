@@ -1848,6 +1848,13 @@ function tryDeviceGateAdmin(){
           <div class="section-sub" style="margin-top:-8px;">💡 « Jours ouvrés ce mois » est calculé automatiquement : lundi → vendredi, jours fériés français exclus (Jour de l'an, Lundi de Pâques, 1er mai, 8 mai, Ascension, Lundi de Pentecôte, 14 juillet, Assomption, Toussaint, Armistice, Noël) — se met à jour tout seul chaque mois, rien à régler. La « prime superviseur » est versée aux agents marqués <b>📊 Superviseur</b> (onglet Réglages), calculée sur les contrats signés par toute l'équipe ce mois-ci ; tu peux la personnaliser agent par agent dans le tableau ci-dessous. Un superviseur en retard de plus de 10 minutes (ou absent) un jour donné perd sa journée de salaire fixe ET sa part de commission de ce jour-là : elle est redistribuée à parts égales entre les superviseurs présents ce même jour. En dessous de 10 minutes de retard, il garde sa part (seule sa demi-heure de salaire perso est retenue).</div>
         </div>
 
+        <div class="settings-box" style="border:2px solid rgba(184,147,90,0.55); background:rgba(184,147,90,0.06);">
+          <label style="font-size:16px;">💰 Commission superviseur — agent indépendant par agent indépendant</label>
+          <div class="section-sub"><b>C'est ICI, et seulement ici</b>, que tu règles : « sur TEL agent indépendant précis, TEL superviseur touche TANT de DH par contrat — ou rien du tout ». C'est complètement séparé de la « Prime superviseur / contrat d'équipe » réglée juste au-dessus : celle-là porte sur toute l'équipe globalement, jamais sur un agent précis — ce n'est PAS elle qu'il faut utiliser pour ça.</div>
+          <div class="section-sub" style="margin-top:-8px;">Choisis <b>« — Aucun (0 DH) — »</b> comme superviseur pour qu'il ne touche rien du tout sur cet agent. Chaque ligne s'enregistre <b>toute seule</b> dès que tu changes une valeur — pas besoin de chercher un bouton « Enregistrer ».</div>
+          <div id="indepSupCommTable" style="margin-top:12px;"><div class="empty">Chargement…</div></div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(255,215,0,0.4);">
           <label>💰 Ton chiffre d'affaires (patron) — payé au contrat</label>
           <div class="section-sub">Tu es payé sur les contrats signés par toute l'équipe. Règle ta commission, un taux de retour <b>estimé</b> (simulation — les retours arrivent en général ~2 mois après la signature, donc ce n'est pas un chiffre mesuré dans l'appli, juste ton estimation), et un bonus en plus.</div>
@@ -2624,7 +2631,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r165';
+const APP_VERSION = '2026-09-01-r166';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -8707,7 +8714,37 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   rows = [...rows].sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
   indepRows = [...indepRows].sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
 
-  let html = renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr);
+  // 🏆 RECORDS — même détection que le bandeau ticker (getAllTimeRecords, hors mois en cours), mais
+  // affichée ICI EN PLUS : le ticker défile sur Cash/Objectifs et peut passer inaperçu, alors que le
+  // Bilan de la journée est LE rapport envoyé chaque soir sur WhatsApp — c'est là que la félicitation
+  // doit être vue en priorité. Même cache que le ticker (1 calcul complet par jour), coût quasi nul ici.
+  let teamRecordBannerHtml = '';
+  const personalRecordByAgent = {};
+  try{
+    const recordsNow = dateStr === todayStr() ? nowMA() : new Date(dateStr+'T12:00:00');
+    const records = await getAllTimeRecords(recordsNow);
+    const totalTeamThisMonth = Object.values(monthlyByAgent).reduce((s,mo)=>s+(mo.monthlyRealized||0), 0);
+    if(records.teamBest.value > 0 && totalTeamThisMonth > records.teamBest.value){
+      teamRecordBannerHtml = `<div style="width:min(520px,100%); margin:0 auto 16px; padding:14px 18px; border-radius:14px; background:linear-gradient(135deg, rgba(184,147,90,0.2), rgba(184,147,90,0.07)); border:1px solid rgba(184,147,90,0.5); text-align:center; font-size:14.5px; font-weight:800; color:#b8935a;">${calendarizeRelativeDays(pickRandom(RECORD_TEAM_MSGS).replace(/\{score\}/g, totalTeamThisMonth), dateStr)}</div>`;
+    }
+    // Records individuels — sur le cumul du mois de chaque agent, exactement comme dans le ticker. Un
+    // agent qui bat le record de TOUS les agents ne reçoit que le message le plus fort (il bat forcément
+    // aussi son propre record en même temps) — jamais les deux badges pour la même personne.
+    allDayRows.forEach(r=>{
+      const mo = monthlyByAgent[r.agent];
+      if(!mo || !mo.monthlyRealized) return;
+      const pb = records.personalBest[r.agent];
+      const isAllAgentsRecord = records.allAgentsBest.value > 0 && mo.monthlyRealized > records.allAgentsBest.value;
+      const isPersonalRecord = pb && pb.value > 0 && mo.monthlyRealized > pb.value;
+      if(isAllAgentsRecord){
+        personalRecordByAgent[r.agent] = pickRandom(RECORD_ALLAGENTS_MSGS).replace(/\{agent\}/g, firstName(r.agent)).replace(/\{score\}/g, mo.monthlyRealized);
+      } else if(isPersonalRecord){
+        personalRecordByAgent[r.agent] = pickRandom(RECORD_PERSONAL_MSGS).replace(/\{agent\}/g, firstName(r.agent)).replace(/\{score\}/g, mo.monthlyRealized);
+      }
+    });
+  }catch(e){ console.warn('records bilan jour', e); }
+
+  let html = teamRecordBannerHtml + renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">';
 
   // Une seule liste, un seul ordre d'affichage : classement combiné équipe + indépendants, du plus
@@ -8764,11 +8801,12 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       // même ligne (« 16 / 20 » puis « 16 / 20 ») — de quoi faire douter n'importe qui de la fiabilité
       // des chiffres. Une seule ligne, une seule lecture possible.
       const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
-      const monthlyBlock = (mo.mini>0 || viseAffichable || commentLines.length) ? `
+      const monthlyBlock = (mo.mini>0 || viseAffichable || commentLines.length || personalRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
           ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
           ${viseAffichable ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
+          ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
         </div>` : '';
       const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
       const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
@@ -8811,10 +8849,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
-      const monthlyBlock = (mo.vise>0 || commentLines.length) ? `
+      const monthlyBlock = (mo.vise>0 || commentLines.length || personalRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
           ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
+          ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
         </div>` : '';
       const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
       const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
@@ -10665,7 +10704,10 @@ async function exportMonthlyBilanCSV(){
   const monthVal = document.getElementById('monthSelect').value || todayStr().slice(0,7);
   const [year, month] = monthVal.split('-').map(Number);
   if(config.agents.length === 0){ alert('Ajoute des agents dans Réglages.'); return; }
-  const supervisionBonusMap = await supervisorMonthlyBonus(year, month);
+  const [supervisionBonusMap, indepCommMap] = await Promise.all([
+    supervisorMonthlyBonus(year, month),
+    indepSupervisorCommissionForMonth(year, month)
+  ]);
   const rows = await Promise.all(config.agents.map(async agent=>{
     const isIndep = isIndependant(agent);
     const pay = getAgentPay(agent, year, month);
@@ -10677,6 +10719,10 @@ async function exportMonthlyBilanCSV(){
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const salRes = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
     const supervisorBonus = isSupervisor(agent) ? Math.round(supervisionBonusMap.dh[agent] || 0) : 0;
+    // 🤝 Commission sur agents indépendants (Admin → Production) — flux séparé de la prime de
+    // supervision d'équipe ci-dessus, sans quoi ce CSV afficherait un "Salaire brut estimé" inférieur
+    // à ce que touche réellement le superviseur (voir billingComputeAgent, même logique).
+    const indepCommission = isSupervisor(agent) ? Math.round((indepCommMap[agent] || {}).amount || 0) : 0;
     return {
       agent, isIndep,
       realized: st.realized,
@@ -10684,14 +10730,14 @@ async function exportMonthlyBilanCSV(){
       vise: desiredObjective || 0,
       retardsCumules: isIndep ? 0 : monthStats.retardsCumules,
       assiduite: isIndep ? '' : (assiduiteAcquise ? 'Acquise' : 'Perdue'),
-      supervisorBonus,
-      salaire: salRes.total + supervisorBonus
+      supervisorBonus, indepCommission,
+      salaire: salRes.total + supervisorBonus + indepCommission
     };
   }));
   rows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
-  let csv = 'Agent;Independant;Contrats realises;Mini obligatoire;Objectif vise;Retards cumules;Assiduite;Prime supervision;Salaire brut estime (mois)\n';
+  let csv = 'Agent;Independant;Contrats realises;Mini obligatoire;Objectif vise;Retards cumules;Assiduite;Prime supervision;Commission agents independants;Salaire brut estime (mois)\n';
   rows.forEach(r=>{
-    csv += `${csvSafe(r.agent)};${r.isIndep?'Oui':'Non'};${r.realized};${r.mini||''};${r.vise||''};${r.retardsCumules||''};${r.assiduite};${r.supervisorBonus||''};${r.salaire}\n`;
+    csv += `${csvSafe(r.agent)};${r.isIndep?'Oui':'Non'};${r.realized};${r.mini||''};${r.vise||''};${r.retardsCumules||''};${r.assiduite};${r.supervisorBonus||''};${r.indepCommission||''};${r.salaire}\n`;
   });
   const totalSalaire = rows.reduce((s,r)=>s+r.salaire, 0);
   csv += `;;;;;;;TOTAL;${totalSalaire}\n`;
@@ -11040,12 +11086,19 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
     }
 
     // mois1 — on compare à lui-même, jamais à l'équipe, et on introduit doucement l'objectif.
+    // ⚠️ CORRIGÉ — ces 4 phrases mélangeaient deux compteurs différents : "jours" (ancienneté réelle,
+    // depuis la date d'embauche, qui peut chevaucher deux mois civils) et "monthlyRealized" (contrats
+    // du mois CIVIL en cours uniquement, remis à zéro le 1er de chaque mois). Formulées en "X au total"
+    // ou "tu as Y" sans préciser "ce mois-ci", elles laissaient croire que Y était le cumul depuis
+    // l'arrivée — flagrant le 1er du mois pour une recrue embauchée le mois précédent : monthlyRealized
+    // ne contient alors que le tout premier jour du nouveau mois, mais le texte disait "tu as Y contrats
+    // depuis que tu es là". Chaque variante nomme désormais explicitement "ce mois-ci", jamais un total.
     const rythmeRecrue = daysElapsed > 0 ? (monthlyRealized / daysElapsed) : 0;
     lines.push(mk('🌱', seedPick([
-      `${jours+1}ᵉ jour chez nous, ${ctr(monthlyRealized)} au total (${fmtNum(rythmeRecrue)}/jour en moyenne). Tu es encore en montée en compétence : compare-toi à ta semaine dernière, pas au reste de l'équipe.`,
-      `Tu es là depuis ${jours+1} jours et tu as ${ctr(monthlyRealized)}. Ce qui compte à ce stade, c'est que la courbe monte — pas le classement.`,
-      `Premier mois en cours (${jours+1}ᵉ jour, ${monthlyRealized} contrats). Continue à construire ta régularité, l'objectif complet viendra après.`,
-      `${monthlyRealized} contrats en ${jours+1} jours. Fixe-toi un petit défi personnel cette semaine plutôt que de viser l'objectif de l'équipe.`
+      `${jours+1}ᵉ jour chez nous. Ce mois-ci : ${ctr(monthlyRealized)} (${fmtNum(rythmeRecrue)}/jour en moyenne). Tu es encore en montée en compétence : compare-toi à ta propre semaine dernière, pas au reste de l'équipe.`,
+      `Tu es là depuis ${jours+1} jours. Ce mois-ci, tu as déjà ${ctr(monthlyRealized)} — ce qui compte à ce stade, c'est que la courbe monte, pas le classement.`,
+      `Premier mois en cours (${jours+1}ᵉ jour chez nous, ${ctr(monthlyRealized)} ce mois-ci). Continue à construire ta régularité, l'objectif complet viendra après.`,
+      `${ctr(monthlyRealized)} ce mois-ci, pour ton ${jours+1}ᵉ jour chez nous. Fixe-toi un petit défi personnel cette semaine plutôt que de viser l'objectif de l'équipe.`
     ], seed+'|recrue-m1'), TEAL, TEAL_BG));
     if(vise > 0 && monthlyRealized >= vise){
       lines.push(mk('🚀', `Et tu as déjà dépassé l'objectif que tu t'étais fixé (${vise}) — chapeau pour un premier mois.`, SAGE, SAGE_BG));
@@ -15872,13 +15925,18 @@ async function renderSupervision(){
   const myOwnRow = rows.find(r=>r.agent===supervisor);
   const todayDateStrForBonus = todayStr();
   const weekDatesForBonus = currentWeekDateStrs();
-  const [bonusDayMap, bonusWeekMap, bonusMonthMap, totalBasePool, rateBoostToday] = await Promise.all([
+  const [bonusDayMap, bonusWeekMap, bonusMonthMap, totalBasePool, rateBoostToday, indepCommMap] = await Promise.all([
     supervisorBonusForDates([todayDateStrForBonus]),
     supervisorBonusForDates(weekDatesForBonus),
     supervisorMonthlyBonus(now.getFullYear(), now.getMonth()+1),
     contractsUnderAllSupervisors(now.getFullYear(), now.getMonth()+1),
-    supervisorRateBoostToday(supervisor)
+    supervisorRateBoostToday(supervisor),
+    indepSupervisorCommissionForMonth(now.getFullYear(), now.getMonth()+1)
   ]);
+  // 🤝 Commission sur agents indépendants — flux séparé de la prime de supervision d'équipe ci-dessus,
+  // réglée agent par agent (Admin → Production). N'apparaît que si CE superviseur a au moins un agent
+  // indépendant qui lui est attribué avec un taux réglé.
+  const myIndepComm = indepCommMap[supervisor] || null;
   const rate = supervisorPay.supervisorPrimePerContract || 0;
   const contractsDay = bonusDayMap.contracts[supervisor] || 0;
   const contractsWeek = bonusWeekMap.contracts[supervisor] || 0;
@@ -15978,6 +16036,15 @@ async function renderSupervision(){
       <div class="sub" style="margin-top:4px;font-size:11px;">Ne compte ni tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''}, ni ceux des autres superviseurs — le nombre de contrats affiché est toujours le vrai total de l'équipe, jamais doublé. Semaine = lundi à aujourd'hui.</div>
       ${myIneligibilityReason ? `<div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚫 Aujourd'hui, à cause du non-respect du règlement — ${myIneligibilityReason} — tu es à <b>0 DH/contrat</b> des agents de base. Ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}
     </div>
+    ${myIndepComm && myIndepComm.detail.length ? `
+    <div class="supervision-card sup-perso-block">
+      <div class="label">🤝 Ta commission sur agents indépendants</div>
+      <div class="big gold" style="font-size:22px;">${myIndepComm.amount.toLocaleString('fr-FR')} DH <span style="font-size:12px; color:var(--muted); font-weight:600;">ce mois-ci</span></div>
+      <div class="sub" style="margin-top:6px; font-size:11.5px;">Séparée de ta prime de supervision d'équipe ci-dessus — réglée agent par agent (Admin → Production).</div>
+      <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px;">
+        ${myIndepComm.detail.map(x => `<div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text);"><span>${escapeHtml(x.agent)} — ${x.contracts} contrat${x.contracts>1?'s':''} × ${x.rate} DH</span><b style="color:var(--gold);">${x.amount.toLocaleString('fr-FR')} DH</b></div>`).join('')}
+      </div>
+    </div>` : ''}
     <div class="sup-perso-hidden-note">🙈 Ta prime de supervision est masquée — les chiffres d'équipe restent visibles.</div>
   `;
 
@@ -16310,6 +16377,102 @@ function loadProdConfigUI(){
   if(el('prodDaysWeek')) el('prodDaysWeek').value = pc.daysPerWeek ?? 5;
   if(el('prodDaysMonth')) el('prodDaysMonth').value = pc.daysPerMonth ?? 22;
   renderAgentPayTable();
+  renderIndepSupervisorCommissionTable();
+}
+
+// ═══ COMMISSION SUPERVISEUR PAR AGENT INDÉPENDANT ═══════════════════════════════════════════════
+// Widget DÉDIÉ, volontairement séparé du grand tableau "Rémunération par agent" (13 colonnes à faire
+// défiler) — le patron n'a pas réussi à trouver ce réglage à 3 reprises quand il n'était qu'une colonne
+// de plus dans ce tableau, ou confondu avec le taux global "Prime superviseur/contrat d'équipe" (qui
+// porte sur TOUTE l'équipe, jamais sur un agent précis). Ici : une ligne par agent indépendant, un
+// superviseur à choisir et un montant en DH par contrat SPÉCIFIQUE à cet agent. Aucun superviseur
+// choisi = 0 DH, personne ne touche rien sur les contrats de cet agent-là. Enregistre INSTANTANÉMENT
+// à chaque changement (select ou montant) — pas de bouton "Enregistrer" à chercher ailleurs sur la page.
+async function renderIndepSupervisorCommissionTable(){
+  const container = document.getElementById('indepSupCommTable');
+  if(!container) return;
+  const indepAgents = config.agents.filter(a => isIndependant(a));
+  const supervisors = listSupervisors();
+  if(indepAgents.length === 0){
+    container.innerHTML = '<div class="empty">Aucun agent indépendant pour le moment (Réglages → Agents).</div>';
+    return;
+  }
+  if(supervisors.length === 0){
+    container.innerHTML = '<div class="empty">Aucun superviseur réglé pour l\'instant — marque d\'abord un agent comme <b>📊 Superviseur</b> dans Réglages → Agents pour pouvoir lui attribuer une commission ici.</div>';
+    return;
+  }
+  const pc = getProdConfig();
+  const now = nowMA();
+  const y = now.getFullYear(), m = now.getMonth()+1;
+  const rows = await Promise.all(indepAgents.map(async agent=>{
+    const c = pc.agentPay[agent] || {};
+    const contracts = await monthlyRealizedContracts(agent, y, m);
+    return { agent, sup: c.indepCommissionSupervisor || '', rate: c.indepCommissionRate || 0, contracts };
+  }));
+  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent indépendant</th><th>Superviseur qui touche la commission</th><th>DH / contrat</th><th>Ce mois-ci</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const agentSafe = r.agent.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    const amount = Math.round((r.rate||0) * r.contracts);
+    html += `<tr>
+      <td><b>${escapeHtml(r.agent)}</b></td>
+      <td>
+        <select onchange="saveIndepSupervisorCommission('${agentSafe}','indepCommissionSupervisor', this.value)" style="min-width:170px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--panel2); color:var(--text);">
+          <option value="">— Aucun (0 DH) —</option>
+          ${supervisors.map(s=>`<option value="${escapeHtml(s)}" ${r.sup===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="number" min="0" step="5" value="${r.rate || ''}" placeholder="0" style="width:90px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--panel2); color:var(--text);" onchange="saveIndepSupervisorCommission('${agentSafe}','indepCommissionRate', this.value)"></td>
+      <td>${(r.sup && r.rate) ? `<b style="color:#b8935a;">${amount.toLocaleString('fr-FR')} DH</b> <span style="color:var(--muted); font-size:11px;">(${r.contracts} contrat${r.contracts>1?'s':''} × ${r.rate} DH)</span>` : '<span style="color:var(--muted);">0 DH — pas de commission réglée</span>'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+async function saveIndepSupervisorCommission(agent, field, value){
+  const pc = getProdConfig();
+  pc.agentPay = pc.agentPay || {};
+  if(!pc.agentPay[agent]) pc.agentPay[agent] = {};
+  if(field === 'indepCommissionSupervisor'){
+    if(value) pc.agentPay[agent].indepCommissionSupervisor = value;
+    else delete pc.agentPay[agent].indepCommissionSupervisor;
+  } else if(field === 'indepCommissionRate'){
+    const n = parseFloat(value);
+    if(!isNaN(n) && n > 0) pc.agentPay[agent].indepCommissionRate = n;
+    else delete pc.agentPay[agent].indepCommissionRate;
+  }
+  if(Object.keys(pc.agentPay[agent]).length === 0) delete pc.agentPay[agent];
+  await saveConfigSilent();
+  logAudit('Admin', 'Commission superviseur (agent indépendant) modifiée', agent);
+  showToast('✅ Enregistré', 'ok', 2000);
+  await renderIndepSupervisorCommissionTable();
+  renderMonthlyObjectif();
+  renderSupervision();
+}
+
+// Commission des superviseurs sur les agents indépendants qui leur sont attribués — INDÉPENDANTE de la
+// prime de supervision d'équipe (supervisorMonthlyBonus, qui porte sur les agents "de base", jamais sur
+// un agent en particulier). Réglée agent par agent (widget ci-dessus, Admin → Production) : agent X →
+// superviseur Y → tant de DH par contrat RÉALISÉ par X ce mois-ci (rétractations déjà retirées, comme
+// partout ailleurs, via monthlyRealizedContracts). Un agent sans superviseur choisi, ou à taux 0, ne
+// contribue à rien ici.
+async function indepSupervisorCommissionForMonth(year, month){
+  const pc = getProdConfig();
+  const result = {};
+  const indepAgents = config.agents.filter(a => isIndependant(a));
+  await Promise.all(indepAgents.map(async agent=>{
+    const c = pc.agentPay[agent] || {};
+    const sup = c.indepCommissionSupervisor;
+    const rate = Number(c.indepCommissionRate) || 0;
+    if(!sup || !rate) return;
+    const contracts = await monthlyRealizedContracts(agent, year, month);
+    if(contracts <= 0) return;
+    const amount = Math.round(contracts * rate);
+    if(!result[sup]) result[sup] = { amount: 0, detail: [] };
+    result[sup].amount += amount;
+    result[sup].detail.push({ agent, rate, contracts, amount });
+  }));
+  return result;
 }
 
 async function renderAgentPayTable(){
@@ -19900,6 +20063,20 @@ async function billingComputeAgent(agent, monthVal){
     salary = { ...salary, brut: salary.brut + supervisorBonusAmt, total: salary.total + supervisorBonusAmt, supervisorBonus: supervisorBonusAmt, supervisorBonusContracts };
   }
 
+  // 🤝 COMMISSION SUR AGENTS INDÉPENDANTS — flux SÉPARÉ de la prime de supervision d'équipe ci-dessus.
+  // Réglée agent indépendant par agent indépendant (Admin → Production → « Commission superviseur —
+  // agent indépendant par agent indépendant »), jamais en pool partagé : chaque agent indépendant qui
+  // a CE superviseur choisi contribue ses propres contrats × son propre taux.
+  let indepCommissionAmt = 0, indepCommissionDetail = [];
+  if(isSupervisor(agent)){
+    const indepCommMap = await indepSupervisorCommissionForMonth(year, month);
+    const mine = indepCommMap[agent];
+    if(mine){ indepCommissionAmt = Math.round(mine.amount); indepCommissionDetail = mine.detail; }
+  }
+  if(indepCommissionAmt){
+    salary = { ...salary, brut: salary.brut + indepCommissionAmt, total: salary.total + indepCommissionAmt, indepCommission: indepCommissionAmt, indepCommissionDetail };
+  }
+
   return {
     agent, monthVal, year, month, pay: displayPay, stats, assiduiteAcquise, paySource,
     importedTotal: rows.length,
@@ -20127,8 +20304,9 @@ function billingAgentSheetHTML(d, forImage){
   line(`Prime d'assiduité${d.assiduiteAcquise ? '' : ' — perdue (3e retard/absence)'}`, d.assiduiteAcquise ? d.pay.primeAssiduite : 0, { plus: true, color: d.assiduiteAcquise ? 'var(--green)' : 'var(--muted)' });
   const st = d.salary.status || {};
   const supBonus = d.salary.supervisorBonus || 0;
+  const indepComm = d.salary.indepCommission || 0;
   if(!st.isIndep){
-    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0) - supBonus), { plus: true });
+    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0) - supBonus - indepComm), { plus: true });
     if(st.objectif > 0){
       const manquantObj = Math.max(0, st.objectif - (br ? br.payable : st.realized));
       const tipObj = `Calculé sur les contrats PAYÉS (après rétractations et retours), pas sur les contrats signés — un agent qui tombe sous son minimum à cause de ses retours perd cette prime, même s'il a signé plus que l'objectif.`;
@@ -20138,7 +20316,7 @@ function billingAgentSheetHTML(d, forImage){
     }
     if(st.primeExtra) line(`Bonus ${st.extraCount} contrat${st.extraCount>1?'s':''} au-delà de l'objectif`, st.primeExtra, { plus: true, color: 'var(--green)' });
   } else {
-    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0) - supBonus, { plus: true });
+    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0) - supBonus - indepComm, { plus: true });
   }
   (d.salary.manualPrimes || []).forEach(p => {
     const amt = p.type === 'occurrences' ? (Number(p.amount) || 0) * (Number(p.count) || 1) : (Number(p.amount) || 0);
@@ -20146,6 +20324,10 @@ function billingAgentSheetHTML(d, forImage){
     if(applied) line(`🎁 ${escapeHtml(p.label || 'Prime')}`, amt, { plus: true, color: 'var(--gold)' });
   });
   if(supBonus) line(`📊 Prime supervision (${d.salary.supervisorBonusContracts || 0} contrats équipe)`, supBonus, { plus: true, color: 'var(--gold)' });
+  if(indepComm){
+    const detailTip = (d.salary.indepCommissionDetail || []).map(x => `${x.agent} : ${x.contracts} contrat${x.contracts>1?'s':''} × ${x.rate} DH = ${x.amount} DH`).join('&#10;');
+    line(`🤝 Commission sur agents indépendants <span title="${detailTip}" style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span>`, indepComm, { plus: true, color: 'var(--gold)' });
+  }
   line('SALAIRE BRUT', d.salary.brut, { bold: true, top: true });
 
   // Retenues, regroupées par nature pour rester lisible (le détail jour par jour reste dans le CSV)
