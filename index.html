@@ -1190,6 +1190,18 @@ function tryDeviceGateAdmin(){
         <div class="section-title">🐺 Classement des gros salaires (mois en cours)</div>
         <div class="section-sub">Le vrai classement qui compte à la fin du mois — celui du compte en banque.</div>
         <div class="cash-leaderboard" id="cashLeaderboard"></div>
+
+        <div class="section-title">📅 Mes mois précédents</div>
+        <div class="section-sub">Consulte ta paye et ton nombre de contrats payés d'un mois passé.</div>
+        <div class="admin-toolbar" style="margin-top:0;">
+          <div>
+            <label style="margin-bottom:4px;">Mois</label>
+            <select id="cashPastMonthSelect" onchange="renderCashPastMonth()">
+              <option value="">— Choisis un mois —</option>
+            </select>
+          </div>
+        </div>
+        <div id="cashPastMonthResult" style="margin-top:14px;"></div>
       </div>
 
       <div id="cashEmpty" class="empty" style="margin-top:30px;">Sélectionne ton nom pour voir ton cash. 💰</div>
@@ -1542,7 +1554,7 @@ function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:0;">
             <div>
               <label style="display:inline;margin:0 8px 0 0;">Mois analysé :</label>
-              <input type="month" id="monthSelect" onchange="renderAllMonthly()">
+              <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('monthSelect',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="monthSelect" onchange="renderAllMonthly()"><button type="button" onclick="shiftMonthInput('monthSelect',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
             </div>
             <button class="link-btn" onclick="exportOverviewCSV()">Exporter la vue d'ensemble (CSV)</button>
             <button class="link-btn" onclick="exportMonthlyBilanCSV()">📥 Exporter le bilan complet du mois (CSV)</button>
@@ -1600,15 +1612,17 @@ function tryDeviceGateAdmin(){
 
           <div style="margin-bottom:14px;">
             <label style="margin-bottom:6px;">🗓️ Statut spécial du jour</label>
-            <select id="corrJustifiedAbsence">
+            <select id="corrJustifiedAbsence" onchange="toggleAbsenceDurationField()">
               <option value="">Aucun (jour normal)</option>
               <optgroup label="Absence justifiée (perd le salaire, NE compte JAMAIS dans la prime)">
                 <option value="justifiee_full">🗓️ Absence justifiée — journée complète</option>
                 <option value="justifiee_half">🗓️ Absence justifiée — demi-journée</option>
+                <option value="justifiee_duree">🗓️ Absence justifiée — durée précise (minutes/heures)</option>
               </optgroup>
               <optgroup label="Absence injustifiée (perd le salaire, COMPTE TOUJOURS dans la prime)">
                 <option value="injustifiee_full">🚫 Absence injustifiée — journée complète</option>
                 <option value="injustifiee_half">🚫 Absence injustifiée — demi-journée</option>
+                <option value="injustifiee_duree">🚫 Absence injustifiée — durée précise (minutes/heures)</option>
               </optgroup>
               <optgroup label="Absence autorisée (perd le salaire, choisis si ça compte dans la prime)">
                 <option value="autorisee_full_compte">✅ Absence autorisée — journée complète — COMPTE dans la prime</option>
@@ -1625,7 +1639,18 @@ function tryDeviceGateAdmin(){
                 <option value="mise_a_pied_half">⛔ Mise à pied — demi-journée</option>
               </optgroup>
             </select>
-            <div class="section-sub" style="margin-top:6px;"><b>Absence justifiée</b> (avec justificatif : arrêt maladie, convocation administrative, etc.) : perd le salaire, ne pèse jamais sur la prime d'assiduité. <b>Absence injustifiée</b> : l'agent ne s'est pas présenté sans justificatif — perd le salaire et compte toujours dans l'escalade des 3ᵉ/5ᵉ/6ᵉ retards-absences du règlement. <b>Absence autorisée</b> : accord préalable de l'admin — perd le salaire dans tous les cas, à toi de choisir si elle compte ou non dans l'escalade. <b>Congé payé</b> : jamais de retenue, jamais compté — congé légal ou jour compensé. <b>Mise à pied</b> : sanction disciplinaire — perd le salaire et compte toujours dans l'escalade.</div>
+            <div class="section-sub" style="margin-top:6px;"><b>Absence justifiée</b> (avec justificatif : arrêt maladie, convocation administrative, etc.) : perd le salaire, ne pèse jamais sur la prime d'assiduité. <b>Absence injustifiée</b> : l'agent ne s'est pas présenté sans justificatif — perd le salaire et compte toujours dans l'escalade des 3ᵉ/5ᵉ/6ᵉ retards-absences du règlement. <b>Absence autorisée</b> : accord préalable de l'admin — perd le salaire dans tous les cas, à toi de choisir si elle compte ou non dans l'escalade. <b>Congé payé</b> : jamais de retenue, jamais compté — congé légal ou jour compensé. <b>Mise à pied</b> : sanction disciplinaire — perd le salaire et compte toujours dans l'escalade. <b>Durée précise</b> : au lieu d'une journée ou demi-journée entière, indique le nombre exact de minutes (ou d'heures) d'absence — la retenue de salaire est calculée exactement au prorata de cette durée.</div>
+            <div id="corrAbsenceDurationWrap" style="display:none; margin-top:10px;">
+              <label style="margin-bottom:4px;">⏱️ Durée de l'absence</label>
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <input type="number" id="corrAbsenceDurationMinutes" min="1" step="1" placeholder="Minutes" style="width:110px;" oninput="syncAbsenceDurationHours()">
+                <span style="color:var(--muted); font-size:12.5px;">minutes</span>
+                <span style="color:var(--muted); font-size:12.5px;">=</span>
+                <input type="number" id="corrAbsenceDurationHours" min="0" step="0.25" placeholder="Heures" style="width:110px;" oninput="syncAbsenceDurationMinutes()">
+                <span style="color:var(--muted); font-size:12.5px;">heures</span>
+              </div>
+              <div class="section-sub" style="margin-top:6px;">Ex : 2h d'absence = 120 minutes. La retenue est calculée au même taux minute que les retards.</div>
+            </div>
           </div>
           <div style="margin-bottom:14px;">
             <label style="margin-bottom:6px;">📝 Motif / commentaire (optionnel)</label>
@@ -1713,7 +1738,7 @@ function tryDeviceGateAdmin(){
             </div>
             <div>
               <label>Mois</label>
-              <input type="month" id="retractAdminMonth">
+              <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('retractAdminMonth',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="retractAdminMonth"><button type="button" onclick="shiftMonthInput('retractAdminMonth',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
             </div>
           </div>
           <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -1875,7 +1900,7 @@ function tryDeviceGateAdmin(){
 
         <div class="settings-box">
           <label>🎁 Primes manuelles</label>
-          <div class="section-sub">Ajoute une prime libre : nom et montant de ton choix. Cooptation, challenge gagné, prime exceptionnelle... Elle s'ajoute automatiquement au salaire du <b>mois que tu choisis</b> — y compris un mois passé — et apparaît partout où le salaire est affiché : Mon argent côté agent, tableau des objectifs, masse salariale et fiche de paie.</div>
+          <div class="section-sub">Ajoute une prime OU une retenue libre : nom et montant de ton choix (montant négatif = retenue, ex: -200 pour retirer 200 DH). Cooptation, challenge gagné, prime exceptionnelle, commission de supervision à ajuster... Elle s'applique automatiquement au salaire du <b>mois que tu choisis</b> — y compris un mois passé — et apparaît partout où le salaire est affiché : Mon argent côté agent, tableau des objectifs, masse salariale et fiche de paie.</div>
           <div class="section-sub" style="margin-top:6px;">👥 Tu peux viser <b>un agent</b>, ou d'un coup <b>tous les agents</b>, tous les salariés, ou tous les indépendants — pratique pour un challenge collectif. Chaque agent reçoit sa propre copie, supprimable individuellement ensuite.</div>
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
@@ -1893,7 +1918,7 @@ function tryDeviceGateAdmin(){
               </div>
               <div>
                 <label style="margin-bottom:4px;">Montant (DH)</label>
-                <input type="number" id="primeAmount" min="0" step="10" style="width:110px;">
+                <input type="number" id="primeAmount" step="10" style="width:110px;" title="Positif pour ajouter une prime/commission, négatif pour retirer (retenue).">
               </div>
               <div>
                 <label style="margin-bottom:4px;">Type</label>
@@ -2070,7 +2095,7 @@ function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div>
               <label style="margin-bottom:4px;">Mois de production</label>
-              <input type="month" id="billingProdMonth" onchange="renderBillingImportSummary()" title="Le mois auquel rattacher les contrats du fichier. Un nouvel import sur le même mois complète l'existant sans créer de doublons.">
+              <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('billingProdMonth',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="billingProdMonth" onchange="renderBillingImportSummary()" title="Le mois auquel rattacher les contrats du fichier. Un nouvel import sur le même mois complète l'existant sans créer de doublons."><button type="button" onclick="shiftMonthInput('billingProdMonth',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
             </div>
             <div>
               <label style="margin-bottom:4px;">Fichier CSV</label>
@@ -2091,7 +2116,7 @@ function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div>
               <label style="margin-bottom:4px;">Imputer sur le mois de paie</label>
-              <input type="month" id="billingRetMonth" onchange="renderBillingImportSummary()" title="Le mois de PAIE sur lequel retenir ces retours — celui où tu les reçois, pas celui où les contrats ont été signés. Exemple : retours reçus fin mars pour la période 21/12 → 20/01, tu choisis mars.">
+              <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('billingRetMonth',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="billingRetMonth" onchange="renderBillingImportSummary()" title="Le mois de PAIE sur lequel retenir ces retours — celui où tu les reçois, pas celui où les contrats ont été signés. Exemple : retours reçus fin mars pour la période 21/12 → 20/01, tu choisis mars."><button type="button" onclick="shiftMonthInput('billingRetMonth',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
             </div>
             <div>
               <label style="margin-bottom:4px;">Période couverte — du</label>
@@ -2598,7 +2623,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-08-31-r160';
+const APP_VERSION = '2026-09-01-r162';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -5684,6 +5709,29 @@ function markCorrAttachmentForRemoval(){
   renderCorrAttachmentCurrent();
 }
 
+// Affiche/masque le champ de durée précise selon le statut spécial choisi — seuls les 2 statuts
+// "durée précise" (justifiée/injustifiée) en ont besoin, les autres restent en journée/demi-journée.
+function toggleAbsenceDurationField(){
+  const val = document.getElementById('corrJustifiedAbsence').value;
+  const wrap = document.getElementById('corrAbsenceDurationWrap');
+  if(wrap) wrap.style.display = (val === 'justifiee_duree' || val === 'injustifiee_duree') ? 'block' : 'none';
+}
+// Les deux champs (minutes / heures) restent synchronisés dans les deux sens — l'admin saisit celui
+// qui lui est le plus naturel, l'autre se met à jour tout seul. La valeur réellement sauvegardée est
+// toujours en minutes (voir saveDayCorrection).
+function syncAbsenceDurationHours(){
+  const minEl = document.getElementById('corrAbsenceDurationMinutes');
+  const hEl = document.getElementById('corrAbsenceDurationHours');
+  const min = parseFloat(minEl.value);
+  if(!isNaN(min)) hEl.value = Math.round((min/60) * 100) / 100;
+}
+function syncAbsenceDurationMinutes(){
+  const minEl = document.getElementById('corrAbsenceDurationMinutes');
+  const hEl = document.getElementById('corrAbsenceDurationHours');
+  const h = parseFloat(hEl.value);
+  if(!isNaN(h)) minEl.value = Math.round(h * 60);
+}
+
 async function loadDayCorrectionForm(){
   const agent = document.getElementById('corrAgent').value;
   const dateInput = document.getElementById('corrDate');
@@ -5699,6 +5747,9 @@ async function loadDayCorrectionForm(){
     document.getElementById('corrRealise').value = '';
     document.getElementById('corrJustifiedAbsence').value = '';
     document.getElementById('corrAbsenceComment').value = '';
+    document.getElementById('corrAbsenceDurationMinutes').value = '';
+    document.getElementById('corrAbsenceDurationHours').value = '';
+    toggleAbsenceDurationField();
     document.getElementById('corrAttachmentFile').value = '';
     document.getElementById('corrAttachmentStatus').textContent = '';
     corrCurrentAttachment = null; corrPendingAttachment = null; corrAttachmentPendingRemove = false;
@@ -5714,6 +5765,9 @@ async function loadDayCorrectionForm(){
   document.getElementById('corrOut').value = outEvt ? outEvt.time.slice(0,5) : '';
   document.getElementById('corrJustifiedAbsence').value = log.justifiedAbsence || '';
   document.getElementById('corrAbsenceComment').value = log.absenceComment || '';
+  document.getElementById('corrAbsenceDurationMinutes').value = log.absenceDurationMinutes || '';
+  document.getElementById('corrAbsenceDurationHours').value = log.absenceDurationMinutes ? Math.round((log.absenceDurationMinutes/60)*100)/100 : '';
+  toggleAbsenceDurationField();
   document.getElementById('corrAttachmentFile').value = '';
   document.getElementById('corrAttachmentStatus').textContent = '';
   corrCurrentAttachment = log.attachmentData ? { data: log.attachmentData, type: log.attachmentType, name: log.attachmentName } : null;
@@ -5759,6 +5813,13 @@ async function saveDayCorrection(){
 
   const justifiedAbsence = document.getElementById('corrJustifiedAbsence').value || null;
   const absenceComment = document.getElementById('corrAbsenceComment').value.trim() || null;
+  const absenceDurationMinutes = (justifiedAbsence === 'justifiee_duree' || justifiedAbsence === 'injustifiee_duree')
+    ? (parseInt(document.getElementById('corrAbsenceDurationMinutes').value) || 0)
+    : null;
+  if((justifiedAbsence === 'justifiee_duree' || justifiedAbsence === 'injustifiee_duree') && !absenceDurationMinutes){
+    alert('Indique la durée de l\'absence en minutes (ou en heures — le champ minutes se remplit automatiquement).');
+    return;
+  }
 
   if(!isIndependant(agent)){
     const inTime = document.getElementById('corrIn').value;
@@ -5798,6 +5859,7 @@ async function saveDayCorrection(){
     const logToSave = { events };
     if(justifiedAbsence) logToSave.justifiedAbsence = justifiedAbsence;
     if(absenceComment) logToSave.absenceComment = absenceComment;
+    if(absenceDurationMinutes) logToSave.absenceDurationMinutes = absenceDurationMinutes;
 
     // Pièce jointe : encodée en base64 et écrite directement sur le log Firestore (pas de Firebase
     // Storage — forfait gratuit du projet). saveDayLog remplace tout le log à chaque sauvegarde, donc une
@@ -6520,7 +6582,9 @@ function tickADFTimer(){
 const JUSTIFIED_ABSENCE_TYPES = {
   justifiee_full:              { label: 'Absence justifiée (journée)',                          shortLabel: 'Absence justifiée (jour)',              icon: '🗓️', deduction: 'full', counted: false, paid: false, justified: true },
   justifiee_half:               { label: 'Absence justifiée (demi-journée)',                     shortLabel: 'Absence justifiée (demi-j)',            icon: '🗓️', deduction: 'half', counted: false, paid: false, justified: true },
+  justifiee_duree:               { label: 'Absence justifiée (durée précise)',                    shortLabel: 'Absence justifiée (durée)',             icon: '🗓️', deduction: 'duree', counted: false, paid: false, justified: true },
   injustifiee_full:             { label: 'Absence injustifiée (journée)',                        shortLabel: 'Absence injustifiée (jour)',            icon: '🚫', deduction: 'full', counted: true,  paid: false, justified: false },
+  injustifiee_duree:             { label: 'Absence injustifiée (durée précise)',                  shortLabel: 'Absence injustifiée (durée)',           icon: '🚫', deduction: 'duree', counted: true,  paid: false, justified: false },
   injustifiee_half:             { label: 'Absence injustifiée (demi-journée)',                   shortLabel: 'Absence injustifiée (demi-j)',          icon: '🚫', deduction: 'half', counted: true,  paid: false, justified: false },
   autorisee_full_compte:        { label: 'Absence autorisée (journée) — compte dans la prime',   shortLabel: 'Absence autorisée (jour, compte)',      icon: '✅', deduction: 'full', counted: true,  paid: false, justified: true },
   autorisee_half_compte:        { label: 'Absence autorisée (demi-journée) — compte dans la prime', shortLabel: 'Absence autorisée (demi-j, compte)', icon: '✅', deduction: 'half', counted: true,  paid: false, justified: true },
@@ -6558,7 +6622,13 @@ function absenceCommentTitleStr(comment){
   return ` title="${String(comment).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"`;
 }
 function absenceCommentTitle(log){
-  return absenceCommentTitleStr(log && log.absenceComment);
+  if(!log) return absenceCommentTitleStr(null);
+  const jaMeta = log.justifiedAbsence ? JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence] : null;
+  const dureeTxt = (jaMeta && jaMeta.deduction === 'duree' && log.absenceDurationMinutes)
+    ? `Durée : ${log.absenceDurationMinutes} min (${Math.round((log.absenceDurationMinutes/60)*100)/100}h)`
+    : '';
+  const combined = [dureeTxt, log.absenceComment].filter(Boolean).join(' — ');
+  return absenceCommentTitleStr(combined || null);
 }
 
 // Petit lien 📎 cliquable vers la pièce jointe (certificat médical, justificatif...) éventuellement
@@ -7767,7 +7837,7 @@ async function addManualPrime(){
 
   if(!destinataires.length){ alert('Ajoute au moins un agent dans Réglages → Agents.'); return; }
   if(!label){ alert('Donne un nom à cette prime (ex: Prime de cooptation).'); return; }
-  if(isNaN(amount) || amount <= 0){ alert('Indique un montant valide.'); return; }
+  if(isNaN(amount) || amount === 0){ alert('Indique un montant valide (positif pour ajouter, négatif pour retirer).'); return; }
 
   const prime = {
     id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
@@ -7785,7 +7855,8 @@ async function addManualPrime(){
 
   const [year, month] = monthVal.split('-').map(Number);
   const moisLisible = new Date(year, month-1, 1).toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
-  if(destinataires.length > 1 && !confirm(`Ajouter « ${label} » (${amount} DH) à ${destinataires.length} agents pour ${moisLisible} ?`)) return;
+  const estRetenue = amount < 0;
+  if(destinataires.length > 1 && !confirm(`${estRetenue ? 'Retirer' : 'Ajouter'} « ${label} » (${amount} DH) ${estRetenue ? 'de' : 'à'} ${destinataires.length} agents pour ${moisLisible} ?`)) return;
 
   // Chaque agent reçoit sa PROPRE copie de la prime, avec son propre identifiant : elle reste
   // supprimable ou modifiable individuellement ensuite, exactement comme une prime saisie à la main.
@@ -7795,8 +7866,8 @@ async function addManualPrime(){
     list.push(copie);
     await saveManualPrimes(dest, year, month, list);
   }
-  logAudit('Admin', `Prime manuelle « ${label} » ${amount} DH — ${moisLisible}`, destinataires.join(', '));
-  showToast(`🎁 Prime ajoutée à ${destinataires.length} agent${destinataires.length>1?'s':''} sur ${moisLisible}.`, 'ok', 5000);
+  logAudit('Admin', `${estRetenue ? 'Retenue' : 'Prime'} manuelle « ${label} » ${amount} DH — ${moisLisible}`, destinataires.join(', '));
+  showToast(`${estRetenue ? '➖ Retenue' : '🎁 Prime'} ${estRetenue ? 'appliquée' : 'ajoutée'} à ${destinataires.length} agent${destinataires.length>1?'s':''} sur ${moisLisible}.`, 'ok', 5000);
 
   document.getElementById('primeLabel').value = '';
   document.getElementById('primeAmount').value = '';
@@ -7831,10 +7902,11 @@ async function renderManualPrimesList(){
   let html = '<table><thead><tr><th>Agent</th><th>Prime</th><th>Type</th><th>Montant</th><th>Statut</th><th></th></tr></thead><tbody>';
   for(const r of rows){
     let typeLabel, amountLabel, statusLabel;
+    const estRet = (r.amount||0) < 0;
     if(r.type === 'occurrences'){
       typeLabel = 'Plusieurs fois';
       amountLabel = `${r.amount} DH × <input type="number" min="1" step="1" value="${r.count||1}" style="width:55px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);" onchange="updateManualPrimeCount('${r.agent.replace(/'/g,"\\'")}', ${year}, ${month}, '${r.id}', this.value)">`;
-      statusLabel = `<span class="tag ok">${(r.amount * Math.max(1,r.count||1)).toLocaleString('fr-FR')} DH acquis</span>`;
+      statusLabel = `<span class="tag ${estRet?'late':'ok'}">${(r.amount * Math.max(1,r.count||1)).toLocaleString('fr-FR')} DH ${estRet?'retenu':'acquis'}</span>`;
     } else if(r.type === 'conditional'){
       typeLabel = `Si ≥ ${r.targetObjective} contrats`;
       const realized = await monthlyRealizedContracts(r.agent, year, month);
@@ -7844,7 +7916,7 @@ async function renderManualPrimesList(){
     } else {
       typeLabel = 'Unique';
       amountLabel = `${r.amount.toLocaleString('fr-FR')} DH`;
-      statusLabel = '<span class="tag ok">✅ Acquis</span>';
+      statusLabel = estRet ? '<span class="tag late">➖ Retenu</span>' : '<span class="tag ok">✅ Acquis</span>';
     }
     html += `<tr>
       <td><b>${r.agent}</b></td>
@@ -9469,7 +9541,7 @@ async function renderBossRevenue(force){
       <td title="${commTip}" style="cursor:help;">${gainContrats>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${gainContrats.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}${(d.contractPart>0 && d.extraPart>0) ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">dont ${d.contractPart.toLocaleString('fr-FR')} DH commission + ${d.extraPart.toLocaleString('fr-FR')} DH bonus/contrat</div>` : (d.extraPart>0 ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">bonus par contrat au-delà de l'objectif</div>` : '')}${objRegle ? `<div style="font-size:11px; margin-top:2px; color:${d.resteAvantCommission>0 ? 'var(--amber)' : 'var(--green)'};">${d.payableMonth}/${payD.objectifMensuel} ce mois${d.resteAvantCommission>0 ? ` · encore ${d.resteAvantCommission}` : ' · objectif dépassé'}</div>${objReduit ? `<div style="font-size:10.5px; margin-top:1px; color:var(--accent);" title="Cet agent n'a pas travaillé le mois entier (embauche ou départ en cours de mois). Son objectif minimum est réduit dans la même proportion que son salaire fixe : ${objBrut} × ${Math.round(payD.prorationFactor*100)}% = ${payD.objectifMensuel}. On ne lui demande pas les contrats d'un mois complet pour une partie de mois.">objectif réduit ${objBrut} → ${payD.objectifMensuel} (${Math.round(payD.prorationFactor*100)}% du mois)</div>` : ''}` : ''}</td>
       <td>${d.objectifPrimes>0 ? `<span style="color:var(--green);">+${d.objectifPrimes.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.deductionsTotal>0 ? `<span style="color:var(--red);">-${d.deductionsTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
-      <td>${d.manualPrimesTotal>0 ? `<span style="color:var(--gold);">+${d.manualPrimesTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
+      <td>${d.manualPrimesTotal!==0 ? `<span style="color:${d.manualPrimesTotal>0?'var(--gold)':'var(--red)'};">${d.manualPrimesTotal>0?'+':''}${d.manualPrimesTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.supervisorBonus>0 ? `<span style="color:var(--gold);">+${d.supervisorBonus.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td><b style="color:${d.isIndep?'var(--independant)':'var(--green)'};">${d.total.toLocaleString('fr-FR')} DH</b></td>
     </tr>`;
@@ -13168,9 +13240,15 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
       // jours non ouvrés : les deux écrans se contredisaient sur le même jour, et l'agent perdait une
       // quote-part de fixe pour une journée qu'il n'avait de toute façon pas à travailler.
       if(jaMeta && isWorkingDay(dateStr)){
-        const amt = jaMeta.deduction === 'full' ? dailyFixedQuote : (jaMeta.deduction === 'half' ? dailyFixedQuote / 2 : 0);
+        const dureeMin = log.absenceDurationMinutes || 0;
+        const amt = jaMeta.deduction === 'full' ? dailyFixedQuote
+          : (jaMeta.deduction === 'half' ? dailyFixedQuote / 2
+          : (jaMeta.deduction === 'duree' ? minuteRate * dureeMin : 0));
         total += amt;
-        const payTxt = jaMeta.deduction === 'none' ? 'aucune retenue (payée)' : (jaMeta.deduction === 'full' ? 'journée non payée' : 'demi-journée non payée');
+        const payTxt = jaMeta.deduction === 'none' ? 'aucune retenue (payée)'
+          : (jaMeta.deduction === 'full' ? 'journée non payée'
+          : (jaMeta.deduction === 'half' ? 'demi-journée non payée'
+          : `${dureeMin} min non payée${dureeMin>1?'s':''} (au prorata)`));
         const commentTxt = log.absenceComment ? ` — ${log.absenceComment}` : '';
         items.push({ date: dateStr, label: `${jaMeta.label} — ${payTxt}${commentTxt}`, amount: Math.round(amt) });
       }
@@ -15042,7 +15120,7 @@ async function renderCash(){
         <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
         ${rt.fixedFull>0 ? `<div><span>Fixe + prime fixe (prorata)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.returnsCount>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -15061,7 +15139,7 @@ async function renderCash(){
         ${(pay.perContract>0 || rt.contractPart>0) ? `<div><span>Commission contrats${explicationCommission ? `<small>${explicationCommission}</small>` : ''}</span><b>${rt.contractPart.toLocaleString('fr-FR')} DH</b></div>` : ''}
         <div class="${rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif (${monthRes.status.objectif||'—'})</span><b>${rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : (monthRes.status.objectif ? 'Pas encore atteint' : 'Non réglé')}</b></div>
         ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.returnsCount>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
         ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -15073,6 +15151,75 @@ async function renderCash(){
   renderCashRealGrid();
   renderCashSim();
   renderCashLeaderboard(salaryRankings);
+  populateCashPastMonthSelect();
+}
+
+// ---- 📅 Mes mois précédents (agent) ----
+// Réutilise EXACTEMENT le même moteur que le tableau admin (billingComputeAgent) : mêmes chiffres, pas
+// de recalcul maison qui pourrait diverger. Si l'admin a "figé" le mois (archive définitive), on
+// affiche l'archive plutôt que de recalculer — c'est LE chiffre officiel de paie, même si un réglage a
+// changé depuis. Sinon, on calcule à la volée (mois pas encore figé, ex: mois dernier tout juste fini).
+function populateCashPastMonthSelect(){
+  const sel = document.getElementById('cashPastMonthSelect');
+  if(!sel) return;
+  const current = sel.value;
+  const now = nowMA();
+  const curVal = billingMonthVal(now.getFullYear(), now.getMonth()+1);
+  let opts = '<option value="">— Choisis un mois —</option>';
+  for(let i=1; i<=12; i++){
+    const dt = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const mv = billingMonthVal(dt.getFullYear(), dt.getMonth()+1);
+    opts += `<option value="${mv}">${escapeHtml(billingMonthLabel(mv))}</option>`;
+  }
+  if(sel.innerHTML !== opts) sel.innerHTML = opts;
+  if(current && current !== curVal) sel.value = current;
+}
+
+async function renderCashPastMonth(){
+  const el = document.getElementById('cashPastMonthResult');
+  if(!el || !currentCashAgent) return;
+  const monthVal = document.getElementById('cashPastMonthSelect').value;
+  if(!monthVal){ el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
+  const agent = currentCashAgent;
+
+  const payslip = await getBillingPayslips(monthVal);
+  const frozenEntry = payslip && payslip.entries ? payslip.entries.find(e=>e.agent===agent) : null;
+
+  let contracts, retracted, returnsCount, returnsDivisor, returnAmount, brut, deductionsTotal, net, figé;
+  if(frozenEntry){
+    figé = true;
+    contracts = frozenEntry.contracts; retracted = frozenEntry.retracted || 0;
+    returnsCount = frozenEntry.returns || 0; returnsDivisor = frozenEntry.returnDivisor;
+    returnAmount = frozenEntry.returnAmount || 0; brut = frozenEntry.brut;
+    deductionsTotal = frozenEntry.deductions; net = frozenEntry.net;
+  } else {
+    figé = false;
+    const d = await billingComputeAgent(agent, monthVal);
+    contracts = d.counterRealized; retracted = d.retractCounter || 0;
+    returnsCount = d.returns.count || 0; returnsDivisor = d.returns.divisor;
+    returnAmount = d.returns.amount || 0; brut = d.salary.brut;
+    deductionsTotal = d.salary.deductions.total; net = d.salary.total;
+  }
+
+  const badge = figé
+    ? `<span class="tag ok" title="Mois clôturé par l'admin — ce montant ne bougera plus.">🔒 Figé par l'admin</span>`
+    : `<span class="tag warn" title="L'admin n'a pas encore clôturé ce mois — ce montant peut encore changer (retour de facturation reçu tardivement, rétractation, correction de pointage...).">⏳ Pas encore figé — peut encore bouger</span>`;
+
+  el.innerHTML = `
+    <div style="padding:16px 18px; border-radius:12px; background:var(--panel2); border:1px solid var(--border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+        <div style="font-weight:800; font-size:15px; text-transform:capitalize;">${escapeHtml(billingMonthLabel(monthVal))}</div>
+        ${badge}
+      </div>
+      <div class="cash-breakdown">
+        <div><span>Contrats payés</span><b>${contracts}${retracted>0 || returnsCount>0 ? ` <span style="color:var(--muted); font-weight:500; font-size:12px;" title="${retracted} rétractation(s) et ${returnsCount} retour(s) de facturation ${returnsDivisor===1?'en 1:1':'÷'+returnsDivisor} déjà déduits.">(${retracted} rétract. · ${returnsCount} retour${returnsCount>1?'s':''} ${returnsDivisor===1?'1:1':'÷'+returnsDivisor})</span>` : ''}</b></div>
+        <div><span>Salaire brut</span><b>${brut.toLocaleString('fr-FR')} DH</b></div>
+        ${deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${returnAmount>0 ? `<div class="miss"><span>Dont retenue retours</span><b>-${Math.round(returnAmount).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        <div class="hit" style="border-top:2px solid var(--border); margin-top:6px; padding-top:8px;"><span style="font-weight:800;">SALAIRE NET</span><b style="font-size:16px;">${net.toLocaleString('fr-FR')} DH</b></div>
+      </div>
+    </div>`;
 }
 
 // Classement "argent réel" partagé entre le hero (rang affiché) et la liste du classement, pour que
@@ -15233,7 +15380,7 @@ function renderCashRealGrid(){
         <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:12px 0 4px;">🤝 Tes contrats (${rt ? rt.contractsRealized : monthContracts} payé${(rt ? rt.contractsRealized : monthContracts)>1?'s':''} ce mois${rt && (rt.contractsBrut>rt.contractsRealized || rt.returnsCount>0) ? ` <span title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés — ${rt.contractsBrut} signés au total." style="cursor:help; opacity:0.7;">(sur ${rt.contractsBrut} signés) ⓘ</span>` : ''})</div>
         ${contractLinesFor(rt ? rt.contractDetail : contractEarnings(pay, monthContracts, monthContracts), `${rt ? rt.contractsRealized : monthContracts} contrat${(rt ? rt.contractsRealized : monthContracts)>1?'s':''}`)}
         ${rt && rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${rt && rt.manualPrimesTotal>0 ? `<div class="hit"><span>🎁 Prime(s) manuelle(s)</span><b>+${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt && rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt && rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement (mois)</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
 
         <div style="border-top:2px solid var(--gold); margin-top:10px; padding-top:8px;"><span><b>Total du mois à ce jour</b></span><b style="color:var(--gold); font-size:16px;">${rt ? rt.total.toLocaleString('fr-FR') : 0} DH</b></div>
@@ -16240,7 +16387,7 @@ async function renderMonthlyObjectif(){
       <td>${isFreeRow ? '—' : (stPaye.objectif>0 ? (stPaye.remaining>0 ? stPaye.remaining+' à faire' : '✅ atteint') : '—')}</td>
       <td>${primeTxt}</td>
       <td>${isFreeRow ? '—' : (full && full.deductions.total>0 ? `<span style="color:var(--red);">-${full.deductions.total.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>')}</td>
-      <td><b style="color:${r.isIndep?'var(--independant)':(noObj?'var(--amber)':'var(--green)')};">${fullTotalWithSupervisor.toLocaleString('fr-FR')} DH</b>${supervisorBonusMo>0 ? `<div style="font-size:11px;color:var(--muted);">dont +${supervisorBonusMo.toLocaleString('fr-FR')} DH supervision</div>` : ''}${full && full.manualPrimesTotal>0 ? `<div style="font-size:11px;color:var(--gold);">🎁 dont +${full.manualPrimesTotal.toLocaleString('fr-FR')} DH prime(s) manuelle(s)</div>` : ''}</td>
+      <td><b style="color:${r.isIndep?'var(--independant)':(noObj?'var(--amber)':'var(--green)')};">${fullTotalWithSupervisor.toLocaleString('fr-FR')} DH</b>${supervisorBonusMo>0 ? `<div style="font-size:11px;color:var(--muted);">dont +${supervisorBonusMo.toLocaleString('fr-FR')} DH supervision</div>` : ''}${full && full.manualPrimesTotal!==0 ? `<div style="font-size:11px;color:${full.manualPrimesTotal>0?'var(--gold)':'var(--red)'};">${full.manualPrimesTotal>0?'🎁 dont +':'➖ dont '}${full.manualPrimesTotal.toLocaleString('fr-FR')} DH prime(s)/retenue(s) manuelle(s)</div>` : ''}</td>
     </tr>`;
   }
   const totalMasseSalariale = totalBrutTeam + totalBrutBackoffice;
@@ -16890,6 +17037,18 @@ function billingRetKey(monthVal){ return `billingReturns:${monthVal}`; }
 function billingRatioKey(monthVal){ return `billingRatio:${monthVal}`; }
 function billingPayslipKey(monthVal){ return `billingPayslip:${monthVal}`; }
 const PENDING_RETRACT_KEY = 'billingPendingRetractions';
+
+// Navigue un <input type="month"> d'un mois en avant/arrière (delta = -1 ou +1) et déclenche son
+// onchange (ou le listener délégué éventuel) — pour ne pas avoir à rouvrir le sélecteur natif à
+// chaque fois qu'on veut consulter le mois précédent d'un tableau ou d'un import.
+function shiftMonthInput(inputId, delta){
+  const el = document.getElementById(inputId);
+  if(!el || !el.value) return;
+  const [y, m] = el.value.split('-').map(Number);
+  const d = new Date(y, (m - 1) + delta, 1);
+  el.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
 
 function billingMonthVal(year, month){ return `${year}-${String(month).padStart(2,'0')}`; }
 
@@ -17879,6 +18038,7 @@ async function importBillingProd(text, monthVal){
   const duplicatesInFile = [];
   let ridCounter = 0;
   let undatedCount = 0;
+  let emptyRowsSkipped = 0;
 
   // Ordre des dates déterminé sur la colonne entière avant toute lecture : ton suivi est en français
   // (09/12/2025), un export d'un autre outil pourrait être en américain. On ne suppose rien.
@@ -17889,7 +18049,7 @@ async function importBillingProd(text, monthVal){
 
   parsed.rows.forEach(raw => {
     const r = billingMapRow(raw);
-    if(!r.agent && !r.nom && !r.numContrat) return;
+    if(!r.agent && !r.nom && !r.numContrat){ emptyRowsSkipped++; return; }
     // Lignes inversées dans le message Telegram : ce qui a été remis en place, et ce qui reste douteux.
     if(r._fixes) r._fixes.forEach(f => fixesLog.push(`${r.nom || r.numContrat || '?'} — ${f}`));
     if(r._warnings) r._warnings.forEach(w => warningsLog.push(`${r.nom || r.numContrat || '?'} — ${w}`));
@@ -18060,6 +18220,7 @@ async function importBillingProd(text, monthVal){
     ${moved.length ? `<div style="font-size:12.5px; color:#7aa7d9; margin-top:6px;">📦 <b>${moved.length} contrat${moved.length>1?'s':''} déplacé${moved.length>1?'s':''} de mois</b> — leur date a changé depuis le dernier import, l'exemplaire de l'ancien mois a été retiré pour éviter tout doublon.<br><span style="color:var(--muted);">${moved.slice(0,8).map(escapeHtml).join(' · ')}${moved.length>8 ? ' …' : ''}</span></div>` : ''}
     ${shiftedCount ? `<div style="font-size:12.5px; color:#7aa7d9; margin-top:6px;">🔀 <b>${shiftedCount} contrat${shiftedCount>1?'s':''} rattaché${shiftedCount>1?'s':''} malgré une ligne décalée</b> — la colonne Agent contenait autre chose (une virgule non protégée dans l'adresse décale toute la fin de ligne), le nom du vendeur a été retrouvé ailleurs dans la ligne.</div>` : ''}
     <div style="font-size:12px; color:var(--muted); margin-top:5px;">Chaque contrat va au mois de <b>sa</b> date — tu peux donc importer un fichier contenant plusieurs mois d'un coup.${undatedCount ? ` ${undatedCount} ligne(s) sans date lisible ont été placées dans ${escapeHtml(billingMonthLabel(monthVal))}.` : ''}</div>
+    ${emptyRowsSkipped ? `<div style="font-size:12.5px; color:var(--red); margin-top:6px;">🚫 <b>${emptyRowsSkipped} ligne${emptyRowsSkipped>1?'s':''} du fichier ${emptyRowsSkipped>1?'ont':'a'} été complètement ignorée${emptyRowsSkipped>1?'s':''}</b> — aucune colonne exploitable trouvée (ni agent, ni nom, ni numéro de contrat). Vérifie qu'il ne s'agit pas de vraies lignes mal formatées dans ton fichier.</div>` : ''}
   </div>`;
   // ═══ RAPPROCHEMENT « OÙ SONT PASSÉS MES CONTRATS ? » ═══════════════════════════════════════════
   // Le nombre de lignes importées et le total affiché ailleurs dans l'appli ne coïncident pas toujours,
@@ -20258,7 +20419,16 @@ async function syncBackofficeInbox(opts){
   // proprement. Une seule règle de lecture pour les deux boîtes : impossible qu'elles divergent.
   const ingest = (data, idForLog)=>{
     const r = backofficeReadFields(data || {});
-    if(!r.dateISO){ result.badDate.push(r.numContrat || r.nom || idForLog); return false; }
+    if(!r.dateISO){
+      result.badDate.push({
+        id: r.numContrat || r.nom || idForLog,
+        numContrat: r.numContrat || '',
+        nom: r.nom || '',
+        agent: r.agent || '',
+        rawDate: (r.date || r.datePropre || '').toString().trim() || '(champ date vide)'
+      });
+      return false;
+    }
     const agent = billingResolveAgent(r.agent) || billingFindAgentInRow(data);
     if(!agent){ result.unresolvedAgent.push(r.agent || r.numContrat || idForLog); return false; }
     // Lignes inversées remises en place (et doutes restants) sur les contrats reçus au quotidien :
@@ -20615,7 +20785,10 @@ async function renderBackofficeInboxPanel(lastResult){
   if(r && r.badDate && r.badDate.length){
     html += `<div style="margin-top:10px; padding:12px 14px; border-radius:10px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.4);">
       <div style="font-weight:800; color:var(--amber); margin-bottom:6px;">⚠️ ${r.badDate.length} contrat${r.badDate.length>1?'s':''} sans date lisible</div>
-      <div style="font-size:12.5px; color:var(--muted);">Ils restent en attente. Vérifie que Pabbly envoie bien le champ <b>date</b> au format 10/08/2026 ou 2026-08-10.</div>
+      <div style="font-size:12.5px; color:var(--muted); line-height:1.8;">${r.badDate.slice(0,15).map(x=>
+        `<b>${escapeHtml(x.numContrat || x.nom || x.id)}</b>${x.nom && x.numContrat ? ` — ${escapeHtml(x.nom)}` : ''}${x.agent ? ` (${escapeHtml(x.agent)})` : ''} — date reçue : « ${escapeHtml(x.rawDate)} »`
+      ).join('<br>')}${r.badDate.length>15 ? `<br>… et ${r.badDate.length-15} de plus` : ''}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Ils restent en attente. Vérifie que Pabbly envoie bien le champ <b>date</b> au format 10/08/2026 ou 2026-08-10 pour ce(s) contrat(s) précis.</div>
     </div>`;
   }
   el.innerHTML = html;
