@@ -1833,7 +1833,8 @@ function tryDeviceGateAdmin(){
             </div>
             <div>
               <label>📊 Prime superviseur / contrat d'équipe (DH)</label>
-              <input type="number" id="prodDefaultPrimeSupervisor" min="0" step="10">
+              <input type="number" id="prodDefaultPrimeSupervisor" min="0" step="10" title="Valeur PAR DÉFAUT, appliquée à tout superviseur sans réglage individuel. Pour personnaliser CE superviseur précisément, descends jusqu'au tableau « Rémunération par agent » juste en dessous, colonne « 📊 Prime superviseur/contrat équipe » (tout à droite du tableau) — ce que tu y saisis pour lui écrase ce défaut.">
+              <div style="font-size:11px; color:var(--muted); margin-top:4px;">Valeur par défaut, pour tous. Pour personnaliser un superviseur précis → tableau <b>Rémunération par agent</b> juste en dessous, colonne <b>📊 Prime superviseur/contrat équipe</b> (tout à droite).</div>
             </div>
             <div>
               <label>Jours ouvrés / semaine</label>
@@ -2623,7 +2624,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r163';
+const APP_VERSION = '2026-09-01-r165';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -11538,7 +11539,14 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
   // moment le plus important de son intégration : il vient de prouver qu'il peut le faire.
   const palierDod = agentPalierAnciennete(agentName, refDateStr);
   if(palierDod !== 'confirme' && todayRealized > 0){
-    const premierJamais = (c.monthlyRealized || 0) <= todayRealized;
+    // ⚠️ BUG CORRIGÉ — "premierJamais" (le tout premier contrat de la carrière de l'agent, jamais un
+    // contrat parmi d'autres) était déduit de c.monthlyRealized, qui repart à zéro chaque mois. Le 1er
+    // (ou les tout premiers jours) d'un nouveau mois, monthlyRealized = todayRealized par pure
+    // coïncidence de calendrier, même pour un agent en poste depuis des semaines : "Ton premier
+    // contrat ici !" s'affichait alors à quelqu'un qui en avait déjà signé des dizaines le mois
+    // d'avant. Seul palierDod === 'jour1' (vrai tout premier jour de travail, peu importe le mois en
+    // cours) garantit qu'il s'agit réellement d'un premier contrat jamais signé.
+    const premierJamais = palierDod === 'jour1';
     if(premierJamais){
       return { text: seedPick([
         `🎉 Ton premier contrat ici ! C'est le plus dur, et tu viens de le faire. Rappelle-toi comment tu t'y es pris.`,
