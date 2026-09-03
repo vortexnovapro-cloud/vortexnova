@@ -1558,6 +1558,7 @@ function tryDeviceGateAdmin(){
             </div>
             <button class="link-btn" onclick="exportOverviewCSV()">Exporter la vue d'ensemble (CSV)</button>
             <button class="link-btn" onclick="exportMonthlyBilanCSV()">📥 Exporter le bilan complet du mois (CSV)</button>
+            <button class="link-btn" id="exportBilanPdfBtn" onclick="exportMonthlyBilanPDF()" title="Le même bilan, en tableau PDF couleur : rétractations en rouge, objectifs atteints en vert.">🖨️ PDF en couleur</button>
           </div>
 
           <div class="kpi-row" id="kpiRow"></div>
@@ -1570,13 +1571,21 @@ function tryDeviceGateAdmin(){
           <div id="escaladeContainer"></div>
 
           <div class="section-title">⏰ Retards et Absences — détail par agent</div>
-          <div class="section-sub">Même rappel du règlement que dans « Mon argent », pour n'importe quel agent et n'importe quel mois (mois choisi ci-dessus).</div>
+          <div class="section-sub">Choisis un agent et un mois — <b>y compris un mois précédent</b>, avec les flèches juste ici, pas besoin de remonter en haut de la page.</div>
           <div class="admin-toolbar" style="margin-top:0;">
             <div>
               <label style="margin-bottom:4px;">Agent</label>
               <select id="raaAgentSelect" onchange="renderRetardsAbsencesAdmin(true)">
                 <option value="">— Choisis un agent —</option>
               </select>
+            </div>
+            <div>
+              <label style="margin-bottom:4px;">Mois</label>
+              <span style="display:inline-flex; align-items:center; gap:4px;">
+                <button type="button" onclick="shiftMonthInput('monthSelect',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button>
+                <span id="raaMonthLabel" style="min-width:120px; text-align:center; font-weight:700; padding:6px 4px; display:inline-block;">—</span>
+                <button type="button" onclick="shiftMonthInput('monthSelect',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button>
+              </span>
             </div>
           </div>
           <div id="adminRetardsAbsencesPanel" style="margin-top:14px;"></div>
@@ -2631,7 +2640,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r167';
+const APP_VERSION = '2026-09-01-r169';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4061,6 +4070,12 @@ async function renderRetardsAbsencesAdmin(force){
   const monthVal = document.getElementById('monthSelect')?.value;
   const now = nowMA();
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
+  // 🏷️ Repère de mois DIRECTEMENT sur cette section — avant, seul le sélecteur "Mois analysé" tout en
+  // haut de Vue d'ensemble pilotait ce panneau, invisible dès qu'on avait scrollé jusqu'ici. Le patron
+  // ne le trouvait pas et pensait qu'il n'existait pas. Ces flèches ◀ ▶ pilotent le MÊME #monthSelect
+  // (via shiftMonthInput, qui déclenche déjà le rafraîchissement complet), donc aucun état dupliqué.
+  const raaLabel = document.getElementById('raaMonthLabel');
+  if(raaLabel) raaLabel.textContent = new Date(year, month-1, 1).toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
   await renderRetardsAbsencesPanel('adminRetardsAbsencesPanel', agent, year, month, force);
 }
 
@@ -10701,12 +10716,12 @@ function exportOverviewCSV(){
   a.click();
 }
 
-// Bilan complet du mois : contrats, mini obligatoire, objectif visé, assiduité et salaire brut estimé
-// pour chaque agent — une seule ligne par agent, prête à archiver hors de l'app (Excel, comptabilité...).
-async function exportMonthlyBilanCSV(){
-  const monthVal = document.getElementById('monthSelect').value || todayStr().slice(0,7);
+// Bilan complet du mois : contrats, mini obligatoire, objectif visé, assiduité, rétractations et salaire
+// brut estimé pour chaque agent — une seule ligne par agent. Factorisé (computeMonthlyBilanRows) pour
+// que l'export CSV et l'export PDF couleur partagent EXACTEMENT le même calcul : jamais deux moteurs
+// susceptibles de diverger pour le même bilan (même leçon que le compteur de rétractations paie/import).
+async function computeMonthlyBilanRows(monthVal){
   const [year, month] = monthVal.split('-').map(Number);
-  if(config.agents.length === 0){ alert('Ajoute des agents dans Réglages.'); return; }
   const [supervisionBonusMap, indepCommMap] = await Promise.all([
     supervisorMonthlyBonus(year, month),
     indepSupervisorCommissionForMonth(year, month)
@@ -10714,10 +10729,14 @@ async function exportMonthlyBilanCSV(){
   const rows = await Promise.all(config.agents.map(async agent=>{
     const isIndep = isIndependant(agent);
     const pay = getAgentPay(agent, year, month);
-    const [st, desiredObjective, monthStats] = await Promise.all([
+    const [st, desiredObjective, monthStats, retracted] = await Promise.all([
       monthlyObjectifStatus(agent, year, month),
       getMonthlyDesiredObjective(agent, year, month),
-      monthlyStats(agent, year, month)
+      monthlyStats(agent, year, month),
+      // 🔻 Rétractations — même compteur que celui utilisé pour la paie (monthlyRetractions), pas le
+      // décompte brut des lignes importées : c'est LE chiffre qui doit apparaître ici pour rester
+      // cohérent avec "Contrats comptés (paie)" sur la fiche détaillée de l'agent.
+      monthlyRetractions(agent, year, month)
     ]);
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const salRes = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
@@ -10732,18 +10751,26 @@ async function exportMonthlyBilanCSV(){
       mini: isIndep ? 0 : (pay.objectifMensuel || 0),
       vise: desiredObjective || 0,
       retardsCumules: isIndep ? 0 : monthStats.retardsCumules,
+      retracted: retracted || 0,
       assiduite: isIndep ? '' : (assiduiteAcquise ? 'Acquise' : 'Perdue'),
       supervisorBonus, indepCommission,
       salaire: salRes.total + supervisorBonus + indepCommission
     };
   }));
   rows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
-  let csv = 'Agent;Independant;Contrats realises;Mini obligatoire;Objectif vise;Retards cumules;Assiduite;Prime supervision;Commission agents independants;Salaire brut estime (mois)\n';
+  return rows;
+}
+
+async function exportMonthlyBilanCSV(){
+  const monthVal = document.getElementById('monthSelect').value || todayStr().slice(0,7);
+  if(config.agents.length === 0){ alert('Ajoute des agents dans Réglages.'); return; }
+  const rows = await computeMonthlyBilanRows(monthVal);
+  let csv = 'Agent;Independant;Contrats realises;Mini obligatoire;Objectif vise;Retractations;Retards cumules;Assiduite;Prime supervision;Commission agents independants;Salaire brut estime (mois)\n';
   rows.forEach(r=>{
-    csv += `${csvSafe(r.agent)};${r.isIndep?'Oui':'Non'};${r.realized};${r.mini||''};${r.vise||''};${r.retardsCumules||''};${r.assiduite};${r.supervisorBonus||''};${r.indepCommission||''};${r.salaire}\n`;
+    csv += `${csvSafe(r.agent)};${r.isIndep?'Oui':'Non'};${r.realized};${r.mini||''};${r.vise||''};${r.retracted||''};${r.retardsCumules||''};${r.assiduite};${r.supervisorBonus||''};${r.indepCommission||''};${r.salaire}\n`;
   });
   const totalSalaire = rows.reduce((s,r)=>s+r.salaire, 0);
-  csv += `;;;;;;;TOTAL;${totalSalaire}\n`;
+  csv += `;;;;;;;;TOTAL;${totalSalaire}\n`;
   const blob2 = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url2 = URL.createObjectURL(blob2);
   const a2 = document.createElement('a');
@@ -10751,6 +10778,70 @@ async function exportMonthlyBilanCSV(){
   a2.download = `bilan_complet_${monthVal}.csv`;
   a2.click();
   showToast(`📥 Bilan de ${monthVal} exporté (${rows.length} agent${rows.length>1?'s':''})`, 'ok');
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 🖨️ BILAN COMPLET DU MOIS EN PDF COULEUR — même données que le CSV (computeMonthlyBilanRows), mais
+// un vrai tableau HTML coloré (rétractations en rouge, objectif atteint en vert, assiduité perdue en
+// orange) capturé en image via le pipeline PDF déjà utilisé pour le Bilan de la journée
+// (capturerPageEnCanvas + jsPDF) — un seul moteur PDF dans toute l'appli, jamais deux.
+async function exportMonthlyBilanPDF(){
+  const btn = document.getElementById('exportBilanPdfBtn');
+  const monthVal = document.getElementById('monthSelect').value || todayStr().slice(0,7);
+  if(config.agents.length === 0){ alert('Ajoute des agents dans Réglages.'); return; }
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Préparation...'; }
+  try{
+    await ensureJsPDF();
+    const rows = await computeMonthlyBilanRows(monthVal);
+    const totalSalaire = rows.reduce((s,r)=>s+r.salaire, 0);
+    const cell = (txt, style)=> `<td style="padding:9px 10px; border-bottom:1px solid rgba(255,255,255,0.08); font-size:13px; ${style||''}">${txt}</td>`;
+    const th = (txt)=> `<th style="padding:9px 10px; text-align:left; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:0.4px; color:#8b98a6; border-bottom:2px solid rgba(255,255,255,0.16); white-space:nowrap;">${txt}</th>`;
+    const rowsHtml = rows.map(r=>{
+      // Rétractations : la cellule la plus voulue par le patron doit sauter aux yeux — rouge dès 1.
+      const retractStyle = r.retracted > 0 ? 'color:#ff6b6b; font-weight:800;' : 'color:#5a6577;';
+      const objAtteint = r.mini > 0 && r.realized >= r.mini;
+      const realizedStyle = r.mini > 0 ? `font-weight:800; color:${objAtteint ? '#34c77a' : '#e5a83d'};` : 'font-weight:700; color:#e8edf2;';
+      const assiduiteStyle = r.assiduite === 'Perdue' ? 'color:#ff6b6b; font-weight:700;' : (r.assiduite === 'Acquise' ? 'color:#34c77a;' : 'color:#5a6577;');
+      return `<tr style="${r.retracted > 0 ? 'background:rgba(255,107,107,0.07);' : ''}">
+        ${cell(`<b>${escapeHtml(r.agent)}</b>${r.isIndep ? ' <span style="font-size:10px; color:#8b98a6;">(indép.)</span>' : ''}`)}
+        ${cell(realizedStyle ? `<span style="${realizedStyle}">${r.realized}</span>` : r.realized)}
+        ${cell(r.mini || '—')}
+        ${cell(r.vise || '—')}
+        ${cell(`<span style="${retractStyle}">${r.retracted || 0}</span>`)}
+        ${cell(r.isIndep ? '—' : (r.retardsCumules || 0))}
+        ${cell(`<span style="${assiduiteStyle}">${r.assiduite || '—'}</span>`)}
+        ${cell(`<b>${r.salaire.toLocaleString('fr-FR')} DH</b>`)}
+      </tr>`;
+    }).join('');
+    const tableHtml = `<table style="width:100%; border-collapse:collapse;">
+      <thead><tr>${th('Agent')}${th('Contrats')}${th('Mini')}${th('Visé')}${th('Rétract.')}${th('Retards')}${th('Assiduité')}${th('Salaire brut')}</tr></thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot><tr><td colspan="7" style="padding:12px 10px; text-align:right; font-size:12.5px; font-weight:800; color:#8b98a6; border-top:2px solid rgba(255,255,255,0.16);">TOTAL</td><td style="padding:12px 10px; border-top:2px solid rgba(255,255,255,0.16); font-size:15px; font-weight:900; color:#e5c15a;">${totalSalaire.toLocaleString('fr-FR')} DH</td></tr></tfoot>
+    </table>
+    <div style="margin-top:14px; display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:#8b98a6;">
+      <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#ff6b6b; margin-right:5px;"></span>Rétractation(s) ce mois</span>
+      <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#34c77a; margin-right:5px;"></span>Objectif atteint / assiduité acquise</span>
+      <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#e5a83d; margin-right:5px;"></span>Objectif pas encore atteint</span>
+    </div>`;
+    const canvas = await capturerPageEnCanvas({
+      innerHTML: tableHtml,
+      width: 900,
+      title: 'Bilan complet du mois',
+      badge: 'Facturation & Paie',
+      badgeColor: '#c9a870',
+      caption: billingMonthLabel(monthVal),
+      densite: 2.4
+    });
+    const img = canvas.toDataURL('image/jpeg', 0.94);
+    const w = canvas.width, h = canvas.height;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
+    pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
+    pdf.save(`bilan_complet_${monthVal}.pdf`);
+    showToast(`✅ PDF généré (${rows.length} agent${rows.length>1?'s':''}).`, 'ok', 6000);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '🖨️ PDF en couleur'; }
+  }
 }
 
 // Rappel de fin de mois : dès que l'admin se connecte un mois différent du dernier mois vu, on lui
