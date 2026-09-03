@@ -2280,7 +2280,9 @@ function tryDeviceGateAdmin(){
         <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
           <button class="link-btn" onclick="downloadBillingAgentCSV()" title="Le tableau de cet agent pour ce mois : tous ses contrats nominatifs, ses retours, et le détail ligne par ligne de son salaire. Ouvrable dans Excel ou Google Sheets.">📥 Télécharger ce tableau (CSV)</button>
           <button class="link-btn" onclick="exportBillingAgentImage()" title="Image du tableau, calibrée pour rester lisible une fois envoyée sur WhatsApp.">📸 Image WhatsApp de ce tableau</button>
+          <button class="link-btn" id="exportBillingAgentPdfBtn" onclick="exportBillingAgentPDF()" title="Le tableau de CET agent en PDF couleur — à envoyer par email ou en pièce jointe Document sur WhatsApp, net et zoomable.">🖨️ PDF (à envoyer)</button>
           <button class="link-btn" onclick="downloadAllBillingAgentsCSV()" title="Un seul fichier contenant le tableau complet de chaque agent, les uns après les autres.">📦 Télécharger TOUS les agents (CSV)</button>
+          <button class="link-btn" id="exportAllBillingAgentsPdfBtn" onclick="downloadAllBillingAgentsPDF()" title="Un seul PDF avec une page par agent — pour tout archiver d'un coup.">📦 TOUS les agents (PDF)</button>
         </div>
 
         <div class="section-title" style="margin-top:34px;">🕐 4. Historique des salaires nets</div>
@@ -2640,7 +2642,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r169';
+const APP_VERSION = '2026-09-01-r170';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -20549,6 +20551,85 @@ async function exportBillingAgentImage(){
     caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
     filename: `${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie.png`
   });
+}
+
+// 🖨️ PDF DU TABLEAU D'UN AGENT — même contenu coloré que l'image WhatsApp ci-dessus (billingAgentSheetHTML),
+// mais en PDF : un fichier propre à envoyer par email ou en pièce jointe « Document » sur WhatsApp (pas
+// recompressé comme une image), que l'agent peut zoomer sans perte. Même moteur PDF que le Bilan de la
+// journée et le Bilan complet du mois (capturerPageEnCanvas + jsPDF) — un seul moteur PDF dans toute l'appli.
+async function exportBillingAgentPDF(){
+  const d = BILLING_LAST_SHEET;
+  if(!d){ alert('Affiche d\'abord le tableau d\'un agent.'); return; }
+  const btn = document.getElementById('exportBillingAgentPdfBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Préparation...'; }
+  try{
+    await ensureJsPDF();
+    const inner = `<div style="font-size:0;"></div>` + billingAgentSheetHTML(d, true);
+    const canvas = await capturerPageEnCanvas({
+      innerHTML: inner,
+      width: 1000,
+      title: `${d.agent} — ${billingMonthLabel(d.monthVal)}`,
+      badge: 'Tableau de paie',
+      badgeColor: '#c9a870',
+      caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
+      densite: 2.4
+    });
+    const img = canvas.toDataURL('image/jpeg', 0.94);
+    const w = canvas.width, h = canvas.height;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
+    pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
+    pdf.save(`${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie.pdf`);
+    showToast(`✅ PDF de ${d.agent} généré — prêt à envoyer.`, 'ok', 6000);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '🖨️ PDF (à envoyer)'; }
+  }
+}
+
+// 📦 PDF de TOUS les agents d'un coup — un fichier, une page par agent (même contenu que chaque PDF
+// individuel ci-dessus), pour archiver le mois complet sans cliquer agent par agent. Pour ENVOYER un
+// agent en particulier, utilise plutôt le bouton individuel : celui-ci sert à tout garder d'un coup.
+async function downloadAllBillingAgentsPDF(){
+  const monthVal = document.getElementById('billingSheetMonth')?.value;
+  if(!monthVal) return;
+  const agents = config.agents || [];
+  if(!agents.length){ alert('Aucun agent.'); return; }
+  const btn = document.getElementById('exportAllBillingAgentsPdfBtn');
+  if(btn){ btn.disabled = true; }
+  try{
+    await ensureJsPDF();
+    const { jsPDF } = window.jspdf;
+    let pdf = null;
+    for(let i = 0; i < agents.length; i++){
+      const a = agents[i];
+      if(btn) btn.textContent = `⏳ ${a} (${i+1}/${agents.length})...`;
+      const d = await billingComputeAgent(a, monthVal);
+      const inner = `<div style="font-size:0;"></div>` + billingAgentSheetHTML(d, true);
+      const canvas = await capturerPageEnCanvas({
+        innerHTML: inner,
+        width: 1000,
+        title: `${a} — ${billingMonthLabel(monthVal)}`,
+        badge: 'Tableau de paie',
+        badgeColor: '#c9a870',
+        caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
+        pageInfo: `agent ${i+1}/${agents.length}`,
+        densite: 2.4
+      });
+      const img = canvas.toDataURL('image/jpeg', 0.94);
+      const w = canvas.width, h = canvas.height;
+      if(i === 0){
+        pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
+      } else {
+        pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait');
+      }
+      pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
+    }
+    pdf.save(`tableaux_agents_${monthVal}.pdf`);
+    logAudit('Admin', 'Export PDF de tous les tableaux agents', monthVal);
+    showToast(`✅ PDF généré — ${agents.length} agent${agents.length>1?'s':''}, une page chacun.`, 'ok', 6000);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '📦 TOUS les agents (PDF)'; }
+  }
 }
 
 // ------------------------------------------------------------
