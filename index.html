@@ -850,6 +850,22 @@
   </div>
 </div>
 
+<!-- 🎯 Fenêtre du Point du jour : s'ouvre toute seule au premier créneau, puis à la demande depuis le
+     bandeau. z-index sous pwModal (une demande de mot de passe doit toujours passer devant). -->
+<div id="pdjModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.78); z-index:99996; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:24px; max-width:760px; width:100%; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 14px 50px rgba(0,0,0,0.6);">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:6px;">
+      <div id="pdjModalTitre" style="font-size:20px; font-weight:900; color:var(--text);">🎯 Point du jour</div>
+      <button type="button" onclick="fermerPointDuJour()" title="Fermer — le bandeau reste en haut de ta page tant que tous les points ne sont pas faits" style="background:none; border:none; color:var(--muted); font-size:24px; line-height:1; cursor:pointer; padding:0 4px;">×</button>
+    </div>
+    <div id="pdjModalSousTitre" style="font-size:13.5px; color:var(--text); opacity:0.9; margin-bottom:16px;"></div>
+    <div id="pdjModalBody" style="overflow:auto; flex:1; padding-right:4px;"></div>
+    <div style="margin-top:16px; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+      <button type="button" onclick="fermerPointDuJour()" style="padding:11px 20px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:700; cursor:pointer;">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <div id="pwModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:99998; align-items:center; justify-content:center; padding:20px;">
   <div style="background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:28px 24px; max-width:340px; width:100%; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.5);">
     <div style="font-size:30px; margin-bottom:8px;">🔒</div>
@@ -1238,6 +1254,8 @@ function tryDeviceGateAdmin(){
           </div>
         </div>
 
+        <div id="pointDuJourBannerSup" style="display:none; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; background:linear-gradient(135deg, rgba(229,72,77,0.16), rgba(229,72,77,0.06)); border:2px solid rgba(229,72,77,0.45); border-radius:16px; padding:20px 24px; margin-bottom:18px;"></div>
+
         <div class="supervision-dashboard" id="supervisionDashboard"></div>
 
         <div id="supervisionDetail"></div>
@@ -1409,6 +1427,12 @@ function tryDeviceGateAdmin(){
             <button type="button" id="dailyBriefingExportBtnAdminHQ" onclick="exportBriefingImage('dailyBriefingAdmin','dailyBriefingExportBtnAdminHQ','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin','#e0c25e',true)" title="PNG haute définition (2400 px). À envoyer dans WhatsApp via 📎 → Document : aucune compression, lisible au zoom." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max (à envoyer en Document)</button>
           </div>
           <div id="dailyBriefingAdmin"></div>
+        </div>
+
+        <div class="mega-section theme-red">
+          <div class="mega-section-title">🎯 Point du jour — qui a été vu, et par qui <span style="font-size:12px; font-weight:800; background:rgba(229,72,77,0.16); border:1px solid rgba(229,72,77,0.45); border-radius:20px; padding:3px 12px; letter-spacing:0.3px; color:#e5484d;">SUIVI SUPERVISEURS</span></div>
+          <div class="mega-section-sub">Deux fois par jour (12h et 15h), l'appli alerte tes superviseurs sur les agents à 0 contrat ou sous leur objectif du jour, avec un conseil adapté à chaque situation. Ils confirment ici, agent par agent, que le point a bien été fait. Tu vois <b>reçu</b> (leur page était ouverte), <b>lu</b> (ils ont ouvert la fenêtre) et <b>fait</b> (avec l'heure et ce qui s'est dit).</div>
+          <div id="pointDuJourAdminPanel"></div>
         </div>
 
         <div class="mega-section theme-orange" style="border-top-width:4px;">
@@ -2800,6 +2824,23 @@ function registerActivity(){
 // Demande la permission de notification système dès qu'un agent se connecte (geste utilisateur requis) —
 // et débloque l'audio du navigateur au passage pour que les bips fonctionnent même sans clic ultérieur.
 let notifUnavailableWarned = false;
+// Les garde-fous « déjà notifié / déjà vu » sont datés (une clé par jour). Sans ménage, ils
+// s'accumulent indéfiniment dans le localStorage du poste. On efface ici tout ce qui ne concerne ni
+// aujourd'hui ni la semaine en cours — appelé une fois au démarrage, coût nul.
+function nettoyerVieillesClesLocales(){
+  try{
+    const today = todayStr();
+    const aSupprimer = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(!k) continue;
+      const m = k.match(/^vn_(?:pdjPopup|pdjRecu|missingObjNotif)_(\d{4}-\d{2}-\d{2})/);
+      if(m && m[1] < today) aSupprimer.push(k);
+    }
+    aSupprimer.forEach(k=>{ try{ localStorage.removeItem(k); }catch(e){} });
+  }catch(e){}
+}
+
 function primeInactivityAlerts(agentOverride){
   const agent = agentOverride !== undefined ? agentOverride : currentAgent;
   try{
@@ -3233,6 +3274,7 @@ let firebaseAuthReady = Promise.resolve();
 // déjà "firebaseAuthReady" avant de charger quoi que ce soit, donc le comportement au démarrage — et
 // l'ordre exact des opérations — reste identique à avant, juste sans bloquer le premier rendu.
 document.addEventListener('DOMContentLoaded', function(){
+try{ nettoyerVieillesClesLocales(); }catch(e){}
 try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "REMPLACE_MOI"){
     firebase.initializeApp(firebaseConfig);
@@ -3383,6 +3425,7 @@ let refreshTierLastRun = { rapide: 0, courant: 0, lent: 0 };
 function clearRenderCaches(){
   prodBoardCache = {};
   dayLogCache = {};
+  if(typeof invalidateBriefingRowsCache === 'function') invalidateBriefingRowsCache();
   infrCache = {};
   retractCache = {};
   desiredObjCache = {};
@@ -3498,6 +3541,7 @@ function startAutoRefresh(kind){
         // saisie de salaire en cours.
         if(courantDu){
           checkSupervisionBriefingAcksForAdmin();
+          checkPointDuJourAcksForAdmin();
           checkWeeklyBriefingReminder();
           const overviewEl = document.getElementById('admin-overview');
           if(overviewEl && overviewEl.classList.contains('active')) showAdminSub('overview');
@@ -4247,7 +4291,7 @@ function showAdminSub(sub){
     renderBillingAgentSheet();
     renderBillingHistory();
   }
-  if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
+  if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderPointDuJourAdmin(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); renderProdBoardHistoryPanel(); }
   if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderAssistanceQuotaPanel(); }
@@ -4306,6 +4350,8 @@ function tryAdminLogin(){
     checkMonthRollover();
     checkWeeklyBriefingReminder();
     checkSupervisionBriefingAcksForAdmin();
+    checkPointDuJourAcksForAdmin();
+    renderPointDuJourAdmin();
     initExploDefaults();
     initObjSnapDefaults();
     renderAllMonthly();
@@ -6765,6 +6811,23 @@ function justifiedAbsenceLabel(type, short){
   return short ? t.shortLabel : t.label;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// 🗣️ LE LIBELLÉ QUE LIT L'AGENT — pas celui que lit la paie
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// Les libellés ci-dessus sont écrits pour l'admin : « Absence autorisée (journée) — compte dans la
+// prime ». Parfait dans un tableau de paie, absurde dans une carte envoyée sur le WhatsApp de
+// l'équipe, où l'agent lit une mention de prime au milieu d'un message d'encouragement. Cette
+// fonction ne garde que la nature de l'absence, sans la mécanique de paie ni la durée.
+function absenceLabelPourAgent(type){
+  if(!type) return 'Absent';
+  if(type.startsWith('conge_paye')) return 'Congé payé';
+  if(type.startsWith('justifiee')) return 'Absence justifiée';
+  if(type.startsWith('autorisee')) return 'Absence autorisée';
+  if(type.startsWith('injustifiee')) return 'Absence injustifiée';
+  if(type.startsWith('mise_a_pied')) return 'Mise à pied';
+  return justifiedAbsenceLabel(type, true);
+}
+
 // Petit texte de fin de badge (ex: "retenue, compte dans l'escalade assiduité") — reflète à la fois si
 // le jour est payé et s'il compte dans l'escalade retard/absence de la prime d'assiduité.
 function justifiedAbsenceStatusSuffix(type){
@@ -8763,7 +8826,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // chacun par rapport à ses objectifs du mois entier, avec un rythme/jour nécessaire sur les jours ouvrés
   // restants. Un seul calcul par agent, partagé entre sa carte "équipe" et sa carte "indépendant".
   const [y, m] = dateStr.split('-').map(Number);
-  const remainingDays = workingDaysRemainingFrom(dateStr);
+  // Même correction que dans le Conseil du matin : tant que la journée n'est pas terminée, elle compte
+  // encore dans les jours ouvrés restants (voir joursOuvresRestantsPourAgir). Le soir, ou sur un jour
+  // passé, la fonction retombe exactement sur l'ancien calcul — aucun changement pour le bilan du soir.
+  const remainingDays = joursOuvresRestantsPourAgir(dateStr);
   const monthlyByAgent = {};
   await Promise.all(allDayRows.map(async r=>{
     const pay = getAgentPay(r.agent, y, m);
@@ -8793,7 +8859,6 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // 10 jours ouvrés = deux semaines. Assez pour ne plus mentir sur une série longue (« 10j+ »), et
   // moitié moins de journées à relire que la fenêtre de 20 que j'avais posée d'abord — celle-ci
   // alourdissait l'ouverture du Bilan sans rien apporter de plus dans la pratique.
-  const STREAK_WINDOW_DAYS = 10;
   const streakRecentDates = lastNWorkingDaysBefore(dateStr, STREAK_WINDOW_DAYS);
   const streakBoardsByDate = {};
   await Promise.all(streakRecentDates.map(async d=>{
@@ -8945,6 +9010,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const badge = dailyProgressBadge(r.realized, r.agent);
       const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
+      // Une journée d'absence complète (maladie, congé payé, absence autorisée...) ne casse aucune
+      // série : l'agent n'était pas au poste, son 0 n'est pas un résultat. Même règle que le conseil
+      // du matin et que l'historique des 5 derniers jours (voir jourNeutrePourSerie).
+      const absentJourComplet = !!(mo && mo.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence] && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence].deduction === 'full');
+      const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
       const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
@@ -8961,10 +9031,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${commentLinesToHtml(commentLines)}
           ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
         </div>` : '';
-      const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
+      const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], streakDayCounts);
       const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
       const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak}${zeroStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée sans finir à 0 contrat${zeroStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreakTxt}</span>` : '';
-      const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], dayIsOver);
+      const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], streakDayCounts);
       const objectiveStreakTxt = streakLabel(objectiveStreak), objectiveStreakPlus = streakEstPlafonnee();
       const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak}${objectiveStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée avec l'objectif du jour atteint${objectiveStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreakTxt}</span>` : '';
       const podiumColor = podiumBorderColor(allRankByAgent[r.agent]?.rank);
@@ -8983,7 +9053,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
         </div>
         ${noObj
-          ? '<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div>'
+          ? (absentJourComplet
+              ? `<div style="font-size:13.5px; color:#b98a42; font-weight:600;">🗓️ ${absenceLabelPourAgent(mo.justifiedAbsence)} — journée non travaillée, aucun objectif attendu</div>${r.realized>0 ? `<div style="margin-top:4px; font-size:13px;">Et malgré tout : <b style="color:#4f9d78; font-weight:700;">${r.realized}</b> contrat${r.realized>1?'s':''}</div>` : ''}`
+              : (isInDecouverte(r.agent) && (!decouverteEndDateOf(r.agent) || dateStr <= decouverteEndDateOf(r.agent))
+                ? `<div style="font-size:13.5px; color:#b8935a; font-weight:600;">🔍 En découverte — aucun objectif imposé</div><div style="margin-top:4px; font-size:13px;">Réalisé : <b style="color:${r.realized>0?'#4f9d78':'var(--text)'}; font-weight:700;">${r.realized}</b> contrat${r.realized>1?'s':''}</div>`
+                : `<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé : <b style="color:var(--text); font-weight:700;">${r.realized}</b> contrat${r.realized>1?'s':''}</div>`))
           : `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">Contrats ${dayIsOver ? 'de la journée' : "d'aujourd'hui"}</div>
              <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
@@ -8998,6 +9072,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const hit = hasObj && r.realized >= r.objective;
       const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
+      // Une journée d'absence complète (maladie, congé payé, absence autorisée...) ne casse aucune
+      // série : l'agent n'était pas au poste, son 0 n'est pas un résultat. Même règle que le conseil
+      // du matin et que l'historique des 5 derniers jours (voir jourNeutrePourSerie).
+      const absentJourComplet = !!(mo && mo.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence] && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence].deduction === 'full');
+      const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
       const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
@@ -9008,10 +9087,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${commentLinesToHtml(commentLines)}
           ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
         </div>` : '';
-      const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], dayIsOver);
+      const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], streakDayCounts);
       const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
       const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak}${zeroStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée sans finir à 0 contrat${zeroStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreakTxt}</span>` : '';
-      const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], dayIsOver);
+      const objectiveStreak = computeObjectiveStreak(r.realized, r.objective, streakHistoryByAgent[r.agent], streakDayCounts);
       const objectiveStreakTxt = streakLabel(objectiveStreak), objectiveStreakPlus = streakEstPlafonnee();
       const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak}${objectiveStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée avec l'objectif du jour atteint${objectiveStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreakTxt}</span>` : '';
       const podiumColor = podiumBorderColor(allRankByAgent[r.agent]?.rank);
@@ -11090,6 +11169,19 @@ function workingDaysElapsedInMonth(){
 }
 // Jours ouvrés restants APRÈS une date donnée, jusqu'à la fin de ce même mois (exclut la date elle-même —
 // sa production est déjà comptée dans le réalisé, on ne calcule le rythme que sur ce qu'il reste à faire).
+// ⚠️ CORRIGÉ — LE RYTHME REQUIS ÉTAIT MÉCANIQUEMENT TROP ÉLEVÉ TOUTE LA JOURNÉE.
+// workingDaysRemainingFrom() compte à partir de DEMAIN. Parfait pour un bilan du soir (la journée est
+// jouée), faux pour le conseil du matin : l'avant-dernier jour ouvré du mois, on annonçait « il faut
+// tout faire en 1 jour » alors qu'il en restait deux, et le « X contrat/jour nécessaires » affiché
+// dans chaque carte était surévalué du matin jusqu'à la fermeture. Cette fonction-ci rajoute la
+// journée en cours tant qu'elle n'est pas terminée (même règle que isDayOverForMessage, celle qui
+// décide déjà partout ailleurs si on parle au présent ou au passé).
+function joursOuvresRestantsPourAgir(dateStr){
+  const ds = dateStr || todayStr();
+  const base = workingDaysRemainingFrom(ds);
+  return base + ((isWorkingDay(ds) && !isDayOverForMessage(ds)) ? 1 : 0);
+}
+
 function workingDaysRemainingFrom(dateStr){
   const [y, m, dNum] = dateStr.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -11238,16 +11330,18 @@ function supervisorNudge(agentName){
 // motivant sans jamais ressembler à une alerte.
 // Fine enveloppe : calcule les lignes normalement (personalDailyCommentRaw, inchangée), puis corrige
 // "demain"/"hier" au bon jour ouvré avant de renvoyer — voir calendarizeRelativeDays plus haut.
-function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed){
-  const lines = personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed);
+function personalDailyComment(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed, ctx){
+  const lines = personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed, ctx);
   if(!lines) return lines;
   // 🏷️ PÉRIMÈTRE EXPLICITE — voir commentLinesToHtml. Ces phrases-là parlent TOUJOURS du cumul du
   // MOIS. Sans l'étiquette, elles se retrouvaient collées sous un gros « 0 » qui, lui, est le chiffre
   // du JOUR : l'agent lisait « 0 » puis « 16 contrats » dans la même carte et concluait, logiquement,
   // que l'appli comptait mal. Les deux chiffres étaient justes — c'est le cadre qui manquait.
-  return lines.map(l => ({ ...l, scope: 'mois', text: calendarizeRelativeDays(l.text, refDayForSeed) }));
+  // Certaines lignes savent elles-mêmes de quelle période elles parlent (la journée en cours, la
+  // semaine) : on ne les réétiquette plus de force en « Ce mois ». Les autres restent mensuelles.
+  return lines.map(l => ({ ...l, scope: l.scope || 'mois', text: calendarizeRelativeDays(l.text, refDayForSeed) }));
 }
-function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed){
+function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysElapsed, remainingDays, rankInfo, rankOverride, refDayForSeed, ctx){
   const n = firstName(agentName);
   const fmtNum = x => (Math.round(x*10)/10).toLocaleString('fr-FR');
   const mk = (emoji, text, color, bg, critical) => ({ text: `${emoji} ${text}`, color, bg, critical: !!critical });
@@ -11270,6 +11364,156 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   const BLUE = '#5680ab', BLUE_BG = 'rgba(86,128,171,0.12)';
   const VIOLET = '#7d739e', VIOLET_BG = 'rgba(125,115,158,0.12)';
   const ROSE = '#a5698a', ROSE_BG = 'rgba(165,105,138,0.12)';
+
+  const c = ctx || {};
+  // Ligne qui sait de quelle période elle parle (voir COMMENT_SCOPE_LABELS) — sans ça, une phrase sur
+  // la journée ou la semaine se retrouvait étiquetée « Ce mois » et devenait fausse à la lecture.
+  const mkS = (scope, emoji, text, color, bg, critical) => ({ ...mk(emoji, text, color, bg, critical), scope });
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // 0.a) ABSENT AUJOURD'HUI — on ne parle pas objectifs à quelqu'un qui n'est pas là
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // DEMANDE PATRON. Une agente en absence autorisée lisait, le jour même : « tu domines le classement,
+  // la place se mérite CHAQUE JOUR », « pas d'objectif fixé ce matin », et le bandeau la comptait parmi
+  // les agents fautifs. Trois messages faux le même matin, sur la même personne. Un jour non travaillé
+  // n'est ni une faute, ni un relâchement : on le dit, on ne demande rien, et on se projette au retour.
+  if(c.absentToday){
+    const lbl = c.absenceLabel || 'Absent';
+    if(c.absenceJustifiee){
+      lines.push(mkS('jour', '🗓️', seedPick([
+        `${lbl} aujourd'hui — aucun objectif n'est attendu de toi, et ce 0 ne compte pas contre toi.`,
+        `Journée d'absence (${lbl.toLowerCase()}) : rien à te reprocher côté chiffres, tu n'étais pas au poste.`,
+        `${lbl} : ta journée ne rentre dans aucun compteur. On se retrouve à ton retour, l'esprit clair.`,
+        `Pas de contrat aujourd'hui et c'est parfaitement normal — ${lbl.toLowerCase()}. Ta série et ta moyenne ne bougent pas.`
+      ], seed+'|abs-just'), SLATE, SLATE_BG));
+      if((c.todayRealized || 0) > 0){
+        lines.push(mkS('jour', '👏', `Et tu as quand même signé ${ctr(c.todayRealized)} — personne ne te le demandait. Chapeau, ${n}.`, SAGE, SAGE_BG));
+      }
+    } else {
+      // Absence injustifiée ou mise à pied : aucune indulgence, mais un cap clair pour le retour.
+      lines.push(mkS('jour', '🚫', seedPick([
+        `${lbl} aujourd'hui. Ce n'est pas un jour neutre : il te coûte une journée de production, et il compte. À ton retour, on repart avec un objectif écrit dès la première heure.`,
+        `${lbl} : journée perdue pour tes chiffres comme pour l'équipe. Le sujet se règle ${escalationWith(agentName)}, pas en le laissant traîner.`,
+        `${lbl} aujourd'hui — tes collègues ont travaillé, pas toi. Le rattrapage commence à ton retour, et il commence par un objectif fixé le matin.`
+      ], seed+'|abs-injust'), TERRACOTTA, TERRACOTTA_BG));
+    }
+    // Un seul repère chiffré, purement factuel, sans mise en pression : elle n'est pas au travail.
+    if(mini > 0){
+      const resteMini = Math.max(0, mini - monthlyRealized);
+      lines.push(resteMini <= 0
+        ? mkS('mois', '📌', `Ton objectif minimum du mois est déjà sécurisé (${monthlyRealized}/${mini}) — rien à rattraper à ton retour.`, SAGE, SAGE_BG)
+        : mkS('mois', '📌', `Où tu en es sur le mois : ${monthlyRealized}/${mini}. À ton retour, il restera ${ctr(resteMini)} à aller chercher${remainingDays > 0 ? ` sur ${remainingDays} jour${remainingDays>1?'s':''} ouvré${remainingDays>1?'s':''}` : ''}.`, SLATE, SLATE_BG));
+    } else if(monthlyRealized > 0){
+      lines.push(mkS('mois', '📌', `Pour mémoire, tu es à ${ctr(monthlyRealized)} ce mois-ci. On reprend là où tu t'es arrêté${genderPick(agentName, '', 'e')}.`, SLATE, SLATE_BG));
+    }
+    // Le 1er du mois garde sa couronne même absent : c'est un acquis du mois, pas une performance du
+    // jour. On le dit sans le pousser (« la place se mérite chaque jour » à quelqu'un en congé, c'était
+    // exactement le message absurde à supprimer).
+    if(c.absenceJustifiee && rankInfo && rankInfo.total > 1 && rankInfo.rank === 1){
+      lines.push(mkS('mois', '👑', `Et tu restes en tête du classement du mois (${ctr(monthlyRealized)}) — ta place t'attend à ton retour.`, GOLD, GOLD_BG));
+    }
+    return lines;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // 0.b) EN DÉCOUVERTE — payé au contrat, AUCUN objectif imposé
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // DEMANDE PATRON. Un agent en découverte n'a ni fixe, ni prime, ni quota : on n'attend de lui aucun
+  // « objectif du matin », et lui servir le discours d'un salarié confirmé (classement, minimum
+  // obligatoire, « ton salaire est en jeu ») est doublement faux — il n'a pas de salaire fixe à perdre,
+  // et il n'est pas encore comparable au reste de l'équipe. Ce qu'on attend de lui tient en une phrase :
+  // qu'il signe. Donc chaque contrat est célébré, franchement, et rien n'est réclamé.
+  if(c.enDecouverte){
+    const jours = agentAncienneteJours(agentName, refDayForSeed);
+    const jourTxt = (jours != null && jours >= 0) ? `${ordinalJourFr(jours+1)} jour` : null;
+    const aujourdhui = c.todayRealized || 0;
+
+    if(aujourdhui > 0){
+      lines.push(mkS('jour', '🎉', seedPick([
+        `${ctr(aujourdhui)} aujourd'hui, en découverte, sans objectif imposé. C'est exactement ce qu'on attend de toi : que tu signes. Bravo ${n}.`,
+        `Tu viens de signer ${ctr(aujourdhui)} alors que personne ne t'a fixé de quota. Voilà la preuve que tu peux le faire — c'est tout ce qui compte à ce stade.`,
+        `${ctr(aujourdhui)} aujourd'hui. En découverte, chaque contrat est une réponse à la seule question qu'on se pose sur toi : est-ce qu'il vend ? Aujourd'hui, c'est oui.`,
+        genderPick(agentName,
+          `Beau travail : ${ctr(aujourdhui)} aujourd'hui. Tu es en découverte, tu n'as rien à prouver sur un chiffre — et pourtant tu le fais.`,
+          `Beau travail : ${ctr(aujourdhui)} aujourd'hui. Tu es en découverte, tu n'as rien à prouver sur un chiffre — et pourtant tu le fais.`)
+      ], seed+'|dec-jour-ok'), SAGE, SAGE_BG));
+    } else if(monthlyRealized > 0){
+      // Il a DÉJÀ signé ce mois-ci : lui répéter « vise un seul contrat, tu débutes » serait le prendre
+      // pour un débutant qu'il n'est plus. On s'appuie sur ce qu'il a déjà réussi.
+      lines.push(mkS('jour', '🔍', seedPick([
+        `Rien signé pour l'instant aujourd'hui — mais tu as déjà ${ctr(monthlyRealized)} depuis le début du mois : tu sais faire. Refais exactement ce que tu as fait ces jours-là.`,
+        `Compteur du jour encore à 0. Tu as déjà prouvé que tu peux signer (${ctr(monthlyRealized)} ce mois-ci) : c'est une question de volume d'appels, pas de capacité.`,
+        `Pas encore de contrat aujourd'hui. Aucun quota ne t'est imposé en découverte, mais tu es lancé${genderPick(agentName,'','e')} — ne laisse pas la journée passer sans un vrai essai.`
+      ], seed+'|dec-jour-relance'), BLUE, BLUE_BG));
+    } else {
+      lines.push(mkS('jour', '🔍', seedPick([
+        `Tu es en découverte : aucun objectif ne t'est imposé aujourd'hui, personne n'attend un chiffre de toi. Concentre-toi sur le nombre d'appels — les contrats suivent toujours le volume.`,
+        `Pas d'objectif à fixer pendant ta découverte. Ta seule mission du jour : passer plus d'appels qu'hier et te faire écouter par un collègue qui signe.`,
+        `Découverte en cours — on regarde comment tu travailles, pas ton compteur. Choisis UNE chose à améliorer aujourd'hui (l'accroche, par exemple) et travaille-la sur tous tes appels.`,
+        `Aucun quota pour toi aujourd'hui. Vise UN contrat, pas dix : le premier est celui qui débloque tous les autres.`
+      ], seed+'|dec-jour'), BLUE, BLUE_BG));
+    }
+
+    if(monthlyRealized > 0){
+      const rythmeDec = daysElapsed > 0 ? (monthlyRealized / daysElapsed) : 0;
+      lines.push(mkS('mois', '🌱', seedPick([
+        `Depuis le 1er du mois : ${ctr(monthlyRealized)}${daysElapsed > 1 ? ` (${fmtNum(rythmeDec)}/jour en moyenne)` : ''}. Ces contrats-là ne sont pas perdus : ils resteront comptés pour ton objectif quand tu passeras salarié.`,
+        `${ctr(monthlyRealized)} ce mois-ci pendant ta découverte${jourTxt ? `, pour ton ${jourTxt} chez nous` : ''}. Compare-toi à ta propre semaine dernière, jamais au reste de l'équipe.`,
+        `Ton compteur du mois est à ${monthlyRealized}. En découverte, tu es payé au contrat : chacun d'eux est directement dans ta poche.`
+      ], seed+'|dec-mois'), TEAL, TEAL_BG));
+    } else if(jourTxt){
+      lines.push(mkS('mois', '🌱', seedPick([
+        `${jourTxt} chez nous, compteur du mois encore à 0. Normal à ce stade — mais c'est le premier contrat qui décidera de la suite, va le chercher.`,
+        `${jourTxt} en découverte, pas encore de contrat ce mois-ci. Personne ne t'en tiendra rigueur aujourd'hui ; demande à un collègue de te faire écouter un de ses appels.`
+      ], seed+'|dec-mois0'), BLUE, BLUE_BG));
+    }
+    return lines;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // 0.c) LA SEMAINE EN COURS — le chaînon qui manquait entre la journée et le mois
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // Le conseil du matin sautait directement du chiffre du jour au cumul du mois. Entre les deux, il y a
+  // la semaine : c'est l'échelle où une baisse se voit AVANT qu'elle ne coûte le mois, et où un agent
+  // qui accélère mérite d'être félicité tout de suite plutôt qu'au 30. Affichée seulement à partir du
+  // 2e jour travaillé de la semaine (un lundi, « cette semaine » et « aujourd'hui » sont le même
+  // chiffre — le répéter donnerait l'impression que l'appli compte deux fois), et jamais pour une
+  // recrue, qui a son propre discours plus bas.
+  const semaineDispo = c.weekRealized != null && (c.weekDaysElapsed || 0) >= 2
+    && agentPalierAnciennete(agentName, refDayForSeed) === 'confirme';
+  // Une semaine entièrement blanche : le signal le plus récent, et le plus fiable, sur ce qui se passe
+  // vraiment MAINTENANT. Il prend le pas sur la moyenne du mois dans les blocs « objectif » plus bas.
+  const semaineFroide = semaineDispo && c.weekRealized === 0;
+  if(semaineDispo){
+    const semTotal = c.weekRealized;
+    const semJours = c.weekDaysElapsed;
+    const semRythme = semTotal / semJours;
+    if(semTotal === 0){
+      lines.push(mkS('semaine', '📅', seedPick([
+        `Aucun contrat depuis lundi, sur ${semJours} jours travaillés. C'est le premier chiffre à corriger, et ça se joue aujourd'hui.`,
+        `Semaine encore vide (0 en ${semJours} jours). Une semaine blanche coûte un tiers du mois — reprends ${escalationWith(agentName)} ce qui bloque, aujourd'hui.`,
+        `Rien signé cette semaine. Ne laisse pas passer un jour de plus : va chercher UN contrat aujourd'hui, la dynamique repartira de là.`
+      ], seed+'|sem0'), TERRACOTTA, TERRACOTTA_BG));
+    } else if(currentPace > 0 && semRythme >= currentPace * 1.15){
+      lines.push(mkS('semaine', '📈', seedPick([
+        `${ctr(semTotal)} depuis lundi, soit ${fmtNum(semRythme)}/jour — au-dessus de ta moyenne du mois (${fmtNum(currentPace)}/jour). Tu accélères, c'est visible.`,
+        `Belle semaine en cours : ${fmtNum(semRythme)} contrat/jour contre ${fmtNum(currentPace)} sur l'ensemble du mois. Continue exactement comme ça.`,
+        `Ta semaine tire ton mois vers le haut (${ctr(semTotal)} en ${semJours} jours). C'est le bon moment pour pousser encore un cran.`
+      ], seed+'|semUp'), SAGE, SAGE_BG));
+    } else if(currentPace > 0 && semRythme < currentPace * 0.7){
+      lines.push(mkS('semaine', '📉', seedPick([
+        `${ctr(semTotal)} depuis lundi (${fmtNum(semRythme)}/jour) contre ${fmtNum(currentPace)}/jour sur le mois. Tu ralentis — ça se rattrape encore cette semaine, pas la semaine prochaine.`,
+        `Ta semaine est en dessous de ton propre niveau (${fmtNum(semRythme)}/jour, tu es à ${fmtNum(currentPace)} sur le mois). Rien de grave si tu réagis maintenant.`,
+        `Coup de mou cette semaine : ${ctr(semTotal)} en ${semJours} jours. Tu sais faire mieux, tu l'as déjà fait ce mois-ci.`
+      ], seed+'|semDown'), AMBER, AMBER_BG));
+    } else {
+      lines.push(mkS('semaine', '📅', seedPick([
+        `${ctr(semTotal)} depuis lundi, soit ${fmtNum(semRythme)}/jour — tu tiens ton rythme habituel.`,
+        `Semaine régulière : ${ctr(semTotal)} en ${semJours} jours travaillés. La régularité, c'est ce qui fait les bons mois.`,
+        `${ctr(semTotal)} cette semaine. Dans la continuité de ton mois — maintenant, va chercher le petit plus.`
+      ], seed+'|semStable'), SLATE, SLATE_BG));
+    }
+  }
 
   // 0) RECRUE — un discours entièrement à part, qui remplace tout le reste.
   // Une personne arrivée il y a trois jours n'a rien à faire dans un classement d'équipe ni face à un
@@ -11324,10 +11568,10 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
     // depuis que tu es là". Chaque variante nomme désormais explicitement "ce mois-ci", jamais un total.
     const rythmeRecrue = daysElapsed > 0 ? (monthlyRealized / daysElapsed) : 0;
     lines.push(mk('🌱', seedPick([
-      `${jours+1}ᵉ jour chez nous. Ce mois-ci : ${ctr(monthlyRealized)} (${fmtNum(rythmeRecrue)}/jour en moyenne). Tu es encore en montée en compétence : compare-toi à ta propre semaine dernière, pas au reste de l'équipe.`,
+      `${ordinalJourFr(jours+1)} jour chez nous. Ce mois-ci : ${ctr(monthlyRealized)} (${fmtNum(rythmeRecrue)}/jour en moyenne). Tu es encore en montée en compétence : compare-toi à ta propre semaine dernière, pas au reste de l'équipe.`,
       `Tu es là depuis ${jours+1} jours. Ce mois-ci, tu as déjà ${ctr(monthlyRealized)} — ce qui compte à ce stade, c'est que la courbe monte, pas le classement.`,
-      `Premier mois en cours (${jours+1}ᵉ jour chez nous, ${ctr(monthlyRealized)} ce mois-ci). Continue à construire ta régularité, l'objectif complet viendra après.`,
-      `${ctr(monthlyRealized)} ce mois-ci, pour ton ${jours+1}ᵉ jour chez nous. Fixe-toi un petit défi personnel cette semaine plutôt que de viser l'objectif de l'équipe.`
+      `Premier mois en cours (${ordinalJourFr(jours+1)} jour chez nous, ${ctr(monthlyRealized)} ce mois-ci). Continue à construire ta régularité, l'objectif complet viendra après.`,
+      `${ctr(monthlyRealized)} ce mois-ci, pour ton ${ordinalJourFr(jours+1)} jour chez nous. Fixe-toi un petit défi personnel cette semaine plutôt que de viser l'objectif de l'équipe.`
     ], seed+'|recrue-m1'), TEAL, TEAL_BG));
     if(vise > 0 && monthlyRealized >= vise){
       lines.push(mk('🚀', `Et tu as déjà dépassé l'objectif que tu t'étais fixé (${vise}) — chapeau pour un premier mois.`, SAGE, SAGE_BG));
@@ -11478,7 +11722,19 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
       ], seed+'|miniDernier'), CRITICAL, CRITICAL_BG, true));
     } else {
       const neededPace = miniGap / remainingDays;
-      if(currentPace >= neededPace){
+      // ⚠️ COHÉRENCE — LA MOYENNE DU MOIS PEUT MENTIR, ET ELLE MENTAIT.
+      // Un agent avec un très bon début de mois puis une semaine entière sans rien signer gardait une
+      // moyenne rassurante : il lisait « Large, continue comme ça » le jour même où il enchaînait sa
+      // quatrième journée blanche — et, deux lignes plus haut, « aucun contrat depuis lundi ». Deux
+      // phrases justes séparément, contradictoires dans la même carte, et c'est la carte entière qui
+      // perd sa crédibilité. Quand la semaine est à zéro, c'est elle qui parle : on ne rassure pas.
+      if(semaineFroide){
+        lines.push(mk('📌', seedPick([
+          `Sur le papier ton objectif minimum tient encore (${monthlyRealized}/${mini}) — mais cette moyenne, tu l'as faite les semaines d'avant. Cette semaine tu es à 0. C'est ce chiffre-là qui décide de la suite du mois.`,
+          `Ne te fie pas à ta moyenne (${fmtNum(currentPace)}/jour) : elle traîne encore tes bons jours. Depuis lundi, rien. Il te manque ${ctr(miniGap)} et le retard commence aujourd'hui, pas le 30.`,
+          `Ton retard ne se voit pas encore dans le cumul du mois, et c'est exactement le piège. Une semaine à 0 se paie toujours à la fin — reprends la main dès aujourd'hui, ${n}.`
+        ], seed+'|miniSemFroide'), TERRACOTTA, TERRACOTTA_BG));
+      } else if(currentPace >= neededPace){
         lines.push(mk('📌', seedPick([
           `Pour ton objectif minimum il faut ${fmtNum(neededPace)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. Large, continue comme ça.`,
           `Tu tiens un bon rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à te faire.`,
@@ -11549,7 +11805,14 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
       ], seed+'|viseDernier'), ROSE, ROSE_BG));
     } else {
       const neededPaceVise = viseGap / remainingDays;
-      if(currentPace >= neededPaceVise){
+      // Même garde-fou que pour le minimum : « en très bonne voie » sonne faux quand la semaine est à 0.
+      // Ici le ton reste motivant (c'est un bonus, jamais un risque de paie), mais il redevient honnête.
+      if(semaineFroide){
+        lines.push(mk('🚀', seedPick([
+          `Ton objectif visé reste à portée sur le papier (${monthlyRealized}/${vise}) — mais il ne se gagnera pas avec une semaine à 0. Relance dès aujourd'hui et il redevient tout à fait jouable.`,
+          `Tu as l'objectif visé dans les jambes, tu l'as prouvé ce mois-ci. Il te manque juste de rallumer la semaine : ${ctr(viseGap)} d'ici la fin du mois.`
+        ], seed+'|viseSemFroide'), VIOLET, VIOLET_BG));
+      } else if(currentPace >= neededPaceVise){
         lines.push(mk('🚀', seedPick([
           `Pour l'objectif visé il faut ${fmtNum(neededPaceVise)} contrat/jour — tu es à ${fmtNum(currentPace)}/jour. En très bonne voie !`,
           `Tu es sur le bon rythme pour ton objectif visé (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPaceVise)}). Continue, ça se voit !`,
@@ -11600,8 +11863,9 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
 // fabriquent), pas par l'appelant : aucune carte ne peut donc l'oublier, et les ~200 phrases existantes
 // n'ont pas eu à être réécrites une par une.
 const COMMENT_SCOPE_LABELS = {
-  jour: { txt: "Aujourd'hui", color: '#5680ab', bg: 'rgba(86,128,171,0.16)' },
-  mois: { txt: 'Ce mois',     color: '#7d739e', bg: 'rgba(125,115,158,0.16)' }
+  jour:    { txt: "Aujourd'hui",   color: '#5680ab', bg: 'rgba(86,128,171,0.16)' },
+  semaine: { txt: 'Cette semaine', color: '#4a9891', bg: 'rgba(74,152,145,0.16)' },
+  mois:    { txt: 'Ce mois',       color: '#7d739e', bg: 'rgba(125,115,158,0.16)' }
 };
 function commentScopeChip(scope){
   const s = COMMENT_SCOPE_LABELS[scope];
@@ -11671,6 +11935,11 @@ function agentPalierAnciennete(agentName, refDateStr){
   if(j <= 30) return 'mois1';
   return 'confirme';
 }
+// « 1ᵉ jour » n'existe pas en français — c'est « 1er jour ». Le reste s'écrit bien 2ᵉ, 3ᵉ, 14ᵉ.
+// Détail minuscule, mais ces cartes partent sur le WhatsApp de l'équipe : une faute d'école dans la
+// première phrase lue par une recrue, c'est le sérieux de tout le rapport qui en prend un coup.
+function ordinalJourFr(n){ return `${n}${n === 1 ? 'er' : 'ᵉ'}`; }
+
 function estRecrue(agentName, refDateStr){
   return agentPalierAnciennete(agentName, refDateStr) !== 'confirme';
 }
@@ -11935,11 +12204,26 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
 // Petit historique visuel des derniers jours ouvrés (barres + chiffres), lu de gauche (le plus ancien) à
 // droite (le plus récent, juste avant aujourd'hui) — pour voir la tendance d'un coup d'œil.
 function historyStripHtml(historyFull){
-  const valid = (historyFull||[]).filter(d => d && d.realized != null);
+  // ⚠️ Un jour non travaille (absence sur la journee entiere, jour anterieur a l'arrivee de l'agent,
+  // periode hors contrat) n'est PLUS affiche comme une barre rouge « 0 contrat » : c'est un tiret gris,
+  // neutre, et il ne sert pas non plus a calculer la hauteur des autres barres. Voir jourNeutrePourSerie.
+  const valid = (historyFull||[]).filter(d => d && d.realized != null && !jourNeutrePourSerie(d));
   if(!valid.length) return '';
   const max = Math.max(1, ...valid.map(d => d.realized||0));
   const chronological = [...historyFull].reverse();
+  const aDesJoursNeutres = chronological.some(d => jourNeutrePourSerie(d));
   const bars = chronological.map(day=>{
+    if(jourNeutrePourSerie(day)){
+      const tip = day.horsPeriode
+        ? "Pas encore dans l'equipe ce jour-la (ou periode hors contrat) — rien a compter"
+        : `${(day.absenceLabel || 'Absence')} — jour non travaille, ce 0 ne compte pas contre lui`;
+      return `<div title="${tip}" style="display:flex; flex-direction:column; align-items:center; gap:3px; flex:1; cursor:help; opacity:0.55;">
+        <div style="width:100%; max-width:16px; height:22px; display:flex; align-items:center; justify-content:center;">
+          <div style="width:100%; height:3px; background:var(--muted); border-radius:3px;"></div>
+        </div>
+        <div style="font-size:9.5px; color:var(--muted); font-weight:600;">—</div>
+      </div>`;
+    }
     const v = (day && day.realized) || 0;
     const obj = (day && day.objective) || 0;
     const h = Math.max(v===0?6:4, Math.round((v/max)*22));
@@ -11961,7 +12245,7 @@ function historyStripHtml(historyFull){
       <div style="font-size:9.5px; color:${numColor}; font-weight:${(v===0||missed)?'700':'500'};">${v}</div>
     </div>`;
   }).join('');
-  return `<div style="margin-top:10px;"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours <span style="opacity:0.7;">(vert = objectif atteint, orange = objectif manqué, rouge = 0 contrat)</span></div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
+  return `<div style="margin-top:10px;"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours <span style="opacity:0.7;">(vert = objectif atteint, orange = objectif manqué, rouge = 0 contrat${aDesJoursNeutres ? ', gris = jour non travaillé' : ''})</span></div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
 }
 
 // Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
@@ -11987,22 +12271,37 @@ function streakEstPlafonnee(){ return _streakPlafonnee; }
 // coupée par la taille de la fenêtre d'historique. À appeler juste après computeZeroStreak /
 // computeObjectiveStreak, dont il lit le drapeau.
 function streakLabel(n){ return `${n}j${streakEstPlafonnee() ? '+' : ''}`; }
+
+// ⚠️ CORRIGÉ — le commentaire annonçait « 20 jours ouvrés, soit un mois complet », le code en lisait
+// 10 : une série de 14 jours s'affichait « 10j+ ». Le chiffre était donc à la fois faux ET plafonné,
+// exactement le défaut que la fenêtre élargie devait supprimer. Une SEULE constante sert maintenant
+// aux deux endroits qui calculent des séries (Conseil du matin et Bilan de la journée), pour qu'elles
+// ne puissent plus diverger. Coût : 20 documents « tableau du jour » au lieu de 10 — un document par
+// JOUR, pas par agent, donc négligeable.
+const STREAK_WINDOW_DAYS = 20;
+
+// ⚠️ JOURS QUI NE DISENT RIEN DE LA PERFORMANCE — ils ne cassent aucune serie, ils sont SAUTES.
+// Trois cas : l'agent etait absent toute la journee (maladie, conge paye, absence autorisee...), le
+// jour est anterieur a son arrivee, ou il tombe dans une periode hors contrat. Avant, ces jours-la
+// valaient « 0 contrat » comme n'importe quel autre : une agente qui posait un conge payé perdait sa
+// serie de 12 jours sans 0, et une recrue arrivee le matin affichait cinq barres rouges « 0 » pour des
+// jours ou elle n'etait meme pas encore dans l'entreprise. Deux chiffres faux, posés a cote de chiffres
+// justes — exactement ce qui fait perdre confiance dans TOUS les compteurs de l'appli.
+function jourNeutrePourSerie(day){
+  return !!(day && (day.absentJour || day.horsPeriode));
+}
 function computeZeroStreak(todayRealized, historyFull, todayCounts){
   _streakPlafonnee = false;
-  if(!todayCounts){
-    let streak = 0;
-    for(const day of historyFull){
-      if((day.realized||0) > 0) streak++; else break;
-    }
-    if(streak === historyFull.length && streak > 0) _streakPlafonnee = true;
-    return streak;
+  const list = (historyFull||[]).filter(d => d && !jourNeutrePourSerie(d));
+  let streak = 0, exhausted = true;
+  if(todayCounts){
+    if(todayRealized <= 0) return 0;
+    streak = 1;
   }
-  if(todayRealized <= 0) return 0;
-  let streak = 1;
-  for(const day of historyFull){
-    if((day.realized||0) > 0) streak++; else break;
+  for(const day of list){
+    if((day.realized||0) > 0) streak++; else { exhausted = false; break; }
   }
-  if(streak === historyFull.length + 1) _streakPlafonnee = true;
+  if(exhausted && streak > 0) _streakPlafonnee = true;
   return streak;
 }
 
@@ -12013,21 +12312,78 @@ function computeZeroStreak(todayRealized, historyFull, todayCounts){
 function computeObjectiveStreak(todayRealized, todayObjective, historyFull, todayCounts){
   _streakPlafonnee = false;
   const dayHits = day => (day.objective||0) > 0 && (day.realized||0) >= (day.objective||0);
-  if(!todayCounts){
-    let streak = 0;
-    for(const day of historyFull){
-      if(dayHits(day)) streak++; else break;
-    }
-    if(streak === historyFull.length && streak > 0) _streakPlafonnee = true;
-    return streak;
+  // Meme regle que ci-dessus : un jour non travaille est saute, il ne casse pas la serie 🎯.
+  const list = (historyFull||[]).filter(d => d && !jourNeutrePourSerie(d));
+  let streak = 0, exhausted = true;
+  if(todayCounts){
+    if(!(todayObjective > 0) || todayRealized < todayObjective) return 0;
+    streak = 1;
   }
-  if(!(todayObjective > 0) || todayRealized < todayObjective) return 0;
-  let streak = 1;
-  for(const day of historyFull){
-    if(dayHits(day)) streak++; else break;
+  for(const day of list){
+    if(dayHits(day)) streak++; else { exhausted = false; break; }
   }
-  if(streak === historyFull.length + 1) _streakPlafonnee = true;
+  if(exhausted && streak > 0) _streakPlafonnee = true;
   return streak;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⏱️ LA LIGNE « AUJOURD'HUI » DU CONSEIL DU MATIN
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Le conseil du matin ne parlait QUE du cumul du mois. Résultat : un agent qui avait déjà bouclé son
+// objectif du jour à 11 h lisait « ton objectif minimum est en danger » et rien d'autre — aucune
+// félicitation pour ce qu'il venait de faire ; et un agent encore à 0 à 15 h ne lisait aucune urgence
+// alors que c'est LE moment où la pression sert encore à quelque chose. Cette ligne comble le trou :
+// elle ne parle que de la journée en cours, et seulement quand il y a vraiment quelque chose à dire
+// (objectif du jour atteint, mi-parcours, ou 0 contrat alors que la journée avance).
+// Elle est volontairement muette pour un agent absent ou en découverte : ces deux cas ont leur propre
+// discours, complet, dans personalDailyComment.
+function dayNudgeLine(r, nowHour, dateStr){
+  if(!r || r.absentToday || r.enDecouverte) return null;
+  const SAGE = '#4f9d78', SAGE_BG = 'rgba(79,157,120,0.12)';
+  const BLUE = '#5680ab', BLUE_BG = 'rgba(86,128,171,0.12)';
+  const AMBER = '#b98a42', AMBER_BG = 'rgba(185,138,66,0.12)';
+  const TERRACOTTA = '#b5595c', TERRACOTTA_BG = 'rgba(181,89,92,0.12)';
+  const mkJ = (emoji, text, color, bg, critical)=> ({ text: `${emoji} ${text}`, color, bg, critical: !!critical, scope: 'jour' });
+  const seed = `${r.agent}|${r.todayRealized}|${r.todayObjective}|${dateStr}`;
+  const obj = r.todayObjective || 0, fait = r.todayRealized || 0;
+  const ctr = v => `${v} contrat${v>1?'s':''}`;
+
+  if(obj > 0 && fait >= obj){
+    const bonus = fait - obj;
+    return mkJ('🎯', seedPick([
+      `Objectif du jour déjà atteint (${fait}/${obj})${bonus>0?` et même dépassé de ${bonus}`:''} — et la journée n'est pas finie. Tout ce que tu signes maintenant, c'est du bonus pur.`,
+      `Tu as tenu ta promesse du matin (${fait}/${obj}). Bravo. Maintenant, va chercher un contrat de plus que ce que tu t'étais promis.`,
+      `${fait}/${obj} : objectif du jour dans la poche avant la fin de journée. C'est exactement comme ça qu'on construit un bon mois.`
+    ], seed+'|dayHit'), SAGE, SAGE_BG);
+  }
+  if(obj > 0 && fait > 0 && fait * 2 >= obj){
+    return mkJ('⏱️', seedPick([
+      `${fait}/${obj} sur ton objectif du jour — plus de la moitié. Ne lâche pas maintenant, la fin de journée fait la différence.`,
+      `Tu es à mi-chemin de ton objectif du jour (${fait}/${obj}). Encore ${ctr(obj-fait)} et tu tiens parole.`,
+      `${ctr(fait)} déjà signé${fait>1?'s':''} sur les ${obj} que tu t'es fixés. C'est bien parti — termine le travail.`
+    ], seed+'|dayHalf'), BLUE, BLUE_BG);
+  }
+  if(fait === 0 && nowHour >= 15){
+    return mkJ('🚨', seedPick([
+      `Toujours 0 contrat et la journée se termine. Il te reste peu de temps — un dernier vrai coup de collier, maintenant.`,
+      `0 aujourd'hui à cette heure-ci, c'est la journée blanche qui se profile. Ne finis pas comme ça : décroche, appelle, insiste.`,
+      `Fin de journée en approche et rien au compteur. C'est LE moment de tout donner, pas de commencer à ranger.`
+    ], seed+'|dayZeroLate'), TERRACOTTA, TERRACOTTA_BG);
+  }
+  if(fait === 0 && nowHour >= 12){
+    return mkJ('⏱️', seedPick([
+      `Toujours rien signé à la mi-journée. Il reste largement de quoi renverser la journée — mais ça se joue maintenant.`,
+      `0 contrat pour l'instant. L'après-midi est encore entière : change une chose dans ton approche et relance.`,
+      `Rien au compteur à la mi-journée${obj>0?` (objectif : ${obj})`:''}. Va chercher le premier, le reste suit toujours plus facilement.`
+    ], seed+'|dayZeroNoon'), AMBER, AMBER_BG);
+  }
+  if(fait > 0 && obj === 0){
+    return mkJ('✅', seedPick([
+      `${ctr(fait)} déjà aujourd'hui, sans même t'être fixé d'objectif ce matin. Imagine avec un cap clair.`,
+      `Le compteur est lancé (${fait}) — pense quand même à te fixer un objectif, c'est ce qui fait la différence en fin de journée.`
+    ], seed+'|dayNoObj'), BLUE, BLUE_BG);
+  }
+  return null;
 }
 
 // Construit le "briefing du jour" pour chaque agent — même principe que les cartes 🎯 Objectif choisi &
@@ -12037,11 +12393,21 @@ function computeObjectiveStreak(todayRealized, todayObjective, historyFull, toda
 // sous la main (c'est le cas de Supervision, qui les calcule déjà pour son propre tableau), on les lui
 // passe directement au lieu de les relire une seconde fois — ça évite de doubler les lectures Firestore.
 // Format attendu : [{ agent, isIndep, todayRealized, todayObjective, monthlyRealized, mini, vise }].
-async function buildDailyBriefingHtml(baseRows){
-  if(config.agents.length === 0) return '<div class="empty">Ajoute des agents dans Réglages.</div>';
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 📇 LES LIGNES D'AGENT ENRICHIES — une seule source pour trois écrans
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Chiffres du jour, de la semaine et du mois, statut d'absence, découverte, ancienneté, historique
+// qualifié, classement. Trois écrans en avaient besoin (Conseil du matin, Point du jour du superviseur,
+// suivi Admin des points faits) : le calcul est donc sorti de buildDailyBriefingHtml plutôt que
+// dupliqué trois fois — dupliqué, il aurait suffi d'une correction oubliée quelque part pour que deux
+// écrans affichent deux vérités différentes sur le même agent.
+// `baseRows` optionnel : quand l'appelant a déjà les chiffres du jour et du mois sous la main
+// (Supervision), on les lui prend au lieu de relire Firestore une deuxième fois.
+async function buildBriefingRows(baseRows){
+  if(config.agents.length === 0) return null;
   const dateStr = todayStr();
   const [y, m] = dateStr.split('-').map(Number);
-  const remainingDays = workingDaysRemainingFrom(dateStr);
+  const remainingDays = joursOuvresRestantsPourAgir(dateStr);
   // Deux fenêtres, volontairement différentes :
   //  • recentDates (5 jours) alimente le petit graphique en barres « 5 derniers jours » — au-delà, la
   //    bande devient illisible ;
@@ -12051,7 +12417,7 @@ async function buildDailyBriefingHtml(baseRows){
   // dans TOUS les chiffres de l'appli. Les tableaux sont mutualisés dans boardsByDate et servis depuis
   // prodBoardCache, donc la fenêtre plus large ne coûte quasiment rien.
   const recentDates = lastNWorkingDaysBefore(dateStr, 5);
-  const streakDates = lastNWorkingDaysBefore(dateStr, 10);
+  const streakDates = lastNWorkingDaysBefore(dateStr, STREAK_WINDOW_DAYS);
   const boardsByDate = {};
   await Promise.all([...new Set([...recentDates, ...streakDates])].map(async d=>{
     boardsByDate[d] = prodBoardCache[d] || await getProdBoard(d);
@@ -12098,19 +12464,72 @@ async function buildDailyBriefingHtml(baseRows){
     return { ...b, yesterdayRealized, historyStrip, historyFull };
   });
 
-  // Alerte "objectif du matin pas fixé" — le pire des scénarios pour le boss, c'est un agent qui démarre
-  // sa journée sans même s'être fixé un objectif. Passé 10h (heure Maroc), on le signale clairement, et
-  // on prévient le boss par notification navigateur s'il a activé les alertes.
-  const nowHourMA = nowMA().getHours();
-  const missingObjectiveAgents = rows.filter(r=>!r.isIndep && r.todayObjective===0).map(r=>r.agent);
-  let alertBannerHtml = '';
-  if(isWorkingDay(dateStr) && nowHourMA >= 10 && missingObjectiveAgents.length > 0){
-    alertBannerHtml = `<div style="margin-bottom:14px; padding:13px 16px; border-radius:12px; background:rgba(181,89,92,0.12); border:1px solid rgba(181,89,92,0.35); font-family:'Inter',sans-serif;">
-      <b style="color:#b5595c; font-size:13.5px;">⏰ ${missingObjectiveAgents.length} agent${missingObjectiveAgents.length>1?'s':''} n'${missingObjectiveAgents.length>1?'ont':'a'} toujours pas fixé son objectif du matin</b>
-      <div style="margin-top:5px; font-size:12.5px; color:var(--muted);">${missingObjectiveAgents.join(', ')}</div>
-    </div>`;
-  }
- 
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // 🚦 LE CONTEXTE RÉEL DE CHAQUE AGENT — sans lui, la carte du matin raconte n'importe quoi
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // Trois situations où réclamer « ton objectif du matin » n'a AUCUN sens, et où l'appli le réclamait
+  // quand même (remonté du terrain, capture à l'appui) :
+  //   • l'agent est absent toute la journée (maladie, congé payé, absence autorisée) — il n'est pas là ;
+  //   • l'agent est en découverte — il est payé au contrat, sans aucun objectif imposé, le temps qu'on
+  //     décide de le garder : lui compter un « objectif manquant » est faux ET décourageant ;
+  //   • le jour est antérieur à son arrivée (pour l'historique des 5 jours).
+  // On charge donc, une fois pour toutes, le vrai statut de chaque jour affiché. Les journaux des jours
+  // PASSÉS ne changent plus : ils restent en cache (dayLogCache n'est purgé que pour aujourd'hui et
+  // au-delà), le coût réel se limite donc au premier affichage.
+  const mondayThisWeek = mondayOfWeek(dateStr);
+  await Promise.all(rows.map(async r=>{
+    const startDate = getAgentStartDate(r.agent);
+    const marquerJour = async (d, prod)=>{
+      const horsPeriode = !!((startDate && d < startDate) || estHorsContrat(r.agent, d));
+      let absentJour = false, absenceLabel = '';
+      // ⚡ On ne lit le journal d'un jour QUE s'il peut réellement changer quelque chose : un jour où
+      // l'agent a signé ET tenu son objectif ne cassera aucune série et s'affichera en vert quoi qu'il
+      // arrive — savoir s'il était absent ce jour-là ne sert à rien (et de toute façon, il a produit).
+      // Seuls les jours « à 0 » ou « objectif manqué » ont besoin d'être qualifiés. En pratique ça fait
+      // tomber le nombre de lectures de 20 par agent à une poignée, sans rien perdre à l'affichage.
+      const vJour = (prod && prod.realized) || 0;
+      const oJour = (prod && prod.objective) || 0;
+      const peutCasser = vJour === 0 || (oJour > 0 && vJour < oJour);
+      if(!horsPeriode && peutCasser){
+        const lg = await getDayLog(r.agent, d);
+        const ja = lg && lg.justifiedAbsence ? lg.justifiedAbsence : null;
+        const meta = ja ? JUSTIFIED_ABSENCE_TYPES[ja] : null;
+        // Journée COMPLÈTE uniquement : une demi-journée (ou une absence de durée précise) laisse
+        // l'agent au travail une partie de la journée — son chiffre reste donc pleinement comparable.
+        if(meta && meta.deduction === 'full'){ absentJour = true; absenceLabel = absenceLabelPourAgent(ja); }
+      }
+      return { ...(prod || {}), horsPeriode, absentJour, absenceLabel };
+    };
+    const markedFull = await Promise.all(streakDates.map((d,i)=> marquerJour(d, r.historyFull[i])));
+    r.historyFull = markedFull;
+    r.historyStrip = await Promise.all(recentDates.map((d,i)=> marquerJour(d, r.historyStrip[i])));
+
+    // --- Aujourd'hui ---
+    const logToday = await getDayLog(r.agent, dateStr);
+    const jaToday = logToday && logToday.justifiedAbsence ? logToday.justifiedAbsence : null;
+    const metaToday = jaToday ? JUSTIFIED_ABSENCE_TYPES[jaToday] : null;
+    r.justifiedAbsence = jaToday;
+    r.absentToday = !!(metaToday && metaToday.deduction === 'full');
+    r.absenceLabelToday = jaToday ? absenceLabelPourAgent(jaToday) : '';
+    // Une absence injustifiée ou une mise à pied n'ouvre droit à aucune indulgence : le ton reste ferme.
+    r.absenceJustifiee = !!(metaToday && (metaToday.justified || metaToday.paid));
+
+    // --- Découverte en cours ce jour-là ---
+    const decEnd = decouverteEndDateOf(r.agent);
+    r.enDecouverte = isInDecouverte(r.agent) && (!decEnd || dateStr <= decEnd);
+
+    // --- La semaine en cours (lundi → aujourd'hui), jours non travaillés exclus ---
+    // Aucune lecture supplémentaire : les tableaux de la semaine sont déjà dans boardsByDate.
+    const joursSemaine = streakDates
+      .map((d,i)=> ({ d, m: markedFull[i] }))
+      .filter(x => x.d >= mondayThisWeek && x.d < dateStr && !x.m.horsPeriode && !x.m.absentJour);
+    r.weekRealized = (r.todayRealized || 0) + joursSemaine.reduce((sum,x)=> sum + (x.m.realized || 0), 0);
+    r.weekDaysElapsed = joursSemaine.length + ((isWorkingDay(dateStr) && !r.absentToday) ? 1 : 0);
+
+    // --- Ancienneté ---
+    r.palierAnc = agentPalierAnciennete(r.agent, dateStr);
+    r.ancienneteJours = agentAncienneteJours(r.agent, dateStr);
+  }));
 
   // Même convention partout : classé du plus au moins de contrats réalisés CE MOIS-CI, alphabétique si
   // égalité. Équipe ET indépendants dans le MÊME classement (un seul "1er du mois", pas deux vérités
@@ -12124,6 +12543,92 @@ async function buildDailyBriefingHtml(baseRows){
   }
   const allSorted = [...rows].sort((a,b)=> b.monthlyRealized !== a.monthlyRealized ? b.monthlyRealized - a.monthlyRealized : a.agent.localeCompare(b.agent));
   const allRankByAgent = rankMap(allSorted);
+
+  return { rows, dateStr, remainingDays, allRankByAgent, recentDates, streakDates };
+}
+
+// Petit cache mémoire des lignes enrichies du JOUR EN COURS. Le Point du jour (superviseur) et le
+// suivi Admin les demandent à quelques secondes d'intervalle du Conseil du matin, sur exactement les
+// mêmes données : sans ce cache, chaque panneau relançait toute la chaîne de lectures. TTL court —
+// un contrat qui tombe doit se voir vite.
+let _briefingRowsCache = { at: 0, dateStr: null, data: null };
+const BRIEFING_ROWS_TTL_MS = 20000;
+async function getBriefingRowsCached(){
+  const dateStr = todayStr();
+  if(_briefingRowsCache.data && _briefingRowsCache.dateStr === dateStr
+     && (Date.now() - _briefingRowsCache.at) < BRIEFING_ROWS_TTL_MS){
+    return _briefingRowsCache.data;
+  }
+  const data = await buildBriefingRows();
+  _briefingRowsCache = { at: Date.now(), dateStr, data };
+  return data;
+}
+function invalidateBriefingRowsCache(){ _briefingRowsCache = { at: 0, dateStr: null, data: null }; }
+
+// ⚠️ CORRIGÉ — le commentaire de l'alerte « objectif du matin » promettait depuis longtemps une
+// notification navigateur au boss… qui n'a jamais existé dans le code. Promesse tenue ici : une seule
+// notification par journée et par liste d'agents concernés (si un agent fixe enfin son objectif, la
+// liste change et une notification actualisée part — mais jamais deux fois la même). Le garde-fou est
+// dans localStorage, donc propre à ce poste : le boss et le superviseur reçoivent chacun la leur.
+function notifierObjectifsManquants(dateStr, agents){
+  if(!agents || !agents.length) return;
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  const signature = agents.slice().sort().join('|');
+  const cle = `vn_missingObjNotif_${dateStr}`;
+  try{
+    if(localStorage.getItem(cle) === signature) return;
+    localStorage.setItem(cle, signature);
+  }catch(e){ return; }   // navigation privée : on préfère ne rien envoyer plutôt que spammer
+  try{
+    const plur = agents.length > 1;
+    const notif = new Notification(`⏰ ${agents.length} agent${plur?'s':''} sans objectif du matin`, {
+      body: `${agents.join(', ')} ${plur?"n'ont":"n'a"} toujours pas fixé ${plur?'leur':'son'} objectif du jour.`,
+      tag: `vortexnova-missing-objective-${dateStr}`, renotify: true
+    });
+    notif.onclick = ()=>{ window.focus(); notif.close(); };
+  }catch(e){}
+}
+
+async function buildDailyBriefingHtml(baseRows){
+  if(config.agents.length === 0) return '<div class="empty">Ajoute des agents dans Réglages.</div>';
+  const built = await buildBriefingRows(baseRows);
+  if(!built) return '<div class="empty">Ajoute des agents dans Réglages.</div>';
+  const { rows, dateStr, remainingDays, allRankByAgent } = built;
+  // Le Point du jour du superviseur travaille sur exactement ces lignes-là : on les publie au passage,
+  // ça lui évite de refaire toute la chaîne de lectures dans la seconde qui suit. Publié aussi quand les
+  // chiffres viennent de Supervision (baseRows) : ce sont les mêmes données du même jour, et sans ça
+  // Supervision relançait tout le calcul une deuxième fois à chaque rafraîchissement de 30 secondes.
+  _briefingRowsCache = { at: Date.now(), dateStr, data: built };
+
+  // Alerte "objectif du matin pas fixé" — le pire des scénarios pour le boss, c'est un agent qui démarre
+  // sa journée sans même s'être fixé un objectif. Passé 10h (heure Maroc), on le signale clairement, et
+  // on prévient le boss par notification navigateur s'il a activé les alertes.
+  const nowHourMA = nowMA().getHours();
+  // ⚠️ CORRIGÉ — l'alerte comptait TOUT LE MONDE, y compris ceux dont on n'attend légitimement aucun
+  // objectif : un agent absent toute la journée et un agent en découverte. Le boss lisait « 2 agents
+  // n'ont pas fixé leur objectif » alors qu'aucun des deux n'était concerné — une alerte fausse, et une
+  // alerte fausse finit toujours par être ignorée, y compris le jour où elle est vraie.
+  // (Le pluriel « son objectif » → « leur objectif » est corrigé au passage.)
+  const missingObjectiveAgents = rows
+    .filter(r => !r.isIndep && r.todayObjective === 0 && !r.absentToday && !r.enDecouverte)
+    .map(r => r.agent);
+  // Ceux qu'on a volontairement écartés — nommés en petit sous l'alerte, pour que le boss sache que
+  // l'appli ne les a pas simplement oubliés.
+  const excusedAgents = rows
+    .filter(r => !r.isIndep && r.todayObjective === 0 && (r.absentToday || r.enDecouverte))
+    .map(r => `${r.agent} (${r.absentToday ? (r.absenceLabelToday || 'absent') : 'découverte'})`);
+  let alertBannerHtml = '';
+  if(isWorkingDay(dateStr) && nowHourMA >= 10 && missingObjectiveAgents.length > 0){
+    const plur = missingObjectiveAgents.length > 1;
+    alertBannerHtml = `<div style="margin-bottom:14px; padding:13px 16px; border-radius:12px; background:rgba(181,89,92,0.12); border:1px solid rgba(181,89,92,0.35); font-family:'Inter',sans-serif;">
+      <b style="color:#b5595c; font-size:13.5px;">⏰ ${missingObjectiveAgents.length} agent${plur?'s':''} ${plur?"n'ont":"n'a"} toujours pas fixé ${plur?'leur':'son'} objectif du matin</b>
+      <div style="margin-top:5px; font-size:12.5px; color:var(--muted);">${missingObjectiveAgents.join(', ')}</div>
+      ${excusedAgents.length ? `<div style="margin-top:6px; font-size:11.5px; color:var(--muted); opacity:0.85;">Non concerné${excusedAgents.length>1?'s':''} aujourd'hui : ${excusedAgents.join(' · ')}</div>` : ''}
+    </div>`;
+    notifierObjectifsManquants(dateStr, missingObjectiveAgents);
+  }
+ 
+
   const teamRows = rows.filter(r=>!r.isIndep).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
   const indepRows = rows.filter(r=>r.isIndep).sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
 
@@ -12140,12 +12645,25 @@ async function buildDailyBriefingHtml(baseRows){
     // pour rien). Cette comparaison vit désormais dans "Bilan de la journée", pensé pour la fin de
     // journée où les deux totaux sont enfin comparables.
     const agentDaysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
-    const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, agentDaysElapsed, remainingDays, rankInfo);
-    const allLines = [...(monthlyLines || [])].filter(Boolean);
+    // Le contexte du jour (absence, découverte, chiffre d'aujourd'hui, cumul de la semaine, ancienneté)
+    // descend maintenant jusqu'au moteur de commentaires : c'est lui qui décide du DISCOURS, pas
+    // seulement de la couleur. Sans ça, on félicitait une agente absente d'être 1re « chaque jour ».
+    const ctxJour = {
+      todayRealized: r.todayRealized, todayObjective: r.todayObjective,
+      weekRealized: r.weekRealized, weekDaysElapsed: r.weekDaysElapsed,
+      absentToday: r.absentToday, absenceLabel: r.absenceLabelToday, absenceJustifiee: r.absenceJustifiee,
+      enDecouverte: r.enDecouverte, nowHour: nowHourMA
+    };
+    const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, agentDaysElapsed, remainingDays, rankInfo, null, dateStr, ctxJour);
+    const dayLine = dayNudgeLine(r, nowHourMA, dateStr);
+    const allLines = [dayLine, ...(monthlyLines || [])].filter(Boolean);
     // todayCounts : le jour du jour n'entre dans le calcul de la série que si c'est un jour ouvré ET qu'il
     // est déjà terminé (sinon le "0 contrat" du matin casserait la flamme avant même que la journée ait
     // commencé — voir commentaire de computeZeroStreak plus haut).
-    const todayCounts = isWorkingDay(dateStr) && isDayOverForMessage(dateStr);
+    // ⚠️ ...et jamais quand l'agent était absent : sa journée non travaillée ne doit ni casser sa série
+    // 🔥 « sans finir à 0 », ni sa série 🎯 « objectif atteint ». Même règle que jourNeutrePourSerie
+    // pour les jours passés — appliquée ici au jour en cours.
+    const todayCounts = isWorkingDay(dateStr) && isDayOverForMessage(dateStr) && !r.absentToday;
     const zeroStreak = computeZeroStreak(r.todayRealized, r.historyFull, todayCounts);
     const zeroStreakTxt = streakLabel(zeroStreak), zeroStreakPlus = streakEstPlafonnee();
     const streakBadge = zeroStreak >= 2 ? `<span title="${zeroStreak}${zeroStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée sans finir à 0 contrat${zeroStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#b98a42; background:rgba(185,138,66,0.14); border:1px solid rgba(185,138,66,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🔥 ${zeroStreakTxt}</span>` : '';
@@ -12171,6 +12689,10 @@ async function buildDailyBriefingHtml(baseRows){
              <span style="font-size:21px; font-weight:800; letter-spacing:-0.4px; color:${barColor};">${r.todayRealized}<span style="font-size:13px; color:var(--muted); font-weight:500;"> / ${r.todayObjective}</span></span>
              <span style="font-size:13px; font-weight:700; color:${barColor};">${pct}%</span>
            </div>`
+        : r.absentToday
+        ? `<div style="font-size:12.5px; color:#b98a42; font-weight:600;">🗓️ ${r.absenceLabelToday || 'Absent'} — pas d'objectif attendu aujourd'hui</div>${r.todayRealized>0 ? `<div style="margin-top:4px; font-size:13px;">Et malgré tout : <b style="color:#4f9d78; font-weight:700;">${r.todayRealized}</b> contrat${r.todayRealized>1?'s':''} signé${r.todayRealized>1?'s':''}</div>` : ''}`
+        : r.enDecouverte
+        ? `<div style="font-size:12.5px; color:#b8935a; font-weight:600;">🔍 En découverte — aucun objectif imposé</div><div style="margin-top:4px; font-size:13px;">Réalisé aujourd'hui : <b style="color:${r.todayRealized>0?'#4f9d78':'var(--text)'}; font-weight:700;">${r.todayRealized}</b></div>`
         : `<div style="font-size:12.5px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé aujourd'hui : <b style="color:var(--text); font-weight:700;">${r.todayRealized}</b></div>`}
       ${historyStripHtml(r.historyStrip)}
       ${allLines.length ? `<div style="margin-top:12px; padding-top:11px; border-top:1px solid rgba(255,255,255,0.07);">${commentLinesToHtml(allLines)}</div>` : ''}
@@ -12190,6 +12712,545 @@ async function renderDailyBriefingSection(containerId){
   const container = document.getElementById(containerId);
   if(!container) return;
   container.innerHTML = await buildDailyBriefingHtml();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🎯 LE POINT DU JOUR — l'alerte qui oblige le superviseur à aller voir les agents en difficulté
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// POURQUOI CE MODULE EXISTE.
+// Le Conseil du matin dit qui va mal. Le Bilan du soir constate les dégâts. Entre les deux, il ne se
+// passait RIEN : un agent pouvait rester à 0 contrat de 9 h à 18 h sans que personne n'aille lui
+// parler, et le soir on découvrait une journée blanche qu'il était trop tard pour rattraper.
+// Ce module ferme ce trou. Deux fois par jour, il calcule qui est en difficulté, alerte le superviseur
+// (bandeau + fenêtre qui s'ouvre + notification navigateur), lui donne un conseil ADAPTÉ à la situation
+// réelle de chaque agent, et lui demande de confirmer, agent par agent, que le point a bien été fait.
+// L'admin voit en temps réel qui a reçu l'alerte, qui l'a lue, et qui a réellement fait le point.
+// Même mécanique éprouvée que le briefing hebdomadaire (storageSet + poll + notification), en plus fin.
+const POINT_DU_JOUR_CRENEAUX = [
+  { key:'midi',  heure:12, titre:'Point de mi-journée',    badge:'MI-JOURNÉE',    sousTitre:"La matinée est jouée, l'après-midi peut encore tout changer." },
+  { key:'aprem', heure:15, titre:'Point de fin de journée', badge:'DERNIÈRE CHANCE', sousTitre:"Dernières heures : c'est le tout dernier moment où une journée blanche peut encore être évitée." }
+];
+// Le créneau EN COURS (le dernier dont l'heure est passée), ou null avant le premier.
+function creneauPointDuJour(now){
+  const h = (now || nowMA()).getHours();
+  let actif = null;
+  POINT_DU_JOUR_CRENEAUX.forEach(c=>{ if(h >= c.heure) actif = c; });
+  return actif;
+}
+function creneauxEcoulesPointDuJour(now){
+  const h = (now || nowMA()).getHours();
+  return POINT_DU_JOUR_CRENEAUX.filter(c => h >= c.heure);
+}
+const pdjDoneKey = (d, c, a)=> `pdjDone:${d}:${c}:${a}`;
+const pdjSeenKey = (d, c, sup)=> `pdjSeen:${d}:${c}:${sup}`;
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// Qui doit faire l'objet d'un point, et à quel niveau de gravité ?
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// Le seuil monte avec l'heure, volontairement. À midi, être à la moitié de son objectif n'a rien
+// d'inquiétant : on ne signale que le 0 et les vrais décrochages (moins de la moitié). À 15 h, la
+// journée est presque jouée : tout ce qui est encore sous l'objectif mérite un passage. Alerter trop
+// large à midi aurait tué l'outil en deux jours — un superviseur qui reçoit huit alertes par jour
+// n'en traite aucune.
+function evaluerPointDuJour(r, creneau, dateStr){
+  if(!r || r.absentToday) return null;                    // il n'est pas là : rien à lui reprocher
+  if(estHorsContrat(r.agent, dateStr)) return null;
+  const fait = r.todayRealized || 0;
+  const obj  = r.todayObjective || 0;
+  if(fait === 0) return { niveau: 'zero' };
+  if(obj > 0 && fait < obj){
+    if(creneau.key === 'midi' && fait * 2 >= obj) return null;   // à mi-chemin à midi : normal
+    return { niveau: 'sousObjectif' };
+  }
+  return null;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// LE CONSEIL AU SUPERVISEUR — c'est toute la valeur de ce module
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// « Va voir Modou » ne sert à rien. Ce qui sert, c'est : pourquoi lui, pourquoi maintenant, ce qu'on
+// sait de sa situation réelle (ancienneté, semaine, mois, habitudes), et QUOI LUI DIRE. Le ton monte
+// avec la gravité, mais ne devient jamais méprisant — un agent humilié ne signe pas l'après-midi.
+function conseilPointDuJour(r, creneau, remainingDays){
+  const n = firstName(r.agent);
+  const fait = r.todayRealized || 0;
+  const obj  = r.todayObjective || 0;
+  const ctr  = v => `${v} contrat${v>1?'s':''}`;
+  const fmtNum = x => (Math.round(x*10)/10).toLocaleString('fr-FR');
+
+  // Ce qu'on sait de son passé récent — jours non travaillés déjà écartés (voir jourNeutrePourSerie).
+  const joursUtiles   = (r.historyFull || []).filter(d => d && !jourNeutrePourSerie(d));
+  const cinqDerniers  = joursUtiles.slice(0, 5);
+  const zeros5        = cinqDerniers.filter(d => (d.realized||0) === 0).length;
+  const zerosRecents  = joursUtiles.filter(d => (d.realized||0) === 0).length;
+  const moyenneRecente = joursUtiles.length
+    ? joursUtiles.reduce((s,d)=> s + (d.realized||0), 0) / joursUtiles.length : 0;
+  const habituellementBon = moyenneRecente >= 1.5 && zeros5 === 0;
+  const semaineVide   = (r.weekDaysElapsed || 0) >= 2 && (r.weekRealized || 0) === 0;
+  const recrue        = r.palierAnc && r.palierAnc !== 'confirme';
+  const tard          = creneau.key === 'aprem';
+
+  const conseils = [];
+  let urgence = 1;          // 1 = accompagner · 2 = pousser · 3 = recadrer sérieusement
+  let constat = '';
+  let aDire   = '';
+
+  // ─── 1. DÉCOUVERTE ─────────────────────────────────────────────────────────────────────────
+  if(r.enDecouverte){
+    urgence = fait === 0 && tard ? 2 : 1;
+    constat = fait === 0
+      ? `En découverte, ${ctr(0)} aujourd'hui. Aucun objectif ne lui est imposé — mais c'est précisément la période où il décide s'il reste, et où tu décides si tu le gardes.`
+      : `En découverte, ${ctr(fait)} aujourd'hui. Il produit : c'est le signal qu'on attendait.`;
+    conseils.push("Écoute un appel entier à côté de lui, sans intervenir, puis reprends UN seul point avec lui — pas trois.");
+    conseils.push("Regarde d'abord son volume d'appels, pas ses contrats : en découverte, c'est le volume qui manque neuf fois sur dix.");
+    if(fait === 0) conseils.push("Fixe-lui un mini-objectif pour la fin de journée : un seul contrat. Un objectif atteignable vaut mieux qu'un objectif juste.");
+    else conseils.push("Félicite-le devant l'équipe. À ce stade, la confiance produit plus que la technique.");
+    aDire = fait === 0
+      ? `« ${n}, on ne te demande pas de chiffre aujourd'hui. On te demande d'essayer une chose de plus que ce matin. Montre-moi ton prochain appel. »`
+      : `« ${n}, tu viens de prouver que tu sais le faire. Refais exactement ça sur ton prochain appel. »`;
+    return { agent: r.agent, urgence, constat, conseils, aDire, fait, obj };
+  }
+
+  // ─── 2. RECRUE (moins d'un mois) ────────────────────────────────────────────────────────────
+  if(recrue){
+    urgence = tard && fait === 0 ? 2 : 1;
+    constat = `Arrivé${genderPick(r.agent,'','e')} il y a ${(r.ancienneteJours||0)+1} jour${(r.ancienneteJours||0)+1>1?'s':''}. ${fait === 0 ? "Toujours rien signé aujourd'hui." : `${ctr(fait)} aujourd'hui, sous son objectif de ${obj}.`} À ce stade, un mauvais chiffre ne dit rien sur son potentiel.`;
+    conseils.push("Ne compare surtout pas au classement de l'équipe devant les autres : compare-le à sa propre journée d'hier.");
+    conseils.push("Fais-lui réécouter un bon appel d'un agent confirmé — le discours s'apprend mieux à l'oreille que sur papier.");
+    conseils.push("Vérifie qu'il maîtrise les trois objections les plus fréquentes. Si ça bloque là, tout le reste bloque.");
+    aDire = `« ${n}, personne ne t'attend au chiffre cette semaine. Ce que je regarde, c'est le nombre d'appels que tu passes. On en refait un ensemble maintenant ? »`;
+    return { agent: r.agent, urgence, constat, conseils, aDire, fait, obj };
+  }
+
+  // ─── 3. CONFIRMÉ, ZÉRO CONTRAT ──────────────────────────────────────────────────────────────
+  if(fait === 0){
+    if(semaineVide){
+      urgence = 3;
+      constat = `Rien aujourd'hui, et rien depuis lundi (${r.weekDaysElapsed} jours travaillés à 0). Ce n'est plus une mauvaise journée, c'est une mauvaise semaine.`;
+      conseils.push("Ce n'est plus un rappel : c'est un entretien. Prends-le à part, au calme, pas au milieu du plateau.");
+      conseils.push("Commence par écouter : quatre jours à 0 chez quelqu'un de confirmé, il y a toujours une cause (fichier, moral, santé, un dossier qui a mal tourné).");
+      conseils.push("Repars avec un engagement écrit et vérifiable pour demain matin : un objectif chiffré et une heure de contrôle.");
+      conseils.push(`Rappelle-lui concrètement ce que ça coûte : sa prime et son objectif mensuel se jouent sur ces jours-là.`);
+      aDire = `« ${n}, quatre jours sans rien, ce n'est pas toi. Je ne suis pas là pour te taper dessus, je suis là pour comprendre ce qui bloque. Dis-moi. »`;
+    } else if(habituellementBon){
+      urgence = tard ? 2 : 1;
+      constat = `${ctr(0)} aujourd'hui alors qu'il tourne à ${fmtNum(moyenneRecente)}/jour sur ses ${joursUtiles.length} derniers jours travaillés. Ce n'est pas son habitude : ce n'est probablement pas un problème de motivation.`;
+      conseils.push("Ne commence pas par la pression : chez un bon agent, un 0 isolé vient presque toujours d'autre chose (fichier pourri, appel qui s'est mal passé, fatigue, souci perso).");
+      conseils.push("Demande-lui de te raconter son dernier appel raté. Souvent, il se débloque tout seul en le racontant.");
+      conseils.push("Propose-lui de repartir sur des leads que tu sais bons — relancer une victoire est plus efficace qu'un discours.");
+      aDire = `« ${n}, tu es à 0 aujourd'hui et ça ne te ressemble pas. Il s'est passé quoi ce matin ? »`;
+    } else if(zerosRecents >= 2){
+      // zerosRecents ne compte QUE les jours passés : la journée d'aujourd'hui, elle aussi à 0, s'ajoute.
+      // Le seuil est donc à 2 passés + aujourd'hui = 3e journée blanche, exactement la marche où le
+      // règlement interne et le reste de l'appli passent déjà au ton « sérieux ».
+      const nbZeros = zerosRecents + 1;
+      urgence = 3;
+      constat = `${ctr(0)} aujourd'hui : c'est sa ${nbZeros}ᵉ journée à 0 sur ses ${joursUtiles.length + 1} derniers jours travaillés. Le problème est installé, il ne se réglera pas tout seul.`;
+      conseils.push("Change de registre : ce qui a été dit les fois précédentes n'a pas fonctionné, le répéter ne servira à rien.");
+      conseils.push("Passe une heure à écouter ses appels en direct, sans prévenir à l'avance. Le problème se voit en trois appels.");
+      conseils.push(`Sois explicite sur les conséquences, calmement : à ce rythme, son objectif du mois et sa prime ne sont pas atteignables.`);
+      conseils.push("Note ce point du jour — s'il faut un jour formaliser, c'est cette trace-là qui comptera.");
+      aDire = `« ${n}, c'est ta ${nbZeros}ᵉ journée à 0. On a déjà parlé. Aujourd'hui, on ne parle plus : je t'écoute travailler. »`;
+    } else {
+      urgence = tard ? 3 : 2;
+      constat = tard
+        ? `Toujours ${ctr(0)} et la journée se termine. Il reste très peu de temps pour éviter une journée blanche.`
+        : `${ctr(0)} à la mi-journée${obj > 0 ? ` (il s'était fixé ${obj})` : ''}. L'après-midi est entière : tout est encore récupérable.`;
+      conseils.push("Va le voir maintenant, pas dans une heure. Un 0 à midi qui n'est pas traité devient un 0 le soir dans huit cas sur dix.");
+      conseils.push("Fais-lui changer UNE chose : l'accroche, le fichier, ou l'ordre des arguments. Refaire la même chose plus fort ne marche jamais.");
+      if(tard) conseils.push("Reste à côté de lui pour ses derniers appels. La présence physique du superviseur change le résultat, c'est mesurable.");
+      aDire = tard
+        ? `« ${n}, il te reste une heure. On la fait ensemble, je reste à côté de toi. »`
+        : `« ${n}, tu es à 0 à midi. On regarde ton prochain appel ensemble, et on change une chose. Laquelle tu veux essayer ? »`;
+    }
+  } else {
+    // ─── 4. CONFIRMÉ, SOUS SON OBJECTIF DU JOUR ────────────────────────────────────────────────
+    const manque = Math.max(0, obj - fait);
+    urgence = tard ? 2 : 1;
+    constat = `${fait}/${obj} sur l'objectif qu'il s'est fixé lui-même ce matin. Il lui manque ${ctr(manque)}${tard ? ' et la journée se termine.' : ' et il reste tout l\'après-midi.'}`;
+    conseils.push(`Donne-lui le chiffre exact, pas une impression : « il te manque ${manque} ». Un objectif chiffré se rattrape, un « fais un effort » ne se rattrape pas.`);
+    conseils.push("C'est SON objectif, pas le tien : rappelle-lui qu'il l'a choisi ce matin. C'est beaucoup plus efficace qu'un objectif imposé.");
+    if(tard) conseils.push("Reste avec lui sur les derniers appels : un contrat de plus en fin de journée change aussi son moral pour demain.");
+    else conseils.push("Vérifie son volume d'appels de la matinée. S'il est bas, le problème est là — pas dans son discours.");
+    aDire = `« ${n}, il te manque ${manque} pour tenir ce que tu t'es promis ce matin. Tu le fais, ou on regarde ensemble ce qui bloque ? »`;
+  }
+
+  // ─── Complément commun : l'enjeu du MOIS, quand il est réel ────────────────────────────────
+  if(r.mini > 0){
+    const resteMini = Math.max(0, r.mini - (r.monthlyRealized || 0));
+    if(resteMini > 0 && remainingDays > 0){
+      const rythmeNecessaire = resteMini / remainingDays;
+      if(rythmeNecessaire > 1.5){
+        conseils.push(`Parle-lui aussi du mois, pas seulement de la journée : il lui manque ${ctr(resteMini)} en ${remainingDays} jour${remainingDays>1?'s':''} ouvré${remainingDays>1?'s':''}, soit ${fmtNum(rythmeNecessaire)}/jour. C'est sa paie qui se joue là.`);
+        if(urgence < 2) urgence = 2;
+      }
+    }
+  }
+  if(obj === 0 && !r.enDecouverte){
+    conseils.push("Il n'a pas fixé d'objectif ce matin. Fais-le avec lui maintenant, même en retard : sans repère, il n'y a rien à rattraper et rien à célébrer.");
+  }
+  // Un superviseur peut lui aussi apparaître dans cette liste — il a ses propres contrats. « Va le
+  // voir » n'a alors aucun sens : il se lit lui-même. On le dit explicitement plutôt que de laisser
+  // une consigne absurde à l'écran (même logique que escalationWith ailleurs dans l'appli).
+  if(isSupervisor(r.agent)){
+    conseils.push("C'est un superviseur : son compteur est lu par toute son équipe, l'exemplarité fait partie du poste. Ce point-là se règle avec l'admin, pas en interne.");
+  }
+  return { agent: r.agent, urgence, constat, conseils, aDire, fait, obj };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// Calcul complet d'un créneau : qui est concerné, avec quel conseil, et où en est la confirmation.
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+async function calculerPointDuJour(creneau){
+  const built = await getBriefingRowsCached();
+  if(!built) return { creneau, dateStr: todayStr(), alertes: [] };
+  const { rows, dateStr, remainingDays } = built;
+  if(!isWorkingDay(dateStr)) return { creneau, dateStr, alertes: [] };
+  const brutes = rows
+    .map(r => ({ r, ev: evaluerPointDuJour(r, creneau, dateStr) }))
+    .filter(x => x.ev);
+  const alertes = await Promise.all(brutes.map(async x=>{
+    const conseil = conseilPointDuJour(x.r, creneau, remainingDays);
+    let done = null;
+    try{
+      const res = await storageGet(pdjDoneKey(dateStr, creneau.key, x.r.agent));
+      if(res && res.value) done = JSON.parse(res.value);
+    }catch(e){}
+    return { ...conseil, niveau: x.ev.niveau, isIndep: x.r.isIndep, done };
+  }));
+  // Le plus grave en premier : c'est l'ordre dans lequel le superviseur doit se déplacer.
+  alertes.sort((a,b)=> b.urgence !== a.urgence ? b.urgence - a.urgence : (a.fait - b.fait) || a.agent.localeCompare(b.agent));
+  return { creneau, dateStr, alertes };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🖥️ CÔTÉ SUPERVISEUR — bandeau, fenêtre qui s'ouvre toute seule, notification, confirmation
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+let _pdjEtatCourant = null;      // dernier calcul affiché, pour que les boutons de la fenêtre y accèdent
+let _pdjModalOuverte = false;
+
+function pdjCouleurUrgence(u){
+  if(u >= 3) return { c:'#e5484d', bg:'rgba(229,72,77,0.12)', bd:'rgba(229,72,77,0.45)', txt:'À RECADRER' };
+  if(u === 2) return { c:'#e5a83d', bg:'rgba(229,168,61,0.12)', bd:'rgba(229,168,61,0.45)', txt:'À POUSSER' };
+  return { c:'#5680ab', bg:'rgba(86,128,171,0.12)', bd:'rgba(86,128,171,0.45)', txt:'À ACCOMPAGNER' };
+}
+
+async function renderPointDuJourSupervision(supervisorName){
+  const banner = document.getElementById('pointDuJourBannerSup');
+  if(!banner) return;
+  const now = nowMA();
+  const dateStr = todayStr();
+  const creneau = creneauPointDuJour(now);
+  // Hors jour ouvré, ou avant le premier créneau : rien à demander à personne.
+  if(!creneau || !isWorkingDay(dateStr)){ banner.style.display = 'none'; return; }
+
+  const etat = await calculerPointDuJour(creneau);
+  _pdjEtatCourant = { ...etat, supervisor: supervisorName };
+  const restants = etat.alertes.filter(a => !a.done);
+
+  if(!etat.alertes.length){
+    // Tout le monde est dans les clous : on le dit, en vert, sans animation. Un superviseur a autant
+    // besoin de savoir que tout va bien que de savoir que ça va mal.
+    banner.style.display = 'flex';
+    banner.style.animation = 'none';
+    banner.style.borderColor = '#5cb896';
+    banner.innerHTML = `<div style="display:flex; align-items:center; gap:16px;">
+      <div style="font-size:34px; line-height:1; flex-shrink:0;">✅</div>
+      <div>
+        <div style="font-size:18px; font-weight:900; color:#5cb896;">${creneau.titre} — personne à aller voir</div>
+        <div style="font-size:13px; font-weight:600; color:var(--text); opacity:0.85; margin-top:3px;">Aucun agent à 0 ni sous son objectif du jour. Continue comme ça.</div>
+      </div>
+    </div>`;
+    return;
+  }
+
+  const urgenceMax = Math.max(...etat.alertes.map(a=>a.urgence));
+  const col = pdjCouleurUrgence(urgenceMax);
+  const toutFait = restants.length === 0;
+  banner.style.display = 'flex';
+  banner.style.animation = toutFait ? 'none' : 'pulseWarn 2.2s infinite';
+  banner.style.borderColor = toutFait ? '#5cb896' : col.bd;
+  banner.innerHTML = `<div style="display:flex; align-items:center; gap:16px; min-width:0;">
+      <div style="font-size:34px; line-height:1; flex-shrink:0;">${toutFait ? '✅' : '🚨'}</div>
+      <div style="min-width:0;">
+        <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+          <span style="font-size:19px; font-weight:900; color:${toutFait ? '#5cb896' : col.c};">${creneau.titre}</span>
+          <span style="font-size:11px; font-weight:800; background:${toutFait ? '#5cb896' : col.c}; color:#141a22; border-radius:20px; padding:3px 11px; letter-spacing:0.4px;">${creneau.badge}</span>
+        </div>
+        <div style="font-size:13.5px; font-weight:600; color:var(--text); opacity:0.9; margin-top:3px;">
+          ${toutFait
+            ? `Les ${etat.alertes.length} point${etat.alertes.length>1?'s':''} sont faits et transmis à l'admin. Bravo.`
+            : `<b style="color:${col.c};">${restants.length} agent${restants.length>1?'s':''}</b> à aller voir maintenant : ${restants.map(a=>escapeHtml(a.agent)).join(', ')}.`}
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-top:3px;">${creneau.sousTitre}</div>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-shrink:0;">
+      <button type="button" onclick="ouvrirPointDuJour()" style="padding:12px 22px; border-radius:10px; border:1px solid ${toutFait ? '#5cb896' : col.c}; background:${toutFait ? 'rgba(92,184,150,0.18)' : col.bg}; color:${toutFait ? '#5cb896' : col.c}; font-weight:800; font-size:13.5px; cursor:pointer;">${toutFait ? '👀 Revoir le point' : '📋 Ouvrir le point du jour'}</button>
+    </div>`;
+
+  // Trace « reçu » pour l'admin : le superviseur a bien la page ouverte et l'alerte a été calculée chez
+  // lui. Écrit une seule fois par créneau (le poll repasse toutes les 30 s, inutile de réécrire).
+  if(supervisorName){
+    const cleRecu = `vn_pdjRecu_${dateStr}_${creneau.key}_${supervisorName}`;
+    let dejaEcrit = false;
+    try{ dejaEcrit = localStorage.getItem(cleRecu) === '1'; }catch(e){}
+    if(!dejaEcrit){
+      try{
+        await storageSet(pdjSeenKey(dateStr, creneau.key, supervisorName), JSON.stringify({ receivedAt: new Date().toISOString(), readAt: null, total: etat.alertes.length }));
+        localStorage.setItem(cleRecu, '1');
+      }catch(e){}
+    }
+  }
+
+  // Ouverture automatique + notification, UNE SEULE FOIS par créneau et par poste. Passé ce moment, le
+  // bandeau suffit : rouvrir la fenêtre toutes les 30 secondes rendrait la page inutilisable.
+  if(restants.length){
+    const clePopup = `vn_pdjPopup_${dateStr}_${creneau.key}_${supervisorName || 'sup'}`;
+    let dejaVu = false;
+    try{ dejaVu = localStorage.getItem(clePopup) === '1'; }catch(e){}
+    if(!dejaVu){
+      try{ localStorage.setItem(clePopup, '1'); }catch(e){}
+      ouvrirPointDuJour();
+      try{ playInactivityBeep(1); }catch(e){}
+      flashDocTitle(`🚨 ${restants.length} AGENT${restants.length>1?'S':''} À VOIR`);
+      if('Notification' in window && Notification.permission === 'granted'){
+        try{
+          const notif = new Notification(`🚨 ${creneau.titre} — ${restants.length} agent${restants.length>1?'s':''} à aller voir`, {
+            body: restants.map(a=> `${a.agent} : ${a.fait}${a.obj?'/'+a.obj:''}`).join(' · '),
+            tag: `vortexnova-pdj-${dateStr}-${creneau.key}`, requireInteraction: true, renotify: true
+          });
+          notif.onclick = ()=>{ window.focus(); ouvrirPointDuJour(); notif.close(); };
+        }catch(e){}
+      }
+    }
+  }
+}
+
+function ouvrirPointDuJour(){
+  const modal = document.getElementById('pdjModal');
+  if(!modal || !_pdjEtatCourant) return;
+  _pdjModalOuverte = true;
+  // On coupe le clignotement du titre : l'alerte a été vue, elle n'a plus à harceler.
+  if(inactivityTitleFlashTimer){ clearInterval(inactivityTitleFlashTimer); inactivityTitleFlashTimer = null; document.title = inactivityDocOriginalTitle; }
+  dessinerPointDuJourModal();
+  modal.style.display = 'flex';
+  // Trace « lu » pour l'admin.
+  const { dateStr, creneau, supervisor, alertes } = _pdjEtatCourant;
+  if(supervisor){
+    storageSet(pdjSeenKey(dateStr, creneau.key, supervisor), JSON.stringify({
+      receivedAt: new Date().toISOString(), readAt: new Date().toISOString(), total: alertes.length
+    })).catch(()=>{});
+  }
+}
+function fermerPointDuJour(){
+  const modal = document.getElementById('pdjModal');
+  if(modal) modal.style.display = 'none';
+  _pdjModalOuverte = false;
+}
+
+function dessinerPointDuJourModal(){
+  const body = document.getElementById('pdjModalBody');
+  // ⚠️ La fenêtre est redessinée à chaque rafraîchissement automatique (30 s). Sans ce sauvetage, un
+  // superviseur en train de taper ce que l'agent vient de lui répondre voyait son texte s'effacer sous
+  // ses doigts — le genre de détail qui fait abandonner un outil en deux jours.
+  const notesEnCours = {};
+  if(body){
+    body.querySelectorAll('input[id^="pdjNote_"]').forEach(inp=>{ if(inp.value) notesEnCours[inp.id] = inp.value; });
+  }
+  const titre = document.getElementById('pdjModalTitre');
+  const sous  = document.getElementById('pdjModalSousTitre');
+  if(!body || !_pdjEtatCourant) return;
+  const { creneau, alertes } = _pdjEtatCourant;
+  const restants = alertes.filter(a=>!a.done);
+  if(titre) titre.textContent = `🎯 ${creneau.titre}`;
+  if(sous) sous.innerHTML = restants.length
+    ? `<b style="color:#e5a83d;">${restants.length} agent${restants.length>1?'s':''}</b> à aller voir. Confirme chaque point une fois fait — l'admin le voit en direct.`
+    : `<b style="color:#5cb896;">Tous les points sont faits.</b> L'admin a bien reçu la confirmation.`;
+
+  body.innerHTML = alertes.map(a=>{
+    const col = pdjCouleurUrgence(a.urgence);
+    const fini = !!a.done;
+    const heure = fini ? (()=>{ try{ return new Date(a.done.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } })() : '';
+    return `<div style="border:1px solid ${fini ? 'rgba(92,184,150,0.45)' : col.bd}; background:${fini ? 'rgba(92,184,150,0.07)' : col.bg}; border-radius:14px; padding:16px 18px; margin-bottom:12px; ${fini ? 'opacity:0.72;' : ''}">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        ${agentAvatarHtml(a.agent, 30)}
+        <b style="font-size:16px; font-weight:800;">${escapeHtml(a.agent)}</b>
+        <span style="font-size:10.5px; font-weight:800; letter-spacing:.4px; color:${fini ? '#5cb896' : col.c}; background:${fini ? 'rgba(92,184,150,0.16)' : 'transparent'}; border:1px solid ${fini ? 'rgba(92,184,150,0.5)' : col.bd}; border-radius:20px; padding:2px 9px;">${fini ? '✅ POINT FAIT' + (heure ? ' · ' + heure : '') : col.txt}</span>
+        <span style="margin-left:auto; font-size:19px; font-weight:900; color:${col.c};">${a.fait}${a.obj ? `<span style="font-size:12px; color:var(--muted); font-weight:600;"> / ${a.obj}</span>` : `<span style="font-size:12px; color:var(--muted); font-weight:600;"> contrat${a.fait>1?'s':''}</span>`}</span>
+      </div>
+      <div style="font-size:13.5px; line-height:1.55; color:var(--text); margin-bottom:10px;">${escapeHtml(a.constat)}</div>
+      <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:11px;">
+        ${a.conseils.map(c=>`<div style="display:flex; gap:8px; align-items:flex-start; font-size:12.8px; line-height:1.5; color:var(--text); opacity:0.93;"><span style="color:${col.c}; flex-shrink:0; margin-top:4px; font-size:8px;">●</span><span>${escapeHtml(c)}</span></div>`).join('')}
+      </div>
+      <div style="font-size:13px; line-height:1.55; font-style:italic; color:var(--text); background:rgba(255,255,255,0.04); border-left:3px solid ${col.c}; border-radius:0 8px 8px 0; padding:9px 12px; margin-bottom:12px;">${escapeHtml(a.aDire)}</div>
+      ${fini
+        ? `<div style="font-size:12px; color:#5cb896; font-weight:700;">✅ Confirmé par ${escapeHtml(a.done.by || 'le superviseur')}${heure ? ' à ' + heure : ''}${a.done.note ? ` — « ${escapeHtml(a.done.note)} »` : ''}</div>`
+        : `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+             <input type="text" id="pdjNote_${encodeURIComponent(a.agent)}" placeholder="Ce que tu as dit / ce qu'il t'a répondu (facultatif)" style="flex:1; min-width:180px; padding:9px 12px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:12.5px;">
+             <button type="button" onclick="confirmerPointFait('${a.agent.replace(/'/g,"\\'")}')" style="padding:10px 18px; border-radius:9px; border:1px solid #5cb896; background:rgba(92,184,150,0.16); color:#5cb896; font-weight:800; font-size:12.5px; cursor:pointer; white-space:nowrap;">✅ Point fait avec ${escapeHtml(firstName(a.agent))}</button>
+           </div>`}
+    </div>`;
+  }).join('');
+  // On remet ce qui était en cours de saisie, y compris le curseur là où il était si le champ est actif.
+  Object.keys(notesEnCours).forEach(id=>{
+    const inp = document.getElementById(id);
+    if(inp) inp.value = notesEnCours[id];
+  });
+}
+
+async function confirmerPointFait(agent){
+  if(!_pdjEtatCourant) return;
+  const { dateStr, creneau, supervisor } = _pdjEtatCourant;
+  let note = '';
+  const champ = document.getElementById(`pdjNote_${encodeURIComponent(agent)}`);
+  if(champ) note = (champ.value || '').trim().slice(0, 300);
+  const enregistrement = { by: supervisor || 'Superviseur', at: new Date().toISOString(), note, creneau: creneau.key };
+  // On met à jour l'affichage AVANT l'écriture réseau : le superviseur est debout à côté d'un agent,
+  // il ne doit pas attendre Firestore pour voir que son clic a été pris en compte.
+  const cible = _pdjEtatCourant.alertes.find(a=>a.agent === agent);
+  if(cible) cible.done = enregistrement;
+  dessinerPointDuJourModal();
+  try{
+    await storageSet(pdjDoneKey(dateStr, creneau.key, agent), JSON.stringify(enregistrement));
+    logAudit(supervisor || 'Superviseur', `Point du jour fait avec ${agent} (${creneau.key})`, note);
+    showToast(`✅ Point avec ${firstName(agent)} confirmé — l'admin est prévenu.`, 'ok', 4000);
+  }catch(e){
+    if(cible) cible.done = null;
+    dessinerPointDuJourModal();
+    showToast(`⚠️ Impossible d'enregistrer le point avec ${firstName(agent)}. Réessaie.`, 'warn', 6000);
+    return;
+  }
+  const supName = supervisor;
+  renderPointDuJourSupervision(supName).then(()=>{ if(_pdjModalOuverte) dessinerPointDuJourModal(); });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 👑 CÔTÉ ADMIN — reçu / lu / fait, en direct, sans avoir à demander à personne
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// DEMANDE PATRON : « ils doivent me confirmer à moi que c'est fait, et je veux un truc qui me dit
+// qu'ils ont reçu, lu, et fait ce qu'il fallait. » Les trois états sont donc distincts et horodatés :
+//   • REÇU  = l'alerte a été calculée sur le poste du superviseur (sa page était bien ouverte) ;
+//   • LU    = il a ouvert la fenêtre du point du jour ;
+//   • FAIT  = il a confirmé, agent par agent, avec éventuellement ce qui s'est dit.
+// Un superviseur qui n'a jamais « reçu » n'est pas un superviseur qui ignore : c'est un superviseur
+// dont la page n'était pas ouverte. La nuance compte avant de reprocher quoi que ce soit.
+async function renderPointDuJourAdmin(){
+  const el = document.getElementById('pointDuJourAdminPanel');
+  if(!el) return;
+  const dateStr = todayStr();
+  const now = nowMA();
+  if(!isWorkingDay(dateStr)){
+    el.innerHTML = `<div class="empty">Jour non travaillé — aucun point du jour attendu.</div>`;
+    return;
+  }
+  const creneaux = creneauxEcoulesPointDuJour(now);
+  if(!creneaux.length){
+    const prochain = POINT_DU_JOUR_CRENEAUX[0];
+    el.innerHTML = `<div class="empty">Premier point du jour à ${prochain.heure}h — rien à suivre pour l'instant.</div>`;
+    return;
+  }
+  const superviseurs = listSupervisors();
+  const creneauEnCours = creneauPointDuJour(now);
+  const blocs = await Promise.all(creneaux.map(async creneau=>{
+    const estEnCours = creneauEnCours && creneauEnCours.key === creneau.key;
+    const etat = await calculerPointDuJour(creneau);
+    const faits = etat.alertes.filter(a=>a.done);
+    const restants = etat.alertes.filter(a=>!a.done);
+
+    // Statut reçu/lu de chaque superviseur pour ce créneau.
+    const statuts = await Promise.all(superviseurs.map(async sup=>{
+      let st = null;
+      try{
+        const res = await storageGet(pdjSeenKey(dateStr, creneau.key, sup));
+        if(res && res.value) st = JSON.parse(res.value);
+      }catch(e){}
+      return { sup, st };
+    }));
+    const hhmm = iso => { try{ return new Date(iso).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+    const ligneSup = statuts.map(x=>{
+      if(!x.st) return `<span style="color:#b5595c;">⛔ ${escapeHtml(x.sup)} — pas reçu (page fermée)</span>`;
+      if(!x.st.readAt) return `<span style="color:#e5a83d;">📨 ${escapeHtml(x.sup)} — reçu à ${hhmm(x.st.receivedAt)}, pas encore ouvert</span>`;
+      return `<span style="color:#5cb896;">👁️ ${escapeHtml(x.sup)} — lu à ${hhmm(x.st.readAt)}</span>`;
+    }).join(' · ');
+
+    const entete = `<div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:16px 0 8px;">
+        <b style="font-size:15.5px; font-weight:900; color:var(--text);">${creneau.heure}h — ${creneau.titre}</b>
+        <span style="font-size:11px; font-weight:800; letter-spacing:.4px; border-radius:20px; padding:2px 10px; background:${restants.length ? 'rgba(229,72,77,0.16)' : 'rgba(92,184,150,0.16)'}; border:1px solid ${restants.length ? 'rgba(229,72,77,0.45)' : 'rgba(92,184,150,0.45)'}; color:${restants.length ? '#e5484d' : '#5cb896'};">${etat.alertes.length === 0 ? 'PERSONNE À VOIR' : (restants.length ? `${restants.length} EN ATTENTE` : 'TOUT EST FAIT')}</span>
+      </div>
+      ${superviseurs.length ? `<div style="font-size:12px; font-weight:700; margin-bottom:9px;">${ligneSup}</div>`
+        : `<div style="font-size:12px; color:var(--muted); margin-bottom:9px;">Aucun superviseur désigné (Réglages → Agents → 📊 Superviseur) — personne ne reçoit ces alertes.</div>`}`;
+
+    if(!etat.alertes.length){
+      return entete + `<div style="font-size:13px; color:#5cb896;">✅ Aucun agent à 0 ni sous son objectif à ce créneau.</div>`;
+    }
+    // ⚠️ À SAVOIR EN LISANT CE PANNEAU : la liste est recalculée en direct, sur les chiffres de
+    // MAINTENANT. Un agent qui était à 0 à midi et qui a signé depuis n'y figure plus — c'est voulu
+    // (on suit les agents à aider, pas un registre d'archives), mais il faut le savoir avant de
+    // conclure qu'un superviseur « n'a rien eu à faire » à midi.
+    const noteVivante = `<div style="font-size:11.5px; color:var(--muted); margin:0 0 8px;">Liste recalculée en direct : un agent qui a signé depuis ce créneau n'y apparaît plus.</div>`;
+    const cartes = etat.alertes.map(a=>{
+      const col = pdjCouleurUrgence(a.urgence);
+      const fini = !!a.done;
+      const heure = fini ? (()=>{ try{ return new Date(a.done.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } })() : '';
+      return `<div style="border:1px solid ${fini ? 'rgba(92,184,150,0.4)' : col.bd}; background:${fini ? 'rgba(92,184,150,0.06)' : col.bg}; border-radius:11px; padding:11px 14px;">
+        <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+          <b style="font-size:14px;">${escapeHtml(a.agent)}</b>
+          <span style="font-size:12.5px; font-weight:800; color:${col.c};">${a.fait}${a.obj ? ` / ${a.obj}` : ''}</span>
+          <span style="margin-left:auto; font-size:11px; font-weight:800; color:${fini ? '#5cb896' : (estEnCours ? '#e5a83d' : '#b5595c')};">${fini ? `✅ Fait par ${escapeHtml(a.done.by || '?')}${heure ? ' à ' + heure : ''}` : (estEnCours ? '⏳ En attente' : '❌ Jamais confirmé')}</span>
+        </div>
+        ${fini && a.done.note ? `<div style="font-size:12px; color:var(--muted); margin-top:5px; font-style:italic;">« ${escapeHtml(a.done.note)} »</div>` : ''}
+        ${!fini ? `<div style="font-size:12px; color:var(--muted); margin-top:5px;">${escapeHtml(a.constat)}</div>` : ''}
+      </div>`;
+    }).join('');
+    return entete + noteVivante + `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:9px;">${cartes}</div>`;
+  }));
+  el.innerHTML = blocs.join('');
+}
+
+// Notification au patron dès qu'un superviseur confirme un point — même mécanique que
+// checkSupervisionBriefingAcksForAdmin : on ne notifie jamais au tout premier passage après un
+// rechargement de page, sinon tous les points déjà faits dans la journée re-sonneraient d'un coup.
+let seenPointDuJourAcks = null;
+async function checkPointDuJourAcksForAdmin(){
+  const dateStr = todayStr();
+  if(!isWorkingDay(dateStr)){ seenPointDuJourAcks = null; return; }
+  const creneaux = creneauxEcoulesPointDuJour(nowMA());
+  if(!creneaux.length){ seenPointDuJourAcks = null; return; }
+  const built = await getBriefingRowsCached();
+  if(!built) return;
+  const cles = [];
+  creneaux.forEach(creneau=>{
+    built.rows.forEach(r=>{
+      if(evaluerPointDuJour(r, creneau, dateStr)) cles.push({ creneau, agent: r.agent });
+    });
+  });
+  const resultats = await Promise.all(cles.map(async x=>{
+    try{
+      const res = await storageGet(pdjDoneKey(dateStr, x.creneau.key, x.agent));
+      if(res && res.value){
+        const v = JSON.parse(res.value);
+        return { id: `${x.creneau.key}|${x.agent}`, by: v.by, agent: x.agent, creneau: x.creneau, note: v.note };
+      }
+    }catch(e){}
+    return null;
+  }));
+  const trouves = resultats.filter(Boolean);
+  const nowSeen = new Set(trouves.map(t=>t.id));
+  if(seenPointDuJourAcks === null){ seenPointDuJourAcks = nowSeen; return; }
+  trouves.forEach(t=>{
+    if(seenPointDuJourAcks.has(t.id)) return;
+    if('Notification' in window && Notification.permission === 'granted'){
+      try{
+        const notif = new Notification('✅ Point du jour fait', {
+          body: `${t.by} a fait le point avec ${t.agent} (${t.creneau.titre.toLowerCase()}).${t.note ? ' « ' + t.note + ' »' : ''}`,
+          tag: `vortexnova-pdj-ack-${dateStr}-${t.id}`, renotify: true
+        });
+        notif.onclick = ()=>{ window.focus(); notif.close(); };
+      }catch(e){}
+    }
+  });
+  seenPointDuJourAcks = nowSeen;
 }
 
 // ============================================================
@@ -16217,7 +17278,13 @@ async function renderSupervision(){
   const pc = getProdConfig();
   const now = nowMA();
   const dateStr = todayStr();
-  const daysRemaining = Math.max(0, currentWorkingDaysInMonth() - workingDaysElapsedInMonth());
+  // ⚠️ ALIGNÉ sur le reste de l'appli. Cette ligne comptait « jours ouvrés du mois − jours écoulés
+  // aujourd'hui compris », donc elle excluait la journée en cours : un superviseur lisait « 1 jour
+  // restant » l'avant-dernier jour du mois, et un « contrats/jour requis » systématiquement trop élevé
+  // du matin au soir — pendant que le Conseil du matin, juste en dessous sur la même page, affichait le
+  // bon chiffre. Deux nombres différents pour la même question sur le même écran : c'est exactement ce
+  // qui fait douter de tous les autres. Une seule fonction fait foi désormais.
+  const daysRemaining = joursOuvresRestantsPourAgir(todayStr());
 
   const dateBoard = prodBoardCache[dateStr] || await getProdBoard(dateStr);
   prodBoardCache[dateStr] = dateBoard;
@@ -16764,6 +17831,10 @@ async function renderSupervision(){
   detail.innerHTML = html;
   renderWeeklyBriefingSection('weeklyBriefingSup', 'weeklyBriefingWeekSelectSupervision');
   checkWeeklyBriefingReminderSupervision(supervisor);
+  // 🎯 Point du jour : recalculé à chaque rendu de Supervision (donc aussi à l'auto-refresh 30 s).
+  // C'est ce qui fait apparaître le bandeau, ouvrir la fenêtre au premier créneau et partir la
+  // notification — sans que le superviseur ait quoi que ce soit à cliquer.
+  renderPointDuJourSupervision(supervisor).then(()=>{ if(_pdjModalOuverte) dessinerPointDuJourModal(); }).catch(e=>console.warn('point du jour', e));
 
   // Même rendu que l'Admin pour le Bilan de la journée (carte Total équipe + cartes détaillées) :
   // on réutilise renderObjSnapSingleDay au lieu de dupliquer le code, pour que les deux vues
