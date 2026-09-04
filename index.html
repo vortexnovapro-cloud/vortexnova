@@ -2437,9 +2437,14 @@ function tryDeviceGateAdmin(){
               <input type="checkbox" id="newAgentIndep">
               <label for="newAgentIndep">Indépendant</label>
             </div>
+            <div class="indep-toggle">
+              <input type="checkbox" id="newAgentDecouverte">
+              <label for="newAgentDecouverte">🔍 Découverte</label>
+            </div>
             <button onclick="addAgent()">Ajouter</button>
           </div>
           <div class="section-sub" style="margin-top:10px;">💡 <b>Indépendant</b> = pas de pointage, pas d'objectif, payé directement au contrat (dès le 1er).</div>
+          <div class="section-sub" style="margin-top:4px;">🔍 <b>Découverte</b> = nouvel agent payé UNIQUEMENT au contrat (aucun fixe, aucune prime) tant que tu n'as pas décidé qu'il passe en salarié normal — bouton 🔍 pour l'activer/désactiver, 🏁 pour terminer la découverte à une date précise sur sa fiche ci-dessus. Les contrats faits pendant la découverte restent comptés pour son objectif du premier mois salarié.</div>
           <div class="section-sub" style="margin-top:4px;">📊 <b>Superviseur</b> = seul(e)s les agents marqués ainsi peuvent ouvrir l'onglet <b>Supervision</b> (vue d'équipe complète + prime par contrat d'équipe). Bascule ce statut avec le bouton 📊 sur la fiche de l'agent ci-dessus. Pense à leur définir un mot de passe (🔑) pour protéger l'accès.</div>
           <div class="section-sub" style="margin-top:4px;">🎓 <b>Formateur ADF</b> = peut recevoir n'importe quel agent à son poste pour un Acte De Formation (même principe que les superviseurs, qui le sont déjà automatiquement). Coche ce statut au fur et à mesure que des agents gagnent en expérience — n'importe quel agent peut ensuite quitter son poste pour aller se faire former par un formateur ADF.</div>
 
@@ -2651,7 +2656,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r175';
+const APP_VERSION = '2026-09-01-r177';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3686,6 +3691,8 @@ async function loadConfig(){
       if(!config.agentsStatusLabel) config.agentsStatusLabel = {};
       if(!config.agentsADFTrainer) config.agentsADFTrainer = {};
       if(!config.agentsEcoutesAutorisees) config.agentsEcoutesAutorisees = {};
+      if(!config.agentsDecouverte) config.agentsDecouverte = {};
+      if(!config.agentsDecouverteEndDate) config.agentsDecouverteEndDate = {};
 
       // Migration ponctuelle : les anciennes pauses nommées (hors déjeuner, ex. "Pause matin", "Pause
       // après-midi"...) deviennent une seule pause libre de X minutes à prendre quand on veut. Le déjeuner,
@@ -4346,14 +4353,18 @@ function renderAgentChips(){
     const probation = getAgentProbation(name);
     const inProbation = isInProbation(name);
     const term = getAgentTermination(name);
+    const inDecouverte = isInDecouverte(name);
+    const decouverteEnd = decouverteEndDateOf(name);
 
-    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${(!isSup && isAssistant(name))?' <span class="indep-badge" style="background:#b5595c;color:#fff;">🤝 Assistant agréé</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
+    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${(!isSup && isAssistant(name))?' <span class="indep-badge" style="background:#b5595c;color:#fff;">🤝 Assistant agréé</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${inDecouverte?(decouverteEnd?` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Payé au contrat sans fixe jusqu'au ${decouverteEnd.split('-').reverse().join('/')}, salarié normal ensuite">🔍 découverte → ${decouverteEnd.split('-').reverse().join('/')}</span>`:` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Payé au contrat uniquement, aucun fixe/prime tant que tu n'as pas terminé sa découverte (bouton 🏁)">🔍 découverte</span>`):''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
       <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
       ${!isSup ? `<button onclick="toggleADFTrainer('${name.replace(/'/g,"\\'")}')" title="Basculer « formateur ADF »" style="color:#4a9891;margin-right:2px;">🎓</button>` : ''}
       ${!isSup ? `<button onclick="toggleAssistant('${name.replace(/'/g,"\\'")}')" title="Basculer « assistant agréé » — il pourra recevoir une demande d'assistance quand le superviseur n'est pas disponible" style="color:#b5595c;margin-right:2px;${isAssistant(name)?'background:rgba(181,89,92,0.25);border-radius:4px;':''}">🤝</button>` : ''}
       <button onclick="toggleEcouteAutorisee('${name.replace(/'/g,"\\'")}')" title="Basculer l'autorisation d'être écouté (écoute)" style="color:var(--accent);margin-right:2px;${ecouteBtnStyle}">🎧</button>
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat » (permanent)" style="color:var(--amber);margin-right:2px;">🎯</button>
+      <button onclick="toggleDecouverte('${name.replace(/'/g,"\\'")}')" title="Basculer « découverte — payé au contrat, sans fixe » (nouvel agent)" style="color:#b8935a;margin-right:2px;">🔍</button>
+      ${inDecouverte ? `<button onclick="setDecouverteEndDate('${name.replace(/'/g,"\\'")}')" title="Terminer la découverte à une date précise — à partir de là, salarié normal (fixe+primes). Les contrats faits pendant la découverte restent comptés pour l'objectif du mois." style="color:#b8935a;margin-right:2px;">🏁</button>` : ''}
       <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
       ${noObj ? `<button onclick="editStatusLabel('${name.replace(/'/g,"\\'")}')" title="Renommer le libellé affiché (ex: Backoffice, Confirmé...)" style="color:var(--muted);margin-right:2px;">✏️</button>` : ''}
       <button onclick="setAgentStartDate('${name.replace(/'/g,"\\'")}')" title="Date de début — les retards/absences/prime d'assiduité ne comptent jamais avant cette date. Si elle tombe en cours de mois, objectif mini/fixe/primes de ce mois-là sont automatiquement réduits au prorata des jours ouvrés restants (utile pour un nouvel agent)" style="color:#4a9891;margin-right:2px;">📅</button>
@@ -4376,6 +4387,100 @@ function hasNoObjectif(agent){
 // modifier, tout le reste de l'appli (déjà câblé sur pay.noObjectif / hasNoObjectif) suit automatiquement.
 function effectiveNoObjectif(agent){
   return hasNoObjectif(agent) || isInTraining(agent);
+}
+
+// ============================================================
+// 🔍 DÉCOUVERTE — nouvel agent payé au contrat, sans salaire, jusqu'à ce que l'admin décide qu'il
+// passe en salarié normal (demande explicite du patron, 04/09).
+// ============================================================
+// Différent de « sans objectif » (🎯, qui garde le fixe/la prime d'assiduité, juste sans quota
+// obligatoire) : la découverte retire TOUT le fixe — baseSalary, primeFixeMensuelle, primeAssiduite ET
+// l'objectif mensuel — pour ne laisser QUE le DH/contrat habituel de l'agent. Voir getDecouverteState
+// (paie) et getAgentPay/estimateSalaryMonthReal pour comment ça s'applique concrètement à la paie.
+function isInDecouverte(agent){
+  return !!(config.agentsDecouverte && config.agentsDecouverte[agent] === true);
+}
+function decouverteEndDateOf(agent){
+  return (config.agentsDecouverteEndDate && config.agentsDecouverteEndDate[agent]) || null;
+}
+
+async function toggleDecouverte(name){
+  if(!config.agentsDecouverte) config.agentsDecouverte = {};
+  const current = isInDecouverte(name);
+  if(current){
+    if(!confirm(`Retirer le statut « découverte » de ${name} ? Il repasse immédiatement en salarié normal (fixe + primes selon les réglages habituels de sa fiche).`)) return;
+    delete config.agentsDecouverte[name];
+    if(config.agentsDecouverteEndDate) delete config.agentsDecouverteEndDate[name];
+    logAudit('Admin', `Découverte retirée : ${name}`, '');
+  } else {
+    config.agentsDecouverte[name] = true;
+    if(config.agentsDecouverteEndDate) delete config.agentsDecouverteEndDate[name];
+    logAudit('Admin', `Découverte activée : ${name}`, 'payé au contrat, sans fixe, jusqu\'à ce que tu termines la découverte (bouton 🏁)');
+  }
+  await saveConfigSilent();
+  billingInvalidate();
+  clearRenderCaches();
+  renderAgentChips();
+  renderAgentPayTable();
+}
+
+// Termine la découverte : à partir de la date choisie, salaire complet (fixe + primes). Si cette date
+// tombe en plein milieu d'un mois, estimateSalaryMonthReal calcule les deux sous-périodes séparément —
+// avant la bascule payé au contrat sec, après au calcul normal — en comptant les contrats déjà faits
+// PENDANT la découverte comme déjà acquis pour l'objectif du mois (l'agent ne repart jamais à 0, c'est
+// la demande explicite du patron : « il commence avec les 3 de sa période de découverte, pas à 0 »).
+async function setDecouverteEndDate(name){
+  if(!isInDecouverte(name)){ alert(`${name} n'est pas en découverte.`); return; }
+  const current = decouverteEndDateOf(name);
+  const val = window.prompt(
+    `Terminer la découverte de ${name} — à partir de quelle date passe-t-il en salarié normal (fixe + primes) ?\n\n` +
+    `Les contrats déjà faits PENDANT la découverte restent comptés pour son objectif du mois — il ne repart jamais à 0.\n\n` +
+    `JJ/MM/AAAA ou AAAA-MM-JJ. Laisse vide pour annuler (remettre en découverte sans date de fin).`,
+    current ? current.split('-').reverse().join('/') : todayStr().split('-').reverse().join('/')
+  );
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(!config.agentsDecouverteEndDate) config.agentsDecouverteEndDate = {};
+  if(trimmed === ''){
+    delete config.agentsDecouverteEndDate[name];
+    await saveConfigSilent();
+    logAudit('Admin', `Découverte remise sans date de fin : ${name}`, '');
+  } else {
+    const iso = parseAdminDateInput(trimmed);
+    if(!iso){
+      alert(`Date illisible : « ${trimmed} ». Utilise JJ/MM/AAAA (ex: 06/08/2026) ou AAAA-MM-JJ. Rien n'a été enregistré — recommence.`);
+      return;
+    }
+    config.agentsDecouverteEndDate[name] = iso;
+    await saveConfigSilent();
+    logAudit('Admin', `Fin de découverte réglée : ${name}`, `salarié normal à partir du ${iso}`);
+    showToast(`✅ ${name} passe en salarié normal à partir du ${iso.split('-').reverse().join('/')}. Les contrats faits pendant la découverte restent comptés pour son objectif du mois.`, 'ok', 8000);
+  }
+  billingInvalidate();
+  clearRenderCaches();
+  renderAgentChips();
+  renderAgentPayTable();
+}
+
+// État de la découverte POUR UN MOIS DONNÉ (agent, year, month) — utilisé par getAgentPay et
+// estimateSalaryMonthReal. Trois cas : pas concerné (jamais en découverte, ou terminée avant ce mois) ;
+// tout le mois est en découverte (pas encore de date de fin, ou date de fin après ce mois) ; bascule EN
+// PLEIN MILIEU de ce mois (le cas normal, une découverte dure ~1 semaine) — postFactor = part des jours
+// ouvrés du mois qui tombent À PARTIR de la bascule, exactement le même calcul que proratedMonthFactor
+// pour une embauche en cours de mois, en parallèle et indépendant de la date d'embauche réelle.
+function getDecouverteState(agent, year, month){
+  if(!isInDecouverte(agent)) return { active: false };
+  const endDate = decouverteEndDateOf(agent);
+  const monthPrefix = `${year}-${String(month).padStart(2,'0')}-`;
+  const monthStartStr = monthPrefix + '01';
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthEndStr = monthPrefix + String(daysInMonth).padStart(2,'0');
+  if(!endDate || endDate > monthEndStr) return { active: true, fullMonth: true };
+  if(endDate <= monthStartStr) return { active: false };
+  const totalWD = workingDaysInMonth(year, month);
+  const postWD = workingDaysInMonthFrom(year, month, endDate);
+  const postFactor = totalWD > 0 ? Math.max(0, Math.min(1, postWD / totalWD)) : 1;
+  return { active: true, fullMonth: false, switchDate: endDate, monthStartStr, monthEndStr, postFactor };
 }
 
 // Date de début d'un agent : les jours AVANT cette date sont totalement exclus du calcul des
@@ -4816,6 +4921,11 @@ async function addAgent(){
   config.agents.push(name);
   const isIndep = document.getElementById('newAgentIndep').checked;
   if(isIndep) config.agentsIndep[name] = true;
+  const startsInDecouverte = document.getElementById('newAgentDecouverte')?.checked;
+  if(startsInDecouverte){
+    if(!config.agentsDecouverte) config.agentsDecouverte = {};
+    config.agentsDecouverte[name] = true;
+  }
   // ⚠️ BUG CORRIGÉ — un agent ajouté n'avait AUCUNE date d'arrivée tant que l'admin ne pensait pas à
   // cliquer 📅 sur sa fiche. Or c'est cette date qui dit à l'appli qu'il est nouveau : sans elle, une
   // recrue de son premier jour était jugée comme un vétéran — objectif mensuel plein, conseils du
@@ -4828,6 +4938,7 @@ async function addAgent(){
   showToast(`✅ ${name} ajouté, arrivée notée au ${todayStr().split('-').reverse().join('/')}. S'il a commencé avant, corrige la date avec le bouton 📅 sur sa fiche — elle sert au prorata de salaire et à l'indulgence des conseils.`, 'ok', 9000);
   input.value = '';
   document.getElementById('newAgentIndep').checked = false;
+  if(document.getElementById('newAgentDecouverte')) document.getElementById('newAgentDecouverte').checked = false;
   renderAgentChips();
   populateAgentSelect();
   renderAgentPayTable();
@@ -13150,6 +13261,41 @@ function getAgentPay(agent, year, month){
       pay.primeObjectifJour = Math.round(pay.primeObjectifJour * factor);
     }
   }
+  // 🔍 DÉCOUVERTE (voir getDecouverteState) — s'applique APRÈS le prorata embauche/licenciement
+  // ci-dessus, pas à la place : les deux se cumulent si jamais un agent a aussi une date d'embauche
+  // qui tombe ce mois-là (rare, mais correct dans tous les cas).
+  if(year != null && month != null && !pay.isIndep){
+    const dec = getDecouverteState(agent, year, month);
+    pay.decouverte = dec;
+    if(dec.active && dec.fullMonth){
+      // Mois entièrement en découverte : 0 DH PARTOUT tant que tu n'as pas terminé la découverte
+      // (demande explicite du patron, 04/09) — aucun fixe, aucune prime, ET aucun montant affiché pour
+      // les contrats non plus, même si l'agent en fait. Les contrats restent comptés normalement
+      // (monthlyRealizedContracts / payableContractsBreakdown ne dépendent d'aucun de ces champs) —
+      // seul ce qui s'AFFICHE en DH est à zéro. Rien n'est perdu : dès que tu règles la fin de la
+      // découverte (bouton 🏁), le vrai DH/contrat (celui réglé sur sa fiche, jamais modifié ici) est
+      // repris pour payer d'un coup les contrats faits pendant la découverte, dans le mois de la
+      // bascule — voir la branche « split » juste en dessous et son calcul dans estimateSalaryMonthReal.
+      pay.baseSalary = 0;
+      pay.primeFixeMensuelle = 0;
+      pay.primeAssiduite = 0;
+      pay.objectifMensuel = 0;
+      pay.primeObjectifJour = 0;
+      pay.primeExtraContrat = 0;
+      pay.perContract = 0;
+      pay.perContractBeforeObjectif = 0;
+      pay.noObjectif = true;
+    } else if(dec.active && !dec.fullMonth){
+      // Bascule en plein milieu du mois : le fixe/les primes ne portent QUE sur la part du mois après
+      // la bascule. Les contrats eux-mêmes sont recalculés à part par estimateSalaryMonthReal (impossible
+      // de les répartir avant/après avec un simple facteur) — pay.decouverte porte l'info nécessaire.
+      pay.baseSalary = Math.round(pay.baseSalary * dec.postFactor);
+      pay.primeFixeMensuelle = Math.round(pay.primeFixeMensuelle * dec.postFactor);
+      pay.primeAssiduite = Math.round(pay.primeAssiduite * dec.postFactor);
+      if(pay.objectifMensuel > 0) pay.objectifMensuel = Math.max(1, Math.round(pay.objectifMensuel * dec.postFactor));
+      pay.primeObjectifJour = Math.round(pay.primeObjectifJour * dec.postFactor);
+    }
+  }
   return pay;
 }
 
@@ -13850,6 +13996,43 @@ async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
   const ded = await monthlyDeductions(agent, year, month);
   // Contrats réellement payés = validés − rétractés − retours convertis en contrats (voir ci-dessus).
   const br = await payableContractsBreakdown(agent, year, month);
+
+  // 🔍 DÉCOUVERTE — bascule en plein milieu de CE mois (voir getDecouverteState/getAgentPay). Le fixe
+  // ci-dessus est déjà réduit à la part après-bascule, mais les CONTRATS ont besoin d'un calcul à part :
+  // ceux faits AVANT la bascule sont payés au DH/contrat sec (aucun palier objectif — « on ne paie que
+  // les contrats faits pendant la découverte », demande explicite) ; ceux faits APRÈS suivent le calcul
+  // normal (palier objectif si réglé), en comptant les contrats de la découverte comme déjà faits pour
+  // la position dans le palier (monthBeforeWindow) — l'agent ne repart jamais à 0.
+  if(pay.decouverte && pay.decouverte.active && !pay.decouverte.fullMonth){
+    const dec = pay.decouverte;
+    const dayBeforeSwitch = new Date(dec.switchDate + 'T00:00:00');
+    dayBeforeSwitch.setDate(dayBeforeSwitch.getDate() - 1);
+    const dayBeforeSwitchStr = todayStr(dayBeforeSwitch);
+    const preRaw = (dayBeforeSwitchStr < dec.monthStartStr)
+      ? 0
+      : await realizedContractsForDateRange(agent, dec.monthStartStr, dayBeforeSwitchStr);
+    // Le mois entier reste plafonné au même « payable » que d'habitude — retours/rétractations ne sont
+    // de toute façon pas datés au jour près (voir payableContractsBreakdown), donc jamais spécifiques à
+    // une sous-période : on les retire une seule fois, sur le total, comme pour tout le monde.
+    const preCount = Math.min(preRaw, br.payable);
+    const postCount = Math.max(0, br.payable - preCount);
+    const preAmt = Math.round(preCount * (pay.perContract || 0));
+    const ceDec = contractEarnings(pay, br.payable, postCount, preCount);
+    const st = await monthlyObjectifStatus(agent, year, month, br.payable);
+    let brut = pay.baseSalary + pay.primeFixeMensuelle;
+    if(assiduiteAcquise !== false) brut += pay.primeAssiduite;
+    brut += preAmt + ceDec.total;
+    brut += st.primeObjectif + st.primeExtra;
+    const manualPrimes = await getManualPrimes(agent, year, month);
+    const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, br.payable);
+    brut += manualPrimesTotal;
+    const total = brut - ded.total;
+    return {
+      total: Math.round(total), brut: Math.round(brut), status: st, breakdown: br, deductions: ded,
+      manualPrimes, manualPrimesTotal,
+      decouverte: { switchDate: dec.switchDate, preCount, preAmt, postCount }
+    };
+  }
 
   if(pay.isIndep){
     // Un indépendant ne pointe pas, donc sa prime d'assiduité (si l'admin lui en a réglé une) est toujours acquise.
@@ -16758,15 +16941,17 @@ async function renderAgentPayTable(){
     const noObj = p.noObjectif;
     const lockObjectif = isIndep || noObj;
     const isSup = isSupervisor(agent);
-    // Un indépendant, ou un agent réglé « sans objectif », n'a jamais d'objectif mini (ces 3 champs restent
-    // verrouillés) mais peut avoir un fixe, une prime d'assiduité et une prime fixe mensuelle réglés
-    // individuellement par l'admin, en plus du DH/contrat. L'objectif visé reste ouvert dans tous les cas
-    // (c'est un cap personnel, pas une obligation).
-    const inp = (field, val, wide)=> `<input class="${wide?'wide':''}" data-agent="${agent.replace(/"/g,'&quot;')}" data-field="${field}" type="number" value="${c[field] !== undefined && c[field] !== '' ? c[field] : ''}" placeholder="${val}" ${lockObjectif && (field==='objectifMensuel' || field==='primeObjectifJour' || field==='primeExtraContrat' || field==='perContractBeforeObjectif') ? 'disabled style="opacity:0.5;" title="Pas d\'objectif pour cet agent"' : ''}>`;
+    const decActive = !archived && isInDecouverte(agent) && !decouverteEndDateOf(agent);
+    // Un indépendant, un agent réglé « sans objectif », ou un agent en PLEINE découverte (pas encore de
+    // date de fin) n'a jamais d'objectif mini (ces 4 champs restent verrouillés) mais peut avoir un fixe,
+    // une prime d'assiduité et une prime fixe mensuelle réglés individuellement par l'admin, en plus du
+    // DH/contrat. L'objectif visé reste ouvert dans tous les cas (c'est un cap personnel, pas une obligation).
+    const lockObjectifRow = lockObjectif || decActive;
+    const inp = (field, val, wide)=> `<input class="${wide?'wide':''}" data-agent="${agent.replace(/"/g,'&quot;')}" data-field="${field}" type="number" value="${c[field] !== undefined && c[field] !== '' ? c[field] : ''}" placeholder="${val}" ${lockObjectifRow && (field==='objectifMensuel' || field==='primeObjectifJour' || field==='primeExtraContrat' || field==='perContractBeforeObjectif') ? 'disabled style="opacity:0.5;" title="Pas d\'objectif pour cet agent"' : ''}>`;
     const desiredObj = i < desiredObjs.length ? desiredObjs[i] : 0;
     const agentKeySafe = agent.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const statusLabel = archived ? '📦 Ne travaille plus ici'
-      : (isIndep ? '🧑‍💼 Indépendant' : (noObj ? `🎯 ${getNoObjectifLabel(agent)}` : '📋 Salarié'));
+      : (decActive ? '🔍 En découverte (payé au contrat)' : (isIndep ? '🧑‍💼 Indépendant' : (noObj ? `🎯 ${getNoObjectifLabel(agent)}` : '📋 Salarié')));
 
     // Repère fixe uniquement (hors commissions au contrat, imprévisibles) : ce que la partie brute du
     // salaire (fixe + prime fixe + assiduité si acquise) représente si le mois est travaillé en entier, et
