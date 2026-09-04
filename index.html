@@ -2680,7 +2680,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r178';
+const APP_VERSION = '2026-09-01-r179';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2834,7 +2834,7 @@ function nettoyerVieillesClesLocales(){
     for(let i = 0; i < localStorage.length; i++){
       const k = localStorage.key(i);
       if(!k) continue;
-      const m = k.match(/^vn_(?:pdjPopup|pdjRecu|missingObjNotif)_(\d{4}-\d{2}-\d{2})/);
+      const m = k.match(/^vn_(?:pdjPopup|pdjRecu|missingObjNotif|recordNotif)_(\d{4}-\d{2}-\d{2})/);
       if(m && m[1] < today) aSupprimer.push(k);
     }
     aSupprimer.forEach(k=>{ try{ localStorage.removeItem(k); }catch(e){} });
@@ -3426,6 +3426,7 @@ function clearRenderCaches(){
   prodBoardCache = {};
   dayLogCache = {};
   if(typeof invalidateBriefingRowsCache === 'function') invalidateBriefingRowsCache();
+  if(typeof invalidateDayRecordsCache === 'function') invalidateDayRecordsCache();
   infrCache = {};
   retractCache = {};
   desiredObjCache = {};
@@ -8962,6 +8963,21 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     });
   }catch(e){ console.warn('records bilan jour', e); }
 
+  // 🏆 RECORDS DE LA JOURNÉE (meilleur score en UNE journée) — à ne pas confondre avec les records du
+  // MOIS juste au-dessus. Uniquement sur la journée en cours : sur un jour passé, ce jour-là est déjà
+  // dans l'historique des records, la comparaison n'aurait aucun sens. Lecture seule ici — l'écriture
+  // du nouveau record est faite une seule fois, par le Conseil du matin (voir buildBriefingRows).
+  const dayRecordByAgent = {};
+  if(dateStr === todayStr()){
+    try{
+      const recJour = await getDayRecords();
+      allDayRows.forEach(r=>{
+        const rj = evaluerRecordDuJour(recJour, r.agent, dateStr, r.realized || 0);
+        if(rj) dayRecordByAgent[r.agent] = messageRecordDuJour(r.agent, rj);
+      });
+    }catch(e){ console.warn('records du jour bilan', e); }
+  }
+
   let html = teamRecordBannerHtml + renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">';
 
@@ -9024,11 +9040,12 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       // même ligne (« 16 / 20 » puis « 16 / 20 ») — de quoi faire douter n'importe qui de la fiabilité
       // des chiffres. Une seule ligne, une seule lecture possible.
       const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
-      const monthlyBlock = (mo.mini>0 || viseAffichable || commentLines.length || personalRecordByAgent[r.agent]) ? `
+      const monthlyBlock = (mo.mini>0 || viseAffichable || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
           ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
           ${viseAffichable ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
+          ${dayRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.2); border:1px solid rgba(184,147,90,0.55); font-size:12.5px; font-weight:800; color:#d8b26e;\">${escapeHtml(dayRecordByAgent[r.agent])}</div>` : ''}
           ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
         </div>` : '';
       const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], streakDayCounts);
@@ -9042,10 +9059,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
       html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
-          <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+          <div style="display:flex; align-items:center; gap:8px; min-width:150px; flex:1;">
             ${agentAvatarHtml(r.agent, 34)}
             ${podiumColor ? `<span title="${allRankByAgent[r.agent].rank}${allRankByAgent[r.agent].rank===1?'er':'e'} du classement" style="cursor:help; flex-shrink:0;">${rankEmoji(allRankByAgent[r.agent].rank, allRankByAgent[r.agent].total)}</span>` : ''}
-            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:24px;">${r.agent}</b>
+            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; line-height:1.25;">${r.agent}</b>
           </div>
           ${hit
             ? '<span class="tag ok" title="Objectif du jour atteint" style="white-space:nowrap; flex-shrink:0; cursor:help;">✅ Atteint</span>'
@@ -9081,10 +9098,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
-      const monthlyBlock = (mo.vise>0 || commentLines.length || personalRecordByAgent[r.agent]) ? `
+      const monthlyBlock = (mo.vise>0 || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
           ${mo.vise>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;"><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
+          ${dayRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.2); border:1px solid rgba(184,147,90,0.55); font-size:12.5px; font-weight:800; color:#d8b26e;\">${escapeHtml(dayRecordByAgent[r.agent])}</div>` : ''}
           ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
         </div>` : '';
       const zeroStreak = computeZeroStreak(r.realized, streakHistoryByAgent[r.agent], streakDayCounts);
@@ -9098,10 +9116,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const cardShadow = `0 2px 10px rgba(0,0,0,0.18)${podiumColor ? `, 0 0 14px ${podiumColor}40` : ''}`;
       html += `<div class="objsnap-card" style="font-family:'Inter',sans-serif; padding:19px; border-radius:18px; background:var(--panel2); border:${cardBorder}; box-shadow:${cardShadow};">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
-          <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+          <div style="display:flex; align-items:center; gap:8px; min-width:150px; flex:1;">
             ${agentAvatarHtml(r.agent, 34)}
             ${podiumColor ? `<span title="${allRankByAgent[r.agent].rank}${allRankByAgent[r.agent].rank===1?'er':'e'} du classement" style="cursor:help; flex-shrink:0;">${rankEmoji(allRankByAgent[r.agent].rank, allRankByAgent[r.agent].total)}</span>` : ''}
-            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:24px;">${r.agent}</b>
+            <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; line-height:1.25;">${r.agent}</b>
           </div>
           <span class="tag independant" style="white-space:nowrap; flex-shrink:0;">Indé</span>
           ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
@@ -12531,6 +12549,37 @@ async function buildBriefingRows(baseRows){
     r.ancienneteJours = agentAncienneteJours(r.agent, dateStr);
   }));
 
+  // 🏆 Records de la journée — calculés ici pour tout le monde d'un coup (un seul document lu), puis
+  // portés par la ligne de l'agent : le Conseil du matin, le Point du jour et le suivi Admin lisent
+  // tous les trois la même info, personne ne peut féliciter un agent que les autres écrans ignorent.
+  try{
+    const recordsJour = await getDayRecords();
+    rows.forEach(r=>{ r.recordJour = evaluerRecordDuJour(recordsJour, r.agent, dateStr, r.todayRealized || 0); });
+    // ⚠️ Deux agents peuvent dépasser l'ANCIEN record absolu le même jour — un seul le détient à la fin
+    // de la journée. Sans ce tri, on annonçait deux « records absolus » côte à côte, ce qui vide le mot
+    // de tout son sens. Celui qui n'est pas en tête retombe sur son record personnel, s'il l'a battu.
+    const globaux = rows.filter(r => r.recordJour && r.recordJour.type === 'global');
+    if(globaux.length > 1){
+      const champion = globaux.reduce((m, r)=> ((r.todayRealized || 0) > (m.todayRealized || 0) ? r : m), globaux[0]);
+      globaux.forEach(r=>{
+        if(r === champion) return;
+        const pa = recordsJour.perAgent ? recordsJour.perAgent[r.agent] : null;
+        const refPerso = (pa && pa.date === dateStr) ? (pa.prev || null) : pa;
+        r.recordJour = (refPerso && refPerso.value > 0 && (r.todayRealized || 0) > refPerso.value)
+          ? { type: 'perso', valeur: r.todayRealized, ancien: refPerso.value, ancienDate: String(refPerso.date).split('-').reverse().join('/') }
+          : null;
+      });
+    }
+    // On enregistre les records réellement battus (et on prévient), une fois les comparaisons faites —
+    // sinon le premier agent traité écraserait le repère utilisé pour comparer les suivants.
+    await Promise.all(rows
+      .filter(r => r.recordJour && r.recordJour.type !== 'egal')
+      .map(async r=>{
+        await enregistrerRecordDuJour(r.agent, dateStr, r.todayRealized || 0);
+        notifierRecordDuJour(r.agent, dateStr, r.recordJour);
+      }));
+  }catch(e){ console.warn('records du jour', e); }
+
   // Même convention partout : classé du plus au moins de contrats réalisés CE MOIS-CI, alphabétique si
   // égalité. Équipe ET indépendants dans le MÊME classement (un seul "1er du mois", pas deux vérités
   // différentes) — seul l'affichage garde deux groupes séparés (statuts de paie différents à l'écran).
@@ -12657,6 +12706,11 @@ async function buildDailyBriefingHtml(baseRows){
     const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, agentDaysElapsed, remainingDays, rankInfo, null, dateStr, ctxJour);
     const dayLine = dayNudgeLine(r, nowHourMA, dateStr);
     const allLines = [dayLine, ...(monthlyLines || [])].filter(Boolean);
+    // 🏆 Un record battu passe AVANT tout le reste, dans son propre encadré doré : c'est la seule
+    // chose que l'agent doit voir en premier ce jour-là.
+    const recordHtml = r.recordJour
+      ? `<div style="margin-top:12px; padding:10px 12px; border-radius:10px; background:rgba(184,147,90,0.18); border:1px solid rgba(184,147,90,0.5); font-size:12.5px; font-weight:800; color:#d8b26e; line-height:1.45;">${escapeHtml(messageRecordDuJour(r.agent, r.recordJour))}</div>`
+      : '';
     // todayCounts : le jour du jour n'entre dans le calcul de la série que si c'est un jour ouvré ET qu'il
     // est déjà terminé (sinon le "0 contrat" du matin casserait la flamme avant même que la journée ait
     // commencé — voir commentaire de computeZeroStreak plus haut).
@@ -12679,7 +12733,7 @@ async function buildDailyBriefingHtml(baseRows){
       <div style="display:flex; align-items:center; gap:9px; margin-bottom:${(streakBadge||objectiveStreakBadge)?'6px':'12px'}; flex-wrap:wrap;">
         ${agentAvatarHtml(r.agent, 30)}
         ${podiumColor ? `<span title="${rankInfo.rank}${rankInfo.rank===1?'er':'e'} du classement du mois" style="cursor:help; flex-shrink:0;">${rankEmoji(rankInfo.rank, rankInfo.total)}</span>` : ''}
-        <b style="font-weight:700; font-size:15px; letter-spacing:-0.1px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:24px;">${r.agent}</b>
+        <b style="font-weight:700; font-size:15px; letter-spacing:-0.1px; flex:1; min-width:110px; white-space:normal; overflow-wrap:anywhere; line-height:1.25;">${r.agent}</b>
         ${r.isIndep ? '<span class="tag independant" title="Statut indépendant — pas de salaire fixe, pas dans le calcul de la prime d\'assiduité" style="flex-shrink:0; cursor:help;">Indé</span>' : ''}
       </div>
       ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; margin-bottom:12px;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
@@ -12694,6 +12748,7 @@ async function buildDailyBriefingHtml(baseRows){
         : r.enDecouverte
         ? `<div style="font-size:12.5px; color:#b8935a; font-weight:600;">🔍 En découverte — aucun objectif imposé</div><div style="margin-top:4px; font-size:13px;">Réalisé aujourd'hui : <b style="color:${r.todayRealized>0?'#4f9d78':'var(--text)'}; font-weight:700;">${r.todayRealized}</b></div>`
         : `<div style="font-size:12.5px; color:var(--muted);">Pas d'objectif fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé aujourd'hui : <b style="color:var(--text); font-weight:700;">${r.todayRealized}</b></div>`}
+      ${recordHtml}
       ${historyStripHtml(r.historyStrip)}
       ${allLines.length ? `<div style="margin-top:12px; padding-top:11px; border-top:1px solid rgba(255,255,255,0.07);">${commentLinesToHtml(allLines)}</div>` : ''}
     </div>`;
@@ -12712,6 +12767,170 @@ async function renderDailyBriefingSection(containerId){
   const container = document.getElementById(containerId);
   if(!container) return;
   container.innerHTML = await buildDailyBriefingHtml();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🏆 LES RECORDS DE LA JOURNÉE — la félicitation qui arrive le jour même
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// L'appli savait déjà repérer les records du MOIS (voir getAllTimeRecords / RECORD_*_MSGS), mais un
+// record mensuel ne tombe qu'une fois de temps en temps et se constate à froid, le 30. Ce qui motive
+// vraiment un agent, c'est d'entendre le jour même : « tu viens de faire ta meilleure journée ».
+// Ce module suit donc DEUX records supplémentaires, sur une seule journée :
+//   • le meilleur score personnel de chaque agent sur une journée ;
+//   • le meilleur score jamais fait EN UNE JOURNÉE par qui que ce soit dans l'équipe.
+//
+// STOCKAGE. Les records sont mémorisés dans un seul document Firestore (`dayRecords`), pas recalculés
+// à chaque affichage : un balayage de l'historique coûterait des centaines de lectures par jour et par
+// poste. Le document est construit UNE fois (bootstrap sur les 120 derniers jours ouvrés), puis
+// simplement mis à jour quand un record tombe. Il survit donc aussi au-delà de la fenêtre balayée :
+// un record de 2024 reste un record.
+//
+// ⚠️ LE PIÈGE ÉVITÉ : si on écrasait le record par la valeur du jour, la félicitation disparaîtrait
+// dans la seconde qui suit (le score ne serait plus « supérieur au record »… puisqu'il SERAIT le
+// record). Chaque entrée garde donc l'ancienne valeur dans `prev` : tant que la date du record est
+// celle d'aujourd'hui, c'est `prev` qui sert de repère de comparaison. La félicitation reste affichée
+// toute la journée, et le lendemain tout est propre.
+const DAY_RECORDS_KEY = 'dayRecords';
+let _dayRecordsCache = null;
+let _dayRecordsInflight = null;
+
+async function bootstrapDayRecords(){
+  // Une seule fois dans la vie de l'installation : on reconstruit les records du jour à partir de
+  // l'historique disponible. 120 jours ouvrés ≈ 6 mois, largement assez pour un point de départ
+  // crédible — et les tableaux déjà chargés dans prodBoardCache ne sont pas relus.
+  const rec = { perAgent: {}, best: null, bootstrappedAt: new Date().toISOString() };
+  const dates = lastNWorkingDaysBefore(todayStr(), 120);
+  const boards = await Promise.all(dates.map(async d=>{
+    if(prodBoardCache[d]) return { d, board: prodBoardCache[d] };
+    const board = await getProdBoard(d);
+    prodBoardCache[d] = board;
+    return { d, board };
+  }));
+  boards.forEach(({ d, board })=>{
+    const ags = (board && board.agents) || {};
+    Object.keys(ags).forEach(a=>{
+      const v = (ags[a] && ags[a].realized) || 0;
+      if(v <= 0) return;
+      if(!rec.perAgent[a] || v > rec.perAgent[a].value) rec.perAgent[a] = { value: v, date: d };
+      if(!rec.best || v > rec.best.value) rec.best = { value: v, date: d, agent: a };
+    });
+  });
+  try{ await storageSet(DAY_RECORDS_KEY, JSON.stringify(rec)); }catch(e){}
+  return rec;
+}
+
+async function getDayRecords(){
+  if(_dayRecordsCache) return _dayRecordsCache;
+  if(_dayRecordsInflight) return _dayRecordsInflight;   // deux panneaux qui démarrent en même temps
+  _dayRecordsInflight = (async ()=>{
+    let rec = null;
+    try{
+      const res = await storageGet(DAY_RECORDS_KEY);
+      if(res && res.value) rec = JSON.parse(res.value);
+    }catch(e){}
+    if(!rec || !rec.perAgent) rec = await bootstrapDayRecords();
+    _dayRecordsCache = rec;
+    return rec;
+  })();
+  try{ return await _dayRecordsInflight; } finally { _dayRecordsInflight = null; }
+}
+function invalidateDayRecordsCache(){ _dayRecordsCache = null; }
+
+// Le score du jour bat-il un record ? Renvoie null si non, sinon de quoi féliciter précisément.
+// N'écrit RIEN : la mise à jour du document est faite juste après par enregistrerRecordDuJour, pour
+// que la lecture reste utilisable partout sans effet de bord surprise.
+function evaluerRecordDuJour(rec, agent, dateStr, realized){
+  if(!rec || !realized || realized <= 0) return null;
+  const fmtDate = d => { try{ return d.split('-').reverse().join('/'); }catch(e){ return d; } };
+  // Repère de comparaison : si le record enregistré porte la date d'AUJOURD'HUI, c'est nous qui
+  // venons de l'écrire — on compare alors à ce qu'il y avait avant (voir le commentaire du module).
+  const pa = rec.perAgent ? rec.perAgent[agent] : null;
+  const refPerso = (pa && pa.date === dateStr) ? (pa.prev || null) : pa;
+  const gl = rec.best || null;
+  // ⚠️ Le repli sur `prev` ne vaut QUE si c'est cet agent-là qui a posé le record du jour. Sinon, un
+  // deuxième agent aurait été félicité d'un « record absolu » à 12 contrats alors qu'une collègue en
+  // avait fait 14 le matin même : deux records absolus le même jour, dont un faux.
+  const refGlobal = (gl && gl.date === dateStr && gl.agent === agent) ? (gl.prev || null) : gl;
+
+  if(refGlobal && refGlobal.value > 0 && realized > refGlobal.value){
+    return { type: 'global', valeur: realized, ancien: refGlobal.value, ancienDate: fmtDate(refGlobal.date), ancienAgent: refGlobal.agent || null };
+  }
+  if(refPerso && refPerso.value > 0 && realized > refPerso.value){
+    return { type: 'perso', valeur: realized, ancien: refPerso.value, ancienDate: fmtDate(refPerso.date) };
+  }
+  // Égaler son record n'est pas un record, mais c'est une belle journée qui mérite d'être nommée —
+  // et ça évite le silence gênant d'un agent qui refait son meilleur score et n'entend rien.
+  if(refPerso && refPerso.value > 0 && realized === refPerso.value){
+    return { type: 'egal', valeur: realized, ancien: refPerso.value, ancienDate: fmtDate(refPerso.date) };
+  }
+  return null;
+}
+
+// Met le document à jour quand un record tombe réellement. Écrit au plus une fois par nouveau record
+// (on ne réécrit pas si la valeur enregistrée est déjà la bonne), et conserve l'ancienne valeur dans
+// `prev` pour que la félicitation tienne toute la journée.
+async function enregistrerRecordDuJour(agent, dateStr, realized){
+  if(!realized || realized <= 0) return;
+  const rec = await getDayRecords();
+  let change = false;
+  const pa = rec.perAgent[agent] || null;
+  if(!pa || realized > pa.value){
+    rec.perAgent[agent] = { value: realized, date: dateStr, prev: (pa && pa.date !== dateStr) ? { value: pa.value, date: pa.date } : (pa ? pa.prev : null) };
+    change = true;
+  } else if(pa && pa.date === dateStr && realized !== pa.value){
+    // Correction d'un contrat retiré/ajouté dans la journée : on garde le document cohérent.
+    rec.perAgent[agent] = { value: realized, date: dateStr, prev: pa.prev || null };
+    change = true;
+  }
+  const gl = rec.best || null;
+  if(!gl || realized > gl.value){
+    rec.best = { value: realized, date: dateStr, agent, prev: (gl && gl.date !== dateStr) ? { value: gl.value, date: gl.date, agent: gl.agent } : (gl ? gl.prev : null) };
+    change = true;
+  }
+  if(!change) return;
+  _dayRecordsCache = rec;
+  try{ await storageSet(DAY_RECORDS_KEY, JSON.stringify(rec)); }catch(e){}
+}
+
+// La phrase de félicitation, à afficher à l'agent. Volontairement chaleureuse et concrète : on nomme
+// l'ancien record et sa date, sinon « nouveau record » ne veut rien dire.
+function messageRecordDuJour(agentName, r){
+  if(!r) return null;
+  const n = firstName(agentName);
+  const ctr = v => `${v} contrat${v>1?'s':''}`;
+  if(r.type === 'global'){
+    return `👑 RECORD ABSOLU — ${ctr(r.valeur)} en une seule journée, ${n} ! Personne n'avait jamais fait mieux ici (ancien record : ${r.ancien}${r.ancienAgent ? ` par ${firstName(r.ancienAgent)}` : ''}, le ${r.ancienDate}).`;
+  }
+  if(r.type === 'perso'){
+    return `🏆 Nouveau record personnel : ${ctr(r.valeur)} aujourd'hui, ${n} — ton meilleur était ${r.ancien} le ${r.ancienDate}. Savoure, tu l'as gagné.`;
+  }
+  return `🥇 Tu égales ta meilleure journée (${ctr(r.valeur)}, comme le ${r.ancienDate}). Un contrat de plus et le record est à toi.`;
+}
+// Version courte pour le superviseur (« qui féliciter, et pourquoi »).
+function resumeRecordDuJour(agentName, r){
+  if(!r) return null;
+  if(r.type === 'global') return `${agentName} vient de battre le record de TOUTE l'équipe : ${r.valeur} en une journée (ancien : ${r.ancien} le ${r.ancienDate}).`;
+  if(r.type === 'perso')  return `${agentName} bat son record personnel : ${r.valeur} aujourd'hui (ancien : ${r.ancien} le ${r.ancienDate}).`;
+  return `${agentName} égale sa meilleure journée (${r.valeur}, comme le ${r.ancienDate}).`;
+}
+
+// Notification navigateur — un record qui tombe, ça se sait tout de suite. Une seule fois par agent et
+// par jour et par poste (le garde-fou daté est nettoyé par nettoyerVieillesClesLocales).
+function notifierRecordDuJour(agentName, dateStr, r){
+  if(!r || r.type === 'egal') return;
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  const cle = `vn_recordNotif_${dateStr}_${agentName}_${r.type}_${r.valeur}`;
+  try{
+    if(localStorage.getItem(cle) === '1') return;
+    localStorage.setItem(cle, '1');
+  }catch(e){ return; }
+  try{
+    const notif = new Notification(r.type === 'global' ? '👑 RECORD ABSOLU battu !' : '🏆 Record personnel battu !', {
+      body: resumeRecordDuJour(agentName, r) + ' — va le féliciter devant tout le monde.',
+      tag: `vortexnova-record-${dateStr}-${agentName}`, renotify: true
+    });
+    notif.onclick = ()=>{ window.focus(); notif.close(); };
+  }catch(e){}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -12920,7 +13139,14 @@ async function calculerPointDuJour(creneau){
   }));
   // Le plus grave en premier : c'est l'ordre dans lequel le superviseur doit se déplacer.
   alertes.sort((a,b)=> b.urgence !== a.urgence ? b.urgence - a.urgence : (a.fait - b.fait) || a.agent.localeCompare(b.agent));
-  return { creneau, dateStr, alertes };
+  // 🏆 L'autre moitié du travail d'un superviseur : féliciter. Un record qui tombe et que personne ne
+  // relève, c'est une occasion perdue — et l'agent le remarque. Ceux-là ne sont pas « à aller voir »
+  // au sens d'un problème : ils sont à aller voir tout de suite, devant l'équipe.
+  const felicitations = rows
+    .filter(r => r.recordJour && !r.absentToday)
+    .map(r => ({ agent: r.agent, record: r.recordJour, texte: resumeRecordDuJour(r.agent, r.recordJour), fait: r.todayRealized || 0 }))
+    .sort((a,b)=> (a.record.type === 'global' ? -1 : 0) - (b.record.type === 'global' ? -1 : 0) || b.fait - a.fait);
+  return { creneau, dateStr, alertes, felicitations };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -12948,18 +13174,25 @@ async function renderPointDuJourSupervision(supervisorName){
   _pdjEtatCourant = { ...etat, supervisor: supervisorName };
   const restants = etat.alertes.filter(a => !a.done);
 
+  const felicitations = etat.felicitations || [];
+  const blocFelicitations = felicitations.length
+    ? `<div style="margin-top:10px; padding:9px 12px; border-radius:10px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.5); font-size:12.5px; font-weight:700; color:#d8b26e; line-height:1.5;">🏆 À féliciter maintenant, devant l'équipe : ${felicitations.map(f=>escapeHtml(f.texte)).join(' · ')}</div>`
+    : '';
+
   if(!etat.alertes.length){
     // Tout le monde est dans les clous : on le dit, en vert, sans animation. Un superviseur a autant
     // besoin de savoir que tout va bien que de savoir que ça va mal.
     banner.style.display = 'flex';
     banner.style.animation = 'none';
-    banner.style.borderColor = '#5cb896';
-    banner.innerHTML = `<div style="display:flex; align-items:center; gap:16px;">
-      <div style="font-size:34px; line-height:1; flex-shrink:0;">✅</div>
-      <div>
-        <div style="font-size:18px; font-weight:900; color:#5cb896;">${creneau.titre} — personne à aller voir</div>
+    banner.style.borderColor = felicitations.length ? '#b8935a' : '#5cb896';
+    banner.innerHTML = `<div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <div style="font-size:34px; line-height:1; flex-shrink:0;">${felicitations.length ? '🏆' : '✅'}</div>
+      <div style="min-width:200px; flex:1;">
+        <div style="font-size:18px; font-weight:900; color:${felicitations.length ? '#d8b26e' : '#5cb896'};">${creneau.titre} — personne à aller voir</div>
         <div style="font-size:13px; font-weight:600; color:var(--text); opacity:0.85; margin-top:3px;">Aucun agent à 0 ni sous son objectif du jour. Continue comme ça.</div>
+        ${blocFelicitations}
       </div>
+      ${felicitations.length ? `<div style="flex-shrink:0;"><button type="button" onclick="ouvrirPointDuJour()" style="padding:12px 22px; border-radius:10px; border:1px solid #b8935a; background:rgba(184,147,90,0.2); color:#d8b26e; font-weight:800; font-size:13.5px; cursor:pointer;">🏆 Quoi dire pour féliciter</button></div>` : ''}
     </div>`;
     return;
   }
@@ -12983,6 +13216,7 @@ async function renderPointDuJourSupervision(supervisorName){
             : `<b style="color:${col.c};">${restants.length} agent${restants.length>1?'s':''}</b> à aller voir maintenant : ${restants.map(a=>escapeHtml(a.agent)).join(', ')}.`}
         </div>
         <div style="font-size:12px; color:var(--muted); margin-top:3px;">${creneau.sousTitre}</div>
+        ${blocFelicitations}
       </div>
     </div>
     <div style="display:flex; gap:8px; flex-shrink:0;">
@@ -13066,9 +13300,31 @@ function dessinerPointDuJourModal(){
   if(titre) titre.textContent = `🎯 ${creneau.titre}`;
   if(sous) sous.innerHTML = restants.length
     ? `<b style="color:#e5a83d;">${restants.length} agent${restants.length>1?'s':''}</b> à aller voir. Confirme chaque point une fois fait — l'admin le voit en direct.`
-    : `<b style="color:#5cb896;">Tous les points sont faits.</b> L'admin a bien reçu la confirmation.`;
+    : (alertes.length
+       ? `<b style="color:#5cb896;">Tous les points sont faits.</b> L'admin a bien reçu la confirmation.`
+       : `<b style="color:#5cb896;">Personne en difficulté à ce créneau.</b>${(_pdjEtatCourant.felicitations || []).length ? ' Il reste le plus agréable à faire.' : ''}`);
 
-  body.innerHTML = alertes.map(a=>{
+  const felicitations = _pdjEtatCourant.felicitations || [];
+  // Le bloc « à féliciter » est placé EN PREMIER, avant les agents en difficulté : un superviseur qui
+  // descend son plateau doit commencer par la bonne nouvelle. C'est ce qui fait que la visite suivante,
+  // celle qui pique, passe beaucoup mieux auprès de toute la salle.
+  const felicitationsHtml = felicitations.length
+    ? `<div style="border:1px solid rgba(184,147,90,0.55); background:rgba(184,147,90,0.12); border-radius:14px; padding:16px 18px; margin-bottom:14px;">
+        <div style="font-size:14.5px; font-weight:900; color:#d8b26e; margin-bottom:9px;">🏆 À féliciter maintenant, devant tout le monde</div>
+        ${felicitations.map(f=>`<div style="display:flex; gap:9px; align-items:flex-start; font-size:13px; line-height:1.5; color:var(--text); margin-bottom:8px;">
+            ${agentAvatarHtml(f.agent, 26)}
+            <div><b>${escapeHtml(f.agent)}</b> — ${escapeHtml(f.texte)}
+              <div style="font-size:12.5px; font-style:italic; color:var(--muted); margin-top:3px;">${escapeHtml(f.record.type === 'global'
+                ? `« Stop, tout le monde écoute : ${firstName(f.agent)} vient de faire la meilleure journée de l'histoire de la boîte. ${f.record.valeur} contrats. Applaudissez. »`
+                : (f.record.type === 'perso'
+                  ? `« ${firstName(f.agent)}, tu viens de battre ton propre record. ${f.record.valeur} en une journée. Retiens exactement ce que tu as fait aujourd'hui. »`
+                  : `« ${firstName(f.agent)}, tu égales ta meilleure journée. Un de plus et c'est un record — il te reste du temps. »`))}</div>
+            </div>
+          </div>`).join('')}
+      </div>`
+    : '';
+
+  body.innerHTML = felicitationsHtml + alertes.map(a=>{
     const col = pdjCouleurUrgence(a.urgence);
     const fini = !!a.done;
     const heure = fini ? (()=>{ try{ return new Date(a.done.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } })() : '';
@@ -13179,7 +13435,8 @@ async function renderPointDuJourAdmin(){
         <span style="font-size:11px; font-weight:800; letter-spacing:.4px; border-radius:20px; padding:2px 10px; background:${restants.length ? 'rgba(229,72,77,0.16)' : 'rgba(92,184,150,0.16)'}; border:1px solid ${restants.length ? 'rgba(229,72,77,0.45)' : 'rgba(92,184,150,0.45)'}; color:${restants.length ? '#e5484d' : '#5cb896'};">${etat.alertes.length === 0 ? 'PERSONNE À VOIR' : (restants.length ? `${restants.length} EN ATTENTE` : 'TOUT EST FAIT')}</span>
       </div>
       ${superviseurs.length ? `<div style="font-size:12px; font-weight:700; margin-bottom:9px;">${ligneSup}</div>`
-        : `<div style="font-size:12px; color:var(--muted); margin-bottom:9px;">Aucun superviseur désigné (Réglages → Agents → 📊 Superviseur) — personne ne reçoit ces alertes.</div>`}`;
+        : `<div style="font-size:12px; color:var(--muted); margin-bottom:9px;">Aucun superviseur désigné (Réglages → Agents → 📊 Superviseur) — personne ne reçoit ces alertes.</div>`}
+      ${(etat.felicitations || []).length ? `<div style="font-size:12.5px; font-weight:800; color:#d8b26e; background:rgba(184,147,90,0.14); border:1px solid rgba(184,147,90,0.45); border-radius:9px; padding:8px 11px; margin-bottom:9px;">🏆 Records du jour à faire applaudir : ${etat.felicitations.map(f=>escapeHtml(f.texte)).join(' · ')}</div>` : ''}`;
 
     if(!etat.alertes.length){
       return entete + `<div style="font-size:13px; color:#5cb896;">✅ Aucun agent à 0 ni sous son objectif à ce créneau.</div>`;
