@@ -2642,7 +2642,7 @@ function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-01-r170';
+const APP_VERSION = '2026-09-01-r173';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -20538,6 +20538,70 @@ async function downloadAllBillingAgentsCSV(){
   logAudit('Admin', 'Export de tous les tableaux agents', monthVal);
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 🧩 DECOUPAGE DU TABLEAU D'UN AGENT EN PLUSIEURS PAGES PDF
+// Le PDF (comme celui du Bilan du jour) est fabrique en transformant du HTML en UNE image, puis en
+// collant cette image dans le fichier PDF (capturerPageEnCanvas). Un agent avec BEAUCOUP de contrats
+// et/ou de retours produit une image bien plus haute que d'habitude — et au-dela d'une certaine
+// hauteur, le navigateur la coupe en silence, sans erreur : le total affiche en haut restait juste,
+// mais le bas du tableau n'existait tout simplement plus sur l'image generee. C'est ce qui donnait
+// l'impression que le compte s'arretait avant la fin (ex. 16 lignes visibles sur 25 reelles, la
+// derniere ligne visible elle-meme coupee en plein milieu — signature typique d'une image tronquee).
+//
+// Correctif : on redecoupe le MEME HTML que billingAgentSheetHTML produit deja (jamais recalcule
+// separement, donc jamais divergent de ce qui est affiche a l'ecran) en plusieurs images de taille
+// raisonnable — une pour l'entete, une ou plusieurs pour les contrats, une ou plusieurs pour les
+// retours, une pour le detail du salaire — au lieu d'une seule image geante.
+const BILLING_PDF_ROWS_PER_PAGE = 30;
+
+// Redecoupe une section de tableau (contrats OU retours) en plusieurs pages d'au plus `rowsPerPage`
+// lignes. Ne touche a AUCUNE donnee : redistribue le HTML de chaque ligne deja genere, a l'identique.
+function billingSplitTableSection(sectionHtml, rowsPerPage){
+  // ⚠️ Extraire les <tr> UNIQUEMENT depuis le <tbody> — sectionHtml contient aussi le <tr> d'en-tête
+  // du <thead>, qu'il ne faut surtout pas compter/redistribuer comme une ligne de donnée.
+  const tbodyMatch = sectionHtml.match(/<tbody>([\s\S]*?)<\/tbody>/);
+  if(!tbodyMatch) return [sectionHtml]; // pas de tableau (ex. "aucun retour ce mois") : une seule page, inchangee
+  const rows = tbodyMatch[1].match(/<tr[\s\S]*?<\/tr>/g);
+  if(!rows || !rows.length) return [sectionHtml];
+  const theadMatch = sectionHtml.match(/<thead>[\s\S]*?<\/thead>/);
+  const thead = theadMatch ? theadMatch[0] : '';
+  const tableStart = sectionHtml.indexOf('<div style="overflow-x:auto;">');
+  const preTable = tableStart >= 0 ? sectionHtml.slice(0, tableStart) : sectionHtml;
+  const titleMatch = preTable.match(/<div class="section-title"[^>]*>([\s\S]*?)<\/div>/);
+  const titleText = titleMatch ? titleMatch[1] : '';
+  const chunks = [];
+  for(let i = 0; i < rows.length; i += rowsPerPage) chunks.push(rows.slice(i, i + rowsPerPage));
+  return chunks.map((rowsChunk, c) => {
+    const head = c === 0 ? preTable : `<div class="section-title" style="margin-top:10px; font-size:15px;">${titleText} — suite (page ${c+1}/${chunks.length})</div>`;
+    return `${head}<div style="overflow-x:auto;"><table class="salary-table">${thead}<tbody>${rowsChunk.join('')}</tbody></table></div>`;
+  });
+}
+
+// Construit la liste des pages (chacune un bloc HTML pret a capturer) pour le PDF complet d'un agent —
+// entete+cartes, puis contrats (paginable), puis retours (paginable), puis detail du salaire.
+function billingAgentSheetPdfPages(d){
+  const full = billingAgentSheetHTML(d, true);
+  const MARK_CONTRATS = '<div class="section-title" style="margin-top:10px; font-size:15px;">Production du mois';
+  const MARK_RETOURS = '<div class="section-title" style="margin-top:26px; font-size:15px; color:var(--red);">Retours de facturation';
+  const MARK_SALAIRE = '<div class="section-title" style="margin-top:26px; font-size:15px;">Calcul du salaire net réel';
+  const iC = full.indexOf(MARK_CONTRATS), iR = full.indexOf(MARK_RETOURS), iS = full.indexOf(MARK_SALAIRE);
+  // Reperes introuvables (texte du tableau modifie un jour) → une seule image plutot que de planter
+  // l'export : mieux vaut le bug deja connu qu'un bouton qui ne fait plus rien.
+  if(iC < 0 || iR < 0 || iS < 0) return [full];
+
+  const header = full.slice(0, iC);
+  const contratsSection = full.slice(iC, iR);
+  const retoursSection = full.slice(iR, iS);
+  const salaireSection = full.slice(iS);
+
+  return [
+    header,
+    ...billingSplitTableSection(contratsSection, BILLING_PDF_ROWS_PER_PAGE),
+    ...billingSplitTableSection(retoursSection, BILLING_PDF_ROWS_PER_PAGE),
+    salaireSection
+  ];
+}
+
 async function exportBillingAgentImage(){
   const d = BILLING_LAST_SHEET;
   if(!d){ alert('Affiche d\'abord le tableau d\'un agent.'); return; }
@@ -20564,23 +20628,36 @@ async function exportBillingAgentPDF(){
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Préparation...'; }
   try{
     await ensureJsPDF();
-    const inner = `<div style="font-size:0;"></div>` + billingAgentSheetHTML(d, true);
-    const canvas = await capturerPageEnCanvas({
-      innerHTML: inner,
-      width: 1000,
-      title: `${d.agent} — ${billingMonthLabel(d.monthVal)}`,
-      badge: 'Tableau de paie',
-      badgeColor: '#c9a870',
-      caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
-      densite: 2.4
-    });
-    const img = canvas.toDataURL('image/jpeg', 0.94);
-    const w = canvas.width, h = canvas.height;
+    // 🐛 BUG CORRIGÉ : avant, tout le tableau (contrats + retours) tenait dans UNE seule image — au-delà
+    // d'une certaine hauteur (beaucoup de contrats/retours), le navigateur la coupait en silence, sans
+    // erreur. billingAgentSheetPdfPages redécoupe en plusieurs pages de taille raisonnable : plus rien
+    // ne peut être tronqué, quel que soit le nombre de contrats ou de retours de l'agent.
+    const pages = billingAgentSheetPdfPages(d);
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
-    pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
+    let pdf = null;
+    for(let p = 0; p < pages.length; p++){
+      if(btn && pages.length > 1) btn.textContent = `⏳ Page ${p+1}/${pages.length}...`;
+      const canvas = await capturerPageEnCanvas({
+        innerHTML: `<div style="font-size:0;"></div>` + pages[p],
+        width: 1000,
+        title: `${d.agent} — ${billingMonthLabel(d.monthVal)}`,
+        badge: 'Tableau de paie',
+        badgeColor: '#c9a870',
+        caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
+        pageInfo: pages.length > 1 ? `page ${p+1}/${pages.length}` : '',
+        densite: 2.4
+      });
+      const img = canvas.toDataURL('image/jpeg', 0.94);
+      const w = canvas.width, h = canvas.height;
+      if(p === 0){
+        pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
+      } else {
+        pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait');
+      }
+      pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
+    }
     pdf.save(`${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie.pdf`);
-    showToast(`✅ PDF de ${d.agent} généré — prêt à envoyer.`, 'ok', 6000);
+    showToast(`✅ PDF de ${d.agent} généré (${pages.length} page${pages.length>1?'s':''}) — prêt à envoyer.`, 'ok', 6000);
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = '🖨️ PDF (à envoyer)'; }
   }
@@ -20600,33 +20677,39 @@ async function downloadAllBillingAgentsPDF(){
     await ensureJsPDF();
     const { jsPDF } = window.jspdf;
     let pdf = null;
+    let firstPage = true;
     for(let i = 0; i < agents.length; i++){
       const a = agents[i];
-      if(btn) btn.textContent = `⏳ ${a} (${i+1}/${agents.length})...`;
       const d = await billingComputeAgent(a, monthVal);
-      const inner = `<div style="font-size:0;"></div>` + billingAgentSheetHTML(d, true);
-      const canvas = await capturerPageEnCanvas({
-        innerHTML: inner,
-        width: 1000,
-        title: `${a} — ${billingMonthLabel(monthVal)}`,
-        badge: 'Tableau de paie',
-        badgeColor: '#c9a870',
-        caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
-        pageInfo: `agent ${i+1}/${agents.length}`,
-        densite: 2.4
-      });
-      const img = canvas.toDataURL('image/jpeg', 0.94);
-      const w = canvas.width, h = canvas.height;
-      if(i === 0){
-        pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
-      } else {
-        pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait');
+      // 🐛 BUG CORRIGÉ : voir billingAgentSheetPdfPages — un agent avec beaucoup de contrats/retours
+      // peut désormais tenir sur plusieurs pages plutôt que sur une seule image tronquée en silence.
+      const pages = billingAgentSheetPdfPages(d);
+      for(let p = 0; p < pages.length; p++){
+        if(btn) btn.textContent = `⏳ ${a} (${i+1}/${agents.length})${pages.length>1?` — page ${p+1}/${pages.length}`:''}...`;
+        const canvas = await capturerPageEnCanvas({
+          innerHTML: `<div style="font-size:0;"></div>` + pages[p],
+          width: 1000,
+          title: `${a} — ${billingMonthLabel(monthVal)}`,
+          badge: 'Tableau de paie',
+          badgeColor: '#c9a870',
+          caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
+          pageInfo: `agent ${i+1}/${agents.length}` + (pages.length > 1 ? ` — page ${p+1}/${pages.length}` : ''),
+          densite: 2.4
+        });
+        const img = canvas.toDataURL('image/jpeg', 0.94);
+        const w = canvas.width, h = canvas.height;
+        if(firstPage){
+          pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
+          firstPage = false;
+        } else {
+          pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait');
+        }
+        pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
       }
-      pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
     }
     pdf.save(`tableaux_agents_${monthVal}.pdf`);
     logAudit('Admin', 'Export PDF de tous les tableaux agents', monthVal);
-    showToast(`✅ PDF généré — ${agents.length} agent${agents.length>1?'s':''}, une page chacun.`, 'ok', 6000);
+    showToast(`✅ PDF généré — ${agents.length} agent${agents.length>1?'s':''}.`, 'ok', 6000);
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = '📦 TOUS les agents (PDF)'; }
   }
