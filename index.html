@@ -846,7 +846,7 @@
   <div style="width:100%; max-width:340px; text-align:center;">
     <div style="font-size:40px; margin-bottom:10px;">🔐</div>
     <div style="font-size:19px; font-weight:800; color:var(--text); margin-bottom:6px;">Connexion</div>
-    <div style="font-size:13.5px; color:var(--muted); margin-bottom:22px; line-height:1.55;">Ton prénom et ton mot de passe habituel.<br>Une seule fois sur cet ordinateur.</div>
+    <div style="font-size:13.5px; color:var(--muted); margin-bottom:22px; line-height:1.55;">Ton prénom et ton mot de passe habituel.</div>
 
     <select id="authGateAgent" style="display:none; width:100%; box-sizing:border-box; padding:13px 14px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:15px; margin-bottom:10px;"
       onchange="const p=document.getElementById('authGatePw'); if(this.value && p) p.focus();"></select>
@@ -869,10 +869,6 @@
     <button id="authGateBtn" onclick="authValiderFormulaire()"
       style="width:100%; margin-top:16px; padding:13px; border-radius:9px; border:none; background:var(--accent); color:white; font-weight:800; font-size:15px; cursor:pointer;">Se connecter</button>
 
-    <!-- Filet de transition : ne fonctionne que tant que « Anonyme » est activé dans la console
-         Firebase. Le jour où l'admin le désactive, ce bouton échoue et le dit clairement. -->
-    <button type="button" onclick="authFiletAnonyme(this)"
-      style="margin-top:14px; background:none; border:none; color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer; text-decoration:underline;">Je n'arrive pas à me connecter</button>
   </div>
 </div>
 
@@ -2801,7 +2797,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-06-r183';
+const APP_VERSION = '2026-09-06-r186';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3858,7 +3854,16 @@ function isSupervisor(agent){
 async function loadConfig(){
   checkStorageAvailable();
   try{
-    const res = await storageGet('config');
+    // 🛟 FILET. Démarrer sur des réglages vides est le pire scénario possible : plus aucun agent,
+    // plus aucun mot de passe, et tout ce qui s'écrit ensuite part de ce vide. Une lecture refusée
+    // (jeton pas encore prêt, coupure réseau d'une seconde) ne doit donc jamais être acceptée du
+    // premier coup. On redemande, en contournant le mémo de lecture qui garderait le vide en cache.
+    let res = await storageGet('config');
+    for(let essai = 0; !(res && res.value) && essai < 4; essai++){
+      await new Promise(r => setTimeout(r, 400 + essai * 600));
+      res = await storageGet('config', { fresh: true });
+    }
+    if(!(res && res.value)) console.error('Réglages illisibles après plusieurs tentatives — l\'app reste sur les valeurs par défaut.');
     if(res && res.value){
       const loaded = JSON.parse(res.value);
       config = Object.assign({}, config, loaded);
@@ -26468,12 +26473,20 @@ const CLE_PRENOMS_PUBLICS = 'publicAgentNames';
 // Publie la liste depuis le panneau Admin. N'écrit que si elle a réellement changé.
 async function publierListePrenoms(){
   if(!firebaseReady || !db) return;
+  // 🛑 GARDE-FOU. Cette liste est lue par TOUS les postes avant connexion : une publication vide la
+  // détruit pour tout le monde et renvoie chaque agent au champ à remplir à la main. Or une session
+  // peut très bien être ouverte sans avoir réussi à lire les réglages (compte anonyme de transition,
+  // règle qui refuse la lecture, coupure réseau au mauvais moment) : config.agents est alors vide,
+  // et sans ce test on écraserait la vraie liste par []. On ne publie donc QUE depuis une session
+  // qui a réellement chargé les réglages depuis la base, et jamais une liste vide.
+  if(!configLoadedFromServer) return;
   try{
     const prenoms = (config.agents || [])
       .filter(a => !estHorsContrat(a, todayStr()))
       .map(a => firstName(a))
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b, 'fr'));
+    if(!prenoms.length) return;
     const charge = JSON.stringify({ prenoms, majAt: new Date().toISOString() });
     const actuel = await storageGet(CLE_PRENOMS_PUBLICS);
     let dejaIdentique = false;
@@ -26569,6 +26582,14 @@ async function authConnecter(prenom, motDePasse){
   for(const adresse of adresses){
     try{
       const cred = await firebase.auth().signInWithEmailAndPassword(adresse, motDePasse);
+      // 🐛 LA COURSE AU JETON. signInWithEmailAndPassword() rend la main dès que Google a validé le
+      // mot de passe — mais Firestore, lui, peut encore avoir l'ANCIEN jeton (aucun) dans ses tuyaux
+      // pendant quelques dizaines de millisecondes. Les toutes premières lectures partaient donc sans
+      // identité, la règle « request.auth != null » les refusait, et loadConfig() revenait vide : l'app
+      // tournait sur les réglages par défaut du fichier et refusait l'accès Admin, alors que la
+      // connexion venait de réussir. getIdToken() force la récupération du jeton et ne rend la main
+      // qu'une fois qu'il est là.
+      try{ await cred.user.getIdToken(); }catch(e){ console.warn('récupération du jeton', e); }
       authUtilisateur = cred.user;
       authModeAnonyme = false;
       authPrenomConnecte = String(prenom || '').trim();
@@ -26678,6 +26699,8 @@ async function authDemarrer(){
     const stop = firebase.auth().onAuthStateChanged(u=>{ stop(); resolve(u || null); });
   });
   if(dejaConnecte){
+    // Même raison qu'à la connexion : on ne déclare la base utilisable qu'une fois le jeton en main.
+    try{ await dejaConnecte.getIdToken(); }catch(e){ console.warn('récupération du jeton', e); }
     authUtilisateur = dejaConnecte;
     authModeAnonyme = !!dejaConnecte.isAnonymous;
     firebaseReady = true;
@@ -26692,24 +26715,9 @@ async function authDemarrer(){
   return false;
 }
 
-// Filet de transition, déclenché depuis l'écran de connexion. Tant que « Anonyme » est actif dans la
-// console Firebase, un poste qui n'arrive pas à se connecter par compte peut continuer de travailler.
-// Le jour où le patron désactive « Anonyme », cet appel échoue et le bouton disparaît de lui-même.
-async function authFiletAnonyme(btn){
-  if(btn){ btn.disabled = true; btn.textContent = 'Tentative…'; }
-  try{
-    await firebase.auth().signInAnonymously();
-    authModeAnonyme = true;
-    firebaseReady = true;
-    authMasquerEcran();
-    await bootApp();
-    showToast("Connecté en mode transitoire. Préviens l'administrateur : ton compte n'est pas encore actif.", 'warn', 9000);
-  }catch(e){
-    authAfficherEcran("Le mode transitoire est fermé. Il faut te connecter avec ton prénom et ton mot de passe.");
-  }finally{
-    if(btn){ btn.disabled = false; btn.textContent = 'Je n\'arrive pas à me connecter'; }
-  }
-}
+// Le « filet de transition » (connexion anonyme de dépannage) a été retiré : l'inscription libre est
+// désactivée dans la console Firebase, ce qui refuse aussi les sessions anonymes. Le compte personnel
+// est désormais le seul chemin d'entrée — c'était le but.
 
 // Déconnexion volontaire — utile quand un agent prête son poste, ou pour tester un autre compte.
 async function authDeconnecter(){
