@@ -2797,7 +2797,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-06-r186';
+const APP_VERSION = '2026-09-06-r188';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3382,6 +3382,16 @@ let firebaseReady = false;
 // Vrai UNIQUEMENT quand les réglages ont réellement été lus depuis la base. Tant qu'il est faux,
 // `config` n'est que l'objet par défaut du fichier — mots de passe compris. Voir tryAdminLogin.
 let configLoadedFromServer = false;
+// Vrai UNIQUEMENT quand les réglages COMPLETS ont pu être lus, c'est-à-dire quand la session est celle
+// de l'admin. Une session d'agent lit la copie publique (voir configPublic) : elle fait tourner
+// l'appli, mais ne contient ni le mot de passe admin, ni les marges du patron, ni le secret du
+// webhook. Tout ce qui écrit les réglages ou ouvre le panneau Admin doit tester CE drapeau-là.
+let configPriveeChargee = false;
+const CLE_CONFIG_PUBLIQUE = 'configPublic';
+// Les champs retirés de la copie publique. Tout le reste (agents, horaires, objectifs, barèmes de
+// paie affichés dans « Mon argent ») y figure : l'appli des agents en a besoin pour fonctionner.
+const CONFIG_CHAMPS_PRIVES = ['adminPassword', 'charges', 'customCharges', 'bossBonusPct', 'bossCommissionPerContract', 'bossReturnRatePct'];
+const PROD_CONFIG_CHAMPS_PRIVES = ['webhookSecret', 'webhookUrl'];
 // Résolue tout de suite si Firebase n'est pas configuré ; sinon résolue seulement une fois la connexion
 // anonyme établie (ou tentée) — le reste de l'appli (loadConfig, etc.) attend cette promesse avant de
 // lire/écrire quoi que ce soit, pour rester compatible avec des règles Firestore qui exigent désormais
@@ -3863,11 +3873,20 @@ async function loadConfig(){
       await new Promise(r => setTimeout(r, 400 + essai * 600));
       res = await storageGet('config', { fresh: true });
     }
+    // Les réglages complets ont-ils été lus ? Seule la session admin y a droit.
+    let complet = !!(res && res.value);
+    if(!complet){
+      // Session d'agent : la règle Firestore lui refuse `config`. Ce n'est PAS une panne, c'est le
+      // fonctionnement voulu. Il lit la copie publique, qui contient tout ce dont l'appli a besoin —
+      // agents, horaires, objectifs, barèmes — et rien de ce qui ne le regarde pas.
+      res = await storageGet(CLE_CONFIG_PUBLIQUE);
+    }
     if(!(res && res.value)) console.error('Réglages illisibles après plusieurs tentatives — l\'app reste sur les valeurs par défaut.');
     if(res && res.value){
       const loaded = JSON.parse(res.value);
       config = Object.assign({}, config, loaded);
       configLoadedFromServer = true;
+      configPriveeChargee = complet;
       // Référence pour la fusion 3-voies au prochain save (voir CONFIG_BASELINE / saveConfigSilent) —
       // capturée ICI, avant toute migration ci-dessous qui va elle-même modifier `config` en mémoire.
       CONFIG_BASELINE = JSON.parse(JSON.stringify(config));
@@ -4013,6 +4032,15 @@ function mergeConfigArrayField(baseline, mine, theirs){
 }
 
 async function saveConfigSilent(){
+  // 🛑 GARDE-FOU CAPITAL. Une session d'agent travaille sur la COPIE PUBLIQUE des réglages : le mot de
+  // passe admin, les marges et le secret du webhook n'y sont pas. Si elle écrivait `config`, elle
+  // remplacerait la vraie configuration par une version amputée — mot de passe admin perdu, marges
+  // perdues. La règle Firestore le refuse déjà côté serveur ; ce test évite en plus de lancer une
+  // écriture vouée à l'échec et d'écraser la référence locale au passage.
+  if(!configPriveeChargee){
+    console.warn("Réglages non enregistrés : cette session ne dispose pas des réglages complets.");
+    return;
+  }
   try{
     if(CONFIG_BASELINE){
       const res = await storageGet('config');
@@ -4029,6 +4057,9 @@ async function saveConfigSilent(){
   }catch(e){ console.error('saveConfigSilent: fusion anti-écrasement', e); }
   await storageSet('config', JSON.stringify(config));
   CONFIG_BASELINE = JSON.parse(JSON.stringify(config));
+  // La copie lisible par les agents est republiée dans la foulée : sans ça, ajouter un agent ou changer
+  // un horaire n'arriverait jamais jusqu'à eux. N'écrit que si quelque chose a réellement changé.
+  publierConfigPublique();
 }
 
 function populateAgentSelect(){
@@ -4186,18 +4217,48 @@ function filterRetractAdminRows(){
 // Marque/démarque le contrat exact sélectionné — même logique que toggleBillingRetracted (tableau de
 // Facturation) : le flag sur la ligne ET le compteur de paie bougent ensemble, du même pas, en même
 // temps. C'est ce qui évite la divergence entre les deux.
-async function toggleRetractAdminRow(monthVal, agent, numContrat){
+// 🐛 BUG CORRIGÉ — le compteur de rétractations était INCRÉMENTÉ (lire → ±1 → écrire) au lieu d'être
+// RECALCULÉ. Deux conséquences bien réelles :
+//   1. deux personnes qui marquent une rétractation au même moment → un incrément écrasé, le compteur
+//      part en vrille et il faut ensuite le recaler à la main ;
+//   2. aucune de ces deux fonctions ne posait `retractPayMonth` : une rétractation marquée à la main
+//      sur un mois DÉJÀ PAYÉ pesait sur ce mois clôturé au lieu du mois de paie en cours.
+// Cette fonction centralise les deux gestes et recalcule la valeur exacte (computeExactRetractCount),
+// qui est idempotente : la relancer dix fois donne dix fois le même résultat.
+async function basculerRetractation(monthVal, agent, numContrat){
   const data = await getBillingProd(monthVal);
   const row = (data.rows || []).find(r => (r.numContrat || r.reference) === numContrat && r.agent === agent);
-  if(!row) return;
+  if(!row) return null;
   row.retracted = !row.retracted;
+  if(row.retracted){
+    // Sur quel mois de paie cette rétractation doit-elle peser ? Le mois de signature s'il est encore
+    // ouvert, le mois de paie en cours s'il est déjà clôturé. Sans cette ligne, une rétractation
+    // tardive rouvrait une paie déjà versée.
+    row.retractPayMonth = resolveRetractPayMonth(monthVal, null);
+  } else {
+    delete row.retractPayMonth;
+  }
+  const moisDePaie = row.retractPayMonth || monthVal;
   await billingSave(billingProdKey(monthVal), data);
+  billingInvalidate();
 
-  const [y, m] = monthVal.split('-').map(Number);
-  const current = await getMonthlyRetractCount(agent, y, m);
-  const next = Math.max(0, current + (row.retracted ? 1 : -1));
-  await saveMonthlyRetractCount(agent, y, m, next);
-  logAudit('Admin', row.retracted ? 'Contrat marqué rétracté (via Réglages)' : 'Rétractation annulée (via Réglages)', `${agent} — contrat ${numContrat} — compteur du mois : ${next}`);
+  // Le compteur est RECALCULÉ, jamais incrémenté — et sur le mois de PAIE, pas sur le mois de
+  // signature. Si les deux diffèrent, on recale aussi le mois de signature, sinon il garderait une
+  // rétractation qui ne le concerne plus.
+  const [py, pm] = moisDePaie.split('-').map(Number);
+  const exact = await computeExactRetractCount(agent, py, pm);
+  await saveMonthlyRetractCount(agent, py, pm, exact);
+  if(moisDePaie !== monthVal){
+    const [sy, sm] = monthVal.split('-').map(Number);
+    await saveMonthlyRetractCount(agent, sy, sm, await computeExactRetractCount(agent, sy, sm));
+  }
+  return { retracted: row.retracted, moisDePaie, exact };
+}
+
+async function toggleRetractAdminRow(monthVal, agent, numContrat){
+  const res = await basculerRetractation(monthVal, agent, numContrat);
+  if(!res) return;
+  logAudit('Admin', res.retracted ? 'Contrat marqué rétracté (via Réglages)' : 'Rétractation annulée (via Réglages)', `${agent} — contrat ${numContrat} — pèse sur ${res.moisDePaie} — compteur recalculé : ${res.exact}`);
 
   billingInvalidate();
   clearRenderCaches();
@@ -4508,8 +4569,15 @@ async function tryAdminLogin(){
   // clair dans un fichier que tout le monde peut télécharger. Autrement dit : couper le réseau
   // suffisait à entrer dans le panneau Admin. On refuse désormais tant que la vraie configuration
   // n'a pas été chargée depuis la base.
-  if(!firebaseReady || !configLoadedFromServer){
-    alert("Connexion à la base impossible pour l'instant — impossible de vérifier le mot de passe.\n\nVérifie ta connexion Internet et recharge la page. (Par sécurité, l'accès Admin est refusé tant que les réglages n'ont pas été lus depuis la base.)");
+  if(!firebaseReady){
+    alert("Connexion à la base impossible pour l'instant — impossible de vérifier le mot de passe.\n\nVérifie ta connexion Internet et recharge la page.");
+    return;
+  }
+  // Les réglages complets ne sont lisibles que par le compte admin (règle Firestore). Une session
+  // ouverte avec un compte d'agent ne peut donc PAS entrer ici, même avec le bon mot de passe : c'est
+  // exactement le but. Le message dit quoi faire au lieu de laisser croire à une panne.
+  if(!configPriveeChargee){
+    alert("Accès Admin refusé sur ce poste.\n\nCette session est ouverte avec un compte d'agent. Pour entrer dans Admin, déconnecte-toi (Réglages → Se déconnecter, ou ferme et rouvre le navigateur) puis reconnecte-toi en choisissant « 🔐 Admin » dans la liste.");
     return;
   }
   const val = document.getElementById('adminPwInput').value;
@@ -4534,8 +4602,11 @@ async function tryAdminLogin(){
     // l'empreinte se calcule à partir de la valeur déjà présente. Une fois par session, et seulement
     // s'il reste quelque chose à convertir.
     migrerMotsDePasseVersEmpreintes();
-    // Tient à jour la liste des prénoms lisible par l'écran de connexion (voir publierListePrenoms).
+    // Tient à jour la liste des prénoms lisible par l'écran de connexion (voir publierListePrenoms)
+    // ET la copie des réglages lisible par les agents. Les deux se réparent donc d'elles-mêmes à
+    // chaque ouverture du panneau Admin, sans que tu aies quoi que ce soit à faire.
     publierListePrenoms();
+    publierConfigPublique();
     initExploDefaults();
     initObjSnapDefaults();
     renderAllMonthly();
@@ -7683,14 +7754,21 @@ async function renderReport(){
   }
   container.innerHTML = '<div class="empty">⏳ Chargement…</div>';
 
+    // 🐛 BUG CORRIGÉ — ce tableau décidait « Absent » sur le seul pointage, alors que le calcul de la
+    // prime d'assiduité (monthlyStatsCompute) exige DEUX conditions : aucun pointage ET aucun contrat,
+    // la journée étant terminée. Un agent qui oubliait de pointer mais signait 3 contrats était donc
+    // affiché « Absent » ici, et compté présent par la paie — deux écrans du même CRM qui se
+    // contredisent, sur la base desquels on sanctionne quelqu'un. Il faut donc la production du jour.
+    const boardDuJour = await getProdBoard(dateStr);
     const rows = await Promise.all(config.agents.map(async agent=>{
+      const realized = getAgentProd(boardDuJour, agent).realized || 0;
       if(isIndependant(agent)){
-        return { agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, isIndep: true, isWorkingDay: isWorkingDay(dateStr) };
+        return { agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, realized, isIndep: true, isWorkingDay: isWorkingDay(dateStr) };
       }
       const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
       const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log));
       const lockouts = extractLockouts(log.events);
-      return { agent, ...ev, infractions, lockouts, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, attachmentData: log.attachmentData || null, attachmentType: log.attachmentType || null, attachmentName: log.attachmentName || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
+      return { agent, ...ev, infractions, lockouts, realized, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, attachmentData: log.attachmentData || null, attachmentType: log.attachmentType || null, attachmentName: log.attachmentName || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
     }));
 
   let html = `<table><thead><tr>
@@ -7760,7 +7838,16 @@ async function renderReport(){
       <td>${infrHtml}</td>
       <td>`;
     if(!r.hasAnyEvent && r.infractions.length===0 && !r.justifiedAbsence){
-      html += `<span class="tag absent">Absent</span>`;
+      // Même définition qu'au calcul de la paie, mot pour mot : « Absent » seulement si la journée est
+      // finie ET qu'aucun contrat n'a été signé. Les deux autres cas ne sont pas des absences et ne
+      // doivent pas s'afficher comme telles — l'un est en cours, l'autre est un oubli de pointage.
+      if(!isDayOverForMessage(dateStr)){
+        html += `<span class="tag warn">Pas encore pointé</span>`;
+      } else if((r.realized || 0) > 0){
+        html += `<span class="tag warn">Pas de pointage — ${r.realized} contrat${r.realized>1?'s':''} signé${r.realized>1?'s':''}</span>`;
+      } else {
+        html += `<span class="tag absent">Absent</span>`;
+      }
     } else if(r.justifiedAbsence){
       const lbl = justifiedAbsenceLabel(r.justifiedAbsence);
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[r.justifiedAbsence];
@@ -7813,7 +7900,11 @@ function exportCSV(){
     let statut = 'OK';
     if(r.isIndep) statut = 'Indépendant';
     else if(r.justifiedAbsence) statut = jaMeta && jaMeta.justified ? 'Absence justifiee' : (r.justifiedAbsence.startsWith('mise_a_pied') ? 'Mise a pied' : 'Absence non justifiee');
-    else if(!r.hasAnyEvent && r.infractions?.length===0) statut = 'Absent';
+    // Même règle qu'à l'écran et qu'à la paie — sans quoi le CSV envoyé au comptable disait « Absent,
+    // compte assiduité = Oui » pour quelqu'un que le calcul de la prime comptait présent.
+    else if(!r.hasAnyEvent && r.infractions?.length===0){
+      statut = (isDayOverForMessage(date) && (r.realized || 0) === 0) ? 'Absent' : 'Pas de pointage';
+    }
     else if(r.lateMinutes > 0 || anyBreakOver || r.infractions?.length>0) statut = 'Non conforme';
     const compteAssiduite = jaMeta ? (jaMeta.counted ? 'Oui' : 'Non') : (statut==='Absent' ? 'Oui' : '');
     const infrTxt = (r.infractions||[]).map(i=>INFR_TYPES[i.type].label).join(' | ');
@@ -13165,7 +13256,12 @@ async function exportSauvegardeComplete(btn){
     document.body.removeChild(a);
     setTimeout(()=> URL.revokeObjectURL(url), 4000);
 
-    try{ localStorage.setItem('vn_lastBackupAt', new Date().toISOString()); }catch(e){}
+    // La date part dans la BASE, pas seulement dans ce navigateur : sinon un poste dont le cache
+    // vient d'être vidé (ou une fenêtre privée) réclame une sauvegarde qui a en réalité été faite.
+    const isoSauvegarde = new Date().toISOString();
+    _derniereSauvegardeIso = isoSauvegarde;
+    try{ localStorage.setItem('vn_lastBackupAt', isoSauvegarde); }catch(e){}
+    try{ await storageSet(CLE_DERNIERE_SAUVEGARDE, isoSauvegarde); }catch(e){ console.warn('date de sauvegarde non enregistrée', e); }
     const poids = (texte.length / 1048576);
     backupSetStatus(`✅ ${total} documents sauvegardés (${poids < 1 ? Math.round(texte.length/1024) + ' Ko' : poids.toFixed(1) + ' Mo'}) — fichier téléchargé.`, '#5cb896');
     logAudit('Admin', 'Sauvegarde complète exportée', `${total} documents`);
@@ -13359,15 +13455,38 @@ async function restaurerSauvegardeComplete(input){
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 // Rappel : une sauvegarde qu'on oublie de faire ne sert à rien.
 // ───────────────────────────────────────────────────────────────────────────────────────────────
-function derniereSauvegardeInfo(){
+const CLE_DERNIERE_SAUVEGARDE = 'lastBackupAt';
+let _derniereSauvegardeIso = null;   // la date lue en base, gardée en mémoire pour l'affichage
+
+// Va chercher la date en base. Repli sur l'ancienne trace locale, qui existe encore sur le poste où
+// les premières sauvegardes ont été faites — et qu'on remonte alors dans la base, une seule fois,
+// pour ne pas perdre l'historique en passant à ce nouveau fonctionnement.
+async function chargerDerniereSauvegarde(){
   let iso = null;
-  try{ iso = localStorage.getItem('vn_lastBackupAt'); }catch(e){}
-  if(!iso) return { jamais: true, jours: null, texte: 'Aucune sauvegarde faite depuis ce poste.' };
+  try{
+    const res = await storageGet(CLE_DERNIERE_SAUVEGARDE);
+    if(res && res.value) iso = res.value;
+  }catch(e){}
+  if(!iso){
+    let local = null;
+    try{ local = localStorage.getItem('vn_lastBackupAt'); }catch(e){}
+    if(local){
+      iso = local;
+      try{ await storageSet(CLE_DERNIERE_SAUVEGARDE, local); }catch(e){}
+    }
+  }
+  _derniereSauvegardeIso = iso;
+  return iso;
+}
+
+function derniereSauvegardeInfo(){
+  const iso = _derniereSauvegardeIso;
+  if(!iso) return { jamais: true, jours: null, texte: 'Aucune sauvegarde n\'a encore été faite.' };
   const d = new Date(iso);
   const jours = Math.floor((Date.now() - d.getTime()) / 86400000);
   return {
     jamais: false, jours,
-    texte: `Dernière sauvegarde depuis ce poste : ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}` + (jours >= 1 ? ` (il y a ${jours} jour${jours>1?'s':''})` : '')
+    texte: `Dernière sauvegarde : ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}` + (jours >= 1 ? ` (il y a ${jours} jour${jours>1?'s':''})` : '')
   };
 }
 // Affiche qui est connecté sur ce poste, et signale clairement le mode transitoire — c'est ce qui
@@ -13386,8 +13505,9 @@ function majEtatConnexion(){
   }
 }
 
-function majBandeauSauvegarde(){
+async function majBandeauSauvegarde(){
   majEtatConnexion();
+  await chargerDerniereSauvegarde();
   const banner = document.getElementById('backupReminderBanner');
   const infoEl = document.getElementById('backupLastInfo');
   const info = derniereSauvegardeInfo();
@@ -13401,7 +13521,7 @@ function majBandeauSauvegarde(){
   if(enRetard){
     const txt = document.getElementById('backupReminderText');
     if(txt) txt.textContent = info.jamais
-      ? "Aucune sauvegarde n'a jamais été faite depuis ce poste. Tes données n'existent qu'à un seul endroit."
+      ? "Aucune sauvegarde n'a jamais été faite. Tes données n'existent qu'à un seul endroit."
       : `Dernière sauvegarde il y a ${info.jours} jours. Tes données n'existent qu'à un seul endroit.`;
   }
 }
@@ -17464,7 +17584,12 @@ async function getAllTimeRecords(now){
   if(allTimeRecordsCache && allTimeRecordsCacheDay === today) return allTimeRecordsCache;
   let teamBest = { value: 0, monthVal: null };
   const personalBest = {};
-  config.agents.forEach(a=>{ personalBest[a] = { value: 0, monthVal: null }; });
+  // 🐛 BUG CORRIGÉ — on bouclait sur config.agents, dont les agents archivés ont été retirés. Le record
+  // d'équipe et le record « tous agents confondus » étaient donc calculés en oubliant tous ceux qui
+  // sont partis : l'appli annonçait fièrement un « nouveau record » qui n'en était pas un. Les mois
+  // passés, eux, contiennent bel et bien leurs contrats — allKnownAgents() existe exactement pour ça.
+  const agentsPourRecords = allKnownAgents();
+  agentsPourRecords.forEach(a=>{ personalBest[a] = { value: 0, monthVal: null }; });
   let allAgentsBest = { value: 0, monthVal: null, agent: null };
   // ⚡ OPTIMISATION — les 24 mois étaient parcourus dans une boucle `for` avec `await` : chaque mois
   // attendait la fin du précédent, soit 24 allers-retours réseau en file indienne avant que Cash ne
@@ -17476,7 +17601,7 @@ async function getAllTimeRecords(now){
     const dt = new Date(now.getFullYear(), now.getMonth()-i, 1);
     const y = dt.getFullYear(), m = dt.getMonth()+1;
     const mv = billingMonthVal(y, m);
-    return Promise.all(config.agents.map(async a=>({ a, v: await monthlyRealizedContracts(a, y, m) })))
+    return Promise.all(agentsPourRecords.map(async a=>({ a, v: await monthlyRealizedContracts(a, y, m) })))
       .then(perAgent => ({ mv, perAgent }));
   }));
   parMois.forEach(({ mv, perAgent })=>{
@@ -20369,12 +20494,24 @@ async function fixContractAgent(mv, key, agent){
 function renderImportAnomalies(){
   const el = document.getElementById('importAnomaliesPanel');
   if(!el) return;
+  // Ceinture et bretelles : tout repose désormais sur `rid`. L'import en pose un sur chaque ligne,
+  // mais une anomalie venue d'une version antérieure pourrait ne pas en avoir — deux lignes sans rid
+  // partageraient alors le même identifiant de menu, et on retomberait dans le bug qu'on vient de
+  // corriger. On en attribue un au passage, ça ne coûte rien.
+  let _n = 0;
+  lastImportAnomalies.forEach(a=>{ if(!a.rid) a.rid = `ano${Date.now().toString(36)}${(_n++).toString(36)}`; });
   // Un même contrat ne doit apparaître qu'une fois, même si le fichier le contenait en double.
+  // 🐛 BUG CORRIGÉ — le dédoublonnage se faisait sur `a.key`, qui vaut la chaîne VIDE pour toute ligne
+  // sans numéro de contrat ni référence… c'est-à-dire précisément les lignes anomales. Deux contrats
+  // sans référence avaient donc la même clé : le second disparaissait de l'écran sans être traité.
+  // On dédoublonne maintenant sur l'identifiant interne (`rid`) dès que la clé est vide.
   const vus = new Set();
   const list = lastImportAnomalies.filter(a=>{
     if(a.resolved) return false;
-    if(vus.has(a.key)) return false;
-    vus.add(a.key); return true;
+    const identifiant = a.key || a.rid;
+    if(!identifiant) return true;
+    if(vus.has(identifiant)) return false;
+    vus.add(identifiant); return true;
   });
   if(!lastImportAnomalies.length){ el.innerHTML = ''; return; }
   if(!list.length){
@@ -20401,8 +20538,15 @@ function renderImportAnomalies(){
     </div>
   </div>`;
   html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Problème</th><th>Date lue</th><th>Client</th><th>N° contrat</th><th>Agent</th><th>Mois</th><th></th></tr></thead><tbody>';
-  list.slice(0, 60).forEach((a, i)=>{
-    const idA = `anoAg_${i}`, idM = `anoMo_${i}`;
+  // 🐛 BUG CORRIGÉ (le plus dangereux des trois) — les menus étaient numérotés d'après la position
+  // dans la liste AFFICHÉE (dédoublonnée puis coupée à 60), alors que « Appliquer toutes les lignes »
+  // relisait ces mêmes numéros sur la liste COMPLÈTE. Dès qu'une ligne était masquée par le
+  // dédoublonnage, tous les numéros suivants glissaient d'un cran : le mois et l'agent choisis pour un
+  // contrat étaient appliqués à un AUTRE contrat. On numérote désormais par identifiant interne, et
+  // « Appliquer tout » travaille sur exactement la liste affichée (voir _anomaliesAffichees).
+  _anomaliesAffichees = list.slice(0, 60);
+  _anomaliesAffichees.forEach(a=>{
+    const idA = `anoAg_${a.rid}`, idM = `anoMo_${a.rid}`;
     html += `<tr>
       <td style="color:var(--amber); font-size:12.5px; max-width:230px;">${escapeHtml(a.reason)}</td>
       <td style="white-space:nowrap; font-size:12.5px;">${escapeHtml(a.rawDate || '—')}</td>
@@ -20419,23 +20563,29 @@ function renderImportAnomalies(){
     </tr>`;
   });
   html += '</tbody></table></div>';
-  if(list.length > 60) html += `<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">… et ${list.length - 60} autres.</div>`;
+  if(list.length > 60) html += `<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">… et ${list.length - 60} autres, à traiter au tour suivant.</div>`;
   el.innerHTML = html;
 }
+
+// Les lignes réellement affichées à l'écran, dans l'ordre exact où elles y sont. C'est la SEULE liste
+// que « Appliquer toutes les lignes » a le droit de lire : appliquer une correction à une ligne que
+// l'admin n'a pas sous les yeux est exactement le bug qu'on vient de corriger.
+let _anomaliesAffichees = [];
 
 // Applique en une passe toutes les lignes affichées : les déplacements de mois sont regroupés par
 // couple (mois source → mois cible), les changements d'agent groupés par mois. Une seule série
 // d'écritures, un seul rafraîchissement à la fin.
 async function applyAllAnomalyFixes(){
   const el = document.getElementById('importAnomaliesPanel');
-  const list = lastImportAnomalies.filter(a => !a.resolved);
+  // Exactement les lignes affichées, ni plus ni moins (voir _anomaliesAffichees).
+  const list = (_anomaliesAffichees || []).filter(a => !a.resolved);
   if(!list.length) return;
 
-  // On relit les menus tels qu'ils sont à l'écran au moment du clic.
+  // On relit les menus tels qu'ils sont à l'écran au moment du clic, par identifiant interne.
   const ops = [];
-  list.forEach((a, i)=>{
-    const mv = document.getElementById(`anoMo_${i}`)?.value || a.month;
-    const ag = document.getElementById(`anoAg_${i}`)?.value || '';
+  list.forEach(a=>{
+    const mv = document.getElementById(`anoMo_${a.rid}`)?.value || a.month;
+    const ag = document.getElementById(`anoAg_${a.rid}`)?.value || '';
     ops.push({ a, mv, ag });
   });
   if(el) el.innerHTML = `<div class="empty" style="padding:12px;">⏳ Application de ${ops.length} ligne(s)…</div>`;
@@ -20989,7 +21139,22 @@ async function importBillingProd(text, monthVal){
         // Déjà présent (reçu de Pabbly ou import précédent) : on remplace la ligne existante par la
         // nouvelle, plutôt que d'ajouter un doublon — le fichier corrigé fait foi.
         const idx = store.rows.findIndex(x => billingRowKeys(x).some(k => keys.includes(k)));
-        if(idx >= 0) store.rows[idx] = r;
+        if(idx >= 0){
+          // 🐛 BUG CORRIGÉ — la ligne existante était remplacée EN ENTIER par celle du fichier. Or le
+          // fichier ne contient que les données brutes du contrat ; il ignore tout ce que TU as décidé
+          // ensuite dans le CRM. Un simple réimport effaçait donc silencieusement :
+          //   • retractPayMonth — le mois de paie sur lequel une rétractation avait été redirigée.
+          //     Elle retombait sur son mois de signature, souvent déjà clôturé → une paie changeait
+          //     toute seule, sans qu'aucune donnée n'ait bougé ;
+          //   • _reviewed — la ligne d'anomalie déjà tranchée revenait dans la liste à traiter ;
+          //   • _rid — l'identifiant interne, seul moyen de retrouver une ligne sans numéro de contrat.
+          // Le fichier fait foi sur les données du contrat ; le CRM fait foi sur les décisions.
+          const ancien = store.rows[idx];
+          if(r.retractPayMonth == null && ancien.retractPayMonth != null) r.retractPayMonth = ancien.retractPayMonth;
+          if(r._reviewed == null && ancien._reviewed != null) r._reviewed = ancien._reviewed;
+          if(r._rid == null && ancien._rid != null) r._rid = ancien._rid;
+          store.rows[idx] = r;
+        }
         return;
       }
       keys.forEach(k => seen.add(k));
@@ -22424,17 +22589,11 @@ async function toggleBillingRetracted(numContrat){
   const monthVal = document.getElementById('billingSheetMonth')?.value;
   const agent = document.getElementById('billingAgentSelect')?.value;
   if(!monthVal || !agent) return;
-  const data = await getBillingProd(monthVal);
-  const row = (data.rows || []).find(r => (r.numContrat || r.reference) === numContrat && r.agent === agent);
-  if(!row) return;
-  row.retracted = !row.retracted;
-  await billingSave(billingProdKey(monthVal), data);
-
-  const [y, m] = monthVal.split('-').map(Number);
-  const current = await getMonthlyRetractCount(agent, y, m);
-  const next = Math.max(0, current + (row.retracted ? 1 : -1));
-  await saveMonthlyRetractCount(agent, y, m, next);
-  logAudit('Admin', row.retracted ? 'Contrat marqué rétracté' : 'Rétractation annulée', `${agent} — contrat ${numContrat} — compteur du mois : ${next}`);
+  // Même traitement exact que depuis Réglages — voir basculerRetractation.
+  const res = await basculerRetractation(monthVal, agent, numContrat);
+  if(!res) return;
+  logAudit('Admin', res.retracted ? 'Contrat marqué rétracté' : 'Rétractation annulée', `${agent} — contrat ${numContrat} — pèse sur ${res.moisDePaie} — compteur recalculé : ${res.exact}`);
+  clearRenderCaches();
   renderBillingAgentSheet();
 }
 
@@ -26468,6 +26627,35 @@ async function saveReturnCostPerAgent(){
 //
 // ⚠️ Nécessite une ligne dans les règles Firestore (voir SECURITE-CONNEXION.md). Sans elle, la
 // lecture échoue simplement et l'écran retombe sur le champ à remplir : rien ne casse.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🔐 LA COPIE PUBLIQUE DES RÉGLAGES
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Le document `config` contient tout mélangé : la liste des agents et les horaires — dont l'appli de
+// CHAQUE agent a besoin pour fonctionner — et, au milieu, le mot de passe admin, les marges du patron
+// et le secret du webhook. Tant que c'était un seul document, il était impossible d'ouvrir le premier
+// sans ouvrir le second : c'est la raison pour laquelle n'importe quel agent connecté pouvait tout
+// lire.
+//
+// On ne coupe pas le document en deux (trop risqué : deux sources de vérité pour la paie, migration
+// des données existantes, risque de perte). On publie une COPIE amputée des champs privés, tenue à
+// jour automatiquement à chaque enregistrement des réglages. L'admin lit `config` ; l'agent lit
+// `configPublic`. La règle Firestore fait le reste.
+async function publierConfigPublique(){
+  if(!firebaseReady || !db) return;
+  // Publier depuis une session qui n'a pas les réglages complets écraserait la copie publique par une
+  // version amputée deux fois. Seul l'admin publie.
+  if(!configPriveeChargee) return;
+  try{
+    const copie = JSON.parse(JSON.stringify(config));
+    CONFIG_CHAMPS_PRIVES.forEach(f=>{ delete copie[f]; });
+    if(copie.prodConfig) PROD_CONFIG_CHAMPS_PRIVES.forEach(f=>{ delete copie.prodConfig[f]; });
+    const charge = JSON.stringify(copie);
+    const actuel = await storageGet(CLE_CONFIG_PUBLIQUE);
+    if(actuel && actuel.value === charge) return;   // rien n'a bougé : aucune écriture inutile
+    await storageSet(CLE_CONFIG_PUBLIQUE, charge);
+  }catch(e){ console.warn('publication de la config publique', e); }
+}
+
 const CLE_PRENOMS_PUBLICS = 'publicAgentNames';
 
 // Publie la liste depuis le panneau Admin. N'écrit que si elle a réellement changé.
@@ -26479,7 +26667,7 @@ async function publierListePrenoms(){
   // règle qui refuse la lecture, coupure réseau au mauvais moment) : config.agents est alors vide,
   // et sans ce test on écraserait la vraie liste par []. On ne publie donc QUE depuis une session
   // qui a réellement chargé les réglages depuis la base, et jamais une liste vide.
-  if(!configLoadedFromServer) return;
+  if(!configPriveeChargee) return;
   try{
     const prenoms = (config.agents || [])
       .filter(a => !estHorsContrat(a, todayStr()))
@@ -26738,7 +26926,7 @@ async function bootApp(){
   // retombait sur un champ à remplir, sans que rien n'explique pourquoi. Elle est maintenant
   // republiée après chaque chargement des réglages, depuis n'importe quelle session connectée
   // (les règles l'autorisent) : elle se répare toute seule. N'écrit que si la liste a changé.
-  loadConfig().then(()=> publierListePrenoms()).catch(e=> console.warn('publication liste prénoms', e));
+  loadConfig().then(()=>{ publierListePrenoms(); publierConfigPublique(); }).catch(e=> console.warn('publication des documents publics', e));
   updateSyncIndicator();
   applyPrivacyMode();
   applySupPrivacy();
