@@ -839,6 +839,43 @@
   </div>
 </div>
 
+<!-- 🔐 Écran de connexion. Affiché uniquement quand aucune session n'est ouverte sur ce poste —
+     donc au tout premier lancement, ou après un effacement complet des données du navigateur.
+     Le reste du temps, personne ne le voit : le navigateur garde la session. -->
+<div id="authGate" style="display:none; position:fixed; inset:0; background:var(--bg); z-index:99994; align-items:center; justify-content:center; padding:24px;">
+  <div style="width:100%; max-width:340px; text-align:center;">
+    <div style="font-size:40px; margin-bottom:10px;">🔐</div>
+    <div style="font-size:19px; font-weight:800; color:var(--text); margin-bottom:6px;">Connexion</div>
+    <div style="font-size:13.5px; color:var(--muted); margin-bottom:22px; line-height:1.55;">Ton prénom et ton mot de passe habituel.<br>Une seule fois sur cet ordinateur.</div>
+
+    <select id="authGateAgent" style="display:none; width:100%; box-sizing:border-box; padding:13px 14px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:15px; margin-bottom:10px;"
+      onchange="const p=document.getElementById('authGatePw'); if(this.value && p) p.focus();"></select>
+
+    <input type="text" id="authGatePrenom" placeholder="Prénom" autocomplete="username" autocapitalize="off" spellcheck="false"
+      style="width:100%; box-sizing:border-box; padding:13px 14px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:15px; margin-bottom:10px;"
+      onkeydown="if(event.key==='Enter'){ event.preventDefault(); const p=document.getElementById('authGatePw'); if(p) p.focus(); }">
+
+    <div style="position:relative;">
+      <input type="password" id="authGatePw" placeholder="Mot de passe" autocomplete="current-password"
+        style="width:100%; box-sizing:border-box; padding:13px 44px 13px 14px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:15px;"
+        onkeydown="if(event.key==='Enter'){ event.preventDefault(); authValiderFormulaire(); }">
+      <button type="button" class="pw-eye-btn" tabindex="-1" title="Afficher le mot de passe le temps de le vérifier"
+        onclick="togglePwField('authGatePw', this)"
+        style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:19px; padding:6px; line-height:1;">👁️</button>
+    </div>
+
+    <div id="authGateError" style="display:none; margin-top:12px; padding:9px 12px; border-radius:8px; background:rgba(229,72,77,0.12); border:1px solid rgba(229,72,77,0.4); color:#e5484d; font-size:13px; font-weight:600;"></div>
+
+    <button id="authGateBtn" onclick="authValiderFormulaire()"
+      style="width:100%; margin-top:16px; padding:13px; border-radius:9px; border:none; background:var(--accent); color:white; font-weight:800; font-size:15px; cursor:pointer;">Se connecter</button>
+
+    <!-- Filet de transition : ne fonctionne que tant que « Anonyme » est activé dans la console
+         Firebase. Le jour où l'admin le désactive, ce bouton échoue et le dit clairement. -->
+    <button type="button" onclick="authFiletAnonyme(this)"
+      style="margin-top:14px; background:none; border:none; color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer; text-decoration:underline;">Je n'arrive pas à me connecter</button>
+  </div>
+</div>
+
 <div id="monthFeesModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:99997; align-items:center; justify-content:center; padding:20px;">
   <div style="background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:24px; max-width:480px; width:100%; max-height:80vh; overflow:auto;">
     <div style="font-size:16px; font-weight:800; margin-bottom:14px;">📋 Frais du mois</div>
@@ -930,10 +967,15 @@ function showDeviceGateAdmin(){
   document.getElementById('deviceGateAdminBox').style.display = 'block';
   document.getElementById('deviceGateAdminPw').focus();
 }
-function tryDeviceGateAdmin(){
+async function tryDeviceGateAdmin(){
   const val = document.getElementById('deviceGateAdminPw').value;
   const pw = (typeof config !== 'undefined' && config.adminPassword) ? config.adminPassword : DEFAULT_ADMIN_PASSWORD;
-  if(val === pw){
+  // Ce portail ne donne accès à aucune donnée : il lève seulement le blocage « ordinateur uniquement ».
+  // Il accepte donc les deux formats, comme partout ailleurs.
+  const okDevice = (typeof motDePasseCorrespond === 'function')
+    ? (await motDePasseCorrespond(val, pw)).ok
+    : (val === pw);
+  if(okDevice){
     sessionStorage.setItem('vn_admin_bypass', '1');
     document.body.classList.remove('device-blocked');
   } else {
@@ -1340,6 +1382,20 @@ function tryDeviceGateAdmin(){
            le reste de l'auto-refresh Admin. Masquée par défaut, n'apparaît que s'il y a au moins une
            anomalie aujourd'hui (retard, absence, pause dépassée, autre infraction). -->
       <div id="adminAnomalyBanner" onclick="jumpToTodayAlerts()" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin:0 0 16px; padding:12px 16px; border-radius:12px; background:rgba(229,90,90,0.12); border:1px solid rgba(229,90,90,0.4); cursor:pointer;"></div>
+
+      <!-- 💾 Rappel de sauvegarde — épinglé au même endroit que les anomalies, donc visible quel que
+           soit le sous-onglet ouvert. N'apparaît qu'au-delà de BACKUP_RAPPEL_JOURS sans sauvegarde,
+           ou si aucune n'a jamais été faite depuis ce poste. Un clic emmène directement au bouton. -->
+      <div id="backupReminderBanner" onclick="showAdminSub('settings'); setTimeout(()=>{ const e=document.getElementById('backupStatus'); if(e) e.scrollIntoView({behavior:'smooth', block:'center'}); }, 120);" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin:0 0 16px; padding:12px 16px; border-radius:12px; background:rgba(229,168,61,0.12); border:1px solid rgba(229,168,61,0.45); cursor:pointer;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="font-size:24px; line-height:1;">💾</div>
+          <div>
+            <b style="color:#e5a83d; font-size:14px;">Sauvegarde à faire</b>
+            <div id="backupReminderText" style="font-size:12.5px; color:var(--text); opacity:0.9; margin-top:2px;"></div>
+          </div>
+        </div>
+        <span style="font-size:12.5px; font-weight:800; color:#e5a83d; white-space:nowrap;">Sauvegarder →</span>
+      </div>
 
       <!-- OVERVIEW SUBVIEW -->
       <div class="admin-subview active" id="admin-overview">
@@ -2118,6 +2174,15 @@ function tryDeviceGateAdmin(){
           <div id="backofficeInboxPanel" style="margin-top:12px;"></div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(229,72,77,0.4);">
+          <label>🧭 Contrats égarés — dates impossibles</label>
+          <div class="section-sub">Un contrat dont la date est fausse (une année mal tapée dans le « FAIT LE », par exemple) est bien enregistré, mais rangé dans un mois où personne ne regarde : <b>il ne compte ni dans la paie de l'agent, ni dans les classements, ni dans ton chiffre d'affaires</b>. L'alerte d'import ne s'affichait qu'au moment du relevé et disparaissait ensuite — ce contrôle-ci relit toute la base, à tout moment.</div>
+          <div class="admin-toolbar" style="margin-top:14px; align-items:center;">
+            <button onclick="scannerContratsEgares(this)" style="padding:11px 20px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:800;cursor:pointer;font-size:13.5px;">🔎 Chercher les contrats égarés</button>
+          </div>
+          <div id="contratsEgaresPanel" style="margin-top:12px;"></div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(184,147,90,0.45);">
           <label>🔀 Qui paie ce mois-ci : les agents ou le backoffice ?</label>
           <div class="section-sub">Pendant le mois, les compteurs <b>+1</b> des agents pilotent tout (Arena, pauses bonus, classements en temps réel). En fin de mois, une fois tous les contrats validés reçus, tu bascules d'un clic sur le chiffre du backoffice — celui que personne ne peut modifier. Le réglage est mémorisé mois par mois.</div>
@@ -2344,6 +2409,26 @@ function tryDeviceGateAdmin(){
 
       <!-- SETTINGS SUBVIEW -->
       <div class="admin-subview" id="admin-settings">
+
+        <div class="settings-box" style="border-color:rgba(92,184,150,0.45);">
+          <label>💾 Sauvegarde de toutes tes données</label>
+          <div class="section-sub">Toutes les données de l'entreprise — pointages, contrats, salaires, réglages — vivent à un seul endroit : la base Firebase. <b>Une sauvegarde te met à l'abri d'une suppression accidentelle, d'un import raté ou d'un problème sur le projet.</b> Le fichier téléchargé contient tout, et il est réinjectable tel quel.</div>
+          <div class="admin-toolbar" style="margin-top:14px; align-items:center; flex-wrap:wrap;">
+            <button onclick="exportSauvegardeComplete(this)" style="padding:11px 20px;border-radius:8px;border:none;background:#4f9d78;color:white;font-weight:800;cursor:pointer;font-size:13.5px;">💾 Sauvegarder toutes mes données</button>
+            <label for="backupVerifyInput" style="padding:10px 18px;border-radius:8px;border:1px solid #5680ab;background:rgba(86,128,171,0.12);color:#7aa7d4;font-weight:700;cursor:pointer;font-size:12.5px;margin:0;" title="Ouvre un fichier de sauvegarde et affiche ce qu'il contient. Tout se passe dans ce navigateur : le fichier n'est envoyé nulle part.">🔎 Vérifier une sauvegarde…</label>
+            <input type="file" id="backupVerifyInput" accept="application/json,.json" style="display:none;" onchange="verifierFichierSauvegarde(this)">
+            <label for="backupRestoreInput" style="padding:10px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-weight:700;cursor:pointer;font-size:12.5px;margin:0;" title="Réinjecter un fichier de sauvegarde. Les documents du fichier écrasent les documents actuels de même nom ; rien n'est supprimé.">↩️ Restaurer une sauvegarde…</label>
+            <input type="file" id="backupRestoreInput" accept="application/json,.json" style="display:none;" onchange="restaurerSauvegardeComplete(this)">
+          </div>
+          <div id="backupStatus" style="margin-top:10px; font-size:13px; font-weight:700;"></div>
+          <div id="backupVerifyResult"></div>
+          <div id="backupLastInfo" style="margin-top:6px; font-size:12.5px; color:var(--muted);"></div>
+          <div class="section-sub" style="margin-top:12px;">💡 <b>Une fois par jour suffit.</b> Range les fichiers dans un dossier de ton ordinateur — un fichier de sauvegarde qui reste dans les Téléchargements finit toujours par être effacé.</div>
+          <div class="section-sub" style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">🔐 <b>Connexion de ce poste</b> — <span id="authEtatPoste">…</span>
+            <button type="button" onclick="authDeconnecter()" style="margin-left:8px; padding:5px 12px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12px; cursor:pointer;">Se déconnecter</button>
+          </div>
+          <div class="section-sub" style="margin-top:6px;">⚠️ La restauration réécrit les documents présents dans le fichier. Ce qui a été créé depuis la sauvegarde n'est pas supprimé, mais tout ce qui porte le même nom revient à son état d'alors.</div>
+        </div>
 
         <div class="settings-box">
           <label>🆘 Bouton d'assistance</label>
@@ -3262,6 +3347,9 @@ const firebaseConfig = {
 let db = null;
 let rtdb = null;
 let firebaseReady = false;
+// Vrai UNIQUEMENT quand les réglages ont réellement été lus depuis la base. Tant qu'il est faux,
+// `config` n'est que l'objet par défaut du fichier — mots de passe compris. Voir tryAdminLogin.
+let configLoadedFromServer = false;
 // Résolue tout de suite si Firebase n'est pas configuré ; sinon résolue seulement une fois la connexion
 // anonyme établie (ou tentée) — le reste de l'appli (loadConfig, etc.) attend cette promesse avant de
 // lire/écrire quoi que ce soit, pour rester compatible avec des règles Firestore qui exigent désormais
@@ -3295,10 +3383,15 @@ try{
     // l'appli elle-même. IMPORTANT (à faire une seule fois, dans la console Firebase) : Authentication →
     // Sign-in method → activer le fournisseur "Anonyme". Sans ça, signInAnonymously() échoue et
     // firebaseReady reste à false (l'appli affiche alors le bandeau "Firebase non configuré").
-    firebaseAuthReady = firebase.auth().signInAnonymously()
-      .then(()=>{ firebaseReady = true; })
+    // ⚠️ CHANGEMENT DE FOND — on n'ouvre plus de session anonyme automatiquement.
+    // signInAnonymously() délivrait un jeton à quiconque le demandait : la règle « if request.auth
+    // != null » était respectée par le monde entier, puisque le monde entier pouvait obtenir ce
+    // jeton avec l'adresse du projet lue dans ce fichier public. On passe par un vrai compte, vérifié
+    // par Google avant que la moindre donnée ne sorte. Voir authDemarrer() plus bas.
+    firebaseAuthReady = authDemarrer()
       .catch(err=>{
-        console.error('Authentification Firebase anonyme échouée (active le fournisseur "Anonyme" dans Firebase Console → Authentication → Sign-in method) :', err.code || err);
+        console.error('Démarrage de la connexion échoué :', err && err.code ? err.code : err);
+        return false;
       });
     // Persistance hors-ligne : si le réseau coupe (terrain, mauvaise connexion...), les écritures sont
     // mises en attente localement (IndexedDB) et se synchronisent automatiquement dès que la connexion
@@ -3502,7 +3595,11 @@ function startAutoRefresh(kind){
   if(autoRefreshTimer && autoRefreshKind === kind) return; // déjà en route avec le bon intervalle
   if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
   autoRefreshKind = kind;
-  refreshTierLastRun = { rapide: 0, courant: 0, lent: 0 };
+  // ⚡ OPTIMISATION — remises à 0, les trois familles étaient toutes « dues » au tout premier tick,
+  // soit un pic de lectures 10 secondes après l'ouverture de l'écran, juste au moment où le rendu
+  // initial vient de se terminer. En partant de l'instant présent, chacune attend son propre délai.
+  const maintenantDemarrage = Date.now();
+  refreshTierLastRun = { rapide: maintenantDemarrage, courant: maintenantDemarrage, lent: maintenantDemarrage };
   autoRefreshTimer = setInterval(async ()=>{
     if(document.hidden) return; // onglet en arrière-plan : on ne consomme rien pour rien
     if(autoRefreshBusy) return; // un tour précédent tourne encore (ex: connexion lente) : on ne s'empile pas dessus
@@ -3566,6 +3663,8 @@ function startAutoRefresh(kind){
 
 function stopAutoRefresh(){
   if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+  // Le bandeau défilant n'a plus de raison de se rafraîchir quand on quitte l'écran qui l'affiche.
+  if(typeof stopTickerResampleLoop === 'function') stopTickerResampleLoop();
   autoRefreshKind = null;
 }
 
@@ -3727,6 +3826,7 @@ async function loadConfig(){
     if(res && res.value){
       const loaded = JSON.parse(res.value);
       config = Object.assign({}, config, loaded);
+      configLoadedFromServer = true;
       // Référence pour la fusion 3-voies au prochain save (voir CONFIG_BASELINE / saveConfigSilent) —
       // capturée ICI, avant toute migration ci-dessous qui va elle-même modifier `config` en mémoire.
       CONFIG_BASELINE = JSON.parse(JSON.stringify(config));
@@ -3834,7 +3934,13 @@ async function loadConfig(){
 const CONFIG_MERGE_DICT_FIELDS = ['agentsTerminated','agentsIndep','agentsSupervisor','agentsNoObjectif',
   'agentsStatusLabel','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate',
   'assistanceMaxParAgent','agentsGaps'];
-const CONFIG_MERGE_ARRAY_FIELDS = ['archivedAgents'];
+// ⚠️ BUG CORRIGÉ — `agents` manquait à cette liste alors qu'archiveAgent modifie `agents` ET
+// `archivedAgents` ensemble. Un onglet resté ouvert qui enregistrait n'importe quel réglage
+// réécrivait `config.agents` en entier : l'agent archivé y revenait, pendant que la fusion le
+// gardait dans `archivedAgents`. Il était alors À LA FOIS actif et archivé — compté deux fois dans
+// la paie, de retour au pointage. Symétriquement, un agent ajouté sur un poste disparaissait dès
+// qu'un autre poste enregistrait après coup.
+const CONFIG_MERGE_ARRAY_FIELDS = ['agents', 'archivedAgents'];
 
 function mergeConfigDictField(baseline, mine, theirs){
   baseline = baseline || {}; mine = mine || {}; theirs = theirs || {};
@@ -4295,6 +4401,7 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderPointDuJourAdmin(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); renderProdBoardHistoryPanel(); }
+  if(sub==='settings'){ majBandeauSauvegarde(); }
   if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderAssistanceQuotaPanel(); }
 }
 
@@ -4303,8 +4410,23 @@ function showAdminSub(sub){
 // exporté (CSV, image). Sans ça, une note d'infraction, un motif d'absence, un libellé de prime ou un
 // nom de charge contenant du HTML se serait injecté tel quel dans la page (innerHTML) — utilisées aux
 // endroits qui affichent du texte libre à quelqu'un d'autre que la personne qui l'a saisi.
+// ⚠️ FAILLE CORRIGÉE — cette fonction n'échappait ni les guillemets doubles ni les apostrophes, alors
+// qu'elle est utilisée partout DANS DES ATTRIBUTS HTML (title="...", onclick="..."). Un guillemet dans
+// une donnée suffisait à sortir de l'attribut et à injecter du HTML — ou du JavaScript. Les quatre
+// entités ci-dessous couvrent les deux contextes (contenu et attribut). Rien à craindre pour
+// l'affichage : &quot; et &#39; sont rendus comme " et ' dans une page. Le CSV a sa propre fonction
+// (csvSafe), il n'est pas concerné.
 function escapeHtml(s){
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Encode une valeur pour la passer en argument d'un onclick="...(  '…'  )" sans jamais pouvoir en
+// sortir : le résultat ne contient que des caractères sûrs (ni guillemet, ni apostrophe, ni chevron,
+// ni antislash). Le handler la relit avec decodeURIComponent(). À utiliser dès qu'une donnée qui ne
+// vient pas de l'admin (import, backoffice, Pabbly, saisie agent) doit voyager dans un attribut.
+function jsArg(s){
+  return encodeURIComponent(String(s == null ? '' : s)).replace(/'/g, '%27');
 }
 // Un champ CSV qui commence par =, +, - ou @ peut être interprété comme une formule par Excel/Sheets à
 // l'ouverture — on le préfixe d'une apostrophe pour le neutraliser (convention standard, Excel l'affiche
@@ -4338,9 +4460,22 @@ async function renderAuditLog(){
   }
 }
 
-function tryAdminLogin(){
+async function tryAdminLogin(){
+  // ⚠️ FAILLE CORRIGÉE — si l'authentification Firebase échoue au démarrage (coupure réseau,
+  // fournisseur désactivé), firebaseReady reste faux, storageGet renvoie null, loadConfig conserve
+  // l'objet par défaut… dans lequel adminPassword vaut DEFAULT_ADMIN_PASSWORD, une valeur écrite en
+  // clair dans un fichier que tout le monde peut télécharger. Autrement dit : couper le réseau
+  // suffisait à entrer dans le panneau Admin. On refuse désormais tant que la vraie configuration
+  // n'a pas été chargée depuis la base.
+  if(!firebaseReady || !configLoadedFromServer){
+    alert("Connexion à la base impossible pour l'instant — impossible de vérifier le mot de passe.\n\nVérifie ta connexion Internet et recharge la page. (Par sécurité, l'accès Admin est refusé tant que les réglages n'ont pas été lus depuis la base.)");
+    return;
+  }
   const val = document.getElementById('adminPwInput').value;
-  if(val === config.adminPassword){
+  const verdictAdmin = await motDePasseCorrespond(val, config.adminPassword);
+  if(verdictAdmin.ok){
+    // Encore stocké en clair : on le remplace par son empreinte, maintenant qu'on le connaît.
+    if(verdictAdmin.aConvertir) convertirMotDePasseAdmin(val);
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminPanel').style.display = 'block';
     // Chrono de verrouillage auto pour inactivité : repart à zéro à chaque nouvelle connexion au
@@ -4353,6 +4488,13 @@ function tryAdminLogin(){
     checkSupervisionBriefingAcksForAdmin();
     checkPointDuJourAcksForAdmin();
     renderPointDuJourAdmin();
+    majBandeauSauvegarde();
+    // Convertit en empreinte tout mot de passe encore stocké en clair. Sans mot de passe à connaître :
+    // l'empreinte se calcule à partir de la valeur déjà présente. Une fois par session, et seulement
+    // s'il reste quelque chose à convertir.
+    migrerMotsDePasseVersEmpreintes();
+    // Tient à jour la liste des prénoms lisible par l'écran de connexion (voir publierListePrenoms).
+    publierListePrenoms();
     initExploDefaults();
     initObjSnapDefaults();
     renderAllMonthly();
@@ -4444,6 +4586,14 @@ function effectiveNoObjectif(agent){
 // obligatoire) : la découverte retire TOUT le fixe — baseSalary, primeFixeMensuelle, primeAssiduite ET
 // l'objectif mensuel — pour ne laisser QUE le DH/contrat habituel de l'agent. Voir getDecouverteState
 // (paie) et getAgentPay/estimateSalaryMonthReal pour comment ça s'applique concrètement à la paie.
+// L'agent est-il en découverte CE JOUR-LÀ ? isInDecouverte() ne répond que « le drapeau est posé »,
+// sans regarder la date de fin — insuffisant dès qu'une découverte a été terminée (bouton 🏁).
+function estEnDecouverteLe(agent, dateStr){
+  if(!isInDecouverte(agent)) return false;
+  const fin = decouverteEndDateOf(agent);
+  return !fin || (dateStr || todayStr()) <= fin;
+}
+
 function isInDecouverte(agent){
   return !!(config.agentsDecouverte && config.agentsDecouverte[agent] === true);
 }
@@ -4948,18 +5098,118 @@ async function toggleSupervisor(name){
   populateSupervisionAgentSelect();
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🔒 MOTS DE PASSE — remplacés par une empreinte illisible
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// LE PROBLÈME. Le document `config` contenait le mot de passe admin et ceux de tous les agents,
+// écrits tels quels. Or n'importe quel compte connecté peut lire ce document : un agent, avec les
+// outils du navigateur, pouvait donc lire le mot de passe admin — et celui de tous ses collègues.
+//
+// LA CORRECTION. On ne stocke plus le mot de passe mais une empreinte calculée à partir de lui
+// (SHA-256, fourni nativement par le navigateur). Le calcul ne fonctionne que dans un sens : de
+// l'empreinte, on ne peut pas revenir au mot de passe. À la saisie, l'app refait le calcul et compare
+// les deux empreintes. Elle n'a jamais besoin de connaître le mot de passe lui-même.
+//
+// RIEN NE CHANGE POUR PERSONNE. Les agents tapent exactement le même mot de passe qu'avant.
+//
+// COMPATIBILITÉ. Les deux formats cohabitent pour toujours : une valeur préfixée « sha256: » est une
+// empreinte, tout le reste est un ancien mot de passe en clair. Une comparaison réussie sur un
+// ancien format déclenche sa conversion silencieuse. Ainsi rien ne peut casser, même si la migration
+// échoue à moitié ou si un poste tourne encore sur une version précédente.
+const HASH_PREFIXE = 'sha256:';
+
+async function empreinteMotDePasse(texte){
+  const brut = String(texte == null ? '' : texte);
+  // Un sel fixe, propre à cette application : sans lui, une empreinte de « 1234 » serait la même que
+  // dans n'importe quelle autre base au monde, donc retrouvable dans les tables publiques.
+  // Il n'a pas à rester secret — il rend juste les empreintes inutilisables ailleurs.
+  const donnees = new TextEncoder().encode('vortexnova::' + brut);
+  const buffer = await crypto.subtle.digest('SHA-256', donnees);
+  return HASH_PREFIXE + Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function estEmpreinte(valeur){
+  return typeof valeur === 'string' && valeur.startsWith(HASH_PREFIXE);
+}
+
+// Compare une saisie à la valeur stockée, quel que soit son format.
+// Renvoie { ok, aConvertir } — aConvertir vaut vrai quand la valeur stockée était encore en clair et
+// mérite d'être remplacée par son empreinte.
+async function motDePasseCorrespond(saisie, stocke){
+  if(stocke == null || stocke === '') return { ok: false, aConvertir: false };
+  if(estEmpreinte(stocke)){
+    return { ok: (await empreinteMotDePasse(saisie)) === stocke, aConvertir: false };
+  }
+  // Ancien format, encore en clair.
+  return { ok: String(saisie) === String(stocke), aConvertir: true };
+}
+
+// Convertit en tâche de fond, sans jamais bloquer l'utilisateur ni faire échouer sa connexion.
+async function convertirMotDePasseAgent(nom, saisie){
+  try{
+    if(!config.agentPasswords || estEmpreinte(config.agentPasswords[nom])) return;
+    config.agentPasswords[nom] = await empreinteMotDePasse(saisie);
+    await saveConfigSilent();
+  }catch(e){ console.warn('conversion mot de passe agent', e); }
+}
+async function convertirMotDePasseAdmin(saisie){
+  try{
+    if(estEmpreinte(config.adminPassword)) return;
+    config.adminPassword = await empreinteMotDePasse(saisie);
+    await saveConfigSilent();
+  }catch(e){ console.warn('conversion mot de passe admin', e); }
+}
+
+// ── Conversion de masse, au chargement du panneau Admin ──────────────────────────────────────────
+// La conversion opportuniste ci-dessus ne convertit un mot de passe que le jour où quelqu'un le tape.
+// Celle-ci convertit tout ce qui reste, d'un coup, dès que l'admin ouvre son panneau. Elle n'a besoin
+// d'AUCUN mot de passe : une empreinte se calcule à partir de la valeur en clair déjà présente.
+// Elle ne tourne qu'une fois par session et n'écrit que s'il reste réellement quelque chose à convertir.
+let empreintesDejaMigrees = false;
+async function migrerMotsDePasseVersEmpreintes(){
+  if(empreintesDejaMigrees) return 0;
+  empreintesDejaMigrees = true;
+  try{
+    let converties = 0;
+    if(config.adminPassword && !estEmpreinte(config.adminPassword)){
+      config.adminPassword = await empreinteMotDePasse(config.adminPassword);
+      converties++;
+    }
+    const mdp = config.agentPasswords || {};
+    for(const nom of Object.keys(mdp)){
+      if(mdp[nom] && !estEmpreinte(mdp[nom])){
+        mdp[nom] = await empreinteMotDePasse(mdp[nom]);
+        converties++;
+      }
+    }
+    if(converties > 0){
+      await saveConfigSilent();
+      logAudit('Admin', 'Mots de passe rendus illisibles dans la base', `${converties} converti${converties>1?'s':''}`);
+      console.info(`[VortexNova] ${converties} mot(s) de passe converti(s) en empreinte.`);
+    }
+    return converties;
+  }catch(e){ console.warn('migration empreintes', e); return 0; }
+}
+
 async function setAgentPassword(name){
-  const current = (config.agentPasswords && config.agentPasswords[name]) || '';
-  const pw = window.prompt(`Mot de passe pour ${name} (laisser vide pour retirer la protection) :`, current);
+  // Le mot de passe actuel n'est plus proposé par défaut : il n'est plus lisible, et c'est le but.
+  const dejaProtege = !!(config.agentPasswords && config.agentPasswords[name]);
+  const pw = window.prompt(
+    `Mot de passe pour ${name}${dejaProtege ? ' (il en a déjà un — le taper à nouveau le remplace)' : ''}\n\n` +
+    `Laisser vide pour retirer la protection.\n\n` +
+    `⚠️ Pense à créer ou mettre à jour son compte dans Firebase → Authentication avec ce même mot de passe.`, '');
   if(pw === null) return;
   if(!config.agentPasswords) config.agentPasswords = {};
   if(pw.trim()===''){ delete config.agentPasswords[name]; }
-  else { config.agentPasswords[name] = pw.trim(); }
+  else { config.agentPasswords[name] = await empreinteMotDePasse(pw.trim()); }
   await saveConfigSilent();
   logAudit('Admin', `Mot de passe modifié pour ${name}`, pw.trim()==='' ? 'protection retirée' : 'mot de passe changé');
   renderAgentChips();
 }
 
+// Publie la liste des prénoms après toute modification de l'équipe, pour qu'un agent tout juste
+// ajouté puisse se connecter depuis un poste neuf sans attendre la prochaine ouverture d'Admin.
 async function addAgent(){
   const input = document.getElementById('newAgentName');
   const name = input.value.trim();
@@ -4999,6 +5249,7 @@ async function addAgent(){
     const n = await autoReparerJourneesSiEcart(moisAVerifier(), { forcer: true });
     if(n) showToast(`✅ ${name} avait déjà des contrats à son nom : ses journées ont été remises à jour automatiquement.`, 'ok', 8000);
   }catch(e){ console.warn('autoReparerJourneesSiEcart (addAgent)', e); }
+  publierListePrenoms();   // il doit apparaître tout de suite dans la liste de l'écran de connexion
 }
 // ============================================================
 // 📦 AGENTS ARCHIVÉS — ceux qui ne travaillent plus ici
@@ -5249,7 +5500,8 @@ async function saveConfig(){
   };
   const newPw = document.getElementById('cfgNewPassword').value.trim();
   if(newPw){
-    config.adminPassword = newPw;
+    // Stocké en empreinte, plus jamais en clair : un agent qui lit `config` n'y trouve rien d'exploitable.
+    config.adminPassword = await empreinteMotDePasse(newPw);
     logAudit('Admin', 'Mot de passe Admin changé', '');
   }
   await saveConfigSilent();
@@ -5311,7 +5563,12 @@ async function checkAgentPassword(name){
   if(authenticatedAgentsThisSession.has(name)) return true;
   const entered = await showPasswordModal(`Mot de passe pour ${name}`);
   if(entered === null) return false;
-  if(entered === pw){ authenticatedAgentsThisSession.add(name); return true; }
+  const verdict = await motDePasseCorrespond(entered, pw);
+  if(verdict.ok){
+    authenticatedAgentsThisSession.add(name);
+    if(verdict.aConvertir) convertirMotDePasseAgent(name, entered);   // en tâche de fond
+    return true;
+  }
   alert('Mot de passe incorrect.');
   return false;
 }
@@ -5325,7 +5582,11 @@ async function requirePasswordReentry(name){
   if(!pw) return true;
   const entered = await showPasswordModal(`Confirme que c'est bien toi — mot de passe pour ${name}`);
   if(entered === null) return false;
-  if(entered === pw) return true;
+  const verdict = await motDePasseCorrespond(entered, pw);
+  if(verdict.ok){
+    if(verdict.aConvertir) convertirMotDePasseAgent(name, entered);
+    return true;
+  }
   alert('Mot de passe incorrect.');
   return false;
 }
@@ -6003,8 +6264,13 @@ async function clearDayLogCorrection(){
   const agent = document.getElementById('corrAgent').value;
   const dateStr = document.getElementById('corrDate').value || todayStr();
   if(!agent){ alert('Choisis un agent.'); return; }
-  if(!confirm(`Effacer tout le pointage de ${agent} pour le ${dateStr} ? (les contrats/objectif ne sont pas touchés)`)) return;
-  await saveDayLog(agent, dateStr, { events: [] });
+  if(!confirm(`Effacer tout le pointage de ${agent} pour le ${dateStr} ?\n\nLes contrats, l'objectif, le statut d'absence et la pièce jointe éventuelle ne sont pas touchés.`)) return;
+  // ⚠️ BUG CORRIGÉ — cette ligne écrivait `{ events: [] }`, ce qui écrasait TOUT le document : le
+  // statut d'absence, le motif saisi par l'admin, et surtout `attachmentData` — le certificat médical
+  // encodé dans ce même document. Le message de confirmation ne parlait pourtant que du pointage.
+  // La pièce jointe était irrécupérable. On ne remet plus à zéro que les événements de pointage.
+  const logExistant = await getDayLog(agent, dateStr);
+  await saveDayLog(agent, dateStr, { ...(logExistant || {}), events: [] });
   logAudit('Admin', `Pointage effacé — ${agent} (${dateStr})`, '');
   await loadDayCorrectionForm();
 }
@@ -6536,9 +6802,14 @@ async function refreshADFStatus(){
     // Même correction côté cible : on cherchait uniquement parmi les formateurs ADF (listADFTrainers()),
     // ce qui ratait toute écoute initiée par un agent non-formateur — l'agent visé ne voyait jamais la
     // demande arriver. On scanne maintenant tout le monde.
-    for(const initiator of config.agents){
-      if(initiator === currentAgent) continue;
-      const record = await getADFRecord(initiator);
+    // ⚡ OPTIMISATION — cette boucle lisait les agents UN PAR UN, en attendant chaque réponse avant de
+    // passer au suivant, et elle tourne toutes les 16 secondes sur chaque poste ouvert. Avec 12 agents
+    // et 12 postes, ça faisait des milliers de lectures en file indienne par heure. Les lectures sont
+    // indépendantes : on les lance ensemble, puis on parcourt les résultats dans le même ordre qu'avant
+    // (donc le même initiateur est retenu qu'auparavant en cas d'écoutes multiples).
+    const autres = config.agents.filter(a => a !== currentAgent);
+    const enregistrements = await Promise.all(autres.map(async a => ({ a, record: await getADFRecord(a) })));
+    for(const { a: initiator, record } of enregistrements){
       if(record && record.agent === currentAgent && (record.status === 'pending' || record.status === 'confirmed')){
         myADFStatus = { role: 'agent', supervisor: initiator, agent: currentAgent, record };
         break;
@@ -6677,7 +6948,11 @@ async function confirmADFIdentity(name, contextLabel){
   if(pw){
     const entered = await showPasswordModal(`${contextLabel} — tape LE MOT DE PASSE DE ${name.toUpperCase()}`);
     if(entered === null) return false;
-    if(entered === pw) return true;
+    const verdict = await motDePasseCorrespond(entered, pw);
+    if(verdict.ok){
+      if(verdict.aConvertir) convertirMotDePasseAgent(name, entered);
+      return true;
+    }
     alert('Mot de passe incorrect.');
     return false;
   }
@@ -8777,7 +9052,13 @@ async function renderObjectifSnapshot(){
 
   const rowsWithAnyObj = rows.filter(r=>r.daysWithObjective > 0);
   const totalTargetRange = rowsWithAnyObj.reduce((s,r)=>s+r.totalObjective, 0);
-  const totalRealizedRange = rowsWithAnyObj.reduce((s,r)=>s+r.totalRealized, 0);
+  // ⚠️ BUG CORRIGÉ — le réalisé ne comptait que les agents ayant fixé un objectif au moins un jour,
+  // alors que le mode « jour unique » compte TOUT LE MONDE (voir le commentaire « Réalisé = TOUT LE
+  // MONDE, objectif fixé ou non » plus bas). Deux conséquences sur la carte exportée vers WhatsApp :
+  // les contrats des agents qui ne fixent jamais d'objectif disparaissaient du grand chiffre, et la
+  // mention « dont X faits par les indépendants » — elle, complète — pouvait dépasser le total
+  // affiché juste au-dessus. L'objectif, lui, reste bien la somme des seuls objectifs fixés.
+  const totalRealizedRange = rows.reduce((s,r)=>s+r.totalRealized, 0);
   const indepRealizedRange = rows.filter(r=>r.isIndep).reduce((s,r)=>s+r.totalRealized, 0);
 
   let html = `<div class="section-sub" style="margin-top:-4px; margin-bottom:10px;">Du ${dateList[0]} au ${dateList[dateList.length-1]} (${dateList.length} jour${dateList.length>1?'s':''}).</div>`;
@@ -12769,6 +13050,321 @@ async function renderDailyBriefingSection(containerId){
   container.innerHTML = await buildDailyBriefingHtml();
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 💾 SAUVEGARDE COMPLÈTE — le filet qui n'existait pas
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Jusqu'ici, TOUTES les données de l'entreprise n'existaient qu'à un seul endroit : la base
+// Firestore. Pas un export, pas une copie, rien. Une fausse manœuvre, un import qui dérape, une
+// suppression accidentelle — et l'historique de pointage, les contrats et la paie disparaissaient
+// définitivement. C'est le manque le plus grave de toute l'application, et le plus simple à combler.
+//
+// Ce module lit l'intégralité des documents et les écrit dans un fichier .json téléchargé sur le
+// poste. Ce fichier est autonome : il contient tout, et il peut être réinjecté tel quel (voir
+// restaurerSauvegardeComplete plus bas).
+//
+// ⚠️ COÛT : une sauvegarde lit chaque document une fois. C'est l'opération la plus lourde de
+// l'application — à faire une fois par jour, pas toutes les heures. Le compteur de documents est
+// affiché à la fin pour que ce coût reste visible plutôt que caché.
+const BACKUP_COLLECTIONS = ['vortexnova', 'vortexnova_backoffice'];
+const BACKUP_RAPPEL_JOURS = 7;   // au-delà, un bandeau réclame une sauvegarde
+
+function backupSetStatus(txt, couleur){
+  const el = document.getElementById('backupStatus');
+  if(el){ el.textContent = txt || ''; el.style.color = couleur || 'var(--muted)'; }
+}
+
+async function exportSauvegardeComplete(btn){
+  if(!firebaseReady || !db){
+    alert("Connexion à la base impossible — la sauvegarde ne peut pas être faite maintenant. Vérifie ta connexion Internet et réessaie.");
+    return;
+  }
+  const label0 = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Sauvegarde en cours…'; }
+  backupSetStatus('Lecture de la base…', 'var(--amber)');
+  try{
+    const donnees = {};
+    let total = 0;
+    for(const nomCollection of BACKUP_COLLECTIONS){
+      backupSetStatus(`Lecture de ${nomCollection}…`, 'var(--amber)');
+      const snap = await db.collection(nomCollection).get();
+      const bloc = {};
+      snap.forEach(doc=>{ bloc[doc.id] = doc.data(); total++; });
+      donnees[nomCollection] = bloc;
+    }
+
+    // La Realtime Database ne contient que la boîte d'attente du backoffice, mais elle peut contenir
+    // des contrats pas encore rangés au moment de la sauvegarde : on la prend aussi.
+    if(rtdb){
+      try{
+        backupSetStatus('Lecture de la boîte backoffice…', 'var(--amber)');
+        // once('value') plutôt que get() : c'est la forme utilisée partout ailleurs dans le fichier
+        // pour lire cette même boîte (lignes 22977, 23182…), donc garantie de fonctionner ici aussi.
+        const snapRt = await rtdb.ref(BACKOFFICE_RTDB_PATH).once('value');
+        donnees['_realtime_' + BACKOFFICE_RTDB_PATH] = snapRt.exists() ? snapRt.val() : null;
+      }catch(e){ console.warn('sauvegarde RTDB ignorée:', e); }
+    }
+
+    const fichier = {
+      _format: 'vortexnova-sauvegarde',
+      _version: 1,
+      _date: new Date().toISOString(),
+      _projet: (firebaseConfig && firebaseConfig.projectId) || '',
+      _nbDocuments: total,
+      donnees
+    };
+    const texte = JSON.stringify(fichier, null, 1);
+    const blob = new Blob([texte], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vortexnova-sauvegarde-${todayStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 4000);
+
+    try{ localStorage.setItem('vn_lastBackupAt', new Date().toISOString()); }catch(e){}
+    const poids = (texte.length / 1048576);
+    backupSetStatus(`✅ ${total} documents sauvegardés (${poids < 1 ? Math.round(texte.length/1024) + ' Ko' : poids.toFixed(1) + ' Mo'}) — fichier téléchargé.`, '#5cb896');
+    logAudit('Admin', 'Sauvegarde complète exportée', `${total} documents`);
+    majBandeauSauvegarde();
+  }catch(e){
+    console.error('sauvegarde:', e);
+    backupSetStatus('❌ La sauvegarde a échoué : ' + (e && e.message ? e.message : e), 'var(--red)');
+    alert("La sauvegarde a échoué. Rien n'a été modifié dans ta base — tu peux réessayer sans risque.\n\nDétail : " + (e && e.message ? e.message : e));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = label0 || '💾 Sauvegarder toutes mes données'; }
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🔎 VÉRIFIER UNE SAUVEGARDE — sans que rien ne sorte du poste
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Une sauvegarde jamais ouverte n'est pas une sauvegarde : on ne découvre qu'elle était vide ou
+// tronquée que le jour où on en a besoin, c'est-à-dire le pire jour possible. Ce contrôle lit le
+// fichier DANS LE NAVIGATEUR, avec l'outil que le navigateur fournit pour lire un fichier choisi par
+// l'utilisateur. Rien n'est envoyé nulle part : ni à Firebase, ni ailleurs. Le fichier ne quitte pas
+// le poste, et l'écran n'affiche que des comptages — jamais le contenu d'un pointage ou d'un contrat.
+const BACKUP_FAMILLES = [
+  { prefixe: 'log:',              nom: 'Pointages (arrivées, pauses, absences)', date: 1, agent: 2 },
+  { prefixe: 'prodBoard:',        nom: 'Contrats du jour',                       date: 1 },
+  { prefixe: 'billingProd:',      nom: 'Facturation et paie',                    date: 1 },
+  { prefixe: 'infr:',             nom: 'Infractions',                            date: 1, agent: 2 },
+  { prefixe: 'retract:',          nom: 'Rétractations',                          date: 1, agent: 2 },
+  { prefixe: 'desiredObj:',       nom: 'Objectifs visés par les agents',         date: 1, agent: 2 },
+  { prefixe: 'pdjDone:',          nom: 'Points du jour confirmés' },
+  { prefixe: 'pdjSeen:',          nom: 'Points du jour reçus' },
+  { prefixe: 'weeklyBriefingAck:',nom: 'Briefings hebdo confirmés' },
+  { prefixe: 'notifStatus:',      nom: 'Statut des notifications' },
+  { prefixe: 'adf:',              nom: 'Écoutes ADF' }
+];
+const BACKUP_DOCS_UNIQUES = [
+  { cle: 'config',          nom: 'Réglages, agents, salaires', vital: true },
+  { cle: 'dayRecords',      nom: 'Records du jour' },
+  { cle: 'latestAppVersion',nom: "Version de l'application" },
+  { cle: 'prodPulse',       nom: 'Signal de synchronisation' }
+];
+
+async function verifierFichierSauvegarde(input){
+  const fichier = input && input.files && input.files[0];
+  if(!fichier) return;
+  input.value = '';
+  const sortie = document.getElementById('backupVerifyResult');
+  if(sortie) sortie.innerHTML = '<div style="color:var(--muted); font-size:13px;">Lecture du fichier…</div>';
+
+  let contenu;
+  try{
+    contenu = JSON.parse(await fichier.text());
+  }catch(e){
+    if(sortie) sortie.innerHTML = `<div style="color:var(--red); font-weight:700; font-size:13.5px;">❌ Ce fichier n'est pas lisible. Ce n'est probablement pas une sauvegarde VortexNova (ou il a été tronqué).</div>`;
+    return;
+  }
+  if(!contenu || contenu._format !== 'vortexnova-sauvegarde' || !contenu.donnees){
+    if(sortie) sortie.innerHTML = `<div style="color:var(--red); font-weight:700; font-size:13.5px;">❌ Ce fichier n'est pas une sauvegarde VortexNova.</div>`;
+    return;
+  }
+
+  // ── Comptage, uniquement sur les NOMS des documents. Le contenu n'est jamais parcouru. ──
+  const principal = contenu.donnees['vortexnova'] || {};
+  const cles = Object.keys(principal);
+  const parFamille = {};
+  const agents = new Set();
+  let dateMin = null, dateMax = null;
+  const orphelines = [];
+
+  const estJour = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+  cles.forEach(cle=>{
+    const fam = BACKUP_FAMILLES.find(f => cle.startsWith(f.prefixe));
+    if(!fam){
+      if(!BACKUP_DOCS_UNIQUES.some(d => d.cle === cle)) orphelines.push(cle);
+      return;
+    }
+    parFamille[fam.prefixe] = (parFamille[fam.prefixe] || 0) + 1;
+    const morceaux = cle.split(':');
+    if(fam.date && estJour(morceaux[fam.date] || '')){
+      const d = morceaux[fam.date];
+      if(!dateMin || d < dateMin) dateMin = d;
+      if(!dateMax || d > dateMax) dateMax = d;
+    }
+    if(fam.agent && morceaux[fam.agent]) agents.add(morceaux.slice(fam.agent).join(':'));
+  });
+
+  const backofficeN = Object.keys(contenu.donnees['vortexnova_backoffice'] || {}).length;
+  const totalDocs = cles.length + backofficeN;
+  const dateSauv = contenu._date ? new Date(contenu._date).toLocaleString('fr-FR') : 'inconnue';
+  const poids = (fichier.size / 1048576).toFixed(2);
+  const fmtD = d => d ? d.split('-').reverse().join('/') : '—';
+
+  // ── Verdict : les trois familles sans lesquelles une sauvegarde ne sert à rien ──
+  const manques = [];
+  if(!principal['config']) manques.push('les réglages (config) — agents, salaires, objectifs');
+  if(!(parFamille['log:'] > 0)) manques.push('les pointages');
+  if(!(parFamille['prodBoard:'] > 0)) manques.push('les contrats du jour');
+  const complet = manques.length === 0;
+
+  const ligne = (nom, valeur, couleur)=> `<div style="display:flex; justify-content:space-between; gap:14px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px;"><span style="color:var(--muted);">${nom}</span><b style="color:${couleur || 'var(--text)'}; white-space:nowrap;">${valeur}</b></div>`;
+
+  let html = `<div style="margin-top:12px; padding:16px 18px; border-radius:12px; background:var(--panel2); border:1px solid ${complet ? 'rgba(92,184,150,0.5)' : 'rgba(229,72,77,0.5)'};">
+    <div style="font-size:15px; font-weight:900; color:${complet ? '#5cb896' : '#e5484d'}; margin-bottom:4px;">
+      ${complet ? '✅ Sauvegarde complète et exploitable' : '⚠️ Sauvegarde incomplète'}
+    </div>
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:12px;">Faite le ${dateSauv} · ${poids} Mo · ${totalDocs} documents</div>`;
+
+  if(!complet){
+    html += `<div style="margin-bottom:12px; padding:10px 12px; border-radius:9px; background:rgba(229,72,77,0.12); font-size:13px; color:#e5484d; font-weight:600;">Il manque : ${manques.join(' · ')}. Refais une sauvegarde.</div>`;
+  }
+
+  html += `<div style="font-weight:800; font-size:12px; letter-spacing:.4px; color:var(--muted); text-transform:uppercase; margin:4px 0 6px;">Ce que le fichier contient</div>`;
+  BACKUP_DOCS_UNIQUES.forEach(d=>{
+    const present = !!principal[d.cle];
+    html += ligne(d.nom, present ? '✅ présent' : (d.vital ? '❌ ABSENT' : '—'), present ? '#5cb896' : (d.vital ? '#e5484d' : 'var(--muted)'));
+  });
+  BACKUP_FAMILLES.forEach(f=>{
+    const n = parFamille[f.prefixe] || 0;
+    if(n === 0 && f.prefixe !== 'log:' && f.prefixe !== 'prodBoard:') return;
+    html += ligne(f.nom, n > 0 ? `${n.toLocaleString('fr-FR')} document${n>1?'s':''}` : '❌ aucun', n > 0 ? '#5cb896' : '#e5484d');
+  });
+  html += ligne('Contrats du backoffice en attente', backofficeN > 0 ? `${backofficeN}` : 'aucun (normal)', 'var(--muted)');
+
+  html += `<div style="font-weight:800; font-size:12px; letter-spacing:.4px; color:var(--muted); text-transform:uppercase; margin:14px 0 6px;">Couverture</div>`;
+  html += ligne('Période couverte', (dateMin && dateMax) ? `du ${fmtD(dateMin)} au ${fmtD(dateMax)}` : '—');
+  html += ligne('Agents présents dans le fichier', agents.size > 0 ? `${agents.size}` : '—');
+  if(agents.size > 0){
+    html += `<div style="font-size:12.5px; color:var(--muted); padding:8px 0 0; line-height:1.6;">${[...agents].sort().map(a=>escapeHtml(a)).join(' · ')}</div>`;
+  }
+  if(orphelines.length){
+    html += `<div style="font-size:12px; color:var(--muted); margin-top:10px;">+ ${orphelines.length} autre${orphelines.length>1?'s':''} document${orphelines.length>1?'s':''} (assistance, historiques, divers) — également sauvegardé${orphelines.length>1?'s':''}.</div>`;
+  }
+  html += `<div style="font-size:11.5px; color:var(--muted); margin-top:14px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.07);">🔒 Ce contrôle s'est fait entièrement dans ce navigateur. Le fichier n'a été envoyé nulle part, et seul le nom des documents a été lu — jamais leur contenu.</div>`;
+  html += `</div>`;
+
+  if(sortie) sortie.innerHTML = html;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// RESTAURATION — volontairement bardée de garde-fous
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// Une sauvegarde qu'on ne sait pas réinjecter ne rassure personne. Mais réécrire la base est
+// l'opération la plus destructrice de l'application : deux confirmations, et surtout on N'EFFACE
+// JAMAIS. On réécrit les documents présents dans le fichier ; ceux créés depuis la sauvegarde
+// restent en place. Restaurer ne peut donc pas faire disparaître de données récentes par surprise.
+async function restaurerSauvegardeComplete(input){
+  const fichier = input && input.files && input.files[0];
+  if(!fichier) return;
+  input.value = '';
+  if(!firebaseReady || !db){ alert("Connexion à la base impossible — restauration annulée."); return; }
+  let contenu;
+  try{
+    contenu = JSON.parse(await fichier.text());
+  }catch(e){ alert("Ce fichier n'est pas une sauvegarde lisible."); return; }
+  if(!contenu || contenu._format !== 'vortexnova-sauvegarde' || !contenu.donnees){
+    alert("Ce fichier n'est pas une sauvegarde VortexNova."); return;
+  }
+  const dateSauv = contenu._date ? new Date(contenu._date).toLocaleString('fr-FR') : 'date inconnue';
+  const nb = contenu._nbDocuments || 0;
+  if(!confirm(`Restaurer la sauvegarde du ${dateSauv} ?\n\n${nb} documents vont être RÉÉCRITS par-dessus les données actuelles.\n\nCe qui a été créé depuis cette sauvegarde n'est PAS effacé, mais tout ce qui porte le même nom sera remplacé par la version d'alors.`)) return;
+  if(!confirm(`Dernière confirmation.\n\nLes salaires, pointages et contrats vont revenir à leur état du ${dateSauv}.\n\nTu confirmes ?`)) return;
+
+  backupSetStatus('Restauration en cours…', 'var(--amber)');
+  let ecrits = 0, echecs = 0;
+  try{
+    for(const nomCollection of BACKUP_COLLECTIONS){
+      const bloc = contenu.donnees[nomCollection];
+      if(!bloc) continue;
+      const cles = Object.keys(bloc);
+      // Par lots de 400 : Firestore refuse les lots de plus de 500 opérations.
+      for(let i = 0; i < cles.length; i += 400){
+        const lot = db.batch();
+        cles.slice(i, i + 400).forEach(cle=>{
+          lot.set(db.collection(nomCollection).doc(cle), bloc[cle]);
+        });
+        try{ await lot.commit(); ecrits += Math.min(400, cles.length - i); }
+        catch(e){ echecs++; console.error('lot de restauration échoué:', e); }
+      }
+      backupSetStatus(`Restauration : ${ecrits} documents réécrits…`, 'var(--amber)');
+    }
+    clearRenderCaches();
+    backupSetStatus(`✅ ${ecrits} documents restaurés${echecs ? ` (${echecs} lot${echecs>1?'s':''} en échec)` : ''}. Recharge la page.`, '#5cb896');
+    logAudit('Admin', 'Sauvegarde restaurée', `${ecrits} documents, sauvegarde du ${dateSauv}`);
+    alert(`Restauration terminée : ${ecrits} documents.\n\nRecharge la page pour voir les données restaurées.`);
+  }catch(e){
+    console.error('restauration:', e);
+    backupSetStatus('❌ Restauration interrompue : ' + (e && e.message ? e.message : e), 'var(--red)');
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// Rappel : une sauvegarde qu'on oublie de faire ne sert à rien.
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+function derniereSauvegardeInfo(){
+  let iso = null;
+  try{ iso = localStorage.getItem('vn_lastBackupAt'); }catch(e){}
+  if(!iso) return { jamais: true, jours: null, texte: 'Aucune sauvegarde faite depuis ce poste.' };
+  const d = new Date(iso);
+  const jours = Math.floor((Date.now() - d.getTime()) / 86400000);
+  return {
+    jamais: false, jours,
+    texte: `Dernière sauvegarde depuis ce poste : ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}` + (jours >= 1 ? ` (il y a ${jours} jour${jours>1?'s':''})` : '')
+  };
+}
+// Affiche qui est connecté sur ce poste, et signale clairement le mode transitoire — c'est ce qui
+// permet à l'admin de repérer un poste qui n'est pas encore passé sur un vrai compte.
+function majEtatConnexion(){
+  const el = document.getElementById('authEtatPoste');
+  if(!el) return;
+  if(authModeAnonyme){
+    el.innerHTML = '<b style="color:var(--red);">mode transitoire (aucun compte)</b> — ce poste passera par le compte dès la prochaine connexion';
+  } else if(authPrenomConnecte){
+    el.innerHTML = `connecté en tant que <b style="color:#5cb896;">${escapeHtml(authPrenomConnecte)}</b>`;
+  } else if(authUtilisateur){
+    el.innerHTML = `connecté (<b style="color:#5cb896;">${escapeHtml(String(authUtilisateur.email || '').split('@')[0])}</b>)`;
+  } else {
+    el.textContent = 'non connecté';
+  }
+}
+
+function majBandeauSauvegarde(){
+  majEtatConnexion();
+  const banner = document.getElementById('backupReminderBanner');
+  const infoEl = document.getElementById('backupLastInfo');
+  const info = derniereSauvegardeInfo();
+  if(infoEl){
+    infoEl.textContent = info.texte;
+    infoEl.style.color = (info.jamais || info.jours >= BACKUP_RAPPEL_JOURS) ? 'var(--red)' : 'var(--muted)';
+  }
+  if(!banner) return;
+  const enRetard = info.jamais || info.jours >= BACKUP_RAPPEL_JOURS;
+  banner.style.display = enRetard ? 'flex' : 'none';
+  if(enRetard){
+    const txt = document.getElementById('backupReminderText');
+    if(txt) txt.textContent = info.jamais
+      ? "Aucune sauvegarde n'a jamais été faite depuis ce poste. Tes données n'existent qu'à un seul endroit."
+      : `Dernière sauvegarde il y a ${info.jours} jours. Tes données n'existent qu'à un seul endroit.`;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // 🏆 LES RECORDS DE LA JOURNÉE — la félicitation qui arrive le jour même
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -14885,7 +15481,13 @@ async function monthlyObjectifStatus(agent, year, month, realizedOverride){
 }
 
 async function monthlyDeductions(agent, year, month, dateRangeOverride){
-  const pay = getAgentPay(agent);
+  // ⚠️ BUG CORRIGÉ — SALAIRE NÉGATIF. getAgentPay(agent) sans mois renvoie la rémunération BRUTE :
+  // ni le prorata d'arrivée en cours de mois, ni la mise à zéro « découverte » (où baseSalary,
+  // primeFixeMensuelle, primeAssiduite et perContract passent tous à 0). Les retenues étaient donc
+  // calculées sur un fixe que l'agent ne touche pas : un agent en découverte avec un seul retard
+  // affichait 0 − 143 = −143 DH. Même effet, plus discret, pour une arrivée en cours de mois : la
+  // retenue n'était pas proratisée alors que le salaire l'était.
+  const pay = getAgentPay(agent, year, month);
   const isIndep = isIndependant(agent);
   const daysMonth = workingDaysInMonth(year, month);
   const dailyFixedQuote = (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth;
@@ -14929,6 +15531,17 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   if(agentEndDate) dateStrs = dateStrs.filter(ds => ds < agentEndDate);
   // Parti puis revenu : les jours entre les deux ne sont ni des absences ni des retards.
   dateStrs = dateStrs.filter(ds => !estHorsContrat(agent, ds));
+
+  // ⚠️ BUG CORRIGÉ — SALAIRE NÉGATIF EN DÉCOUVERTE.
+  // Un agent en découverte est payé au contrat : ni fixe, ni prime fixe, ni prime d'assiduité (voir
+  // getAgentPay, qui les met tous à 0 pour ces mois-là). Or les retenues, elles, continuaient d'être
+  // calculées sur le fixe théorique de sa fiche. Un seul retard de 15 minutes suffisait donc à
+  // afficher un salaire NÉGATIF pour quelqu'un censé toucher « 0 DH partout » : brut 0 − retenue 143
+  // = −143 DH. On écarte les jours de découverte du calcul des retenues — il n'y a rien à retenir sur
+  // un salaire qui n'existe pas. Les jours d'APRÈS la découverte sont retenus normalement.
+  // (La discipline n'est pas concernée : retards et absences restent comptés pour la prime
+  // d'assiduité, calculée ailleurs, dans monthlyStatsCompute — d'où le filtre appliqué ICI seulement.)
+  dateStrs = dateStrs.filter(ds => !estEnDecouverteLe(agent, ds));
 
   // (La mise en service du pointage est déjà prise en compte : disciplineFrom() ci-dessus retient la
   // plus tardive entre l'arrivée de l'agent et la date de mise en service. Un second filtrage ici
@@ -15392,7 +16005,16 @@ async function getProdBoard(dateStr){
     // l'appelant venait la chercher exprès juste avant un saveProdBoard, ce qui rouvrait exactement le
     // bug déjà corrigé une première fois (import/correction qui écrase un objectif tout juste
     // enregistré) — juste une couche plus bas.
-    const res = await storageGet(key, { fresh: true });
+    // ⚡ OPTIMISATION — `fresh: true` était appliqué à TOUTES les journées, y compris celles d'il y a
+    // deux ans. Or une journée passée ne bouge plus : forcer une lecture réseau dessus annulait le
+    // mémo de 3 s pour rien, et c'est ce qui rendait getAllTimeRecords si lourd (24 mois × ~30 jours,
+    // relus en entier à chaque ouverture de Cash).
+    // La protection d'origine reste entière là où elle sert : sur la journée EN COURS, la seule qu'on
+    // relise juste avant de l'écrire. Et de toute façon, toutes les écritures passent désormais par
+    // updateProdBoardTx, qui relit le document DANS la transaction (tx.get) — la fraîcheur de cette
+    // lecture-ci n'est plus le garde-fou, c'est la transaction qui l'est.
+    const journeePassee = dateStr < todayStr();
+    const res = await storageGet(key, journeePassee ? undefined : { fresh: true });
     if(res && res.value) return JSON.parse(res.value);
   }catch(e){}
   return { agents: {}, updatedAt: null };
@@ -16565,6 +17187,9 @@ function onCashSimMonthlyInput(){
 async function contractsUnderAllSupervisors(year, month){
   const totals = await Promise.all(config.agents.map(async agent=>{
     if(isSupervisor(agent)) return 0;
+    // Même correction que dans supervisorBonusForDates : les indépendants ont leur propre commission,
+    // ils ne doivent pas alimenter en plus le pool de la prime d'équipe.
+    if(isIndependant(agent)) return 0;
     return await monthlyRealizedContracts(agent, year, month);
   }));
   return totals.reduce((a,b)=>a+b, 0);
@@ -16651,6 +17276,13 @@ async function supervisorBonusForDates(dateStrs, retirerRetractations){
     let dayPool = 0;
     config.agents.forEach(agent=>{
       if(isSupervisor(agent)) return;
+      // ⚠️ BUG CORRIGÉ — DOUBLE PAIEMENT. Les contrats des indépendants entraient dans ce pool ET
+      // étaient payés une seconde fois par indepSupervisorCommissionForMonth, la commission dédiée
+      // réglée agent par agent dans Production. Le superviseur touchait donc son taux d'équipe ET sa
+      // commission indé sur chaque contrat du même agent, tous les mois, sans que rien ne le signale.
+      // Le commentaire d'origine de cette prime disait pourtant déjà qu'elle « porte sur les agents de
+      // base » : c'était bien un oubli, pas un choix.
+      if(isIndependant(agent)) return;
       dayPool += getAgentProd(board, agent).realized || 0;
     });
     if(dayPool <= 0) return null;
@@ -16793,19 +17425,28 @@ async function getAllTimeRecords(now){
   const personalBest = {};
   config.agents.forEach(a=>{ personalBest[a] = { value: 0, monthVal: null }; });
   let allAgentsBest = { value: 0, monthVal: null, agent: null };
-  for(let i=1; i<=24; i++){
+  // ⚡ OPTIMISATION — les 24 mois étaient parcourus dans une boucle `for` avec `await` : chaque mois
+  // attendait la fin du précédent, soit 24 allers-retours réseau en file indienne avant que Cash ne
+  // s'affiche. Les mois sont indépendants les uns des autres : on les lance tous en même temps.
+  // Le calcul des maximums est fait APRÈS, dans l'ordre des mois, pour que le résultat reste
+  // rigoureusement identique à l'ancien (à égalité de score, c'est le mois le plus récent qui gagne).
+  const parMois = await Promise.all(Array.from({ length: 24 }, (_, k)=>{
+    const i = k + 1;
     const dt = new Date(now.getFullYear(), now.getMonth()-i, 1);
     const y = dt.getFullYear(), m = dt.getMonth()+1;
     const mv = billingMonthVal(y, m);
+    return Promise.all(config.agents.map(async a=>({ a, v: await monthlyRealizedContracts(a, y, m) })))
+      .then(perAgent => ({ mv, perAgent }));
+  }));
+  parMois.forEach(({ mv, perAgent })=>{
     let teamTotal = 0;
-    const perAgent = await Promise.all(config.agents.map(async a=>({ a, v: await monthlyRealizedContracts(a, y, m) })));
     perAgent.forEach(({a, v})=>{
       teamTotal += v;
       if(v > personalBest[a].value){ personalBest[a] = { value: v, monthVal: mv }; }
       if(v > allAgentsBest.value){ allAgentsBest = { value: v, monthVal: mv, agent: a }; }
     });
     if(teamTotal > teamBest.value) teamBest = { value: teamTotal, monthVal: mv };
-  }
+  });
   allTimeRecordsCache = { teamBest, personalBest, allAgentsBest };
   allTimeRecordsCacheDay = today;
   return allTimeRecordsCache;
@@ -16927,10 +17568,17 @@ function renderTickerText(){
   if(arenaEl) arenaEl.textContent = text;
 }
 
+// ⚡ FUITE CORRIGÉE — cet intervalle n'était arrêté nulle part dans tout le fichier. Une fois Cash ou
+// l'Arena ouvert une seule fois, il continuait de tourner toutes les 42 secondes pour le reste de la
+// session, y compris sur un écran Admin où les deux conteneurs n'existent plus. Il est maintenant
+// arrêté en même temps que l'auto-refresh, comme tous les autres minuteurs de l'application.
 let tickerResampleInterval = null;
 function ensureTickerResampleLoop(){
   if(tickerResampleInterval) return;
   tickerResampleInterval = setInterval(renderTickerText, 42000);
+}
+function stopTickerResampleLoop(){
+  if(tickerResampleInterval){ clearInterval(tickerResampleInterval); tickerResampleInterval = null; }
 }
 
 async function renderCash(){
@@ -17044,7 +17692,11 @@ async function renderCash(){
   renderRetardsAbsencesPanel('cashRetardsAbsencesPanel', agent, now.getFullYear(), now.getMonth()+1);
 
   // Ticker — bandeau partagé Cash + Arena, voir refreshTickerPool()/renderTickerText() plus bas.
-  await refreshTickerPool(now);
+  // ⚡ OPTIMISATION — Cash ATTENDAIT tout le calcul du bandeau défilant (dont les records sur 24 mois)
+  // avant d'afficher le moindre chiffre. L'Arena, elle, ne l'attendait déjà pas (voir plus haut :
+  // `refreshTickerPool(now).then(renderTickerText)`). On aligne : la page s'affiche tout de suite, le
+  // bandeau se remplit quand il est prêt. Le `.catch` évite qu'une lecture ratée passe inaperçue.
+  refreshTickerPool(now).then(renderTickerText).catch(e=> console.warn('ticker', e));
   renderTickerText();
   ensureTickerResampleLoop();
 
@@ -17504,8 +18156,42 @@ async function onSupervisionAgentChange(){
   }
 }
 
+// ⚡ OPTIMISATION — COALESCENCE DES RENDUS DE SUPERVISION.
+// Cet écran est le plus lourd de l'application : pour chaque agent il lit le mois, les objectifs, le
+// pointage, les infractions, puis recalcule la prime de supervision (31 tableaux du jour × nombre de
+// superviseurs), la conformité, les tendances et les projections. Et il était déclenché depuis plus
+// de dix endroits : l'auto-refresh de 30 s, le listener du tableau du jour, le signal prodPulse, et
+// chaque enregistrement fait ailleurs dans l'app. Trois déclencheurs dans la même seconde
+// = trois rendus complets, donc trois fois les lectures.
+//
+// Le jeton supervisionRenderToken existait déjà, mais il n'est testé qu'APRÈS les lectures : il
+// empêchait un affichage périmé, pas la dépense. Ici on regroupe en amont : les déclenchements
+// rapprochés fondent en un seul rendu, 350 ms plus tard.
+//
+// ⚠️ Point délicat traité : plusieurs appelants font `await renderSupervision()` — notamment
+// l'auto-refresh, qui laisserait `autoRefreshBusy` bloqué à vrai pour toujours si sa promesse ne se
+// résolvait jamais. Toutes les promesses en attente sont donc mémorisées et résolues ensemble quand
+// le rendu regroupé se termine : aucun appelant ne reste suspendu.
+let _supervisionTimer = null;
+let _supervisionEnAttente = [];
+const SUPERVISION_COALESCENCE_MS = 350;
+function renderSupervision(){
+  return new Promise(resolve=>{
+    _supervisionEnAttente.push(resolve);
+    if(_supervisionTimer) clearTimeout(_supervisionTimer);
+    _supervisionTimer = setTimeout(async ()=>{
+      _supervisionTimer = null;
+      const aResoudre = _supervisionEnAttente;
+      _supervisionEnAttente = [];
+      try{ await renderSupervisionReel(); }
+      catch(e){ console.error('renderSupervision', e); }
+      finally{ aResoudre.forEach(f=>{ try{ f(); }catch(e){} }); }
+    }, SUPERVISION_COALESCENCE_MS);
+  });
+}
+
 let supervisionRenderToken = 0;
-async function renderSupervision(){
+async function renderSupervisionReel(){
   const dashboard = document.getElementById('supervisionDashboard');
   const detail = document.getElementById('supervisionDetail');
   const salary = document.getElementById('supervisionSalary');
@@ -22863,6 +23549,199 @@ async function manualSyncBackoffice(){
 // Le contrat est DÉPLACÉ : retiré du mois où sa date erronée l'avait envoyé, puis rangé dans le mois
 // courant avec la bonne date. Les deux mois concernés sont resynchronisés, donc les compteurs du jour
 // des agents se corrigent immédiatement — chez eux aussi, via le signal envoyé à tous les postes.
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🧭 CONTRATS ÉGARÉS — retrouver ceux qui sont rangés à une date impossible
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// CAS RÉEL QUI A MOTIVÉ CE PANNEAU. Le 17/08/2026, un contrat arrive du backoffice avec « FAIT LE
+// 17/08/1967 » (faute de frappe, ou date de naissance recopiée dans la case du contrat). L'import
+// détecte l'anomalie, écrit l'avertissement « date du contrat invraisemblable — vérifie avant de
+// payer »… et range quand même le contrat en 1967. L'agent concerné a donc un contrat de moins dans
+// son mois, dans sa paie et dans les classements, et il l'ignore.
+//
+// POURQUOI ÇA RESTAIT INVISIBLE. L'alerte n'existait QUE dans le panneau du dernier relevé
+// backoffice, et le bouton de correction avec elle. Au relevé suivant, tout disparaissait de
+// l'écran. Rien ne relisait la base pour retrouver un contrat égaré la semaine d'avant : raté sur
+// le moment = perdu de vue pour toujours.
+//
+// Ce panneau balaie TOUS les mois de facturation existants, à tout moment, et propose une date de
+// remplacement calculée (même jour, même mois, année plausible) plutôt qu'un « ramener à
+// aujourd'hui » qui déplacerait le contrat sur la paie du mois en cours.
+let contratsEgaresCache = null;
+let contratsEgaresCompteurs = { moisLus: 0, contratsLus: 0 };
+
+// Une date est « égarée » si son année est nettement dans le passé, ou si elle est dans le futur.
+// Le seuil d'un an en arrière est volontairement large : un contrat de l'an dernier réimporté est
+// normal, un contrat de 1967 ne l'est pas.
+function dateContratEgaree(dateStr){
+  if(!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { egare: true, motif: 'date illisible' };
+  const annee = Number(dateStr.slice(0, 4));
+  const anneeCourante = Number(todayStr().slice(0, 4));
+  if(annee < anneeCourante - 1) return { egare: true, motif: `année ${annee}` };
+  if(annee > anneeCourante + 1) return { egare: true, motif: `année ${annee}` };
+  const demain = new Date(); demain.setDate(demain.getDate() + 7);
+  if(dateStr > todayStr(demain)) return { egare: true, motif: 'date dans le futur' };
+  return { egare: false };
+}
+
+// Date de remplacement proposée : on garde le JOUR et le MOIS (ils sont presque toujours bons — seule
+// l'année est fautive) et on prend l'année de l'import réel du fichier. Si ça tombe dans le futur, on
+// recule d'un an. C'est ce qui remet le contrat sur SON mois, pas sur le mois en cours.
+function dateCorrigeeProposee(dateStr, importedAt){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+  if(!m) return todayStr();
+  let annee = Number(todayStr().slice(0, 4));
+  if(importedAt){
+    const a = Number(String(importedAt).slice(0, 4));
+    if(a >= 2000 && a <= annee + 1) annee = a;
+  }
+  let propose = `${annee}-${m[2]}-${m[3]}`;
+  if(propose > todayStr()) propose = `${annee - 1}-${m[2]}-${m[3]}`;
+  return propose;
+}
+
+async function scannerContratsEgares(btn){
+  const el = document.getElementById('contratsEgaresPanel');
+  if(!el) return;
+  if(!firebaseReady || !db){ el.innerHTML = '<div class="empty">Connexion à la base impossible.</div>'; return; }
+  const label0 = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Analyse…'; }
+  el.innerHTML = '<div class="empty">Analyse de tous les mois de facturation…</div>';
+  try{
+    // Requête par préfixe d'identifiant : on ne lit QUE les documents billingProd:*, pas toute la base.
+    const snap = await db.collection('vortexnova')
+      .orderBy(firebase.firestore.FieldPath.documentId())
+      .startAt('billingProd:')
+      .endAt('billingProd:\uf8ff')
+      .get();
+
+    const egares = [];
+    let moisLus = 0, contratsLus = 0;
+    snap.forEach(doc=>{
+      moisLus++;
+      let data = null;
+      try{ data = JSON.parse(doc.data().value); }catch(e){ return; }
+      const monthVal = data.month || doc.id.replace('billingProd:', '');
+      (data.rows || []).forEach(r=>{
+        contratsLus++;
+        const verdict = dateContratEgaree(r.date);
+        if(!verdict.egare) return;
+        egares.push({
+          monthVal, date: r.date || '', motif: verdict.motif,
+          num: r.numContrat || '', nom: r.nom || '', agent: r.agent || '',
+          rid: r._rid || '',
+          propose: dateCorrigeeProposee(r.date, data.importedAt),
+          retracted: !!r.retracted
+        });
+      });
+    });
+    contratsEgaresCache = egares;
+    contratsEgaresCompteurs = { moisLus, contratsLus };
+    afficherContratsEgares();
+  }catch(e){
+    console.error('scannerContratsEgares', e);
+    el.innerHTML = `<div style="padding:12px 14px; border-radius:10px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); color:var(--red); font-weight:700;">L'analyse a échoué : ${escapeHtml(e && e.message ? e.message : String(e))}</div>`;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = label0 || '🔎 Chercher les contrats égarés'; }
+  }
+}
+
+function afficherContratsEgares(){
+  const { moisLus, contratsLus } = contratsEgaresCompteurs;
+  const el = document.getElementById('contratsEgaresPanel');
+  if(!el) return;
+  const egares = contratsEgaresCache || [];
+  if(!egares.length){
+    el.innerHTML = `<div style="padding:13px 16px; border-radius:10px; background:rgba(52,183,116,0.1); border:1px solid rgba(52,183,116,0.4); color:var(--green); font-weight:700;">✅ Aucun contrat égaré.<div style="font-weight:500; color:var(--muted); font-size:12.5px; margin-top:5px;">${contratsLus} contrats vérifiés sur ${moisLus} mois. Toutes les dates sont plausibles.</div></div>`;
+    return;
+  }
+  el.innerHTML = `<div style="padding:13px 16px; border-radius:10px; background:rgba(229,72,77,0.12); border:1px solid rgba(229,72,77,0.45);">
+      <div style="font-weight:800; color:var(--red); font-size:14.5px;">🚨 ${egares.length} contrat${egares.length>1?'s':''} rangé${egares.length>1?'s':''} à une date impossible</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.6;">
+        ${egares.length>1?'Ils comptent':'Il compte'} pour l'agent, mais dans un mois où personne ne regarde : <b>pas dans sa paie, pas dans les classements, pas dans ton chiffre d'affaires</b>.
+        La date proposée garde le jour et le mois d'origine (presque toujours justes) et corrige l'année — le contrat retourne ainsi sur SON mois, pas sur le mois en cours.
+      </div>
+      <div style="overflow-x:auto; margin-top:11px;"><table class="salary-table"><thead><tr><th>Contrat</th><th>Client</th><th>Agent</th><th>Date enregistrée</th><th>Problème</th><th>Date corrigée</th><th></th></tr></thead><tbody>
+      ${egares.map((s, i)=>`<tr>
+        <td><b>${escapeHtml(s.num || '—')}</b></td>
+        <td>${escapeHtml(s.nom || '—')}</td>
+        <td>${escapeHtml(s.agent || '—')}</td>
+        <td style="color:var(--red);"><b>${s.date ? s.date.split('-').reverse().join('/') : '—'}</b></td>
+        <td style="font-size:12px; color:var(--muted);">${escapeHtml(s.motif)}${s.retracted ? ' · <b>rétracté</b>' : ''}</td>
+        <td><input type="date" id="egareDate_${i}" value="${escapeHtml(s.propose)}" style="padding:5px 8px; border-radius:6px; border:1px solid var(--border); background:var(--panel2); color:var(--text); font-size:12px;"></td>
+        <td><button onclick="corrigerContratEgare(${i}, this)" style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:transparent; color:var(--green); font-weight:700; font-size:11.5px; cursor:pointer; white-space:nowrap;">→ Corriger</button></td>
+      </tr>`).join('')}
+      </tbody></table></div>
+      <div style="font-size:12px; color:var(--muted); margin-top:9px;">${contratsLus} contrats vérifiés sur ${moisLus} mois de facturation.</div>
+    </div>`;
+}
+
+async function corrigerContratEgare(index, btn){
+  const s = (contratsEgaresCache || [])[index];
+  if(!s) return;
+  const champ = document.getElementById(`egareDate_${index}`);
+  const nouvelle = champ ? champ.value : '';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(nouvelle)){ alert('Choisis une date valide.'); return; }
+  const verdict = dateContratEgaree(nouvelle);
+  if(verdict.egare && !confirm(`La date choisie (${nouvelle.split('-').reverse().join('/')}) est elle aussi inhabituelle : ${verdict.motif}.\n\nContinuer quand même ?`)) return;
+  const moisSrc = String(s.date).slice(0, 7);
+  const moisDst = nouvelle.slice(0, 7);
+  if(!confirm(`Déplacer le contrat n° ${s.num || '(sans numéro)'} de ${s.agent || '?'}\n\ndu ${s.date.split('-').reverse().join('/')}\nau ${nouvelle.split('-').reverse().join('/')} ?\n\nIl comptera alors dans la production et la paie de ${billingMonthLabel(moisDst)}.`)) return;
+
+  const label0 = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳…'; }
+  try{
+    const src = await getBillingProd(moisSrc);
+    const idx = (src.rows || []).findIndex(x =>
+      (s.rid && x._rid === s.rid) ||
+      (String(x.numContrat || '') === String(s.num) && x.date === s.date));
+    if(idx < 0){
+      showToast("⚠️ Contrat introuvable — il a peut-être déjà été corrigé. Relance l'analyse.", 'warn', 6000);
+      return;
+    }
+    const row = src.rows[idx];
+    src.rows.splice(idx, 1);
+    row.date = nouvelle;
+    row.datePropre = nouvelle.split('-').reverse().join('/');
+    row._reviewed = true;
+    delete row._warnings;
+    if(moisSrc === moisDst){
+      src.rows.push(row);
+      await billingSave(billingProdKey(moisSrc), src);
+    } else {
+      const dst = await getBillingProd(moisDst);
+      dst.rows = (dst.rows || []).concat([row]);
+      dst.month = moisDst;
+      await billingSave(billingProdKey(moisSrc), src);
+      await billingSave(billingProdKey(moisDst), dst);
+    }
+    billingContractIndexCache = null;
+    billingInvalidate();
+    // Les deux journées changent de compte : l'ancienne perd le contrat, la nouvelle le gagne.
+    await syncProdBoardRealizedForDates([s.date, nouvelle]);
+
+    // Ménage : si l'ancienne journée ne contenait QUE ce contrat égaré, son tableau devient un
+    // document vide qui continuerait de fausser la période couverte des sauvegardes. On le supprime.
+    if(moisSrc !== moisDst){
+      try{
+        const board = await getProdBoard(s.date);
+        const vide = !board || !board.agents || Object.values(board.agents).every(a => !(a && ((a.realized||0) > 0 || (a.objective||0) > 0)));
+        if(vide) await storageDelete(prodBoardKey(s.date));
+      }catch(e){ console.warn('ménage journée vide ignoré:', e); }
+    }
+    clearRenderCaches();
+    logAudit('Admin', 'Contrat égaré corrigé', `n° ${s.num} (${s.agent}) : ${s.date} → ${nouvelle}`);
+    showToast(`✅ Contrat n° ${s.num} déplacé au ${nouvelle.split('-').reverse().join('/')}. ${s.agent} le retrouve dans ${billingMonthLabel(moisDst)}.`, 'ok', 7000);
+    contratsEgaresCache.splice(index, 1);
+    afficherContratsEgares();
+  }catch(e){
+    console.error('corrigerContratEgare', e);
+    showToast("⚠️ Correction impossible — vérifie ta connexion et réessaie.", 'warn', 6000);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = label0 || '→ Corriger'; }
+  }
+}
+
 async function corrigerDateContratVersAujourdhui(numContrat, ancienneDate, btn){
   const T = todayStr();
   const moisSrc = String(ancienneDate).slice(0, 7);
@@ -23086,7 +23965,7 @@ async function renderBackofficeInboxPanel(lastResult){
       <div style="font-size:12.5px; color:var(--muted); line-height:2.1;">${r.badDate.slice(0,15).map(x=>{
         const label = `${x.numContrat || x.nom || x.id}${x.nom && x.numContrat ? ' — '+x.nom : ''}${x.agent ? ' ('+x.agent+')' : ''} — date reçue « ${x.rawDate} »`;
         return `<span><b>${escapeHtml(x.numContrat || x.nom || x.id)}</b>${x.nom && x.numContrat ? ` — ${escapeHtml(x.nom)}` : ''}${x.agent ? ` (${escapeHtml(x.agent)})` : ''} — date reçue : « ${escapeHtml(x.rawDate)} »
-          <button onclick="discardBackofficeInboxItem('${x.key.replace(/'/g,"\\'")}', '${x.source}', '${label.replace(/'/g,"\\'").replace(/\n/g,' ')}')" title="Retirer définitivement — à utiliser seulement si ce contrat est déjà rangé autrement (ex: import CSV corrigé)." style="margin-left:8px; padding:2px 8px; border-radius:6px; border:1px solid var(--red); background:transparent; color:var(--red); font-size:11px; cursor:pointer;">🗑️ Retirer</button></span>`;
+          <button onclick="discardBackofficeInboxItem(decodeURIComponent('${jsArg(x.key)}'), decodeURIComponent('${jsArg(x.source)}'), decodeURIComponent('${jsArg(label)}'))" title="Retirer définitivement — à utiliser seulement si ce contrat est déjà rangé autrement (ex: import CSV corrigé)." style="margin-left:8px; padding:2px 8px; border-radius:6px; border:1px solid var(--red); background:transparent; color:var(--red); font-size:11px; cursor:pointer;">🗑️ Retirer</button></span>`;
       }).join('<br>')}${r.badDate.length>15 ? `<br>… et ${r.badDate.length-15} de plus` : ''}</div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Ils restent en attente <b>indéfiniment</b> tant que rien n'est fait — une date illisible ne se corrige jamais toute seule. Corrige le champ <b>date</b> dans Pabbly (10/08/2026 ou 2026-08-10) pour les prochains contrats, et retire ceux déjà présents si tu les as importés autrement (ex: CSV corrigé) — sinon ils resteront affichés ici à chaque relevé.</div>
     </div>`;
@@ -25504,8 +26383,304 @@ async function saveReturnCostPerAgent(){
 // qu'auto-exécutée ici — l'ordre réel (init Firebase → bootApp) ne change pas, seul le déclencheur
 // change (DOMContentLoaded au lieu de "fin du script"), pour ne pas dépendre du chargement bloquant
 // des scripts Firebase (voir <head> et le bloc "PERF" juste avant l'init Firebase, plus haut).
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🔐 CONNEXION — le seul contrôle que Google vérifie lui-même
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// LE PROBLÈME QUE ÇA RÈGLE.
+// Jusqu'ici l'application ouvrait sa session avec signInAnonymously() : Firebase accorde ce jeton à
+// QUICONQUE le demande, sans identifiant. Comme index.html est public (GitHub Pages doit l'envoyer au
+// navigateur pour qu'il fonctionne) et qu'il contient l'adresse du projet, n'importe qui pouvait
+// écrire vingt lignes de JavaScript, obtenir un jeton valide, et lire ou modifier toute la base :
+// salaires, mots de passe, coordonnées des clients. La règle « if request.auth != null » était bien
+// respectée — par tout le monde.
+//
+// Les mots de passe agents existants ne protégeaient rien de tout ça : ils sont vérifiés PAR LA PAGE,
+// sur le poste du visiteur, donc contournables avec les outils du navigateur. Ici, c'est Google qui
+// vérifie, sur ses serveurs, AVANT de laisser sortir la moindre donnée.
+//
+// CE QUI NE CHANGE PAS POUR L'ÉQUIPE.
+// L'agent tape son prénom et SON mot de passe habituel — celui qu'il connaît déjà. Rien de nouveau à
+// apprendre, aucune adresse e-mail à retenir : elle est fabriquée en coulisses à partir du prénom.
+// Le navigateur garde la session, donc c'est une fois par poste, pas tous les matins.
+//
+// LA TRANSITION SANS COUPURE.
+// Tant que le mode « Anonyme » reste activé dans la console Firebase, il sert de filet : si la
+// connexion par compte échoue (compte pas encore créé, prénom mal orthographié), l'app retombe
+// dessus et continue de fonctionner exactement comme avant. Personne n'est bloqué pendant que
+// l'équipe passe à la nouvelle version. Le jour où le patron désactive « Anonyme », le filet
+// disparaît de lui-même et la porte se ferme — sans qu'une ligne de code ait à changer.
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 📋 LA LISTE DES PRÉNOMS SUR L'ÉCRAN DE CONNEXION
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// POURQUOI CE DÉTOUR. Un agent choisit son nom dans une liste, il ne l'écrit pas — c'est comme ça
+// depuis le premier jour, et un champ à remplir serait à la fois un recul et une source de fautes de
+// frappe (« Dailore » sans tréma, et la connexion échoue).
+// Mais la liste des agents vit dans `config`, et lire `config` demande d'être déjà connecté. Sur un
+// poste dont le navigateur vient d'être vidé, l'application ne connaît donc encore personne.
+//
+// D'où ce petit document séparé, qui ne contient QUE des prénoms : ni mot de passe, ni salaire, ni
+// contrat. Il est lisible sans connexion, ce qui permet d'afficher la liste déroulante dès le premier
+// écran. Quelqu'un qui le lit apprend les prénoms de l'équipe et rien d'autre — sans mot de passe, il
+// n'entre nulle part.
+//
+// ⚠️ Nécessite une ligne dans les règles Firestore (voir SECURITE-CONNEXION.md). Sans elle, la
+// lecture échoue simplement et l'écran retombe sur le champ à remplir : rien ne casse.
+const CLE_PRENOMS_PUBLICS = 'publicAgentNames';
+
+// Publie la liste depuis le panneau Admin. N'écrit que si elle a réellement changé.
+async function publierListePrenoms(){
+  if(!firebaseReady || !db) return;
+  try{
+    const prenoms = (config.agents || [])
+      .filter(a => !estHorsContrat(a, todayStr()))
+      .map(a => firstName(a))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'fr'));
+    const charge = JSON.stringify({ prenoms, majAt: new Date().toISOString() });
+    const actuel = await storageGet(CLE_PRENOMS_PUBLICS);
+    let dejaIdentique = false;
+    try{
+      const ancien = actuel && actuel.value ? JSON.parse(actuel.value) : null;
+      dejaIdentique = ancien && JSON.stringify(ancien.prenoms || []) === JSON.stringify(prenoms);
+    }catch(e){}
+    if(dejaIdentique) return;
+    await storageSet(CLE_PRENOMS_PUBLICS, charge);
+  }catch(e){ console.warn('publication de la liste des prénoms', e); }
+}
+
+// Lecture SANS connexion, appelée par l'écran de connexion. Passe volontairement à côté de
+// storageGet, qui refuse de lire tant que firebaseReady est faux — ce qui est justement le cas ici.
+async function chargerListePrenomsPublique(){
+  if(!db) return null;
+  try{
+    const doc = await db.collection('vortexnova').doc(CLE_PRENOMS_PUBLICS).get();
+    if(!doc.exists) return null;
+    const data = JSON.parse(doc.data().value);
+    const prenoms = Array.isArray(data.prenoms) ? data.prenoms.filter(Boolean) : [];
+    return prenoms.length ? prenoms : null;
+  }catch(e){
+    // Règle absente, hors ligne, document jamais publié : on retombe sur le champ à remplir.
+    console.info('Liste des prénoms non lisible sans connexion — champ libre affiché.', e && e.code ? e.code : '');
+    return null;
+  }
+}
+
+// Remplit la liste déroulante si on a pu la lire, sinon laisse le champ libre.
+async function authPreparerListePrenoms(){
+  const select = document.getElementById('authGateAgent');
+  const champLibre = document.getElementById('authGatePrenom');
+  if(!select || !champLibre) return;
+  const prenoms = await chargerListePrenomsPublique();
+  if(!prenoms){
+    select.style.display = 'none';
+    champLibre.style.display = '';
+    return;
+  }
+  let dernier = '';
+  try{ dernier = localStorage.getItem('vn_dernierPrenom') || ''; }catch(e){}
+  select.innerHTML = '<option value="">— Choisis ton prénom —</option>' +
+    prenoms.map(p => `<option value="${escapeHtml(p)}"${p.toLowerCase() === dernier.toLowerCase() ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('');
+  select.style.display = '';
+  champLibre.style.display = 'none';
+  if(select.value){
+    const pw = document.getElementById('authGatePw');
+    if(pw) setTimeout(()=> pw.focus(), 60);
+  }
+}
+
+// Le prénom retenu vient de la liste quand elle est affichée, du champ libre sinon.
+function authPrenomSaisi(){
+  const select = document.getElementById('authGateAgent');
+  if(select && select.style.display !== 'none' && select.value) return select.value;
+  const champ = document.getElementById('authGatePrenom');
+  return champ ? champ.value : '';
+}
+
+const AUTH_DOMAINE = 'vortexnova.local';
+
+// Prénom → adresse. Deux formes sont tentées à la connexion, parce que les comptes ont pu être créés
+// avec ou sans accents (« daïlore@ » et « dailore@ » existent tous les deux dans la nature) :
+// l'orthographe exacte du prénom d'abord, puis la version sans accents. L'admin n'a donc rien à
+// renommer dans la console, quelle que soit la façon dont il a saisi les comptes.
+function authAdressesPour(prenom){
+  const base = String(prenom || '').trim().toLowerCase().replace(/\s+/g, '');
+  if(!base) return [];
+  const sansAccents = base.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const formes = [base];
+  if(sansAccents && sansAccents !== base) formes.push(sansAccents);
+  return formes.map(f => `${f}@${AUTH_DOMAINE}`);
+}
+
+let authUtilisateur = null;          // le compte Firebase réellement connecté, ou null
+let authModeAnonyme = false;         // vrai quand on a dû retomber sur le filet de transition
+let authPrenomConnecte = null;       // le prénom saisi, pour présélectionner l'agent ensuite
+
+// Tente les adresses possibles l'une après l'autre. Renvoie { ok } ou { ok:false, raison }.
+async function authConnecter(prenom, motDePasse){
+  const adresses = authAdressesPour(prenom);
+  if(!adresses.length) return { ok: false, raison: 'prenom_vide' };
+  let derniereErreur = null;
+  for(const adresse of adresses){
+    try{
+      const cred = await firebase.auth().signInWithEmailAndPassword(adresse, motDePasse);
+      authUtilisateur = cred.user;
+      authModeAnonyme = false;
+      authPrenomConnecte = String(prenom || '').trim();
+      firebaseReady = true;
+      try{ localStorage.setItem('vn_dernierPrenom', authPrenomConnecte); }catch(e){}
+      return { ok: true };
+    }catch(e){
+      derniereErreur = e && e.code ? e.code : String(e);
+      // « utilisateur inconnu » : on essaie l'autre orthographe. Toute autre erreur (mot de passe
+      // faux, compte désactivé, réseau) est définitive — inutile de retenter.
+      if(derniereErreur !== 'auth/user-not-found' && derniereErreur !== 'auth/invalid-email'
+         && derniereErreur !== 'auth/invalid-credential') break;
+    }
+  }
+  return { ok: false, raison: derniereErreur || 'inconnue' };
+}
+
+// Message compréhensible. Volontairement flou entre « compte inconnu » et « mot de passe faux » :
+// distinguer les deux permettrait à un curieux de deviner la liste des prénoms valides.
+function authMessageErreur(raison){
+  switch(raison){
+    case 'prenom_vide':                return 'Entre ton prénom.';
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+    case 'auth/invalid-credential':
+    case 'auth/invalid-email':         return 'Prénom ou mot de passe incorrect.';
+    case 'auth/user-disabled':         return "Cet accès a été désactivé. Vois avec l'administrateur.";
+    case 'auth/too-many-requests':     return 'Trop de tentatives. Attends une minute et réessaie.';
+    case 'auth/network-request-failed':return 'Pas de connexion Internet. Vérifie le réseau et réessaie.';
+    case 'auth/operation-not-allowed': return "La connexion par mot de passe n'est pas activée sur le projet Firebase.";
+    default:                           return 'Connexion impossible. Réessaie.';
+  }
+}
+
+// ── L'écran de connexion ────────────────────────────────────────────────────────────────────────
+function authAfficherEcran(message){
+  const gate = document.getElementById('authGate');
+  if(!gate) return;
+  gate.style.display = 'flex';
+  // Tente d'afficher la liste déroulante des prénoms. Si elle n'est pas lisible (règle absente,
+  // hors ligne), le champ libre reste en place et la connexion fonctionne quand même.
+  authPreparerListePrenoms().catch(e=> console.warn('liste prénoms', e));
+  const err = document.getElementById('authGateError');
+  if(err){ err.textContent = message || ''; err.style.display = message ? 'block' : 'none'; }
+  const champPrenom = document.getElementById('authGatePrenom');
+  if(champPrenom){
+    if(!champPrenom.value){
+      try{ champPrenom.value = localStorage.getItem('vn_dernierPrenom') || ''; }catch(e){}
+    }
+    setTimeout(()=>{
+      const cible = champPrenom.value ? document.getElementById('authGatePw') : champPrenom;
+      if(cible) cible.focus();
+    }, 60);
+  }
+}
+function authMasquerEcran(){
+  const gate = document.getElementById('authGate');
+  if(gate) gate.style.display = 'none';
+  const pw = document.getElementById('authGatePw');
+  if(pw) pw.value = '';
+}
+
+async function authValiderFormulaire(){
+  const prenom = authPrenomSaisi();
+  const motDePasse = (document.getElementById('authGatePw') || {}).value || '';
+  const btn = document.getElementById('authGateBtn');
+  const err = document.getElementById('authGateError');
+  if(!motDePasse){ if(err){ err.textContent = 'Entre ton mot de passe.'; err.style.display = 'block'; } return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Connexion…'; }
+  if(err) err.style.display = 'none';
+  const res = await authConnecter(prenom, motDePasse);
+  if(btn){ btn.disabled = false; btn.textContent = 'Se connecter'; }
+  if(!res.ok){ authAfficherEcran(authMessageErreur(res.raison)); return; }
+  authMasquerEcran();
+  // La session est ouverte : on démarre l'application, comme après l'ancien signInAnonymously().
+  try{ await bootApp(); }catch(e){ console.error('bootApp après connexion', e); }
+  authPreselectionnerAgent();
+}
+
+// L'agent vient de prouver son identité auprès de Google avec ce mot de passe précis : lui redemander
+// le même dans la seconde qui suit n'apporterait rien. On le présélectionne et on le marque comme
+// déjà authentifié pour cette session. Les redemandes de mot de passe qui ont un vrai sens — retour
+// de pause, retour d'inactivité, quelqu'un a pu s'asseoir à sa place — continuent de fonctionner.
+function authPreselectionnerAgent(){
+  if(!authPrenomConnecte || authModeAnonyme) return;
+  try{
+    const cible = (config.agents || []).find(a => firstName(a).toLowerCase() === authPrenomConnecte.toLowerCase());
+    if(!cible) return;
+    if(typeof authenticatedAgentsThisSession !== 'undefined' && authenticatedAgentsThisSession.add){
+      authenticatedAgentsThisSession.add(cible);
+    }
+    const select = document.getElementById('agentSelect');
+    if(select && select.value !== cible){
+      select.value = cible;
+      if(typeof onAgentChange === 'function') onAgentChange();
+    }
+  }catch(e){ console.warn('présélection agent', e); }
+}
+
+// ── Le point d'entrée : session existante, sinon écran de connexion, sinon filet anonyme ────────
+async function authDemarrer(){
+  if(!firebase || !firebase.auth){ return false; }
+  try{ await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
+
+  // 1) Session déjà ouverte sur ce poste (le cas normal, tous les jours) : on ne demande rien.
+  const dejaConnecte = await new Promise(resolve=>{
+    const stop = firebase.auth().onAuthStateChanged(u=>{ stop(); resolve(u || null); });
+  });
+  if(dejaConnecte){
+    authUtilisateur = dejaConnecte;
+    authModeAnonyme = !!dejaConnecte.isAnonymous;
+    firebaseReady = true;
+    if(!authModeAnonyme){
+      try{ authPrenomConnecte = localStorage.getItem('vn_dernierPrenom') || null; }catch(e){}
+    }
+    return true;
+  }
+
+  // 2) Aucune session : on demande le prénom et le mot de passe.
+  authAfficherEcran('');
+  return false;
+}
+
+// Filet de transition, déclenché depuis l'écran de connexion. Tant que « Anonyme » est actif dans la
+// console Firebase, un poste qui n'arrive pas à se connecter par compte peut continuer de travailler.
+// Le jour où le patron désactive « Anonyme », cet appel échoue et le bouton disparaît de lui-même.
+async function authFiletAnonyme(btn){
+  if(btn){ btn.disabled = true; btn.textContent = 'Tentative…'; }
+  try{
+    await firebase.auth().signInAnonymously();
+    authModeAnonyme = true;
+    firebaseReady = true;
+    authMasquerEcran();
+    await bootApp();
+    showToast("Connecté en mode transitoire. Préviens l'administrateur : ton compte n'est pas encore actif.", 'warn', 9000);
+  }catch(e){
+    authAfficherEcran("Le mode transitoire est fermé. Il faut te connecter avec ton prénom et ton mot de passe.");
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Je n\'arrive pas à me connecter'; }
+  }
+}
+
+// Déconnexion volontaire — utile quand un agent prête son poste, ou pour tester un autre compte.
+async function authDeconnecter(){
+  if(!confirm('Se déconnecter de ce poste ?\n\nIl faudra retaper le prénom et le mot de passe à la prochaine ouverture.')) return;
+  try{ await firebase.auth().signOut(); }catch(e){}
+  try{ localStorage.removeItem('vn_dernierPrenom'); }catch(e){}
+  location.reload();
+}
+
 async function bootApp(){
+  // La session doit être ouverte avant de lire quoi que ce soit. Si elle ne l'est pas, l'écran de
+  // connexion est affiché et c'est lui qui rappellera bootApp() une fois le mot de passe validé.
   await firebaseAuthReady;
+  const gate = document.getElementById('authGate');
+  if(gate && gate.style.display === 'flex') return;   // l'écran de connexion rappellera bootApp()
   loadConfig();
   updateSyncIndicator();
   applyPrivacyMode();
