@@ -2567,6 +2567,42 @@ async function tryDeviceGateAdmin(){
               </div>
             </div>
           </div>
+
+          <details style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+            <summary style="cursor:pointer; font-weight:800; font-size:14px; color:var(--text);">🔐 Mémo Firebase — ajouter / modifier / supprimer un accès</summary>
+            <div class="section-sub" style="margin-top:10px;">
+              Ajouter un agent <b>ici</b> lui donne sa fiche, ses objectifs et sa paie. Ça ne lui donne <b>pas</b> le droit de se connecter : ça, ça se crée dans Firebase. Les deux doivent être faits, dans cet ordre.
+            </div>
+            <div style="margin-top:10px;">
+              <a href="https://console.firebase.google.com/project/pointage-vortex-nova/authentication/users" target="_blank" rel="noopener" style="display:inline-block;padding:9px 16px;border-radius:8px;background:#f5a623;color:#1a1a1a;font-weight:800;text-decoration:none;">↗️ Ouvrir Firebase → Authentication</a>
+            </div>
+
+            <div class="section-sub" style="margin-top:14px;">
+              <b>➕ Ajouter un accès</b> (nouvel agent, après l'avoir ajouté ci-dessus)<br>
+              1. Bouton <b>Add user</b> en haut du tableau.<br>
+              2. Email = <b>son prénom</b> suivi de <b>@vortexnova.local</b> — tout en minuscules, <b>sans accent ni espace</b>. Exemple : <code>mohammed@vortexnova.local</code>, <code>siloee@vortexnova.local</code>.<br>
+              3. Password = le mot de passe que tu lui as mis avec le bouton 🔑 sur sa fiche ci-dessus. <b>Exactement le même</b>, sinon il ne pourra pas entrer. 6 caractères minimum.<br>
+              4. <b>Add user</b>. C'est tout — lui, il ne verra jamais cet email : il choisit son prénom dans la liste et tape son mot de passe, comme d'habitude.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px;">
+              <b>✏️ Changer un mot de passe</b><br>
+              À faire aux <b>deux endroits</b>, sinon ça bloque :<br>
+              1. Ici, bouton 🔑 sur sa fiche.<br>
+              2. Dans Firebase : trouve sa ligne → menu <b>⋮</b> à droite → <b>Reset password</b> (ou <b>Edit user</b>) → tape le nouveau mot de passe.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px;">
+              <b>🗑️ Couper l'accès à quelqu'un qui part</b><br>
+              Archiver l'agent ici (📦) le sort du pointage et de la paie, <b>mais il peut toujours se connecter et tout lire</b>. Pour vraiment fermer la porte :<br>
+              Firebase → sa ligne → menu <b>⋮</b> → <b>Disable account</b> (il ne peut plus entrer, tu peux le réactiver s'il revient) ou <b>Delete account</b> (définitif).<br>
+              👉 <b>Disable</b> est le bon réflexe dans presque tous les cas.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px; padding:10px; border-radius:8px; background:rgba(245,166,35,.10); border:1px solid rgba(245,166,35,.35);">
+              ⚠️ <b>À ne jamais activer</b> : dans Firebase → Authentication → <b>Settings</b> → User actions, la case <b>Enable create (sign-up)</b> doit rester <b>décochée</b>. Cochée, n'importe qui pourrait se créer un compte tout seul et lire tes données.
+            </div>
+          </details>
         </div>
 
         <div class="settings-box">
@@ -2765,7 +2801,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-06-r180';
+const APP_VERSION = '2026-09-06-r183';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -18481,7 +18517,7 @@ async function renderSupervisionReel(){
         </div>
       </div>
       <div class="sub" style="margin-top:4px;">Ton taux : ${(rate).toLocaleString('fr-FR')} DH/contrat des agents de base${!rate ? " — montant à régler par l'admin dans Production" : ''}${effectiveRateToday > rate ? ` <b style="color:var(--gold);">→ ${effectiveRateToday.toLocaleString('fr-FR')} DH aujourd'hui</b> (part d'un collègue superviseur en retard/absent reversée sur ton taux)` : ''}</div>
-      <div class="sub" style="margin-top:4px;font-size:11px;">Ne compte ni tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''}, ni ceux des autres superviseurs — le nombre de contrats affiché est toujours le vrai total de l'équipe, jamais doublé. Semaine = lundi à aujourd'hui.</div>
+      <div class="sub" style="margin-top:4px;font-size:11px;">Hors tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''} et ceux des autres superviseurs. Semaine = lundi à aujourd'hui.</div>
       ${myIneligibilityReason ? `<div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚫 Aujourd'hui, à cause du non-respect du règlement — ${myIneligibilityReason} — tu es à <b>0 DH/contrat</b> des agents de base. Ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}
     </div>
     ${myIndepComm && myIndepComm.detail.length ? `
@@ -26480,8 +26516,16 @@ async function authPreparerListePrenoms(){
   }
   let dernier = '';
   try{ dernier = localStorage.getItem('vn_dernierPrenom') || ''; }catch(e){}
+  // L'admin n'est pas un agent : son compte admin@vortexnova.local n'apparaîtrait dans aucune liste,
+  // et il ne pourrait plus entrer depuis un poste neuf une fois « Anonyme » désactivé. On l'ajoute
+  // donc en tête. Le mot de passe reste le seul rempart, et le message d'erreur ne distingue jamais
+  // « nom inconnu » de « mot de passe faux » : voir cette ligne ne renseigne personne.
+  const entrees = [{ valeur: 'admin', libelle: '\u{1F510} Admin' }]
+    .concat(prenoms
+      .filter(p => p.toLowerCase() !== 'admin')
+      .map(p => ({ valeur: p, libelle: p })));
   select.innerHTML = '<option value="">— Choisis ton prénom —</option>' +
-    prenoms.map(p => `<option value="${escapeHtml(p)}"${p.toLowerCase() === dernier.toLowerCase() ? ' selected' : ''}>${escapeHtml(p)}</option>`).join('');
+    entrees.map(e => `<option value="${escapeHtml(e.valeur)}"${e.valeur.toLowerCase() === dernier.toLowerCase() ? ' selected' : ''}>${escapeHtml(e.libelle)}</option>`).join('');
   select.style.display = '';
   champLibre.style.display = 'none';
   if(select.value){
@@ -26681,7 +26725,12 @@ async function bootApp(){
   await firebaseAuthReady;
   const gate = document.getElementById('authGate');
   if(gate && gate.style.display === 'flex') return;   // l'écran de connexion rappellera bootApp()
-  loadConfig();
+  // La liste des prénoms de l'écran de connexion était publiée UNIQUEMENT à l'ouverture du panneau
+  // Admin. Tant que le patron ne l'avait pas ouvert une fois, l'écran de connexion d'un poste neuf
+  // retombait sur un champ à remplir, sans que rien n'explique pourquoi. Elle est maintenant
+  // republiée après chaque chargement des réglages, depuis n'importe quelle session connectée
+  // (les règles l'autorisent) : elle se répare toute seule. N'écrit que si la liste a changé.
+  loadConfig().then(()=> publierListePrenoms()).catch(e=> console.warn('publication liste prénoms', e));
   updateSyncIndicator();
   applyPrivacyMode();
   applySupPrivacy();
