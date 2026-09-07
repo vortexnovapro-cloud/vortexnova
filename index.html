@@ -1036,6 +1036,12 @@ async function tryDeviceGateAdmin(){
 </header>
 
 <div id="inactivityWarnBanner" onclick="confirmPresenceFromAlert()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; text-align:center; background: var(--red-bg); color: var(--red); padding:14px 16px; font-size:15px; font-weight:800; animation: pulseWarn 1s infinite; cursor:pointer; box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
+<!-- 🎯 RAPPEL D'OBJECTIF — apparaît dès que l'agent a pointé son arrivée sans avoir fixé son
+     objectif du jour, et ne part que lorsqu'il l'a fixé. Volontairement sans croix de fermeture :
+     le seul moyen de le faire disparaître est de faire ce qu'il demande. Il ne recouvre rien
+     (il pousse la page vers le bas) et un clic n'importe où dessus emmène droit au champ. -->
+<div id="objectifRappelBanner" onclick="allerFixerObjectif()" style="display:none; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap; padding:12px 18px; font-size:14.5px; font-weight:800; cursor:pointer; text-align:center;"></div>
+
 <div id="adminInactivityWarnBanner" onclick="confirmAdminPresenceFromAlert()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; text-align:center; background: var(--red-bg); color: var(--red); padding:14px 16px; font-size:15px; font-weight:800; animation: pulseWarn 1s infinite; cursor:pointer; box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
 
 <div id="appUpdateBanner" onclick="forceAppUpdate()" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9998; background:#b0262b; box-shadow:0 6px 26px rgba(0,0,0,0.6); border-bottom:2px solid rgba(255,255,255,0.3); cursor:pointer;">
@@ -2397,8 +2403,8 @@ async function tryDeviceGateAdmin(){
           <button class="link-btn" onclick="downloadBillingAgentCSV()" title="Le tableau de cet agent pour ce mois : tous ses contrats nominatifs, ses retours, et le détail ligne par ligne de son salaire. Ouvrable dans Excel ou Google Sheets.">📥 Télécharger ce tableau (CSV)</button>
           <button class="link-btn" onclick="exportBillingAgentImage()" title="Image du tableau, calibrée pour rester lisible une fois envoyée sur WhatsApp.">📸 Image WhatsApp de ce tableau</button>
           <button class="link-btn" id="exportBillingAgentPdfBtn" onclick="exportBillingAgentPDF()" title="Le tableau de CET agent en PDF couleur — à envoyer par email ou en pièce jointe Document sur WhatsApp, net et zoomable.">🖨️ PDF (à envoyer)</button>
-          <button class="link-btn" onclick="downloadAllBillingAgentsCSV()" title="Un seul fichier contenant le tableau complet de chaque agent, les uns après les autres.">📦 Télécharger TOUS les agents (CSV)</button>
-          <button class="link-btn" id="exportAllBillingAgentsPdfBtn" onclick="downloadAllBillingAgentsPDF()" title="Un seul PDF avec une page par agent — pour tout archiver d'un coup.">📦 TOUS les agents (PDF)</button>
+          <button class="link-btn" id="exportAllBillingAgentsCsvBtn" onclick="downloadAllBillingAgentsCSV()" title="UN FICHIER CSV PAR AGENT, réunis dans une seule archive ZIP : tu décompresses, et chaque agent a son propre tableau prêt à ouvrir dans Excel ou à lui envoyer.">📦 Un CSV par agent</button>
+          <button class="link-btn" id="exportAllBillingAgentsPdfBtn" onclick="downloadAllBillingAgentsPDF()" title="UN FICHIER PDF PAR AGENT, réunis dans une seule archive ZIP : chaque agent a sa fiche de paie complète, prête à envoyer telle quelle.">📦 Un PDF par agent</button>
         </div>
 
         <div class="section-title" style="margin-top:34px;">🕐 4. Historique des salaires nets</div>
@@ -2819,7 +2825,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-07-r192';
+const APP_VERSION = '2026-09-07-r196';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4787,14 +4793,14 @@ function renderAgentChips(){
     const inDecouverte = estEnDecouverteLe(name, todayStr());
     const decouverteEnd = decouverteEndDateOf(name);
 
-    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${(!isSup && isAssistant(name))?' <span class="indep-badge" style="background:#b5595c;color:#fff;">🤝 Assistant agréé</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${inDecouverte?(decouverteEnd?` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Payé au contrat sans fixe jusqu'au ${decouverteEnd.split('-').reverse().join('/')}, salarié normal ensuite">🔍 découverte → ${decouverteEnd.split('-').reverse().join('/')}</span>`:` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Payé au contrat uniquement, aucun fixe/prime tant que tu n'as pas terminé sa découverte (bouton 🏁)">🔍 découverte</span>`):''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
+    chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${(!isSup && isAssistant(name))?' <span class="indep-badge" style="background:#b5595c;color:#fff;">🤝 Assistant agréé</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${inDecouverte?(decouverteEnd?` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Ne gagne rien jusqu'au ${decouverteEnd.split('-').reverse().join('/')}, salarié normal ensuite. Ses contrats sont comptés et repris à son compteur à cette date.">🔍 découverte → ${decouverteEnd.split('-').reverse().join('/')}</span>`:` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Ne gagne rien tant que tu n'as pas terminé sa découverte (bouton 🏁). Ses contrats sont comptés : à la fin de sa découverte, il démarre avec ce total au lieu de repartir de zéro.">🔍 découverte</span>`):''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
       <button onclick="toggleSupervisor('${name.replace(/'/g,"\\'")}')" title="Basculer l'accès à la Supervision" style="color:var(--gold);margin-right:2px;">📊</button>
       ${!isSup ? `<button onclick="toggleADFTrainer('${name.replace(/'/g,"\\'")}')" title="Basculer « formateur ADF »" style="color:#4a9891;margin-right:2px;">🎓</button>` : ''}
       ${!isSup ? `<button onclick="toggleAssistant('${name.replace(/'/g,"\\'")}')" title="Basculer « assistant agréé » — il pourra recevoir une demande d'assistance quand le superviseur n'est pas disponible" style="color:#b5595c;margin-right:2px;${isAssistant(name)?'background:rgba(181,89,92,0.25);border-radius:4px;':''}">🤝</button>` : ''}
       <button onclick="toggleEcouteAutorisee('${name.replace(/'/g,"\\'")}')" title="Basculer l'autorisation d'être écouté (écoute)" style="color:var(--accent);margin-right:2px;${ecouteBtnStyle}">🎧</button>
       <button onclick="toggleIndependant('${name.replace(/'/g,"\\'")}')" title="Basculer indépendant" style="color:var(--independant);margin-right:2px;">🧑‍💼</button>
       <button onclick="toggleNoObjectif('${name.replace(/'/g,"\\'")}')" title="Basculer « sans objectif — payé dès le 1er contrat » (permanent)" style="color:var(--amber);margin-right:2px;">🎯</button>
-      <button onclick="toggleDecouverte('${name.replace(/'/g,"\\'")}')" title="Basculer « découverte — payé au contrat, sans fixe » (nouvel agent)" style="color:#b8935a;margin-right:2px;">🔍</button>
+      <button onclick="toggleDecouverte('${name.replace(/'/g,"\\'")}')" title="Basculer « découverte » : l'agent ne gagne RIEN pendant cette période. Ses contrats sont comptés, et quand tu termines sa découverte (bouton 🏁) il démarre avec ce total au lieu de repartir de zéro." style="color:#b8935a;margin-right:2px;">🔍</button>
       ${inDecouverte ? `<button onclick="setDecouverteEndDate('${name.replace(/'/g,"\\'")}')" title="Terminer la découverte à une date précise — à partir de là, salarié normal (fixe+primes). Les contrats faits pendant la découverte restent comptés pour l'objectif du mois." style="color:#b8935a;margin-right:2px;">🏁</button>` : ''}
       <button onclick="toggleAgentGender('${name.replace(/'/g,"\\'")}')" title="Genre utilisé dans les messages personnalisés — actuellement : ${getAgentGender(name)==='f'?'féminin':'masculin'} (clique pour changer)" style="color:var(--muted);margin-right:2px;">${getAgentGender(name)==='f'?'♀':'♂'}</button>
       ${noObj ? `<button onclick="editStatusLabel('${name.replace(/'/g,"\\'")}')" title="Renommer le libellé affiché (ex: Backoffice, Confirmé...)" style="color:var(--muted);margin-right:2px;">✏️</button>` : ''}
@@ -4821,8 +4827,13 @@ function effectiveNoObjectif(agent){
 }
 
 // ============================================================
-// 🔍 DÉCOUVERTE — nouvel agent payé au contrat, sans salaire, jusqu'à ce que l'admin décide qu'il
-// passe en salarié normal (demande explicite du patron, 04/09).
+// 🔍 DÉCOUVERTE — RÈGLE DU PATRON : pendant sa découverte, l'agent NE GAGNE RIEN. Aucun fixe, aucune
+// prime, et aucun paiement au contrat — ni pendant, ni rétroactivement à l'embauche.
+// Ses contrats sont malgré tout comptés, pour deux raisons : on le félicite quand il signe, et le jour
+// où sa découverte se termine il DÉMARRE AVEC CE TOTAL. Exemple : minimum proratisé de 20 pour son
+// premier mois salarié, 5 contrats signés en découverte → il commence à 5/20, pas à 0/20.
+// ⚠️ Ne jamais écrire « embauche » dans un texte visible : l'agent pourrait y lire une promesse de
+// contrat. On ne parle que de la découverte et de sa fin.
 // ============================================================
 // Différent de « sans objectif » (🎯, qui garde le fixe/la prime d'assiduité, juste sans quota
 // obligatoire) : la découverte retire TOUT le fixe — baseSalary, primeFixeMensuelle, primeAssiduite ET
@@ -4854,7 +4865,7 @@ async function toggleDecouverte(name){
   } else {
     config.agentsDecouverte[name] = true;
     if(config.agentsDecouverteEndDate) delete config.agentsDecouverteEndDate[name];
-    logAudit('Admin', `Découverte activée : ${name}`, 'payé au contrat, sans fixe, jusqu\'à ce que tu termines la découverte (bouton 🏁)');
+    logAudit('Admin', `Découverte activée : ${name}`, 'ne gagne rien pendant la découverte ; ses contrats sont comptés et repris à son compteur à la fin de sa découverte (bouton 🏁)');
   }
   await saveConfigSilent();
   billingInvalidate();
@@ -4865,7 +4876,7 @@ async function toggleDecouverte(name){
 
 // Termine la découverte : à partir de la date choisie, salaire complet (fixe + primes). Si cette date
 // tombe en plein milieu d'un mois, estimateSalaryMonthReal calcule les deux sous-périodes séparément —
-// avant la bascule payé au contrat sec, après au calcul normal — en comptant les contrats déjà faits
+// avant la bascule rien n'est dû, après au calcul normal — en comptant les contrats déjà faits
 // PENDANT la découverte comme déjà acquis pour l'objectif du mois (l'agent ne repart jamais à 0, c'est
 // la demande explicite du patron : « il commence avec les 3 de sa période de découverte, pas à 0 »).
 async function setDecouverteEndDate(name){
@@ -5311,6 +5322,19 @@ async function setAgentStartDate(name){
   }
   await saveConfigSilent();
   renderAgentChips();
+}
+
+// 🐛 BUG CORRIGÉ — « Backoffice » est le libellé par défaut du statut « sans objectif 🎯 », et il
+// s'affichait pour TOUTES les situations sans objectif obligatoire. Un agent en découverte, à qui on
+// n'a jamais posé ce statut, lisait donc « Backoffice » sur sa carte — un mot qui n'a rien à voir avec
+// sa situation, et qui empêche de comprendre pourquoi il n'a pas de mini. Trois raisons possibles,
+// trois libellés distincts. `pay` est optionnel : quand il est fourni (carte d'un mois précis), c'est
+// l'état de découverte DE CE MOIS-LÀ qui fait foi, pas celui d'aujourd'hui.
+function raisonSansObjectif(agent, pay){
+  if(pay && pay.decouverte && pay.decouverte.active) return '🔍 Découverte';
+  if(!pay && estEnDecouverteLe(agent, todayStr())) return '🔍 Découverte';
+  if(isInTraining(agent)) return '🌱 Formation écoute';
+  return getNoObjectifLabel(agent);
 }
 
 function getNoObjectifLabel(agent){
@@ -5939,6 +5963,7 @@ async function onAgentChange(){
   refreshADFStatus();
   renderPointageGreeting();
   renderProbationBanner();
+  majRappelObjectif();   // le bandeau suit l'agent sélectionné, jamais le précédent
 }
 
 // Rappel « zéro tolérance retard/absence » pendant la période d'essai (voir setAgentProbation) —
@@ -7769,6 +7794,8 @@ async function logEvent(type){
   { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, agent: currentAgent, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   await refreshAgentButtons();
   await refreshAgentStatus();
+  // Le pointage d'arrivée est LE déclencheur du rappel d'objectif ; le pointage de fin le retire.
+  majRappelObjectif();
 }
 
 async function refreshAgentStatus(){
@@ -8503,7 +8530,7 @@ async function renderExploMonthlySummary(agents, dateList){
       // Badges couleur par métrique — .tag.ok (vert) / .tag.warn (orange) / .tag.late (rouge) / .tag.absent (gris)
       let miniBadge;
       if(isIndep) miniBadge = '<span class="tag absent">🧑‍💼 Indépendant</span>';
-      else if(noObj) miniBadge = `<span class="tag warn">${getNoObjectifLabel(agent)}</span>`;
+      else if(noObj) miniBadge = `<span class="tag warn">${raisonSansObjectif(agent, pay)}</span>`;
       else if(mini===0) miniBadge = '<span class="tag absent">Non réglé</span>';
       else miniBadge = `<span class="tag ${hitMini?'ok':'late'}">${hitMini?'🟢':'🔴'} ${realized} / ${mini}</span>`;
 
@@ -12162,7 +12189,7 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════════════════
-  // 0.b) EN DÉCOUVERTE — payé au contrat, AUCUN objectif imposé
+  // 0.b) EN DÉCOUVERTE — ne gagne rien, AUCUN objectif imposé, mais ses contrats sont comptés
   // ═══════════════════════════════════════════════════════════════════════════════════════════
   // DEMANDE PATRON. Un agent en découverte n'a ni fixe, ni prime, ni quota : on n'attend de lui aucun
   // « objectif du matin », et lui servir le discours d'un salarié confirmé (classement, minimum
@@ -12205,7 +12232,7 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
       lines.push(mkS('mois', '🌱', seedPick([
         `Depuis le 1er du mois : ${ctr(monthlyRealized)}${daysElapsed > 1 ? ` (${fmtNum(rythmeDec)}/jour en moyenne)` : ''}. Ces contrats-là ne sont pas perdus : ils resteront comptés pour ton objectif quand tu passeras salarié.`,
         `${ctr(monthlyRealized)} ce mois-ci pendant ta découverte${jourTxt ? `, pour ton ${jourTxt} chez nous` : ''}. Compare-toi à ta propre semaine dernière, jamais au reste de l'équipe.`,
-        `Ton compteur du mois est à ${monthlyRealized}. En découverte, tu es payé au contrat : chacun d'eux est directement dans ta poche.`
+        `Ton compteur du mois est à ${monthlyRealized}. Rien n'est perdu : quand ta découverte se termine, tu démarres avec ce total au lieu de repartir de zéro.`
       ], seed+'|dec-mois'), TEAL, TEAL_BG));
     } else if(jourTxt){
       lines.push(mkS('mois', '🌱', seedPick([
@@ -13245,7 +13272,7 @@ async function buildBriefingRows(baseRows){
   // Trois situations où réclamer « ton objectif du matin » n'a AUCUN sens, et où l'appli le réclamait
   // quand même (remonté du terrain, capture à l'appui) :
   //   • l'agent est absent toute la journée (maladie, congé payé, absence autorisée) — il n'est pas là ;
-  //   • l'agent est en découverte — il est payé au contrat, sans aucun objectif imposé, le temps qu'on
+  //   • l'agent est en découverte — il ne gagne rien et n'a aucun objectif imposé, le temps qu'on
   //     décide de le garder : lui compter un « objectif manquant » est faux ET décourageant ;
   //   • le jour est antérieur à son arrivée (pour l'historique des 5 jours).
   // On charge donc, une fois pour toutes, le vrai statut de chaque jour affiché. Les journaux des jours
@@ -16060,7 +16087,7 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   dateStrs = dateStrs.filter(ds => !estHorsContrat(agent, ds));
 
   // ⚠️ BUG CORRIGÉ — SALAIRE NÉGATIF EN DÉCOUVERTE.
-  // Un agent en découverte est payé au contrat : ni fixe, ni prime fixe, ni prime d'assiduité (voir
+  // Un agent en découverte ne gagne rien : ni fixe, ni prime fixe, ni prime d'assiduité (voir
   // getAgentPay, qui les met tous à 0 pour ces mois-là). Or les retenues, elles, continuaient d'être
   // calculées sur le fixe théorique de sa fiche. Un seul retard de 15 minutes suffisait donc à
   // afficher un salaire NÉGATIF pour quelqu'un censé toucher « 0 DH partout » : brut 0 − retenue 143
@@ -16479,12 +16506,22 @@ async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
     // une sous-période : on les retire une seule fois, sur le total, comme pour tout le monde.
     const preCount = Math.min(preRaw, br.payable);
     const postCount = Math.max(0, br.payable - preCount);
-    const preAmt = Math.round(preCount * (pay.perContract || 0));
+    // 🐛 BUG D'ARGENT CORRIGÉ — RÈGLE DU PATRON, mot pour mot : « un agent en découverte ne gagne
+    // RIEN ». Le code lui payait pourtant ses contrats de découverte au moment de l'embauche
+    // (preCount × perContract) : 6 contrats à 200 DH = 1 200 DH versés pour une période où rien n'est
+    // dû. Ces contrats ne rapportent AUCUN dirham, ni pendant, ni après.
+    //
+    // Ils servent à UNE seule chose, et elle est essentielle : le COMPTEUR. Embauché en cours de mois
+    // avec un minimum proratisé de 20, un agent qui a signé 5 contrats en découverte démarre à 5/20,
+    // pas à 0/20. C'est exactement ce que fait `contractEarnings(..., preCount)` juste en dessous :
+    // preCount positionne l'agent dans son palier, et seuls les contrats d'APRÈS l'embauche (postCount)
+    // sont payés.
+    const preAmt = 0;
     const ceDec = contractEarnings(pay, br.payable, postCount, preCount);
     const st = await monthlyObjectifStatus(agent, year, month, br.payable);
     let brut = pay.baseSalary + pay.primeFixeMensuelle;
     if(assiduiteAcquise !== false) brut += pay.primeAssiduite;
-    brut += preAmt + ceDec.total;
+    brut += ceDec.total;   // preAmt vaut 0 : rien n'est dû sur la période de découverte
     brut += st.primeObjectif + st.primeExtra;
     const manualPrimes = await getManualPrimes(agent, year, month);
     const manualPrimesTotal = computeManualPrimesTotal(manualPrimes, br.payable);
@@ -17252,6 +17289,111 @@ async function onArenaAgentChange(){
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🎯 LE RAPPEL D'OBJECTIF — au moment de la prise de poste, pas une heure après
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Les deux cadres « objectif du jour » et « objectif du mois » de l'Arena pulsent déjà tant qu'ils
+// sont vides — mais il faut être SUR l'Arena pour les voir. Un agent qui reste sur l'écran de
+// pointage toute la matinée n'était prévenu par rien. Ce bandeau le suit sur tous ses onglets.
+//
+// DÉCLENCHEUR : le pointage d'arrivée. Pas 10 h, pas une heure après — l'objectif se fixe à la prise
+// de poste (règle du patron). Avant d'avoir pointé, on ne réclame rien : l'agent n'est pas encore là.
+// Après le pointage de fin de journée, non plus : c'est trop tard, le harceler n'apporte rien.
+//
+// UNE SEULE COULEUR, PAS D'ESCALADE HORAIRE. Rouge pour l'objectif du jour (attendu de tout le
+// monde), bleu pour l'objectif du mois (facultatif). Jamais les deux en même temps : le jour d'abord.
+let _rappelObjEnCours = false;
+
+// À qui on ne demande RIEN. C'est la même liste que partout ailleurs dans l'appli — un agent à qui on
+// ne fixe pas d'objectif ne doit pas se voir réclamer un objectif.
+async function etatRappelObjectif(){
+  if(!currentAgent) return null;
+  const d = todayStr();
+  if(!isWorkingDay(d)) return null;                      // week-end, jour férié
+  if(estEnDecouverteLe(currentAgent, d)) return null;    // 🔍 aucun objectif imposé pendant la découverte
+  if(isInTraining(currentAgent, d)) return null;         // 🌱 formation écoute
+  if(hasNoObjectif(currentAgent)) return null;           // 🎯 sans objectif
+  if(estHorsContrat(currentAgent, d)) return null;       // parti puis revenu
+  const arrivee = getAgentStartDate(currentAgent);
+  if(arrivee && d < arrivee) return null;                // pas encore embauché
+  const fin = disciplineUntil(currentAgent);
+  if(fin && d >= fin) return null;                       // déjà parti
+
+  const log = await getDayLog(currentAgent, d);
+  if(log.justifiedAbsence) return null;                  // congé, arrêt, mise à pied
+  const evts = log.events || [];
+  if(!evts.some(e => e.type === 'in')) return null;      // pas encore pointé : rien à réclamer
+  if(lastEventType(evts) === 'out') return null;         // journée terminée : trop tard
+
+  const board = await getProdBoard(d);
+  const objJour = (getAgentProd(board, currentAgent).objective) || 0;
+  if(!objJour) return { type: 'jour' };
+
+  // Objectif PERSO du mois : facultatif, et seulement réclamé en début de mois — au-delà, insister
+  // n'a plus de sens, le mois est déjà bien entamé.
+  const now = nowMA();
+  if(workingDaysElapsedForAgent(currentAgent, d) <= 5){
+    const vise = await getMonthlyDesiredObjective(currentAgent, now.getFullYear(), now.getMonth()+1);
+    if(!vise) return { type: 'mois' };
+  }
+  return null;
+}
+
+async function majRappelObjectif(){
+  const el = document.getElementById('objectifRappelBanner');
+  if(!el || _rappelObjEnCours) return;
+  _rappelObjEnCours = true;
+  let etat = null;
+  try{ etat = await etatRappelObjectif(); }
+  catch(e){ console.warn('rappel objectif', e); }
+  finally{ _rappelObjEnCours = false; }
+
+  if(!etat){ el.style.display = 'none'; el.dataset.type = ''; return; }
+  const jour = etat.type === 'jour';
+  el.dataset.type = etat.type;
+  el.style.background = jour ? 'rgba(229,90,90,0.16)' : 'rgba(61,139,253,0.14)';
+  el.style.color = jour ? '#e5484d' : 'var(--accent)';
+  el.style.borderBottom = '1px solid ' + (jour ? 'rgba(229,90,90,0.5)' : 'rgba(61,139,253,0.5)');
+  el.innerHTML = jour
+    ? `<span>🎯 Tu viens de pointer — fixe ton objectif du jour maintenant.</span><span style="padding:6px 16px; border-radius:20px; background:#e5484d; color:#fff; font-weight:900; white-space:nowrap;">Le fixer →</span>`
+    : `<span>🚀 Fixe ton objectif perso du mois — vise ce que tu veux, personne ne t'y oblige.</span><span style="padding:6px 16px; border-radius:20px; background:var(--accent); color:#fff; font-weight:900; white-space:nowrap;">Le fixer →</span>`;
+  el.style.display = 'flex';
+  if(jour) notifierObjectifManquant();
+}
+
+// Un clic n'importe où sur le bandeau : on bascule sur l'Arena, on amène le cadre concerné au centre
+// de l'écran et on place le curseur DANS le champ. L'agent n'a plus qu'à taper son chiffre.
+function allerFixerObjectif(type){
+  const el = document.getElementById('objectifRappelBanner');
+  const t = type || (el && el.dataset.type) || 'jour';
+  try{ showView('arena'); }catch(e){}
+  setTimeout(()=>{
+    const boite = document.getElementById(t === 'mois' ? 'arenaDesiredObjBox' : 'arenaObjectifBox');
+    const champ = document.getElementById(t === 'mois' ? 'arenaDesiredObjInput' : 'arenaObjectifInput');
+    try{ if(boite) boite.scrollIntoView({ behavior: 'smooth', block: 'center' }); }catch(e){}
+    try{ if(champ){ champ.focus(); champ.select(); } }catch(e){}
+  }, 300);
+}
+
+// UNE notification par jour et par agent, envoyée au moment où l'oubli est constaté — jamais de
+// relance horaire : c'est le meilleur moyen de faire couper les notifications pour de bon.
+function notifierObjectifManquant(){
+  if(!currentAgent) return;
+  const cle = `vn_notifObj:${todayStr()}:${currentAgent}`;
+  try{ if(localStorage.getItem(cle)) return; }catch(e){}
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  try{
+    const n = new Notification('🎯 Objectif du jour', {
+      body: `${firstName(currentAgent)}, tu as pointé ton arrivée mais tu n'as pas encore fixé ton objectif du jour. Ça prend 5 secondes.`,
+      tag: 'vortexnova-objectif-' + todayStr(),
+      renotify: false
+    });
+    n.onclick = ()=>{ try{ window.focus(); }catch(e){} allerFixerObjectif('jour'); n.close(); };
+    try{ localStorage.setItem(cle, '1'); }catch(e){}
+  }catch(e){}
+}
+
 async function saveArenaObjectif(){
   if(!currentArenaAgent){ alert("Sélectionne ton nom d'abord."); return; }
   // Un indépendant peut aussi se fixer un objectif du jour, purement pour le défi (aucune obligation, aucune sanction).
@@ -17266,6 +17408,7 @@ async function saveArenaObjectif(){
     p.objective = val;
   });
   await renderArena();
+  majRappelObjectif();   // objectif fixé : le bandeau disparaît dans la seconde
 }
 
 // Objectif personnel du MOIS (distinct de l'objectif du jour ci-dessus) : chaque agent, indépendant inclus,
@@ -17283,6 +17426,7 @@ async function saveArenaDesiredObjectif(){
   await saveMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1, val);
   showToast(`🎯 Objectif du mois enregistré : ${val} contrats`, 'ok');
   await renderArena();
+  majRappelObjectif();
   if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
 }
 
@@ -17419,12 +17563,15 @@ async function renderArena(){
     hero.innerHTML = '<div class="empty" style="padding:20px;">Connecte-toi pour voir ta position.</div>';
   } else if(myRow){
     const msg = getArenaMessage(myRow, rankings);
-    const isFreeAgent = myRow.isIndep || myRow.noObjectif; // payé au contrat dès le 1er, pas de mini obligatoire
+    // « libre » = pas de mini obligatoire. Attention : ça regroupe trois situations très différentes
+    // (indépendant, sans objectif 🎯, découverte 🔍) — les deux premières sont payées au contrat dès le
+    // 1er, la découverte ne gagne rien. La phrase affichée plus bas fait la distinction.
+    const isFreeAgent = myRow.isIndep || myRow.noObjectif;
     const badgeCls = isFreeAgent ? 'indep' : (myRow.rank === 1 ? 'gold' : (myRow.rank <= 3 ? 'bronze' : (myRow.rank > rankings.length/2 ? 'low' : 'mid')));
     const hasObj = myRow.objective > 0;
     const pctFill = hasObj ? Math.min(150, Math.round((myRow.realized/myRow.objective)*100)) : (isFreeAgent ? Math.min(100, Math.round((myRow.realized/30)*100)) : 0);
     const fillCls = hasObj ? (myRow.realized >= myRow.objective ? 'over' : (pctFill < 50 ? 'under' : '')) : (isFreeAgent ? 'over' : (pctFill < 50 ? 'under' : ''));
-    const statusLabel = myRow.isIndep ? 'Indépendant' : getNoObjectifLabel(myRow.agent);
+    const statusLabel = myRow.isIndep ? 'Indépendant' : raisonSansObjectif(myRow.agent);
     const statusEmoji = myRow.isIndep ? '🧑‍💼' : '🎯';
 
     let projRowHtml;
@@ -17482,7 +17629,9 @@ async function renderArena(){
       </div>
       ${desiredBarHtml}
       ${isMonthScope && !isFreeAgent ? '<div class="section-sub" style="margin-top:10px;">Le total du mois se met à jour automatiquement à chaque contrat ajouté ci-dessous.</div>' : ''}
-      ${isFreeAgent ? `<div class="section-sub" style="margin-top:10px;">${statusLabel} : payé au contrat dès le 1er${hasObj ? ' — objectif fixé par défi, sans obligation' : ', sans objectif obligatoire'}.</div>` : ''}`;
+      ${isFreeAgent ? `<div class="section-sub" style="margin-top:10px;">${estEnDecouverteLe(myRow.agent, todayStr())
+          ? `${statusLabel} : aucun objectif imposé. Tes contrats sont comptés — quand ta découverte se termine, tu démarres avec ce total au lieu de repartir de zéro.`
+          : `${statusLabel} : payé au contrat dès le 1er${hasObj ? ' — objectif fixé par défi, sans obligation' : ', sans objectif obligatoire'}.`}</div>` : ''}`;
   }
 
   const podium = document.getElementById('arenaPodium');
@@ -17516,7 +17665,7 @@ async function renderArena(){
     const isMe = r.agent === currentArenaAgent;
     const rowCls = isMe ? 'me' : (r.rank === 1 ? 'rank-1' : (r.rank === rankings.length && rankings.length > 3 ? 'rank-last' : ''));
     const taunt = getArenaMessage(r, rankings);
-    const indepTag = r.isIndep ? ' <span class="indep-tag">Indé</span>' : (r.noObjectif ? ` <span class="indep-tag" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(r.agent)}</span>` : '');
+    const indepTag = r.isIndep ? ' <span class="indep-tag">Indé</span>' : (r.noObjectif ? ` <span class="indep-tag" style="background:var(--amber);color:#3a2a05;">${raisonSansObjectif(r.agent)}</span>` : '');
     // En vue "jour", il n'existe pas de minimum imposé par l'admin séparé — la seule valeur disponible
     // (r.objective) est celle que l'agent s'est fixée lui-même le matin dans "Ton objectif du jour" :
     // elle va donc sous "visé", pas sous "mini". En vue "mois", les deux existent séparément :
@@ -19530,7 +19679,7 @@ async function renderAgentPayTable(){
     const desiredObj = i < desiredObjs.length ? desiredObjs[i] : 0;
     const agentKeySafe = agent.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const statusLabel = archived ? '📦 Ne travaille plus ici'
-      : (decActive ? '🔍 En découverte (payé au contrat)' : (isIndep ? '🧑‍💼 Indépendant' : (noObj ? `🎯 ${getNoObjectifLabel(agent)}` : '📋 Salarié')));
+      : (decActive ? '🔍 En découverte (ne gagne rien — contrats comptés)' : (isIndep ? '🧑‍💼 Indépendant' : (noObj ? `🎯 ${getNoObjectifLabel(agent)}` : '📋 Salarié')));
 
     // Repère fixe uniquement (hors commissions au contrat, imprévisibles) : ce que la partie brute du
     // salaire (fixe + prime fixe + assiduité si acquise) représente si le mois est travaillé en entier, et
@@ -19544,7 +19693,7 @@ async function renderAgentPayTable(){
       : '';
 
     html += `<tr class="pay-agent-row"${archived ? ' style="opacity:0.62;"' : ''}>
-      <td><b>${agent}</b>${archived ? ' <span class="tag" style="background:var(--muted);color:#111;">📦 Ancien</span>' : ''}${isIndep ? ' <span class="tag independant">Indé</span>' : ''}${(!isIndep && noObj) ? ` <span class="tag warn">${getNoObjectifLabel(agent)}</span>` : ''}${isSup ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">📊 Superviseur</span>' : ''}${brutNote}</td>
+      <td><b>${agent}</b>${archived ? ' <span class="tag" style="background:var(--muted);color:#111;">📦 Ancien</span>' : ''}${isIndep ? ' <span class="tag independant">Indé</span>' : ''}${(!isIndep && noObj) ? ` <span class="tag warn">${raisonSansObjectif(agent)}</span>` : ''}${isSup ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">📊 Superviseur</span>' : ''}${brutNote}</td>
       <td>${inp('baseSalary', p.baseSalary)}</td>
       <td>${inp('perContract', p.perContract)}</td>
       <td>${inp('perContractBeforeObjectif', p.perContractBeforeObjectif)}</td>
@@ -19684,7 +19833,7 @@ async function renderMonthlyObjectif(){
     if(r.isIndep){
       primeTxt = '<span style="color:var(--independant);">🧑‍💼 Indépendant</span>';
     } else if(noObj){
-      primeTxt = `<span style="color:var(--amber);">🎯 ${getNoObjectifLabel(r.agent)} — payé au contrat</span>`;
+      primeTxt = `<span style="color:var(--amber);">${raisonSansObjectif(r.agent)}</span>`;
     } else if(stPaye.objectif <= 0){
       primeTxt = '<span style="color:var(--muted);">Pas d\'objectif réglé</span>';
     } else if(stPaye.atteint){
@@ -19699,7 +19848,7 @@ async function renderMonthlyObjectif(){
     const supervisorBonusMo = isSupervisor(r.agent) ? Math.round(supervisionBonusMoMap.dh[r.agent] || 0) : 0;
     const fullTotalWithSupervisor = (full ? full.total : 0) + supervisorBonusMo;
     const rowClass = isFreeRow ? '' : (r.objectif>0 && r.atteint ? '' : (r.objectif>0 ? 'warn' : ''));
-    const indepTag = r.isIndep ? ' <span class="tag independant">Indé</span>' : (noObj ? ` <span class="tag warn">${getNoObjectifLabel(r.agent)}</span>` : '');
+    const indepTag = r.isIndep ? ' <span class="tag independant">Indé</span>' : (noObj ? ` <span class="tag warn">${raisonSansObjectif(r.agent)}</span>` : '');
     const desiredObjAdmin = await getMonthlyDesiredObjective(r.agent, year, month);
     if(desiredObjAdmin > 0){ totalDesiredObjSum += desiredObjAdmin; totalRealizedForDesiredSum += r.realized; }
     const agentKeySafe = r.agent.replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -19965,6 +20114,67 @@ async function ensureHtml2Canvas(){
 
 // jsPDF, chargé à la demande comme html2canvas : rien n'est téléchargé tant que personne ne clique
 // sur « Générer le PDF ».
+// 📦 UN FICHIER PAR AGENT — demande du patron : « je veux un tableau et un pdf par agent ».
+// Les deux exports « TOUS les agents » produisaient jusqu'ici UN seul fichier contenant tout le monde
+// (un gros CSV avec des séparateurs, un PDF avec une page par agent) : impossible d'envoyer sa fiche
+// à un agent sans d'abord la découper à la main.
+//
+// On livre donc un fichier par agent, réunis dans une archive ZIP pour ne déclencher qu'UN seul
+// téléchargement. Si la librairie ZIP ne peut pas être chargée (poste hors ligne), on retombe
+// automatiquement sur des téléchargements séparés, un fichier après l'autre — le résultat est le
+// même, seul le confort change. Rien n'est jamais perdu à cause du ZIP.
+async function ensureJSZip(){
+  if(window.JSZip) return;
+  await new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  if(!window.JSZip) throw new Error('JSZip indisponible');
+}
+
+// Un nom de fichier propre à partir d'un nom d'agent : accents retirés, espaces en underscores, et
+// rien qui puisse casser un nom de fichier sous Windows.
+function nomFichierAgent(agent){
+  return String(agent || 'agent')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'agent';
+}
+
+// `fichiers` : [{ nom, blob }]. Un ZIP si possible, sinon un téléchargement par fichier.
+async function livrerFichiersParAgent(fichiers, nomArchive, majStatut){
+  if(!fichiers.length) return { mode: 'aucun', n: 0 };
+  try{
+    if(majStatut) majStatut('⏳ Création de l\'archive...');
+    await ensureJSZip();
+    const zip = new window.JSZip();
+    fichiers.forEach(f => zip.file(f.nom, f.blob));
+    const contenu = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    const url = URL.createObjectURL(contenu);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${nomArchive}.zip`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 8000);
+    return { mode: 'zip', n: fichiers.length };
+  }catch(e){
+    // Repli : un téléchargement par fichier, espacés pour que le navigateur les accepte tous.
+    console.warn('ZIP indisponible, téléchargements séparés :', e);
+    for(let i = 0; i < fichiers.length; i++){
+      if(majStatut) majStatut(`⏳ Téléchargement ${i+1}/${fichiers.length}...`);
+      const url = URL.createObjectURL(fichiers[i].blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fichiers[i].nom;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(()=> URL.revokeObjectURL(url), 8000);
+      await new Promise(r => setTimeout(r, 450));
+    }
+    return { mode: 'separe', n: fichiers.length };
+  }
+}
+
 async function ensureJsPDF(){
   if(window.jspdf && window.jspdf.jsPDF) return;
   await new Promise((resolve, reject)=>{
@@ -23490,18 +23700,35 @@ async function downloadBillingAgentCSV(){
   billingDownload(billingAgentCSV(d), `${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie.csv`);
 }
 
+// 📥 UN CSV PAR AGENT. Avant : un seul gros fichier où tous les agents se suivaient, séparés par une
+// ligne de « = » — inexploitable dans Excel (une seule feuille, des en-têtes au milieu des données) et
+// impossible à envoyer à un agent sans le découper à la main.
 async function downloadAllBillingAgentsCSV(){
   const monthVal = document.getElementById('billingSheetMonth')?.value;
   if(!monthVal) return;
   const agents = config.agents || [];
   if(!agents.length){ alert('Aucun agent.'); return; }
-  let csv = '';
-  for(const a of agents){
-    const d = await billingComputeAgent(a, monthVal);
-    csv += billingAgentCSV(d) + '\n\n' + '='.repeat(60) + '\n\n';
+  const btn = document.getElementById('exportAllBillingAgentsCsvBtn');
+  const libelle = btn ? btn.textContent : '';
+  const maj = txt => { if(btn) btn.textContent = txt; };
+  if(btn) btn.disabled = true;
+  try{
+    const fichiers = [];
+    for(let i = 0; i < agents.length; i++){
+      maj(`⏳ ${agents[i]} (${i+1}/${agents.length})...`);
+      const d = await billingComputeAgent(agents[i], monthVal);
+      // Le BOM est indispensable pour qu'Excel affiche correctement les accents.
+      const blob = new Blob(['\ufeff' + billingAgentCSV(d)], { type: 'text/csv;charset=utf-8;' });
+      fichiers.push({ nom: `${nomFichierAgent(agents[i])}_${monthVal}_paie.csv`, blob });
+    }
+    const res = await livrerFichiersParAgent(fichiers, `tableaux_agents_${monthVal}`, maj);
+    logAudit('Admin', 'Export CSV — un fichier par agent', `${monthVal} — ${fichiers.length} fichier(s), ${res.mode === 'zip' ? 'archive ZIP' : 'téléchargements séparés'}`);
+    showToast(res.mode === 'zip'
+      ? `✅ ${fichiers.length} fichiers CSV — un par agent, réunis dans une archive ZIP.`
+      : `✅ ${fichiers.length} fichiers CSV téléchargés, un par agent.`, 'ok', 7000);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = libelle || '📦 Un CSV par agent'; }
   }
-  billingDownload(csv, `tableaux_agents_${monthVal}.csv`);
-  logAudit('Admin', 'Export de tous les tableaux agents', monthVal);
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -23632,26 +23859,30 @@ async function exportBillingAgentPDF(){
 // 📦 PDF de TOUS les agents d'un coup — un fichier, une page par agent (même contenu que chaque PDF
 // individuel ci-dessus), pour archiver le mois complet sans cliquer agent par agent. Pour ENVOYER un
 // agent en particulier, utilise plutôt le bouton individuel : celui-ci sert à tout garder d'un coup.
+// 🖨️ UN PDF PAR AGENT. Avant : un seul PDF de N pages contenant tout le monde — bon pour archiver,
+// inutilisable pour envoyer sa fiche à un agent. Chaque agent a maintenant SON fichier, avec ses
+// propres pages s'il a beaucoup de contrats (même découpage que le PDF individuel, voir
+// billingAgentSheetPdfPages : plus rien ne peut être tronqué en silence).
 async function downloadAllBillingAgentsPDF(){
   const monthVal = document.getElementById('billingSheetMonth')?.value;
   if(!monthVal) return;
   const agents = config.agents || [];
   if(!agents.length){ alert('Aucun agent.'); return; }
   const btn = document.getElementById('exportAllBillingAgentsPdfBtn');
-  if(btn){ btn.disabled = true; }
+  const libelle = btn ? btn.textContent : '';
+  const maj = txt => { if(btn) btn.textContent = txt; };
+  if(btn) btn.disabled = true;
   try{
     await ensureJsPDF();
     const { jsPDF } = window.jspdf;
-    let pdf = null;
-    let firstPage = true;
+    const fichiers = [];
     for(let i = 0; i < agents.length; i++){
       const a = agents[i];
       const d = await billingComputeAgent(a, monthVal);
-      // 🐛 BUG CORRIGÉ : voir billingAgentSheetPdfPages — un agent avec beaucoup de contrats/retours
-      // peut désormais tenir sur plusieurs pages plutôt que sur une seule image tronquée en silence.
       const pages = billingAgentSheetPdfPages(d);
+      let pdf = null;
       for(let p = 0; p < pages.length; p++){
-        if(btn) btn.textContent = `⏳ ${a} (${i+1}/${agents.length})${pages.length>1?` — page ${p+1}/${pages.length}`:''}...`;
+        maj(`⏳ ${a} (${i+1}/${agents.length})${pages.length>1?` — page ${p+1}/${pages.length}`:''}...`);
         const canvas = await capturerPageEnCanvas({
           innerHTML: `<div style="font-size:0;"></div>` + pages[p],
           width: 1000,
@@ -23659,27 +23890,30 @@ async function downloadAllBillingAgentsPDF(){
           badge: 'Tableau de paie',
           badgeColor: '#c9a870',
           caption: `Salaire net réel : ${Math.round(d.salary.total).toLocaleString('fr-FR')} DH`,
-          pageInfo: `agent ${i+1}/${agents.length}` + (pages.length > 1 ? ` — page ${p+1}/${pages.length}` : ''),
+          pageInfo: pages.length > 1 ? `page ${p+1}/${pages.length}` : '',
           densite: 2.4
         });
         const img = canvas.toDataURL('image/jpeg', 0.94);
         const w = canvas.width, h = canvas.height;
-        if(firstPage){
+        if(p === 0){
           pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], compress: true });
-          firstPage = false;
         } else {
           pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait');
         }
         pdf.addImage(img, 'JPEG', 0, 0, w, h, undefined, 'FAST');
       }
+      if(pdf) fichiers.push({ nom: `${nomFichierAgent(a)}_${monthVal}_paie.pdf`, blob: pdf.output('blob') });
     }
-    pdf.save(`tableaux_agents_${monthVal}.pdf`);
-    logAudit('Admin', 'Export PDF de tous les tableaux agents', monthVal);
-    showToast(`✅ PDF généré — ${agents.length} agent${agents.length>1?'s':''}.`, 'ok', 6000);
+    const res = await livrerFichiersParAgent(fichiers, `tableaux_agents_${monthVal}`, maj);
+    logAudit('Admin', 'Export PDF — un fichier par agent', `${monthVal} — ${fichiers.length} fichier(s), ${res.mode === 'zip' ? 'archive ZIP' : 'téléchargements séparés'}`);
+    showToast(res.mode === 'zip'
+      ? `✅ ${fichiers.length} PDF — un par agent, réunis dans une archive ZIP.`
+      : `✅ ${fichiers.length} PDF téléchargés, un par agent.`, 'ok', 7000);
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = '📦 TOUS les agents (PDF)'; }
+    if(btn){ btn.disabled = false; btn.textContent = libelle || '📦 Un PDF par agent'; }
   }
 }
+
 
 // ------------------------------------------------------------
 // 🔒 HISTORIQUE DES SALAIRES — figer un mois payé
