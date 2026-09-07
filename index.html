@@ -2127,6 +2127,23 @@ async function tryDeviceGateAdmin(){
             <button onclick="savePayrollCutoffDayConfig()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer le jour de paye</button>
             <div class="save-note" id="payrollCutoffDaySaveNote"></div>
           </div>
+
+          <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">
+            <label>📅 Le mois où la paye n'est pas partie ce jour-là</label>
+            <div class="section-sub">Le jour réglé au-dessus n'est qu'une <b>règle par défaut</b> : dans les faits la paye part parfois la veille, parfois deux jours plus tard — week-end, jour férié, banque. Saisis ici la date <b>réelle</b> pour un mois donné, et c'est elle qui fera foi pour ce mois : rien n'est deviné. Une rétractation traitée <b>le jour même</b> de la paye compte encore sur ce mois — le basculement ne se fait qu'à partir du lendemain.</div>
+            <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+              <div>
+                <label style="margin-bottom:4px;">Paie du mois</label>
+                <input type="month" id="cutoffMoisExact" title="Le mois TRAVAILLÉ, celui dont c'est la paye.">
+              </div>
+              <div>
+                <label style="margin-bottom:4px;">est partie le</label>
+                <input type="date" id="cutoffDateExacte" title="La date réelle à laquelle l'argent est parti. Forcément dans le mois suivant.">
+              </div>
+              <button onclick="ajouterDatePayeExacte()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer cette date</button>
+            </div>
+            <div id="listeDatesPaye"></div>
+          </div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
@@ -2797,7 +2814,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-06-r188';
+const APP_VERSION = '2026-09-07-r190';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4052,6 +4069,21 @@ async function saveConfigSilent(){
         CONFIG_MERGE_ARRAY_FIELDS.forEach(f=>{
           config[f] = mergeConfigArrayField(CONFIG_BASELINE[f], config[f], remote[f]);
         });
+        // 🐛 BUG CORRIGÉ — la protection anti-écrasement ne couvrait QUE les listes d'agents. Tous les
+        // autres réglages (horaires, pourcentages, prix, délais, mots de passe, dates de paye…) étaient
+        // réécrits en bloc depuis la copie en mémoire de celui qui enregistre. Deux personnes dans
+        // Réglages, chacune modifiant un champ différent : le second à cliquer effaçait le changement
+        // du premier, sans aucun message.
+        // Règle appliquée ici, champ par champ : si le serveur a changé une valeur que je n'ai PAS
+        // touchée depuis mon chargement, c'est la valeur du serveur qui gagne. Si je l'ai modifiée,
+        // c'est la mienne — je viens de la saisir en connaissance de cause.
+        const memeValeur = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+        Object.keys(remote).forEach(f=>{
+          if(CONFIG_MERGE_DICT_FIELDS.includes(f) || CONFIG_MERGE_ARRAY_FIELDS.includes(f)) return;
+          const inchangeChezMoi = memeValeur(config[f], CONFIG_BASELINE[f]);
+          const changeAilleurs  = !memeValeur(remote[f], CONFIG_BASELINE[f]);
+          if(inchangeChezMoi && changeAilleurs) config[f] = remote[f];
+        });
       }
     }
   }catch(e){ console.error('saveConfigSilent: fusion anti-écrasement', e); }
@@ -4826,6 +4858,22 @@ function getPointageStartDate(){
 // un agent présent depuis deux ans reste un agent de deux ans, même si le pointage date d'août.
 function getAgentStartDate(agent){
   return (config.agentsStartDate && config.agentsStartDate[agent]) || null;
+}
+
+// 🐛 BUG CORRIGÉ — Les CONTRATS et la DISCIPLINE n'ont pas les mêmes bornes, et on les confondait.
+// disciplineFrom() retient la plus tardive entre l'arrivée de l'agent et la mise en service du
+// pointage : parfait pour décider si un retard compte, catastrophique pour compter des contrats.
+// Le bilan hebdomadaire filtrait les contrats avec cette date-là : toute semaine ANTÉRIEURE à la mise
+// en service du pointage affichait 0 contrat pour tout le monde, alors que ces contrats existent bel
+// et bien en base. La règle posée partout ailleurs dans l'appli est explicite : « les contrats, eux,
+// comptent toujours ». Cette fonction est la borne à utiliser pour eux — l'arrivée de l'agent, et
+// rien d'autre.
+function datesContratsDe(agent, dates){
+  const arrivee = getAgentStartDate(agent);
+  const depart = disciplineUntil(agent);
+  let out = arrivee ? dates.filter(ds => ds >= arrivee) : dates.slice();
+  if(depart) out = out.filter(ds => ds < depart);
+  return out.filter(ds => !estHorsContrat(agent, ds));
 }
 
 // Date à partir de laquelle retards et absences comptent pour cet agent. Utilisée uniquement par les
@@ -5987,6 +6035,58 @@ function getPayrollCutoffDay(){
   const n = Number(config.payrollCutoffDay);
   return Number.isFinite(n) && n >= 1 && n <= 28 ? n : PAYROLL_CUTOFF_DAY_DEFAULT;
 }
+// Saisie d'une date de paye réelle pour un mois précis. La clé est le mois DE LA PAIE (celui du
+// travail), la valeur la date à laquelle l'argent est parti — forcément dans le mois suivant.
+async function ajouterDatePayeExacte(){
+  const mv = document.getElementById('cutoffMoisExact')?.value;
+  const dt = document.getElementById('cutoffDateExacte')?.value;
+  if(!mv || !dt){ alert('Choisis le mois de paie ET la date à laquelle elle est partie.'); return; }
+  if(dt.slice(0, 7) <= mv){
+    alert("La date de paye doit se situer APRÈS le mois travaillé.\n\nExemple : paie d'août 2026 → une date en septembre 2026.");
+    return;
+  }
+  config.payrollCutoffDates = config.payrollCutoffDates || {};
+  config.payrollCutoffDates[mv] = dt;
+  await saveConfigSilent();
+  logAudit('Admin', 'Date de paye exacte enregistrée', `paie de ${mv} partie le ${dt}`);
+  billingInvalidate();
+  clearRenderCaches();
+  renderDatesPayeExactes();
+}
+
+async function retirerDatePayeExacte(mv){
+  if(!config.payrollCutoffDates || !config.payrollCutoffDates[mv]) return;
+  if(!confirm(`Retirer la date exacte pour la paie de ${mv} ?\n\nLe CRM reviendra au calcul automatique (jour ${getPayrollCutoffDay()} du mois suivant).`)) return;
+  delete config.payrollCutoffDates[mv];
+  await saveConfigSilent();
+  logAudit('Admin', 'Date de paye exacte retirée', mv);
+  billingInvalidate();
+  clearRenderCaches();
+  renderDatesPayeExactes();
+}
+
+function renderDatesPayeExactes(){
+  const el = document.getElementById('listeDatesPaye');
+  if(!el) return;
+  const dates = config.payrollCutoffDates || {};
+  const cles = Object.keys(dates).sort().reverse();
+  if(!cles.length){
+    el.innerHTML = `<div class="section-sub" style="margin-top:10px;">Aucune date saisie — le CRM applique le jour ${getPayrollCutoffDay()} du mois suivant pour tous les mois.</div>`;
+    return;
+  }
+  el.innerHTML = '<div style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">' + cles.map(mv=>{
+    const d = new Date(dates[mv] + 'T00:00:00');
+    const lisible = isNaN(d.getTime()) ? dates[mv] : d.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    return `<div style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; background:var(--panel2); border:1px solid var(--border); font-size:13px;">
+      <b style="min-width:96px;">Paie de ${escapeHtml(billingMonthLabel(mv))}</b>
+      <span style="color:var(--muted);">partie le</span>
+      <b style="color:#5cb896;">${escapeHtml(lisible)}</b>
+      <button onclick="retirerDatePayeExacte('${escapeHtml(mv)}')" title="Revenir au calcul automatique pour ce mois"
+        style="margin-left:auto; padding:4px 10px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:12px;">Retirer</button>
+    </div>`;
+  }).join('') + '</div>';
+}
+
 async function savePayrollCutoffDayConfig(){
   const raw = document.getElementById('cfgPayrollCutoffDay')?.value;
   const n = Number(raw);
@@ -5999,10 +6099,28 @@ async function savePayrollCutoffDayConfig(){
 // La paie d'un mois donné est considérée "déjà partie" dès qu'on a dépassé le jour de paye réglé
 // ci-dessus, DU MOIS SUIVANT. Ex : paie de janvier envoyée le 7 février → à partir du 8 février, on
 // considère que rouvrir janvier reviendrait à corriger une paie déjà versée.
-function isPayrollClosedFor(monthVal){
+// La date à laquelle la paie de `monthVal` est réellement partie.
+// Par défaut : le jour réglé dans Réglages, du mois SUIVANT (ex : paie d'août → 7 septembre).
+// Mais ce jour bouge — week-end, jour férié, banque : l'admin peut donc saisir la date exacte pour
+// un mois donné dans Réglages, et cette saisie l'emporte toujours sur le calcul automatique.
+function payrollCutoffDateFor(monthVal){
+  const exacte = (config.payrollCutoffDates || {})[monthVal];
+  if(exacte){
+    const d = new Date(String(exacte) + 'T00:00:00');
+    if(!isNaN(d.getTime())) return d;
+  }
   const [y, m] = String(monthVal).split('-').map(Number);
-  const cutoff = new Date(y, m, getPayrollCutoffDay()); // m (non -1) = déjà le mois suivant
-  return nowMA() >= cutoff;
+  return new Date(y, m, getPayrollCutoffDay());   // m (non -1) = déjà le mois suivant
+}
+
+// 🐛 BUG CORRIGÉ — la paie était considérée partie dès le jour de paye à 00h00, donc pendant TOUTE
+// la journée du 7. Une rétractation traitée le 7 au matin était renvoyée sur le mois suivant alors
+// que la paie ne partait que dans la journée. Le mois ne se ferme désormais qu'à partir du LENDEMAIN
+// de la date de paye — le jour de paye lui-même, tu travailles encore dessus.
+function isPayrollClosedFor(monthVal){
+  const d = payrollCutoffDateFor(monthVal);
+  const lendemain = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  return nowMA() >= lendemain;
 }
 // Le mois de paie « en cours » à utiliser pour une rétractation en retard : celui d'aujourd'hui.
 function currentPayMonthGuess(){
@@ -9445,7 +9563,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const absentJourComplet = !!(mo && mo.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence] && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence].deduction === 'full');
       const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
-      const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
+      const daysElapsed = workingDaysElapsedForAgent(r.agent, referenceRythmeMois(dateStr));
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       // 📏 « Objectif visé » n'est affiché que s'il DIFFÈRE du minimum. Quand l'admin n'a pas fixé de
@@ -9508,7 +9626,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const absentJourComplet = !!(mo && mo.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence] && JUSTIFIED_ABSENCE_TYPES[mo.justifiedAbsence].deduction === 'full');
       const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
-      const daysElapsed = workingDaysElapsedForAgent(r.agent, dateStr);
+      const daysElapsed = workingDaysElapsedForAgent(r.agent, referenceRythmeMois(dateStr));
       const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.vise>0 || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
@@ -11009,7 +11127,11 @@ async function dailyContractCount(dateStr){
     const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
     prodBoardCache[dateStr] = board;
     n = 0;
-    (config.agents || []).forEach(a=>{ n += ((board.agents && board.agents[a]) || {}).realized || 0; });
+    // 🐛 BUG CORRIGÉ — ce repli bouclait sur config.agents, d'où les agents archivés ont été retirés.
+    // Les contrats d'un agent parti disparaissaient donc de la tendance et des comparaisons de mois,
+    // alors que le chiffre d'affaires, lui, les compte (getTotalContractsMonth utilise déjà
+    // allKnownAgents). Deux écrans racontaient une histoire différente du même mois.
+    allKnownAgents().forEach(a=>{ n += ((board.agents && board.agents[a]) || {}).realized || 0; });
   }
   dailyCountCache[dateStr] = n;
   return n;
@@ -11173,11 +11295,17 @@ async function renderInactiveAgentsPanel(){
 
   // Les 5 derniers jours ouvrés (lundi-vendredi), pour repérer une série de 0 consécutifs jusqu'à
   // aujourd'hui (une pause ou un jour férié n'interrompt pas artificiellement la détection).
+  // 🐛 BUG CORRIGÉ — on ne retirait que les samedis et dimanches, jamais les jours fériés, et on ne
+  // regardait pas si l'agent était en congé. Quelqu'un en congé payé toute la semaine apparaissait
+  // « 0 contrat depuis 5 jours ouvrés » : on allait mettre la pression à quelqu'un qui n'avait rien
+  // à se reprocher. On utilise maintenant isWorkingDay (qui exclut les fériés) et on neutralise les
+  // jours d'absence justifiée agent par agent, plus bas.
   const days = [];
   let cursor = nowMA();
-  while(days.length < 5){
-    const dow = cursor.getDay();
-    if(dow !== 0 && dow !== 6) days.unshift(todayStr(cursor));
+  let garde = 0;
+  while(days.length < 5 && garde++ < 60){
+    const ds = todayStr(cursor);
+    if(isWorkingDay(ds)) days.unshift(ds);
     cursor.setDate(cursor.getDate()-1);
   }
   const boards = {};
@@ -11186,11 +11314,25 @@ async function renderInactiveAgentsPanel(){
     prodBoardCache[dateStr] = boards[dateStr];
   }));
 
+  // Les journées d'absence justifiée (congé payé, arrêt, etc.) ne sont ni un jour d'inactivité ni une
+  // rupture de série : on les saute, exactement comme jourNeutrePourSerie le fait ailleurs.
+  const journauxParAgent = {};
+  await Promise.all(nonIndep.map(async agent=>{
+    const logs = await Promise.all(days.map(d => getDayLog(agent, d).catch(()=> ({}))));
+    journauxParAgent[agent] = {};
+    days.forEach((d, i)=>{ journauxParAgent[agent][d] = logs[i] || {}; });
+  }));
+
   const alerts = [];
   nonIndep.forEach(agent=>{
     let streak = 0;
     for(let i=days.length-1; i>=0; i--){
-      const board = boards[days[i]];
+      const jour = days[i];
+      const log = (journauxParAgent[agent] || {})[jour] || {};
+      // Congé, arrêt, jour hors contrat, jour d'avant son arrivée : neutre, on passe au précédent.
+      const arrivee = getAgentStartDate(agent);
+      if(log.justifiedAbsence || estHorsContrat(agent, jour) || (arrivee && jour < arrivee)) continue;
+      const board = boards[jour];
       const p = (board.agents && board.agents[agent]) || { realized: 0 };
       if((p.realized||0) === 0) streak++;
       else break;
@@ -11318,7 +11460,7 @@ async function renderAllMonthly(){
       : '';
     esc += `<div class="escalade-card" onclick="jumpToAgentRetardDetail('${s.agent.replace(/'/g,"\\'")}')" title="Cliquer pour voir le détail jour par jour de ${s.agent}">
       <div class="name">${s.agent}</div>
-      <div class="count">${s.retardsCumules} retard${s.retardsCumules>1?'s':''}/absence${s.retardsCumules>1?'s':''} cumulés ce mois-ci <span style="color:var(--muted); font-weight:500;">(${s.retards} arrivée + ${s.pauseOver} pause + ${s.absences} absence${s.absences>1?'s':''})</span></div>
+      <div class="count">${s.retardsCumules} retard${s.retardsCumules>1?'s':''}/absence${s.retardsCumules>1?'s':''} cumulés ce mois-ci <span style="color:var(--muted); font-weight:500;" title="Le total ne s'obtient pas en additionnant simplement les trois chiffres : un retard à l'arrivée et une absence comptent chacun pour 1, tandis que les dépassements de pause ne comptent que par 3 sous le seuil réglé (3 petits = 1), et pour 1 chacun au-dessus. C'est ce total-là qui décide de la prime d'assiduité." style="cursor:help;">(${s.retards} arrivée${s.retards>1?'s':''} + ${s.absences} absence${s.absences>1?'s':''} + ${s.pauseOver} pause${s.pauseOver>1?'s':''} → ${s.pauseOverEquivalentRetards != null ? s.pauseOverEquivalentRetards : Math.max(0, s.retardsCumules - s.retards - s.absences)} compté${(s.pauseOverEquivalentRetards != null ? s.pauseOverEquivalentRetards : 0)>1?'s':''}) <span style="opacity:0.7;">ⓘ</span></span></div>
       ${pauseDetail}
       <span class="tier ${tier.cls}">${tier.label}</span>
     </div>`;
@@ -11650,6 +11792,21 @@ function workingDaysElapsedThrough(dateStr){
 // écoulés depuis son arrivée. Un chiffre faux, et humiliant pour quelqu'un qui domine le classement.
 // On ne compte plus que les jours ouvrés écoulés DANS LE MOIS de la date de référence, en partant
 // de l'arrivée de l'agent s'il est arrivé en cours de mois.
+// 🐛 BUG CORRIGÉ — le rythme mensuel se calculait en divisant un total de contrats arrêté à
+// AUJOURD'HUI par les jours écoulés jusqu'à la DATE AFFICHÉE. Rouvrir le bilan du 3 alors qu'on est le
+// 20 donnait « 60 contrats ÷ 3 jours = 20 contrats par jour ». Les deux doivent porter sur la même
+// période. Cette fonction donne la date de référence à utiliser pour les jours écoulés : aujourd'hui
+// si on regarde le mois en cours, la fin du mois si on regarde un mois déjà terminé.
+function referenceRythmeMois(dateStr){
+  const auj = todayStr();
+  const ds = String(dateStr || auj);
+  if(ds.slice(0, 7) === auj.slice(0, 7)) return auj;
+  const [y, m] = ds.split('-').map(Number);
+  if(!y || !m) return auj;
+  const dernier = new Date(y, m, 0).getDate();
+  return `${y}-${String(m).padStart(2,'0')}-${String(dernier).padStart(2,'0')}`;
+}
+
 function workingDaysElapsedForAgent(agent, refDateStr){
   const ref = refDateStr || todayStr();
   const debutMois = ref.slice(0, 8) + '01';
@@ -13576,13 +13733,16 @@ async function bootstrapDayRecords(){
   return rec;
 }
 
-async function getDayRecords(){
-  if(_dayRecordsCache) return _dayRecordsCache;
-  if(_dayRecordsInflight) return _dayRecordsInflight;   // deux panneaux qui démarrent en même temps
+async function getDayRecords(frais){
+  if(!frais && _dayRecordsCache) return _dayRecordsCache;
+  if(!frais && _dayRecordsInflight) return _dayRecordsInflight;   // deux panneaux qui démarrent en même temps
   _dayRecordsInflight = (async ()=>{
     let rec = null;
     try{
-      const res = await storageGet(DAY_RECORDS_KEY);
+      // `frais` est demandé juste avant une réécriture du document (voir enregistrerRecordDuJour) :
+      // sans ça, le poste qui écrit part d'une version en mémoire pouvant dater de plusieurs minutes
+      // et efface le record qu'un autre agent vient de poser.
+      const res = await storageGet(DAY_RECORDS_KEY, frais ? { fresh: true } : undefined);
       if(res && res.value) rec = JSON.parse(res.value);
     }catch(e){}
     if(!rec || !rec.perAgent) rec = await bootstrapDayRecords();
@@ -13628,7 +13788,8 @@ function evaluerRecordDuJour(rec, agent, dateStr, realized){
 // `prev` pour que la félicitation tienne toute la journée.
 async function enregistrerRecordDuJour(agent, dateStr, realized){
   if(!realized || realized <= 0) return;
-  const rec = await getDayRecords();
+  // Relecture fraîche obligatoire : ce document est réécrit EN ENTIER juste en dessous.
+  const rec = await getDayRecords(true);
   let change = false;
   const pa = rec.perAgent[agent] || null;
   if(!pa || realized > pa.value){
@@ -13646,7 +13807,10 @@ async function enregistrerRecordDuJour(agent, dateStr, realized){
   }
   if(!change) return;
   _dayRecordsCache = rec;
-  try{ await storageSet(DAY_RECORDS_KEY, JSON.stringify(rec)); }catch(e){}
+  // 🐛 L'échec d'écriture était totalement silencieux : l'app gardait en mémoire un record qui
+  // n'existait pas en base, et l'agent recevait une félicitation pour rien.
+  try{ await storageSet(DAY_RECORDS_KEY, JSON.stringify(rec)); }
+  catch(e){ _dayRecordsCache = null; console.error('record du jour non enregistré', e); }
 }
 
 // La phrase de félicitation, à afficher à l'agent. Volontairement chaleureuse et concrète : on nomme
@@ -14586,11 +14750,9 @@ async function weekRealizedTotalsForMonday(monday, limitDays){
   }));
   const totals = {};
   config.agents.forEach(agent=>{
-    const agentStartDate = disciplineFrom(agent);
-    const agentEndDate = disciplineUntil(agent);
-    let agentDates = agentStartDate ? wDates.filter(ds=>ds>=agentStartDate) : wDates;
-    if(agentEndDate) agentDates = agentDates.filter(ds=>ds<agentEndDate);
-    agentDates = agentDates.filter(ds => !estHorsContrat(agent, ds));
+    // Ce sont des CONTRATS : bornés par l'arrivée de l'agent, jamais par la mise en service du
+    // pointage (voir datesContratsDe).
+    const agentDates = datesContratsDe(agent, wDates);
     totals[agent] = agentDates.reduce((s,d)=> s + (getAgentProd(boards[d], agent).realized || 0), 0);
   });
   return { weekDates: wDates, totals, daysUsed: wDates.length };
@@ -14656,9 +14818,13 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     let agentWorkingDates = agentStartDate ? workingDates.filter(ds => ds >= agentStartDate) : workingDates;
     if(agentEndDate) agentWorkingDates = agentWorkingDates.filter(ds => ds < agentEndDate);
     agentWorkingDates = agentWorkingDates.filter(ds => !estHorsContrat(agent, ds));
+    // Les contrats se comptent sur leurs propres bornes (arrivée de l'agent), pas sur celles de la
+    // discipline — sinon une semaine d'avant la mise en service du pointage affiche 0 pour tout le
+    // monde. La discipline (retards, absences, jours à 0) reste sur agentWorkingDates ci-dessous.
+    weekRealized = datesContratsDe(agent, workingDates)
+      .reduce((somme, d) => somme + (getAgentProd(boardsByDate[d], agent).realized || 0), 0);
     await Promise.all(agentWorkingDates.map(async d=>{
       const realized = getAgentProd(boardsByDate[d], agent).realized || 0;
-      weekRealized += realized;
       const log = await getDayLog(agent, d);
       // On ne juge "absent" ou "0 contrat" que si la journée est vraiment terminée (jour passé, ou
       // aujourd'hui après l'heure de fin configurée) — sinon un agent apparaît "absent"/"à 0" alors que
@@ -15648,10 +15814,20 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   // calculées sur un fixe que l'agent ne touche pas : un agent en découverte avec un seul retard
   // affichait 0 − 143 = −143 DH. Même effet, plus discret, pour une arrivée en cours de mois : la
   // retenue n'était pas proratisée alors que le salaire l'était.
-  const pay = getAgentPay(agent, year, month);
+  // 🐛 DOUBLE-PRORATA CORRIGÉ. Le taux journalier doit partir du fixe PLEIN divisé par les jours
+  // ouvrés du mois ENTIER — c'est déjà ce que font calculateDailySalary et calculateWeeklySalary.
+  // Ici on partait du fixe DÉJÀ réduit par le prorata d'embauche, puis on le redivisait par le mois
+  // entier : la réduction était appliquée deux fois.
+  //   Cas réel : embauché le 20/08 (8 jours ouvrés sur 21), fixe 3000 DH.
+  //   Correct : 3000/21 = 143 DH retenus pour une journée non payée.
+  //   Avant   : (3000×8/21)/21 = 54 DH — soit 89 DH de moins que ce que le panneau annonçait.
+  // Le motif d'origine de ce prorata (un agent en découverte affichait un salaire NÉGATIF, parce
+  // qu'on lui retenait un fixe qu'il ne touche pas) est déjà traité autrement, plus bas : les jours
+  // de découverte sont retirés de dateStrs, donc aucune retenue n'est calculée sur ces jours-là.
+  const payPlein = getAgentPay(agent);
   const isIndep = isIndependant(agent);
   const daysMonth = workingDaysInMonth(year, month);
-  const dailyFixedQuote = (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth;
+  const dailyFixedQuote = (payPlein.baseSalary + payPlein.primeFixeMensuelle) / daysMonth;
   const workMinutes = Math.max(60, toMinutes(config.end) - toMinutes(config.start));
   const minuteRate = dailyFixedQuote / workMinutes;
   const halfHourDeduction = minuteRate * 30;
@@ -15892,7 +16068,12 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
   raaPanelLastComputed[containerId] = Date.now();
   raaPanelLastKey[containerId] = key;
 
+  // Deux versions volontairement : le taux JOURNALIER se calcule sur le fixe plein (voir
+  // monthlyDeductions), la PRIME D'ASSIDUITÉ est une enveloppe mensuelle, donc proratisée pour une
+  // arrivée ou un départ en cours de mois — exactement comme sur le bulletin. Sans ça, le panneau
+  // annonçait « -500 DH » à une recrue arrivée le 20 alors que la paie n'en retirait que 190.
   const pay = getAgentPay(agent);
+  const payMois = getAgentPay(agent, year, month);
   const [stats, ded] = await Promise.all([
     monthlyStats(agent, year, month),
     monthlyDeductions(agent, year, month)
@@ -15912,7 +16093,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
   const retardAbsenceLost = ded.items.filter(i=> /^(Retard|Absence|Mise à pied)/.test(i.label)).reduce((s,i)=> s + i.amount, 0);
   const pauseLost = ded.items.filter(i=> i.label.startsWith('Dépassement pause')).reduce((s,i)=> s + i.amount, 0);
   const primeAssiduitePerdue = count >= 3;
-  const totalLostThisMonth = retardAbsenceLost + pauseLost + (primeAssiduitePerdue ? (pay.primeAssiduite||0) : 0);
+  const totalLostThisMonth = retardAbsenceLost + pauseLost + (primeAssiduitePerdue ? (payMois.primeAssiduite||0) : 0);
   const fmt = n => Math.round(n).toLocaleString('fr-FR');
 
   // 5 paliers du règlement, espacés régulièrement sur la frise (0/1/3/5/6 → positions 0/25/50/75/100%).
@@ -15950,7 +16131,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
   const captions = {
     0: "Aucun souci ce mois-ci ✅",
     1: "Compteur activé — prime encore acquise",
-    3: `Prime d'assiduité perdue (-${fmt(pay.primeAssiduite||0)} DH)`,
+    3: `Prime d'assiduité perdue (-${fmt(payMois.primeAssiduite||0)} DH)`,
     5: `Mise à pied + retours ÷2 (au lieu de ÷3)`,
     6: `Mise à pied + retours 1:1 (au lieu de ÷3)`
   };
@@ -15960,7 +16141,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
   const detailRows = [
     ['Retard 1 à 10 min', `-${fmt(halfHourDeduction)} DH immédiat (30 min de salaire)`],
     ['Retard +10 min ou absence', `journée non payée (-${fmt(dailyFixedQuote)} DH), contrats du jour toujours payés`],
-    ["3e retard ou absence (ou équivalent)", `-${fmt(pay.primeAssiduite||0)} DH de prime d'assiduité (perdue pour tout le mois)`],
+    ["3e retard ou absence (ou équivalent)", `-${fmt(payMois.primeAssiduite||0)} DH de prime d'assiduité (perdue pour tout le mois)`],
     ["5e retard ou absence (ou équivalent)", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours ÷2 au lieu de ÷3 (hors CRM)`],
     ["6e retard ou absence (ou équivalent)", `mise à pied 1j (≈ -${fmt(dailyFixedQuote)} DH) + retours 1:1 au lieu de ÷3 (hors CRM)`],
     [`☕ Dépassement de pause < ${pauseThresholdForDisplay}min (planning + pause libre)`, `retenue au prorata de la minute (jamais 30min forfaitaires) + 3 dépassements de ce type dans le mois = 1 retard équivalent dans le compteur ci-dessus`],
@@ -18430,7 +18611,7 @@ async function renderSupervisionReel(){
     // Un indépendant peut lui aussi se fixer un défi du jour dans l'Arena (facultatif) — on ne le
     // force plus à 0 ici, pour qu'il apparaisse comme les autres dans le bloc visé/réalisé du jour.
     const dayObjective = dayProd.objective || 0;
-    const weekObjective_ = isIndep ? 0 : dayObjective * (pc.daysPerWeek || 5);
+    const semaineComplete = isIndep ? 0 : dayObjective * (pc.daysPerWeek || 5);
     const monthObj_ = isIndep ? 0 : (pay.objectifMensuel || 0);
 
     const [weekData, monthReal, monthStats, log, desiredObj] = await Promise.all([
@@ -18489,7 +18670,12 @@ async function renderSupervisionReel(){
     }
 
     return {
-      agent, isIndep, dayRealized, dayObjective, weekReal: weekData.total, weekObjective: weekObjective_,
+      // 🐛 BUG CORRIGÉ — on comparait le réalisé du lundi À AUJOURD'HUI à l'objectif d'une semaine
+      // ENTIÈRE. Le mardi, toute l'équipe était donc affichée « en retard » quoi qu'elle fasse, et le
+      // voyant ne voulait plus rien dire. On compare maintenant aux jours ouvrés réellement écoulés.
+      agent, isIndep, dayRealized, dayObjective, weekReal: weekData.total,
+      weekObjective: isIndep ? 0 : dayObjective * Math.min(weekData.daysElapsed || 0, (pc.daysPerWeek || 5)),
+      weekObjectiveComplet: semaineComplete,
       monthReal, monthObj: monthObj_, pctMonth: pctMonth_, atteint, salaryMonth: monthRes.total,
       statusLabel, statusCls, tier, retardsCumules: monthStats ? monthStats.retardsCumules : 0,
       desiredObj, desiredPct,
@@ -18579,7 +18765,16 @@ async function renderSupervisionReel(){
   // Pourquoi "76" (équipe, y compris superviseurs) ne correspond pas directement à "46" (pool de
   // commission, hors superviseurs) : la différence = les contrats PERSO de tous les superviseurs (le
   // tien + ceux des autres s'il y en a), qui ne comptent jamais dans ta prime.
-  const allSupervisorsPersonal = Math.max(0, totalMonthReal - totalBasePool);
+  // 🐛 BUG CORRIGÉ — on faisait « total d'équipe − pool de commission ». Or le total d'équipe COMPTE
+  // les indépendants et le pool NON : dès qu'un indépendant produisait, la soustraction devenait
+  // négative et tombait à 0. On lisait « Dont 46 agents de base + 0 perso » sous un total de 40.
+  // On additionne maintenant les trois familles séparément — leur somme fait exactement le total.
+  const allSupervisorsPersonal = rows
+    .filter(r => !r.isIndep && isSupervisor(r.agent))
+    .reduce((somme, r) => somme + (r.monthReal || 0), 0);
+  const allIndepContracts = rows
+    .filter(r => r.isIndep)
+    .reduce((somme, r) => somme + (r.monthReal || 0), 0);
 
   // ── Nommer les agents concernés, avec le détail chiffré en survol ────────────────────────────────
   // Les infobulles utilisent &#10; (retour à la ligne en attribut HTML) : un \n brut casserait
@@ -18628,7 +18823,7 @@ async function renderSupervisionReel(){
       ${presqueHtml}
       ${viseHtml}
       ${sousViseHtml}
-      <div class="sub" style="margin-top:8px;font-size:11px;" title="Les ${totalBasePool} contrats des agents de base sont les seuls qui alimentent ta prime de supervision.&#10;Les ${allSupervisorsPersonal} contrats personnels des superviseurs (les tiens compris) comptent pour l'équipe, mais JAMAIS dans la prime — personne ne se paie une prime sur ses propres ventes." style="cursor:help;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}. <span style="opacity:0.7;">ⓘ</span></div>
+      <div class="sub" style="margin-top:8px;font-size:11px;" title="Les ${totalBasePool} contrats des agents de base sont les seuls qui alimentent ta prime de supervision.&#10;Les ${allSupervisorsPersonal} contrats personnels des superviseurs (les tiens compris) comptent pour l'équipe, mais JAMAIS dans la prime — personne ne se paie une prime sur ses propres ventes." style="cursor:help;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}${allIndepContracts>0 ? ` + ${allIndepContracts} indépendant${allIndepContracts>1?'s':''}` : ''}. <span style="opacity:0.7;">ⓘ</span></div>
     </div>
     <div class="supervision-card sup-perso-block">
       <div class="label">📊 Ta prime de supervision</div>
@@ -20054,7 +20249,18 @@ async function getBillingPayslips(monthVal){ return await billingLoad(billingPay
 // apparaissait dans le message de fin d'import, sans aucun moyen de savoir lesquelles ni de les rattraper
 // plus tard. Elles atterrissent maintenant ici, en attendant que la Production du bon mois soit importée.
 async function getPendingRetractions(){
-  return await billingLoad(PENDING_RETRACT_KEY, { items: [] });
+  // 🐛 Lecture TOUJOURS fraîche, en contournant le cache de facturation (qui peut servir la même
+  // copie pendant 5 minutes). Ce document est lu juste avant d'être réécrit en entier : avec une
+  // copie périmée, une rétractation qu'un autre poste venait de traiter réapparaissait « en attente »
+  // et le travail de l'autre était perdu. Le document est minuscule et lu rarement.
+  delete BILLING_CACHE[PENDING_RETRACT_KEY];
+  let out = { items: [] };
+  try{
+    const res = await storageGet(PENDING_RETRACT_KEY, { fresh: true });
+    if(res && res.value) out = JSON.parse(res.value);
+  }catch(e){ console.error('getPendingRetractions', e); }
+  BILLING_CACHE[PENDING_RETRACT_KEY] = out;
+  return out;
 }
 async function savePendingRetractions(items){
   await billingSave(PENDING_RETRACT_KEY, { items });
@@ -22388,6 +22594,7 @@ function initBillingDefaults(){
   if(offsetEl && offsetEl.value === '') offsetEl.value = getReturnMonthOffset();
   const cutoffEl = document.getElementById('cfgPayrollCutoffDay');
   if(cutoffEl && cutoffEl.value === '') cutoffEl.value = getPayrollCutoffDay();
+  renderDatesPayeExactes();
   // Période de retours proposée par défaut : la fenêtre 21→20 décalée du nombre de mois réglé
   // ci-dessus (ex : décalage 2 → paie de mars → retours du 21/12 au 20/01). Modifiable à la main.
   const from = document.getElementById('billingRetFrom');
@@ -27614,7 +27821,11 @@ async function assistSave(list){
 async function assistMutate(fn){
   let courant = assistList;
   try{
-    const res = await storageGet(ASSIST_KEY);
+    // 🐛 { fresh: true } INDISPENSABLE. storageGet sert par défaut une copie en mémoire vieille de
+    // 3 secondes. Or cette fonction lit la liste puis la RÉÉCRIT EN ENTIER : avec une copie périmée,
+    // une demande d'assistance créée entre-temps (depuis n'importe quel poste) était effacée. Deux
+    // agents qui appellent à l'aide à quelques secondes d'écart, et l'un des deux n'alertait personne.
+    const res = await storageGet(ASSIST_KEY, { fresh: true });
     if(res && res.value) courant = assistParse(res.value);
   }catch(e){}
   const suivant = fn(assistPurge(courant));
