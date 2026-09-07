@@ -1329,6 +1329,11 @@ async function tryDeviceGateAdmin(){
           onclick="togglePwField('adminPwInput', this)">👁️</button>
       </div>
       <button onclick="tryAdminLogin()">Entrer</button>
+      <!-- Sortie de secours, toujours visible : c'est le SEUL bouton de déconnexion accessible sans
+           être déjà entré dans Admin. Sans lui, une session ouverte avec un compte d'agent ne peut
+           plus jamais atteindre le panneau Admin sur ce poste. -->
+      <button type="button" onclick="authDeconnecter()"
+        style="width:100%; margin-top:10px; padding:11px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer;">Changer de compte (se déconnecter)</button>
       <div style="color:var(--muted); font-size:12px; margin-top:14px;">Mot de passe oublié ? Contacte la personne qui gère cette application.</div>
     </div>
 
@@ -2814,7 +2819,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-07-r190';
+const APP_VERSION = '2026-09-07-r191';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -4609,7 +4614,13 @@ async function tryAdminLogin(){
   // ouverte avec un compte d'agent ne peut donc PAS entrer ici, même avec le bon mot de passe : c'est
   // exactement le but. Le message dit quoi faire au lieu de laisser croire à une panne.
   if(!configPriveeChargee){
-    alert("Accès Admin refusé sur ce poste.\n\nCette session est ouverte avec un compte d'agent. Pour entrer dans Admin, déconnecte-toi (Réglages → Se déconnecter, ou ferme et rouvre le navigateur) puis reconnecte-toi en choisissant « 🔐 Admin » dans la liste.");
+    // 🐛 PIÈGE CORRIGÉ. Ce message renvoyait vers « Réglages → Se déconnecter »… qui se trouve DANS
+    // le panneau Admin, justement inaccessible. Et un rechargement forcé ne déconnecte pas : la
+    // session Firebase survit au vidage du cache. L'utilisateur était enfermé dehors sans issue.
+    // On propose donc la déconnexion ici même, en un clic.
+    if(confirm("Accès Admin refusé sur ce poste.\n\nCette session est ouverte avec un compte d'agent — l'accès Admin demande le compte Admin.\n\nSe déconnecter maintenant pour se reconnecter en « 🔐 Admin » ?")){
+      authDeconnecter(true);
+    }
     return;
   }
   const val = document.getElementById('adminPwInput').value;
@@ -27115,8 +27126,8 @@ async function authDemarrer(){
 // est désormais le seul chemin d'entrée — c'était le but.
 
 // Déconnexion volontaire — utile quand un agent prête son poste, ou pour tester un autre compte.
-async function authDeconnecter(){
-  if(!confirm('Se déconnecter de ce poste ?\n\nIl faudra retaper le prénom et le mot de passe à la prochaine ouverture.')) return;
+async function authDeconnecter(sansDemander){
+  if(!sansDemander && !confirm('Se déconnecter de ce poste ?\n\nIl faudra retaper le prénom et le mot de passe à la prochaine ouverture.')) return;
   try{ await firebase.auth().signOut(); }catch(e){}
   try{ localStorage.removeItem('vn_dernierPrenom'); }catch(e){}
   location.reload();
