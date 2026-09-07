@@ -2819,7 +2819,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-07-r191';
+const APP_VERSION = '2026-09-07-r192';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2935,12 +2935,23 @@ function formatDuration(ms){
   return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+// 🐛 BUG CORRIGÉ — cette fonction ne fermait que la bannière DANS la page. Les notifications système
+// (créées avec requireInteraction: true, donc elles ne disparaissent jamais seules) restaient sur le
+// bureau de l'agent. Il revenait, l'appli le savait, et « DERNIER AVERTISSEMENT AVANT DÉCONNEXION »
+// continuait de le narguer en coin d'écran. On garde donc une référence sur chacune pour les fermer.
+let notificationsInactivite = [];
+function fermerNotificationsInactivite(){
+  notificationsInactivite.forEach(n=>{ try{ n.close(); }catch(e){} });
+  notificationsInactivite = [];
+}
+
 function clearInactivityWarnings(){
   inactivityWarnState = { thirty: false, ten: false, five: false };
   if(inactivityTitleFlashTimer){ clearInterval(inactivityTitleFlashTimer); inactivityTitleFlashTimer = null; }
   document.title = inactivityDocOriginalTitle;
   const banner = document.getElementById('inactivityWarnBanner');
   if(banner) banner.style.display = 'none';
+  fermerNotificationsInactivite();
 }
 
 function registerActivity(){
@@ -3121,6 +3132,8 @@ function showInactivityWarning(secondsLeft, level){
         renotify: true
       });
       notif.onclick = ()=>{ confirmPresenceFromAlert(); notif.close(); };
+      // Mémorisée pour pouvoir la refermer dès que l'agent redonne signe de vie.
+      notificationsInactivite.push(notif);
     }catch(e){}
   }
 }
@@ -3160,7 +3173,13 @@ function tickInactivityWatcher(){
     return;
   }
   if(currentAgent && isWithinScheduledHours()){
-    if(isOnAnyBreakNow(freeBreakCache.events || []) || isProtectedByADF()){
+    // 🐛 BUG CORRIGÉ — freeBreakCache.dateStr existait mais n'était jamais testé, et le cache n'était
+    // pas remis à zéro au changement d'agent. Un cache resté sur une pause non refermée (la veille,
+    // ou celle d'un collègue) faisait croire que l'agent était en pause : plus de compte à rebours,
+    // plus de déconnexion automatique, en silence. On n'y croit plus que si le cache porte bien sur
+    // AUJOURD'HUI.
+    const cacheDuJour = freeBreakCache.dateStr === todayStr() && freeBreakCache.agent === currentAgent;
+    if((cacheDuJour && isOnAnyBreakNow(freeBreakCache.events || [])) || isProtectedByADF()){
       // En pause (déjeuner ou pause libre), OU protégé par un ADF en cours (formation superviseur ↔
       // agent) : le chrono d'inactivité est simplement mis en sommeil, pas de compte à rebours, pas
       // d'alerte, pas de déconnexion.
@@ -3485,6 +3504,26 @@ const STORAGE_GET_TTL_MS = 3000;
 function storageForget(key){ _getRecent.delete(key); }
 function storageForgetAll(){ _getRecent.clear(); }
 
+// Une lecture qui échoue ne doit jamais passer inaperçue : sans ça, un écran de paie vide ressemble
+// trait pour trait à un mois sans contrat. On prévient une seule fois par session pour ne pas noyer
+// l'utilisateur sous les alertes quand le réseau tombe complètement.
+let lectureEchoueeSignalee = false;
+function signalerLectureEchouee(key, e){
+  const code = (e && e.code) ? e.code : '';
+  if(lectureEchoueeSignalee) return;
+  lectureEchoueeSignalee = true;
+  const raison = code === 'permission-denied'
+    ? "l'accès à cette donnée a été refusé"
+    : (code === 'unavailable' ? 'la base est injoignable' : 'la lecture a échoué');
+  try{
+    const el = document.getElementById('syncStatusIndicator');
+    if(el){ el.textContent = '⚠️ Données incomplètes — recharge la page'; el.style.color = '#e0555f'; }
+  }catch(err){}
+  try{
+    showToast(`⚠️ Certaines données n'ont pas pu être lues (${raison}). Les chiffres affichés peuvent être incomplets — recharge la page avant de t'y fier.`, 'warn', 12000);
+  }catch(err){}
+}
+
 async function storageGet(key, opts){
   if(!firebaseReady) return null;
   // 🐛 BUG CORRIGÉ (04/09) : le mémo de 3 s ci-dessus est calibré pour tenir UN SEUL rendu — mais deux
@@ -3505,7 +3544,17 @@ async function storageGet(key, opts){
     try{
       const doc = await db.collection('vortexnova').doc(key).get();
       return doc.exists ? { key, value: doc.data().value } : null;
-    }catch(e){ console.error('storageGet error:', e); return null; }
+    }catch(e){
+      // 🐛 BUG CORRIGÉ — panne réseau, permission refusée ou clé malformée renvoyaient toutes `null`,
+      // exactement comme un document inexistant. L'écran affichait donc « 0 contrat », « pas de
+      // prime » sur des données de PAIE, sans le moindre signal. On continue de renvoyer null (tous
+      // les appelants comptent dessus), mais on le fait savoir : indicateur de synchro en rouge et un
+      // avertissement à l'écran, une seule fois, pour que personne ne prenne un écran vide pour la
+      // vérité.
+      console.error('storageGet error:', key, e);
+      signalerLectureEchouee(key, e);
+      return null;
+    }
   })();
   _getInflight.set(key, p);
   let res = null;
@@ -3521,6 +3570,13 @@ let pendingWriteCount = 0;
 function updateSyncIndicator(){
   const el = document.getElementById('syncStatusIndicator');
   if(!el) return;
+  // Un avertissement « données incomplètes » ne doit pas être effacé par le prochain tour de
+  // rafraîchissement : tant que la page n'est pas rechargée, les chiffres restent douteux.
+  if(lectureEchoueeSignalee){
+    el.textContent = '⚠️ Données incomplètes — recharge la page';
+    el.style.color = '#e0555f';
+    return;
+  }
   if(!navigator.onLine){
     el.textContent = '🔴 Hors ligne — en attente de connexion (rien n\'est perdu)';
     el.style.color = '#e0555f';
@@ -3594,6 +3650,10 @@ function clearRenderCaches(){
   billingContractIndexCache = null;
   if(typeof clearDailyCountCache === 'function') clearDailyCountCache();
   if(typeof monthlyStatsCache !== 'undefined') monthlyStatsCache = {};
+  // 🐛 BUG CORRIGÉ — les records historiques (24 mois) n'étaient jamais invalidés ici : après un
+  // import corrigeant un mois passé, l'appli continuait d'annoncer les anciens records jusqu'au
+  // lendemain, et pouvait donc féliciter pour un record déjà battu.
+  if(typeof allTimeRecordsCache !== 'undefined'){ allTimeRecordsCache = null; allTimeRecordsCacheDay = null; }
   if(typeof storageForgetAll === 'function') storageForgetAll();
   lastFullCachePurgeAt = Date.now();
 }
@@ -3646,11 +3706,28 @@ let autoRefreshBusy = false;
 // par un rafraîchissement automatique — sinon une valeur en train d'être tapée (ex: un salaire dans
 // Production, une correction de pointage) pourrait disparaître sans prévenir. On saute simplement ce
 // tour-là ; le suivant réessaiera.
+// 🐛 BUG CORRIGÉ — n'importe quel champ ayant simplement le FOCUS suffisait à figer tout le
+// rafraîchissement automatique, sans le moindre indice à l'écran. Cliquer un menu déroulant sur
+// Supervision et regarder le tableau : les chiffres ne bougeaient plus de la séance.
+// Deux garde-fous : un menu déroulant ou une case à cocher ne bloquent plus rien (rien ne s'y perd
+// à redessiner), et une saisie abandonnée cesse de bloquer au bout de 90 secondes.
+let derniereFrappeAt = 0;
+document.addEventListener('input', ()=>{ derniereFrappeAt = Date.now(); }, true);
+const SAISIE_INACTIVE_MS = 90000;
+
 function userIsTypingInForm(){
   const el = document.activeElement;
   if(!el) return false;
   const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  if(tag !== 'INPUT' && tag !== 'TEXTAREA') return false;
+  const type = (el.type || '').toLowerCase();
+  // Cases à cocher, boutons radio, boutons : aucun texte en cours, rien à protéger.
+  if(type === 'checkbox' || type === 'radio' || type === 'button' || type === 'submit') return false;
+  // Champ vide et jamais tapé dedans : l'utilisateur a cliqué puis est passé à autre chose.
+  if(!String(el.value || '').length && !derniereFrappeAt) return false;
+  // Saisie abandonnée : au-delà de 90 s sans frappe, on relance le rafraîchissement.
+  if(derniereFrappeAt && (Date.now() - derniereFrappeAt) > SAISIE_INACTIVE_MS) return false;
+  return true;
 }
 
 function startAutoRefresh(kind){
@@ -4013,9 +4090,15 @@ async function loadConfig(){
 // Résultat : deux onglets peuvent modifier deux agents DIFFÉRENTS en parallèle sans que l'un efface le
 // travail de l'autre. Seule une vraie modification concurrente de LA MÊME clé peut encore se
 // « perdre » (cas rare, et c'est alors la dernière écriture qui gagne, comme avant ce correctif).
+// 🐛 BUG CORRIGÉ — six dictionnaires par agent manquaient à cette liste, dont plusieurs qui pèsent
+// DIRECTEMENT sur la paie : une découverte terminée sur un poste (agentsDecouverte /
+// agentsDecouverteEndDate) était réactivée par la première sauvegarde d'un onglet resté ouvert
+// ailleurs — et la découverte retire tout le fixe. Les mots de passe agents subissaient le même sort.
 const CONFIG_MERGE_DICT_FIELDS = ['agentsTerminated','agentsIndep','agentsSupervisor','agentsNoObjectif',
   'agentsStatusLabel','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate',
-  'assistanceMaxParAgent','agentsGaps'];
+  'assistanceMaxParAgent','agentsGaps',
+  'agentsDecouverte','agentsDecouverteEndDate','agentsTraining','agentsProbation',
+  'agentsAssistant','agentPasswords','agentAliases','agentGender'];
 // ⚠️ BUG CORRIGÉ — `agents` manquait à cette liste alors qu'archiveAgent modifie `agents` ET
 // `archivedAgents` ensemble. Un onglet resté ouvert qui enregistrait n'importe quel réglage
 // réécrivait `config.agents` en entier : l'agent archivé y revenait, pendant que la fusion le
@@ -4697,7 +4780,11 @@ function renderAgentChips(){
     const probation = getAgentProbation(name);
     const inProbation = isInProbation(name);
     const term = getAgentTermination(name);
-    const inDecouverte = isInDecouverte(name);
+    // 🐛 BUG CORRIGÉ — le badge ne testait que le drapeau, jamais la date de fin. La fiche affichait
+    // encore « 🔍 découverte → 12/08 » des semaines après le 12/08, alors que la paie appliquait déjà
+    // le régime salarié normal : l'écran des réglages contredisait le bulletin. On utilise la même
+    // règle que la paie (estEnDecouverteLe, qui tient compte de la date de fin).
+    const inDecouverte = estEnDecouverteLe(name, todayStr());
     const decouverteEnd = decouverteEndDateOf(name);
 
     chip.innerHTML = `<span>${name}${hasPw?' 🔒':''}${indep?' <span class="indep-badge">Indé</span>':''}${(!indep && noObj)?` <span class="indep-badge" style="background:var(--amber);color:#3a2a05;">${getNoObjectifLabel(name)}</span>`:''}${isSup?' <span class="indep-badge" style="background:var(--gold);color:#1a1408;">📊 Superviseur</span>':''}${isTrainer?' <span class="indep-badge" style="background:#4a9891;color:#062521;">🎓 Formateur ADF</span>':''}${(!isSup && isAssistant(name))?' <span class="indep-badge" style="background:#b5595c;color:#fff;">🤝 Assistant agréé</span>':''}${startDate?` <span class="indep-badge" style="background:#4a9891;color:#062521;" title="Retards/absences non comptés avant cette date">📅 depuis ${startDate.split('-').reverse().join('/')}</span>`:''}${inTraining?` <span class="indep-badge" style="background:#3d8bfd;color:#08182b;" title="0 objectif obligatoire jusqu'à cette date">🌱 formation jusqu'au ${trainingEndDate(name).split('-').reverse().join('/')}</span>`:''}${inProbation?` <span class="indep-badge" style="background:var(--red);color:#2a0808;" title="Zéro tolérance retard/absence jusqu'à cette date">⏳ essai jusqu'au ${probationEndDate(name).split('-').reverse().join('/')}</span>`:''}${inDecouverte?(decouverteEnd?` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Payé au contrat sans fixe jusqu'au ${decouverteEnd.split('-').reverse().join('/')}, salarié normal ensuite">🔍 découverte → ${decouverteEnd.split('-').reverse().join('/')}</span>`:` <span class="indep-badge" style="background:#b8935a;color:#2a1c05;" title="Payé au contrat uniquement, aucun fixe/prime tant que tu n'as pas terminé sa découverte (bouton 🏁)">🔍 découverte</span>`):''}${term?` <span class="indep-badge" style="background:var(--muted);color:#111;" title="Solde de tout compte au prorata sur la paye du mois concerné">🚪 parti le ${term.lastDay.split('-').reverse().join('/')}</span>`:''}</span>
@@ -5386,6 +5473,16 @@ async function addAgent(){
   const name = input.value.trim();
   if(!name) return;
   if(config.agents.includes(name)){ alert('Cet agent existe déjà.'); return; }
+  // 🐛 BUG CORRIGÉ — retaper le nom de quelqu'un d'archivé le remettait dans `agents` en le laissant
+  // dans `archivedAgents` : il était à la fois actif et archivé, compté deux fois dans certains
+  // écrans, et il retrouvait son passé sans que rien ne l'annonce. On propose plutôt la réintégration,
+  // qui est le geste voulu et qui gère correctement son historique et son licenciement éventuel.
+  if(archivedAgents().includes(name)){
+    if(!confirm(`${name} figure dans les anciens agents.\n\nLe réintégrer plutôt que d'en créer un nouveau ? Il retrouvera son historique complet.\n\nAnnuler = ne rien faire (utilise ↩️ sur sa fiche archivée).`)) return;
+    input.value = '';
+    await unarchiveAgent(name);
+    return;
+  }
   config.agents.push(name);
   const isIndep = document.getElementById('newAgentIndep').checked;
   if(isIndep) config.agentsIndep[name] = true;
@@ -5578,14 +5675,29 @@ async function importAgents(){
     }
     if(indep) newIndep[name] = true;
   }
-  if(newAgents.length === 0){
-    alert('Aucun nouvel agent à importer.');
+  // 🐛 BUG CORRIGÉ — l'import ne regardait pas la liste des archivés : réimporter un ancien nom le
+  // rendait actif ET archivé en même temps. On les écarte et on le dit, plutôt que de créer un doublon.
+  const dejaArchives = newAgents.filter(n => archivedAgents().includes(n));
+  const aAjouter = newAgents.filter(n => !archivedAgents().includes(n));
+  if(aAjouter.length === 0){
+    alert(dejaArchives.length
+      ? `Rien à importer.\n\n${dejaArchives.length} nom(s) figurent dans les anciens agents : ${dejaArchives.join(', ')}.\nRéintègre-les avec ↩️ sur leur fiche archivée, pour qu'ils retrouvent leur historique.`
+      : 'Aucun nouvel agent à importer.');
     return;
   }
-  if(!confirm(`Ajouter ${newAgents.length} agent(s) :\n${newAgents.join('\n')}`)) return;
-  config.agents.push(...newAgents);
+  if(!confirm(`Ajouter ${aAjouter.length} agent(s) :\n${aAjouter.join('\n')}` +
+      (dejaArchives.length ? `\n\n⚠️ Ignorés (déjà dans les anciens agents, à réintégrer avec ↩️) :\n${dejaArchives.join('\n')}` : ''))) return;
+  config.agents.push(...aAjouter);
   Object.assign(config.agentsIndep, newIndep);
+  // 🐛 BUG CORRIGÉ — aucune date d'arrivée n'était posée : chaque agent importé était traité comme un
+  // vétéran (objectif mensuel plein, aucun prorata de salaire, conseils sans indulgence, chambrage
+  // autorisé dès le premier jour), exactement le bug déjà corrigé dans addAgent. Et aucune ligne
+  // d'audit n'était écrite : rien ne gardait trace de qui avait importé quoi, ni quand.
+  if(!config.agentsStartDate) config.agentsStartDate = {};
+  const auj = todayStr();
+  aAjouter.forEach(n=>{ if(!config.agentsStartDate[n]) config.agentsStartDate[n] = auj; });
   await saveConfigSilent();
+  logAudit('Admin', 'Import d\'agents', `${aAjouter.length} ajouté(s) : ${aAjouter.join(', ')} — date d'arrivée posée au ${auj}${dejaArchives.length ? ` — ${dejaArchives.length} ignoré(s) (archivés)` : ''}`);
   renderAgentChips();
   populateAgentSelect();
   renderAgentPayTable();
@@ -6594,6 +6706,34 @@ async function saveDayCorrection(){
     document.getElementById('corrAttachmentFile').value = '';
     document.getElementById('corrAttachmentStatus').textContent = '';
     renderCorrAttachmentCurrent();
+  } else {
+    // 🐛 BUG CORRIGÉ — toute la sauvegarde du log était enfermée dans le `if(!isIndependant)`, alors
+    // que le statut d'absence est lu juste au-dessus et que la ligne d'audit écrit `statut=...` quoi
+    // qu'il arrive. Marquer un congé payé sur un indépendant n'enregistrait donc RIEN, et le journal
+    // affirmait le contraire. Un indépendant n'a pas de pointage — mais il a des absences, des motifs
+    // et des justificatifs, exactement comme les autres.
+    const logIndep = { events: [] };
+    if(justifiedAbsence) logIndep.justifiedAbsence = justifiedAbsence;
+    if(absenceComment) logIndep.absenceComment = absenceComment;
+    if(absenceDurationMinutes) logIndep.absenceDurationMinutes = absenceDurationMinutes;
+    if(corrPendingAttachment){
+      logIndep.attachmentData = corrPendingAttachment.data;
+      logIndep.attachmentType = corrPendingAttachment.type;
+      logIndep.attachmentName = corrPendingAttachment.name;
+    } else if(!corrAttachmentPendingRemove && corrCurrentAttachment){
+      logIndep.attachmentData = corrCurrentAttachment.data;
+      logIndep.attachmentType = corrCurrentAttachment.type;
+      logIndep.attachmentName = corrCurrentAttachment.name;
+    }
+    await saveDayLog(agent, dateStr, logIndep);
+    corrCurrentAttachment = logIndep.attachmentData ? { data: logIndep.attachmentData, type: logIndep.attachmentType, name: logIndep.attachmentName } : null;
+    corrPendingAttachment = null;
+    corrAttachmentPendingRemove = false;
+    const fIndep = document.getElementById('corrAttachmentFile');
+    if(fIndep) fIndep.value = '';
+    const sIndep = document.getElementById('corrAttachmentStatus');
+    if(sIndep) sIndep.textContent = '';
+    renderCorrAttachmentCurrent();
   }
 
   const objectif = parseInt(document.getElementById('corrObjectif').value);
@@ -6682,7 +6822,9 @@ async function giftBreakMinutes(){
 // ---- PAUSE LIBRE (35 min/jour à prendre quand on veut, en plusieurs fois si besoin) ----
 // Utilise des types d'événements dédiés (free_break_start / free_break_end), complètement séparés du
 // couple break_start/break_end réservé au déjeuner (horaire fixe) — les deux systèmes ne se mélangent jamais.
-let freeBreakCache = { events: [], dateStr: null };
+// `agent` en plus de `dateStr` : sur un poste ou l on change d agent dans la liste, le cache de
+// l agent precedent ne doit jamais servir pour le suivant (voir tickInactivityWatcher).
+let freeBreakCache = { events: [], dateStr: null, agent: null };
 
 function extractFreeBreakPairs(events){
   const pairs = [];
@@ -6775,7 +6917,7 @@ async function refreshFreeBreakUI(){
   box.style.display = 'block';
   const dateStr = todayStr();
   const log = await getDayLog(currentAgent, dateStr);
-  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, agent: currentAgent, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   updateFreeBreakDisplay();
   // La pause vient d'être lue : c'est l'un des deux signaux qui rendent quelqu'un indisponible.
   try{ assistPresenceSync(); assistRenderPresenceBox(); }catch(e){}
@@ -6894,7 +7036,7 @@ async function startFreeBreak(){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type: 'free_break_start', time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, agent: currentAgent, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   updateFreeBreakDisplay();
 }
 
@@ -6905,7 +7047,7 @@ async function endFreeBreak(){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type: 'free_break_end', time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, agent: currentAgent, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   updateFreeBreakDisplay();
 }
 
@@ -7624,7 +7766,7 @@ async function logEvent(type){
   const log = await getDayLog(currentAgent, dateStr);
   log.events.push({ type, time: nowTimeStr() });
   await saveDayLog(currentAgent, dateStr, log);
-  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
+  { const info = await getFreeBreakBonusInfo(currentAgent, dateStr, log); freeBreakCache = { events: log.events, dateStr, agent: currentAgent, bonusMin: info.totalBonus, earnedBonus: info.earnedBonus, realizedToday: info.realizedToday, nextTierIn: info.nextTierIn }; }
   await refreshAgentButtons();
   await refreshAgentStatus();
 }
@@ -9536,9 +9678,14 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // était « un peu en retrait » parce qu'elle en avait fait 9 la veille. Absurde, et démotivant.
   // On transmet donc de quoi juger la journée pour ce qu'elle vaut réellement : la moyenne de
   // l'équipe ce jour-là, le meilleur score du jour, le rang, l'avancement sur l'objectif du mois.
+  // 🐛 BUG CORRIGÉ — on filtrait bien les agents actifs… puis on divisait quand même par l'effectif
+  // ENTIER. Chaque absent, chaque agent en congé tirait la moyenne vers le bas comme s'il avait fait
+  // 0 contrat. Cette moyenne sert ensuite à dire qui est « au-dessus » ou « en dessous de la
+  // moyenne » : elle félicitait et sanctionnait sur un repère faussé. On divise maintenant par ceux
+  // qui ont réellement travaillé ce jour-là.
   const activeDay = combinedDayRows.filter(r => (r.realized || 0) > 0);
   const teamAvgToday = activeDay.length
-    ? combinedDayRows.reduce((s, r) => s + (r.realized || 0), 0) / combinedDayRows.length : 0;
+    ? activeDay.reduce((s, r) => s + (r.realized || 0), 0) / activeDay.length : 0;
   const bestToday = combinedDayRows.reduce((m, r) => Math.max(m, r.realized || 0), 0);
 
   const dayOverDayMap = {};
@@ -12310,9 +12457,10 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         `C'est fait, ton objectif minimum est en poche. Le plus dur est derrière toi, ne t'arrête pas en si bon chemin.`,
         `Objectif minimum atteint. Bon travail — chaque contrat en plus maintenant, c'est du bonus pur.`
       ], seed+'|mini'), SAGE, SAGE_BG));
-    } else if(remainingDays <= 0){
+    } else if(remainingDays <= 0 && isWorkingDay(refDayForSeed || todayStr())){
       // Une seule phrase ici, en rouge clignotant, le dernier jour du mois : c'est le message le plus
       // lourd de l'appli, il mérite mieux qu'une formulation unique répétée d'un mois sur l'autre.
+      // Le test isWorkingDay évite de l'afficher un samedi ou un dimanche de fin de mois (voir 4.7).
       lines.push(mk('📌', seedPick([
         `Dernier jour pour boucler ton objectif minimum (${monthlyRealized}/${mini}) ! C'est maintenant ou jamais.`,
         `Dernier jour du mois : il te manque ${ctr(miniGap)} pour ton objectif minimum. Tout se joue aujourd'hui.`,
@@ -12395,7 +12543,7 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
           `Objectif visé en poche. Tu peux être fière de ton mois — et il reste encore des jours pour aller chercher encore plus !`
         )
       ], seed+'|vise'), TEAL, TEAL_BG));
-    } else if(remainingDays <= 0){
+    } else if(remainingDays <= 0 && isWorkingDay(refDayForSeed || todayStr())){
       lines.push(mk('🚀', seedPick([
         `Dernier jour pour attraper ton objectif visé (${monthlyRealized}/${vise}) ! Un dernier coup et c'est fait.`,
         `Dernier jour : ${ctr(viseGap)} te sépare${viseGap>1?'nt':''} de l'objectif que tu t'étais fixé. Ça se tente.`,
@@ -12825,7 +12973,10 @@ function historyStripHtml(historyFull){
     }
     const v = (day && day.realized) || 0;
     const obj = (day && day.objective) || 0;
-    const h = Math.max(v===0?6:4, Math.round((v/max)*22));
+    // 🐛 BUG CORRIGÉ — une journée à 0 était dessinée à 6 px, une journée à 1 contrat (sur un max de
+    // 20) à 4 px : le graphique montrait la PIRE journée plus haute que la meilleure. Un 0 reste
+    // visible, mais ne peut plus dépasser une journée où l'agent a signé quelque chose.
+    const h = v === 0 ? 3 : Math.max(6, Math.round((v/max)*22));
     // 3 couleurs distinctes, logiques (pas décoratives) : rouge = 0 contrat (LE cas à éviter, la peur
     // n°1 du boss), orange = objectif fixé mais PAS atteint (au moins 1 contrat quand même — moins grave
     // qu'un 0, mérite une couleur à part), vert = objectif fixé ET atteint. Bleu neutre = pas d'objectif
@@ -12937,7 +13088,12 @@ function computeObjectiveStreak(todayRealized, todayObjective, historyFull, toda
 // Elle est volontairement muette pour un agent absent ou en découverte : ces deux cas ont leur propre
 // discours, complet, dans personalDailyComment.
 function dayNudgeLine(r, nowHour, dateStr){
+  // 🐛 BUG CORRIGÉ — une recrue à 0 contrat à 15 h lisait « 🚨 Toujours 0 contrat et la journée se
+  // termine », juste au-dessus du bloc recrue qui lui disait « personne n'attend un chiffre de toi
+  // aujourd'hui ». Deux messages opposés dans le même écran, le jour où elle a le plus besoin d'être
+  // rassurée. Les non-confirmés ont leur propre bloc de messages : celui-ci ne les concerne pas.
   if(!r || r.absentToday || r.enDecouverte) return null;
+  if(r.palierAnc && r.palierAnc !== 'confirme') return null;
   const SAGE = '#4f9d78', SAGE_BG = 'rgba(79,157,120,0.12)';
   const BLUE = '#5680ab', BLUE_BG = 'rgba(86,128,171,0.12)';
   const AMBER = '#b98a42', AMBER_BG = 'rgba(185,138,66,0.12)';
@@ -12981,6 +13137,26 @@ function dayNudgeLine(r, nowHour, dateStr){
       `${ctr(fait)} déjà aujourd'hui, sans même t'être fixé d'objectif ce matin. Imagine avec un cap clair.`,
       `Le compteur est lancé (${fait}) — pense quand même à te fixer un objectif, c'est ce qui fait la différence en fin de journée.`
     ], seed+'|dayNoObj'), BLUE, BLUE_BG);
+  }
+  // 🐛 TROU DE SEUIL CORRIGÉ. Les branches ci-dessus couvrent : objectif atteint, au moins la moitié,
+  // et zéro contrat. Le cas « a commencé mais est très loin du compte » (1 sur 6 à 16 h) ne matchait
+  // rien du tout : à 16 h, celui à 0 était alerté, celui à 3/6 encouragé, et celui à 1/6 — le plus en
+  // difficulté des trois après le zéro — n'avait AUCUNE ligne. C'est précisément celui qu'il fallait
+  // relancer. Volontairement placé en dernier : il n'attrape que ce qui reste.
+  if(obj > 0 && fait > 0 && fait * 2 < obj){
+    const reste = obj - fait;
+    if(nowHour >= 15){
+      return mkJ('⚠️', seedPick([
+        `${fait}/${obj} et la journée se termine. Il en manque ${ctr(reste)} — tout ne se rattrape peut-être pas, mais chaque contrat pris maintenant compte double pour ton mois.`,
+        `Tu es loin du compte (${fait}/${obj}) et il reste peu de temps. Vise au moins un de plus avant de partir : ne finis pas sur ce chiffre-là.`,
+        `${ctr(fait)} sur les ${obj} promis ce matin. La fin de journée, c'est maintenant — un dernier vrai coup de collier.`
+      ], seed+'|dayFarLate'), TERRACOTTA, TERRACOTTA_BG);
+    }
+    return mkJ('⏱️', seedPick([
+      `${fait}/${obj} : le compteur est lancé mais tu es encore loin. Il reste ${ctr(reste)} à aller chercher, et encore du temps pour le faire.`,
+      `Un début (${fait}/${obj}), mais le rythme ne suffira pas à tenir ta promesse du matin. Change quelque chose maintenant, pas à 17 h.`,
+      `${ctr(fait)} signé${fait>1?'s':''} sur ${obj}. Tu sais faire mieux — enchaîne, c'est le moment de la journée où ça se décide.`
+    ], seed+'|dayFar'), AMBER, AMBER_BG);
   }
   return null;
 }
@@ -13979,10 +14155,13 @@ function conseilPointDuJour(r, creneau, remainingDays){
       urgence = 3;
       constat = `Rien aujourd'hui, et rien depuis lundi (${r.weekDaysElapsed} jours travaillés à 0). Ce n'est plus une mauvaise journée, c'est une mauvaise semaine.`;
       conseils.push("Ce n'est plus un rappel : c'est un entretien. Prends-le à part, au calme, pas au milieu du plateau.");
-      conseils.push("Commence par écouter : quatre jours à 0 chez quelqu'un de confirmé, il y a toujours une cause (fichier, moral, santé, un dossier qui a mal tourné).");
+      // 🐛 BUG CORRIGÉ — « quatre jours » était écrit en dur alors que cette branche se déclenche dès
+      // 2 jours. Un mardi, le superviseur lisait un chiffre faux dans le seul écran censé lui donner
+      // des faits vérifiables devant l'agent. On reprend le vrai compteur, comme le constat au-dessus.
+      conseils.push(`Commence par écouter : ${r.weekDaysElapsed} jour${r.weekDaysElapsed>1?'s':''} à 0 chez quelqu'un de confirmé, il y a toujours une cause (fichier, moral, santé, un dossier qui a mal tourné).`);
       conseils.push("Repars avec un engagement écrit et vérifiable pour demain matin : un objectif chiffré et une heure de contrôle.");
       conseils.push(`Rappelle-lui concrètement ce que ça coûte : sa prime et son objectif mensuel se jouent sur ces jours-là.`);
-      aDire = `« ${n}, quatre jours sans rien, ce n'est pas toi. Je ne suis pas là pour te taper dessus, je suis là pour comprendre ce qui bloque. Dis-moi. »`;
+      aDire = `« ${n}, ${r.weekDaysElapsed} jour${r.weekDaysElapsed>1?'s':''} sans rien, ce n'est pas toi. Je ne suis pas là pour te taper dessus, je suis là pour comprendre ce qui bloque. Dis-moi. »`;
     } else if(habituellementBon){
       urgence = tard ? 2 : 1;
       constat = `${ctr(0)} aujourd'hui alors qu'il tourne à ${fmtNum(moyenneRecente)}/jour sur ses ${joursUtiles.length} derniers jours travaillés. Ce n'est pas son habitude : ce n'est probablement pas un problème de motivation.`;
@@ -17871,10 +18050,18 @@ async function refreshTickerPool(now){
   if(thirdAgent && thirdAgent.realized > 0 && nAg > 2){
     pousser(remplirTicker('tickerThird', thirdAgent.agent, thirdAgent.realized));
   }
-  if(nAg > 3 && penultAgent){
+  // 🐛 BUG CORRIGÉ — ces deux lignes ne vérifiaient ni l'ancienneté ni le score, alors que le
+  // commentaire individuel de l'Arena, lui, calcule explicitement chambrageAutorise = !estRecrue.
+  // Une recrue de son deuxième jour pouvait donc être nommée « bon dernier avec 0 contrat » sur le
+  // bandeau que TOUTE l'équipe voit défiler — le meilleur moyen de la perdre.
+  // Deuxième garde-fou : avec 3 ou 4 agents, le même agent pouvait être annoncé « 3e du podium » ET
+  // « frôle la dernière place » dans le même défilé. On exige donc assez de monde pour que les rôles
+  // ne se chevauchent pas.
+  const chambrable = (a)=> a && !estRecrue(a.agent);
+  if(nAg > 4 && penultAgent && chambrable(penultAgent) && penultAgent !== thirdAgent){
     pousser(remplirTicker('tickerSecondLast', penultAgent.agent, penultAgent.realized));
   }
-  if(lastAgent && nAg > 2){
+  if(nAg > 3 && lastAgent && chambrable(lastAgent) && lastAgent !== thirdAgent){
     pousser(remplirTicker('tickerLast', lastAgent.agent, lastAgent.realized));
   }
   Object.entries(tieGroups).forEach(([score, names])=>{
@@ -18926,9 +19113,15 @@ async function renderSupervisionReel(){
   const violationCount = complianceResults.filter(c=>c.violation).length;
   const compliantCount = complianceResults.length - violationCount;
 
+  // 🐛 BUG CORRIGÉ — on prenait bêtement le dernier du classement, sans regarder s'il avait seulement
+  // eu l'occasion de travailler. Un agent en congé tout le mois, ou une recrue arrivée la semaine
+  // dernière, se retrouvait désigné publiquement comme celui « à aller pousser un peu ». On écarte
+  // donc les absents du jour et les non-confirmés du choix du dernier — jamais du classement lui-même.
   const sortedByMonth = [...teamRows].sort((a,b)=> b.monthReal - a.monthReal);
   const bestAgent = sortedByMonth[0];
-  const worstAgent = sortedByMonth[sortedByMonth.length-1];
+  const designables = sortedByMonth.filter(r =>
+    !r.justifiedAbsence && !estEnDecouverteLe(r.agent, todayStr()) && !estRecrue(r.agent));
+  const worstAgent = designables.length ? designables[designables.length-1] : null;
 
   const pressureExtraHtml = `
     <div class="section-title" style="margin-top:0;">🚨 Conformité aujourd'hui</div>
