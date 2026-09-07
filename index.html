@@ -2825,7 +2825,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-07-r196';
+const APP_VERSION = '2026-09-07-r198';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -23498,7 +23498,10 @@ function billingAgentSheetHTML(d, forImage){
         <span id="billingSheetSearchCount" style="font-size:12.5px; color:var(--muted); white-space:nowrap;"></span>
       </div>`;
     }
-    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th><th>Téléphone</th><th>N° contrat</th>' + (forImage ? '' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
+    // 📄 DANS LE PDF ET L'IMAGE, le statut est ÉCRIT, pas seulement coloré. La couleur rouge et le
+    // texte barré disparaissent à l'impression en noir et blanc, se voient mal sur un téléphone, et
+    // ne disent rien à quelqu'un qui découvre le document. Le mot « RÉTRACTÉ » ne laisse aucun doute.
+    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th><th>Téléphone</th><th>N° contrat</th>' + (forImage ? '<th>Statut</th>' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
     const flagged = d.rows.filter(r => r._warnings && r._warnings.length);
     if(flagged.length && !forImage){
       html += `<div style="padding:11px 14px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.45); font-size:13px; margin-bottom:12px;">
@@ -23519,7 +23522,9 @@ function billingAgentSheetHTML(d, forImage){
         <td>${escapeHtml(r.nom)}${flag}</td>
         <td>${escapeHtml(r.telephone)}</td>
         <td>${escapeHtml(key)}</td>
-        ${forImage ? '' : `<td><button onclick="toggleBillingRetracted('${String(key).replace(/'/g, "\\'")}')" title="${r.retracted ? 'Ce contrat est marqué rétracté : le client s\'est rétracté dans son délai légal de 14 jours, l\'agent n\'est pas payé dessus. Clique pour annuler.' : 'Marquer ce contrat comme rétracté (le client s\'est rétracté dans les 14 jours). L\'agent ne sera pas payé dessus et son compteur de rétractations du mois augmente de 1.'}" style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>`}
+        ${forImage
+          ? `<td style="white-space:nowrap; font-weight:800; ${r.retracted ? 'color:var(--red);' : 'color:var(--muted); font-weight:600;'}">${r.retracted ? '🔻 RÉTRACTÉ' : '—'}</td>`
+          : `<td><button onclick="toggleBillingRetracted('${String(key).replace(/'/g, "\\'")}')" title="${r.retracted ? 'Ce contrat est marqué rétracté : le client s\'est rétracté dans son délai légal de 14 jours, l\'agent n\'est pas payé dessus. Clique pour annuler.' : 'Marquer ce contrat comme rétracté (le client s\'est rétracté dans les 14 jours). L\'agent ne sera pas payé dessus et son compteur de rétractations du mois augmente de 1.'}" style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>`}
       </tr>`;
     });
     html += '</tbody></table></div>';
@@ -23535,7 +23540,11 @@ function billingAgentSheetHTML(d, forImage){
       : (d.pay.isIndep ? `barème indépendant : ${d.counterRealized} contrats ce mois` : `${ret.lateCount} retard${ret.lateCount>1?'s':''}/absence${ret.lateCount>1?'s':''} ce mois-ci`);
     html += `<div class="section-sub">${ret.count} retour${ret.count>1?'s':''} ${ret.divisor === 1 ? 'en 1:1' : '÷ '+ret.divisor} = <b style="color:var(--red);">${dedContracts} contrat${dedContracts>1?'s':''} retiré${dedContracts>1?'s':''}</b> du compteur payé — ${scaleTxt}.</div>`;
     html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Produit</th><th>Client</th><th>N° contrat</th><th>Mois d\'origine</th><th>Motif</th></tr></thead><tbody>';
-    ret.rows.forEach((r, i) => {
+    // 🔄 ORDRE INVERSÉ (demande du patron) : les derniers retours de la liste passent en tête, et les
+    // premiers passent à la fin. On travaille sur une COPIE — `ret.rows` sert aussi aux calculs de
+    // paie plus haut, l'ordre n'y change rien mais on ne touche jamais à une donnée qu'on affiche.
+    // La numérotation suit l'ordre affiché : la ligne 1 est bien la première du tableau.
+    [...ret.rows].reverse().forEach((r, i) => {
       html += `<tr><td>${i + 1}</td><td>${escapeHtml(r.produit)}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
     });
     html += '</tbody></table></div>';
@@ -23581,7 +23590,16 @@ function billingAgentSheetHTML(d, forImage){
   const supBonus = d.salary.supervisorBonus || 0;
   const indepComm = d.salary.indepCommission || 0;
   if(!st.isIndep){
-    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, (d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0) - supBonus - indepComm), { plus: true });
+    // 🧹 LIGNE MASQUÉE QUAND ELLE VAUT ZÉRO. Elle annonçait « Commission sur 49 contrats payés
+    // (objectif 27) » puis affichait « +0 DH » : on croit à une erreur de calcul alors que c'est
+    // simplement le barème — DH/contrat non réglé pour cet agent, ses contrats sont couverts par le
+    // fixe. Même règle que la ligne « DH/contrat avant objectif », qui disparaît déjà dans ce cas.
+    // Un montant NÉGATIF, lui, resterait affiché : ce serait une vraie anomalie, il ne faut pas la
+    // cacher.
+    const commissionContrats = d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0) - supBonus - indepComm;
+    if(Math.round(commissionContrats) !== 0){
+      line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, commissionContrats, { plus: true });
+    }
     if(st.objectif > 0){
       const manquantObj = Math.max(0, st.objectif - (br ? br.payable : st.realized));
       const tipObj = `Calculé sur les contrats PAYÉS (après rétractations et retours), pas sur les contrats signés — un agent qui tombe sous son minimum à cause de ses retours perd cette prime, même s'il a signé plus que l'objectif.`;
@@ -23591,7 +23609,11 @@ function billingAgentSheetHTML(d, forImage){
     }
     if(st.primeExtra) line(`Bonus ${st.extraCount} contrat${st.extraCount>1?'s':''} au-delà de l'objectif`, st.primeExtra, { plus: true, color: 'var(--green)' });
   } else {
-    line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0) - supBonus - indepComm, { plus: true });
+    // Même règle pour un indépendant : pas de ligne à zéro.
+    const commissionIndep = d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - d.pay.primeAssiduite - (d.salary.manualPrimesTotal || 0) - supBonus - indepComm;
+    if(Math.round(commissionIndep) !== 0){
+      line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés`, commissionIndep, { plus: true });
+    }
   }
   (d.salary.manualPrimes || []).forEach(p => {
     const amt = p.type === 'occurrences' ? (Number(p.amount) || 0) * (Number(p.count) || 1) : (Number(p.amount) || 0);
