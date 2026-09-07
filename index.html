@@ -2000,6 +2000,7 @@ async function tryDeviceGateAdmin(){
           <label style="margin:20px 0 10px;">Autres charges (libres)</label>
           <div id="customChargesList"></div>
           <button class="add-break-btn" onclick="addCustomChargeRow()">+ Ajouter une charge</button>
+          <div class="section-sub" style="margin-top:12px; padding:9px 12px; border-radius:8px; background:rgba(229,168,61,0.10); border:1px solid rgba(229,168,61,0.35);">💾 <b>Ces montants ne sont pas enregistrés automatiquement.</b> Après les avoir modifiés, descends en bas de ce panneau et clique sur <b>« Enregistrer tout »</b>. Si tu quittes l'onglet avant, tes modifications sont perdues.</div>
         </div>
 
         <div class="settings-box">
@@ -2613,7 +2614,9 @@ async function tryDeviceGateAdmin(){
               <b>✏️ Changer un mot de passe</b><br>
               À faire aux <b>deux endroits</b>, sinon ça bloque :<br>
               1. Ici, bouton 🔑 sur sa fiche.<br>
-              2. Dans Firebase : trouve sa ligne → menu <b>⋮</b> à droite → <b>Reset password</b> (ou <b>Edit user</b>) → tape le nouveau mot de passe.
+              2. Dans Firebase : sa ligne → menu <b>⋮</b> → <b>Supprimer le compte</b>, puis <b>Ajouter un utilisateur</b> avec <b>exactement la même adresse</b> et le nouveau mot de passe.<br>
+              ⛔ <b>Surtout pas « Réinitialiser le mot de passe »</b> : cette option envoie un e-mail à <code>prenom@vortexnova.local</code>, une adresse qui n'existe pas et ne reçoit rien. Le courrier part dans le vide, le mot de passe ne change pas, et l'agent reste bloqué.<br>
+              ✅ Supprimer puis recréer ne fait perdre <b>aucune donnée</b> : les règles de sécurité et l'app fonctionnent sur l'ADRESSE, jamais sur l'identifiant interne du compte. Pointages, contrats, salaires et historique sont dans la base, pas dans le compte.
             </div>
 
             <div class="section-sub" style="margin-top:12px;">
@@ -2825,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-07-r198';
+const APP_VERSION = '2026-09-07-r203';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3869,9 +3872,23 @@ async function logAudit(actor, action, details){
       details: details || ''
     });
   }catch(e){
+    // 🐛 ÉCHEC SILENCIEUX CORRIGÉ. Une écriture refusée n'était qu'un avertissement dans la console :
+    // le journal d'audit pouvait ne plus rien enregistrer pendant des semaines sans que personne le
+    // sache — et un journal auquel on croit à tort est pire que pas de journal du tout. On prévient
+    // maintenant à l'écran, une seule fois par session pour ne pas harceler.
     console.warn('logAudit error (action non journalisée, mais bien exécutée) :', e);
+    if(!_auditEchecSignale){
+      _auditEchecSignale = true;
+      const refus = e && e.code === 'permission-denied';
+      try{
+        showToast(refus
+          ? "🔒 Le journal d'activité n'enregistre plus rien : les règles Firestore ne couvrent pas la collection vortexnova_audit. Tes actions sont bien exécutées, mais elles ne laissent aucune trace."
+          : "⚠️ Le journal d'activité n'a pas pu enregistrer cette action. Elle a bien été exécutée, mais elle ne laisse pas de trace.", 'warn', 12000);
+      }catch(err){}
+    }
   }
 }
+let _auditEchecSignale = false;
 
 let vnToastTimer = null;
 function showToast(msg, tone, durationMs){
@@ -4684,7 +4701,13 @@ async function renderAuditLog(){
     container.innerHTML = html;
   }catch(e){
     console.error('renderAuditLog error:', e);
-    container.innerHTML = '<div class="empty">⚠️ Erreur de chargement du journal (vérifie ta connexion).</div>';
+    // « Vérifie ta connexion » envoyait sur une fausse piste : la cause la plus fréquente est une
+    // règle Firestore qui ne couvre pas la collection du journal (vortexnova_audit). On nomme donc
+    // la vraie cause quand Firestore répond « permission refusée ».
+    const refus = e && e.code === 'permission-denied';
+    container.innerHTML = refus
+      ? `<div class="empty">🔒 Journal illisible : les règles Firestore n'autorisent pas la lecture de la collection <code>vortexnova_audit</code> pour ce compte.<br><br>Vérifie que tes règles contiennent bien un bloc <code>match /vortexnova_audit/{doc}</code> — voir le fichier REGLES-FIREBASE fourni. Tant que ce bloc manque, <b>aucune action n'est journalisée non plus</b>.</div>`
+      : '<div class="empty">⚠️ Erreur de chargement du journal (vérifie ta connexion).</div>';
   }
 }
 
@@ -9654,8 +9677,22 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     const recordsNow = dateStr === todayStr() ? nowMA() : new Date(dateStr+'T12:00:00');
     const records = await getAllTimeRecords(recordsNow);
     const totalTeamThisMonth = Object.values(monthlyByAgent).reduce((s,mo)=>s+(mo.monthlyRealized||0), 0);
+    // Le mois est-il terminé ? Tant qu'il reste des jours ouvrés, on annonce « en train de battre »,
+    // jamais « record » au passé. `restantsPourRecord` sert aussi de compte à rebours dans le message.
+    const restantsPourRecord = joursOuvresRestantsPourAgir(dateStr);
+    const moisEnCours = dateStr.slice(0, 7) === todayStr().slice(0, 7) && restantsPourRecord > 0;
+    const joursTxt = `${restantsPourRecord} jour${restantsPourRecord > 1 ? 's' : ''} ouvré${restantsPourRecord > 1 ? 's' : ''}`;
+    const remplirRecord = (banque, score, ancien, agentNom) => pickRandom(banque)
+      .replace(/\{agent\}/g, agentNom || '')
+      .replace(/\{score\}/g, score)
+      .replace(/\{ancien\}/g, ancien)
+      .replace(/\{jours\}/g, joursTxt);
+
     if(records.teamBest.value > 0 && totalTeamThisMonth > records.teamBest.value){
-      teamRecordBannerHtml = `<div style="width:min(520px,100%); margin:0 auto 16px; padding:14px 18px; border-radius:14px; background:linear-gradient(135deg, rgba(184,147,90,0.2), rgba(184,147,90,0.07)); border:1px solid rgba(184,147,90,0.5); text-align:center; font-size:14.5px; font-weight:800; color:#b8935a;">${calendarizeRelativeDays(pickRandom(RECORD_TEAM_MSGS).replace(/\{score\}/g, totalTeamThisMonth), dateStr)}</div>`;
+      const txt = moisEnCours
+        ? remplirRecord(RECORD_TEAM_EN_COURS_MSGS, totalTeamThisMonth, records.teamBest.value)
+        : pickRandom(RECORD_TEAM_MSGS).replace(/\{score\}/g, totalTeamThisMonth);
+      teamRecordBannerHtml = `<div style="width:min(520px,100%); margin:0 auto 16px; padding:14px 18px; border-radius:14px; background:linear-gradient(135deg, rgba(184,147,90,0.2), rgba(184,147,90,0.07)); border:1px solid rgba(184,147,90,0.5); text-align:center; font-size:14.5px; font-weight:800; color:#b8935a;">${calendarizeRelativeDays(txt, dateStr)}</div>`;
     }
     // Records individuels — sur le cumul du mois de chaque agent, exactement comme dans le ticker. Un
     // agent qui bat le record de TOUS les agents ne reçoit que le message le plus fort (il bat forcément
@@ -9667,9 +9704,13 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const isAllAgentsRecord = records.allAgentsBest.value > 0 && mo.monthlyRealized > records.allAgentsBest.value;
       const isPersonalRecord = pb && pb.value > 0 && mo.monthlyRealized > pb.value;
       if(isAllAgentsRecord){
-        personalRecordByAgent[r.agent] = pickRandom(RECORD_ALLAGENTS_MSGS).replace(/\{agent\}/g, firstName(r.agent)).replace(/\{score\}/g, mo.monthlyRealized);
+        personalRecordByAgent[r.agent] = moisEnCours
+          ? remplirRecord(RECORD_ALLAGENTS_EN_COURS_MSGS, mo.monthlyRealized, records.allAgentsBest.value, firstName(r.agent))
+          : pickRandom(RECORD_ALLAGENTS_MSGS).replace(/\{agent\}/g, firstName(r.agent)).replace(/\{score\}/g, mo.monthlyRealized);
       } else if(isPersonalRecord){
-        personalRecordByAgent[r.agent] = pickRandom(RECORD_PERSONAL_MSGS).replace(/\{agent\}/g, firstName(r.agent)).replace(/\{score\}/g, mo.monthlyRealized);
+        personalRecordByAgent[r.agent] = moisEnCours
+          ? remplirRecord(RECORD_PERSONAL_EN_COURS_MSGS, mo.monthlyRealized, pb.value, firstName(r.agent))
+          : pickRandom(RECORD_PERSONAL_MSGS).replace(/\{agent\}/g, firstName(r.agent)).replace(/\{score\}/g, mo.monthlyRealized);
       }
     });
   }catch(e){ console.warn('records bilan jour', e); }
@@ -9740,7 +9781,18 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const pct = noObj ? 0 : Math.min(100, Math.round((r.realized/r.objective)*100));
       const hit = !noObj && r.realized >= r.objective;
       const badge = dailyProgressBadge(r.realized, r.agent);
-      const barColor = hit ? '#4f9d78' : (pct >= 50 ? '#b98a42' : '#b5595c');
+      // 🎨 COHÉRENCE CORRIGÉE — la barre et le pourcentage passaient au ROUGE sous 50 %, quel que soit
+      // l'agent et quelle que soit l'heure. Résultat sur la carte d'une recrue : « 1/5 · 20 % » en
+      // rouge vif, et juste en dessous « 1 contrat aujourd'hui, tu débutes tout juste, c'est très bien
+      // — continue comme ça ». La couleur criait l'échec pendant que le texte encourageait.
+      // Deux règles, déjà appliquées partout ailleurs dans l'appli, enfin appliquées ici aussi :
+      //   • tant que la JOURNÉE N'EST PAS FINIE, rien n'est rouge — 1/5 à 10 h n'est pas un échec,
+      //     c'est un début. Orange au pire ;
+      //   • une RECRUE ou un agent en DÉCOUVERTE n'est jamais rouge : dailyProgressBadge le ménageait
+      //     déjà, la barre ne le ménageait pas.
+      // Le vert (objectif atteint) et le rouge de fin de journée pour un confirmé ne changent pas.
+      const couleurMenagee = !dayIsOver || estRecrue(r.agent) || estEnDecouverteLe(r.agent, dateStr);
+      const barColor = hit ? '#4f9d78' : ((pct >= 50 || couleurMenagee) ? '#b98a42' : '#b5595c');
       const mo = monthlyByAgent[r.agent];
       // Une journée d'absence complète (maladie, congé payé, absence autorisée...) ne casse aucune
       // série : l'agent n'était pas au poste, son 0 n'est pas un résultat. Même règle que le conseil
@@ -18121,13 +18173,29 @@ async function getAllTimeRecords(now){
     const dt = new Date(now.getFullYear(), now.getMonth()-i, 1);
     const y = dt.getFullYear(), m = dt.getMonth()+1;
     const mv = billingMonthVal(y, m);
-    return Promise.all(agentsPourRecords.map(async a=>({ a, v: await monthlyRealizedContracts(a, y, m) })))
+    return Promise.all(agentsPourRecords.map(async a=>({
+      a,
+      v: await monthlyRealizedContracts(a, y, m),
+      // 🐛 BUG CORRIGÉ — un BOUT de mois servait de record à battre. Un agent arrivé le 23 août avait
+      // pour « meilleur mois » ses 6 jours d'août : n'importe quel mois complet le dépassait
+      // mécaniquement, et l'appli criait au record pour une performance qui n'en était pas une.
+      // Même problème pour un agent parti en cours de mois, ou absent du contrat une partie du mois.
+      // proratedMonthFactor vaut exactement 1 quand l'agent était là du 1er au dernier jour, périodes
+      // hors contrat comprises : c'est le seul cas où le mois est comparable à un autre mois.
+      // ⚠️ Limite connue et assumée : un mois où l'agent était présent mais en congé trois semaines
+      // reste compté comme complet — le prorata ne connaît que l'arrivée et le départ, pas les congés.
+      complet: proratedMonthFactor(a, y, m) >= 1
+    })))
       .then(perAgent => ({ mv, perAgent }));
   }));
   parMois.forEach(({ mv, perAgent })=>{
     let teamTotal = 0;
-    perAgent.forEach(({a, v})=>{
+    perAgent.forEach(({a, v, complet})=>{
+      // Le total d'ÉQUIPE compte tout le monde, mois complet ou non : c'est le chiffre du groupe ce
+      // mois-là, il est ce qu'il est.
       teamTotal += v;
+      // Les records INDIVIDUELS, eux, n'acceptent que des mois comparables entre eux.
+      if(!complet) return;
       if(v > personalBest[a].value){ personalBest[a] = { value: v, monthVal: mv }; }
       if(v > allAgentsBest.value){ allAgentsBest = { value: v, monthVal: mv, agent: a }; }
     });
@@ -18137,6 +18205,29 @@ async function getAllTimeRecords(now){
   allTimeRecordsCacheDay = today;
   return allTimeRecordsCache;
 }
+
+// 🐛 BUG CORRIGÉ — ces trois familles de messages annonçaient un record du MOIS en comparant le
+// cumul du mois EN COURS à des mois terminés. Le 7 du mois, l'appli criait « jamais fait mieux » alors
+// qu'il restait trois semaines — et elle le recriait chaque jour jusqu'au 30, avec un chiffre
+// différent à chaque fois. Un record de mois annoncé au milieu du mois ne veut rien dire.
+// Les messages disent maintenant ce qui est vrai : l'agent est EN TRAIN de battre son record, voici
+// l'ancien, et voilà ce qu'il lui reste pour l'installer. Le compte à rebours pousse, et rien ne ment.
+// {ancien} = le record à battre · {jours} = jours ouvrés restants (déjà formaté, ex. « 16 jours »).
+const RECORD_TEAM_EN_COURS_MSGS = [
+  "🔥 L'équipe est en train de battre son record : {score} contrats ce mois-ci, le meilleur mois était à {ancien}. Encore {jours} pour l'installer.",
+  "📈 {score} contrats ce mois-ci — l'équipe dépasse déjà son meilleur mois ({ancien}). Il reste {jours} pour que ça compte vraiment.",
+  "🚀 Record d'équipe en vue : {score} contre {ancien} au meilleur mois. {jours} pour ne pas le laisser filer."
+];
+const RECORD_PERSONAL_EN_COURS_MSGS = [
+  "🔥 {agent} est en train de battre son record perso : {score} contrats, son meilleur mois était à {ancien}. Encore {jours} pour l'installer.",
+  "📈 {agent} dépasse déjà son meilleur mois ({score} contre {ancien}). Il reste {jours} — c'est maintenant que ça se joue.",
+  "💪 {agent} est au-dessus de son record ({score} / {ancien} au meilleur mois). {jours} pour transformer l'essai."
+];
+const RECORD_ALLAGENTS_EN_COURS_MSGS = [
+  "👑 {agent} est en train de battre le record de TOUS les agents : {score} contrats, l'ancien record était à {ancien}. Encore {jours}.",
+  "🏆 Du jamais vu en préparation : {agent} à {score} contrats, le meilleur mois de la maison était à {ancien}. {jours} pour l'écrire.",
+  "🔥 {agent} dépasse le record absolu de l'équipe ({score} contre {ancien}). Il reste {jours} pour le confirmer."
+];
 
 const RECORD_TEAM_MSGS = [
   "🎉 RECORD D'ÉQUIPE ! {score} contrats ce mois-ci — jamais fait aussi bien en 2 ans. Bravo à tous !",
@@ -18225,8 +18316,22 @@ async function refreshTickerPool(now){
   try{
     const records = await getAllTimeRecords(now);
     const totalTeamThisMonth = allRankings.reduce((s,r)=> s + (r.realized||0), 0);
+    // Même règle que le Bilan du jour, mot pour mot : tant que le mois court, on annonce « en train de
+    // battre », jamais « record » au passé. Les deux écrans ne doivent JAMAIS raconter deux histoires
+    // différentes sur le même chiffre.
+    const restantsTicker = joursOuvresRestantsPourAgir(todayStr());
+    const moisEnCoursTicker = restantsTicker > 0;
+    const joursTxtTicker = `${restantsTicker} jour${restantsTicker > 1 ? 's' : ''} ouvré${restantsTicker > 1 ? 's' : ''}`;
+    const remplirRecordTicker = (banque, score, ancien, agentNom) => pickRandom(banque)
+      .replace(/\{agent\}/g, agentNom || '')
+      .replace(/\{score\}/g, score)
+      .replace(/\{ancien\}/g, ancien)
+      .replace(/\{jours\}/g, joursTxtTicker);
+
     if(records.teamBest.value > 0 && totalTeamThisMonth > records.teamBest.value){
-      pousser(pickRandom(RECORD_TEAM_MSGS).replace(/\{score\}/g, totalTeamThisMonth));
+      pousser(moisEnCoursTicker
+        ? remplirRecordTicker(RECORD_TEAM_EN_COURS_MSGS, totalTeamThisMonth, records.teamBest.value)
+        : pickRandom(RECORD_TEAM_MSGS).replace(/\{score\}/g, totalTeamThisMonth));
     }
     allRankings.forEach(r=>{
       if(!r.realized || r.realized <= 0) return;
@@ -18234,9 +18339,13 @@ async function refreshTickerPool(now){
       const isAllAgentsRecord = records.allAgentsBest.value > 0 && r.realized > records.allAgentsBest.value;
       const isPersonalRecord = pb && pb.value > 0 && r.realized > pb.value;
       if(isAllAgentsRecord){
-        pousser(pickRandom(RECORD_ALLAGENTS_MSGS).replace(/\{agent\}/g, r.agent).replace(/\{score\}/g, r.realized));
+        pousser(moisEnCoursTicker
+          ? remplirRecordTicker(RECORD_ALLAGENTS_EN_COURS_MSGS, r.realized, records.allAgentsBest.value, r.agent)
+          : pickRandom(RECORD_ALLAGENTS_MSGS).replace(/\{agent\}/g, r.agent).replace(/\{score\}/g, r.realized));
       } else if(isPersonalRecord){
-        pousser(pickRandom(RECORD_PERSONAL_MSGS).replace(/\{agent\}/g, r.agent).replace(/\{score\}/g, r.realized));
+        pousser(moisEnCoursTicker
+          ? remplirRecordTicker(RECORD_PERSONAL_EN_COURS_MSGS, r.realized, pb.value, r.agent)
+          : pickRandom(RECORD_PERSONAL_MSGS).replace(/\{agent\}/g, r.agent).replace(/\{score\}/g, r.realized));
       }
     });
   }catch(e){ console.warn('records ticker', e); }
