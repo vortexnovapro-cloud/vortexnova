@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-08-r204';
+const APP_VERSION = '2026-09-08-r205';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9719,6 +9719,17 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // MOIS juste au-dessus. Uniquement sur la journée en cours : sur un jour passé, ce jour-là est déjà
   // dans l'historique des records, la comparaison n'aurait aucun sens. Lecture seule ici — l'écriture
   // du nouveau record est faite une seule fois, par le Conseil du matin (voir buildBriefingRows).
+  // 🌱 Contexte des recrues, calculé une seule fois par agent concerné (voir contexteRecrue). Réservé
+  // aux non-confirmés : inutile de relire l'historique de toute l'équipe pour trois nouveaux.
+  const recrueCtxByAgent = {};
+  try{
+    const recrues = allDayRows.filter(r => !r.isIndep && estRecrue(r.agent, dateStr));
+    await Promise.all(recrues.map(async r=>{
+      try{ recrueCtxByAgent[r.agent] = await contexteRecrue(r.agent, dateStr); }
+      catch(e){ console.warn('contexteRecrue', r.agent, e); }
+    }));
+  }catch(e){ console.warn('contexte recrues', e); }
+
   const dayRecordByAgent = {};
   if(dateStr === todayStr()){
     try{
@@ -9801,7 +9812,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
       const daysElapsed = workingDaysElapsedForAgent(r.agent, referenceRythmeMois(dateStr));
-      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr,
+        { todayRealized: r.realized, recrue: recrueCtxByAgent[r.agent] || null });
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       // 📏 « Objectif visé » n'est affiché que s'il DIFFÈRE du minimum. Quand l'admin n'a pas fixé de
       // visé au-dessus du minimum, les deux valent la même chose et la carte affichait deux fois la
@@ -9864,7 +9876,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
       const daysElapsed = workingDaysElapsedForAgent(r.agent, referenceRythmeMois(dateStr));
-      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr);
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr,
+        { todayRealized: r.realized, recrue: recrueCtxByAgent[r.agent] || null });
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.vise>0 || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
@@ -12347,17 +12360,21 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   const palierAnc = agentPalierAnciennete(agentName, refDayForSeed);
   if(palierAnc !== 'confirme'){
     const jours = agentAncienneteJours(agentName, refDayForSeed);
-    const aSigne = monthlyRealized > 0;
+    const rec = c.recrue || null;              // voir contexteRecrue() — peut manquer, tout reste alors dégradé mais juste
+    const depuisArrivee = rec ? rec.contrats : monthlyRealized;
+    const aSigne = depuisArrivee > 0;
+    const aujourdhui = c.todayRealized || 0;
 
+    // ── ① LE PREMIER JOUR — on ne demande rien, on accueille ────────────────────────────────
     if(palierAnc === 'jour1'){
       lines.push(aSigne
-        ? mk('🌱', seedPick([
-            `Premier jour, et déjà ${ctr(monthlyRealized)} au compteur. Franchement, c'est un très beau début — dis-toi bien que beaucoup n'y arrivent pas.`,
-            `${ctr(monthlyRealized)} dès le premier jour. Tu viens de prouver que tu peux le faire : le reste, c'est de la répétition.`,
+        ? mkS('jour', '🌱', seedPick([
+            `Premier jour, et déjà ${ctr(depuisArrivee)} au compteur. Franchement, c'est un très beau début — beaucoup n'y arrivent pas.`,
+            `${ctr(depuisArrivee)} dès le premier jour. Tu viens de prouver que tu peux le faire : le reste, c'est de la répétition.`,
             `Bravo — signer le jour de son arrivée, ce n'est pas banal. Retiens ce que tu as fait aujourd'hui, c'est ta méthode.`,
             `Premier jour, premier résultat. Ne cherche pas à faire mieux demain : cherche à refaire pareil.`
           ], seed+'|recrue-j1-ok'), SAGE, SAGE_BG)
-        : mk('🌱', seedPick([
+        : mkS('jour', '🌱', seedPick([
             `C'est ton premier jour : personne n'attend un chiffre de toi aujourd'hui. Écoute les appels autour de toi, pose des questions, prends tes marques.`,
             `Bienvenue. Aujourd'hui, ton seul objectif c'est de comprendre comment ça se passe ici — pas de signer.`,
             `Premier jour : concentre-toi sur le discours et sur les outils. Les contrats viendront quand tu seras à l'aise.`,
@@ -12366,40 +12383,72 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
       return lines;
     }
 
-    if(palierAnc === 'semaine1'){
-      lines.push(aSigne
-        ? mk('🌱', seedPick([
-            `${ctr(monthlyRealized)} en ${jours+1} jours dans la boîte. Pour une première semaine, c'est du bon travail — continue à ce rythme.`,
-            `Tu as déjà ${ctr(monthlyRealized)} alors que tu apprends encore le métier ici. C'est très encourageant.`,
-            `Première semaine et le compteur est lancé (${monthlyRealized}). L'important maintenant, c'est la régularité, pas le volume.`,
-            `${ctr(monthlyRealized)} pour tes débuts — tu es dans le bon. Note ce qui a marché, tu t'en resserviras.`
-          ], seed+'|recrue-s1-ok'), SAGE, SAGE_BG)
-        : mk('🌱', seedPick([
-            `Première semaine : le compteur n'est pas encore lancé, et c'est normal à ce stade. Vise UN contrat, pas dix.`,
-            `Tu es en apprentissage cette semaine. Concentre-toi sur le nombre d'appels passés — les contrats suivent toujours le volume.`,
-            `Pas encore de contrat : personne ne t'en tiendra rigueur en première semaine. Demande à un collègue de te faire écouter un de ses appels.`,
-            `Début de parcours. Choisis une seule chose à améliorer aujourd'hui — l'accroche, par exemple — et travaille-la sur tous tes appels.`
-          ], seed+'|recrue-s1'), BLUE, BLUE_BG));
-      return lines;
+    // ── ② SA JOURNÉE, comparée à SES propres journées — jamais à celles des autres ──────────
+    if(aujourdhui > 0){
+      const record = rec && rec.meilleure > 0 ? rec.meilleure : 0;
+      lines.push(mkS('jour', '🌱', (record && aujourdhui >= record)
+        ? seedPick([
+            `${ctr(aujourdhui)} aujourd'hui — c'est ta meilleure journée depuis ton arrivée. Tu as trouvé quelque chose : note ce que tu as fait, et refais exactement pareil demain.`,
+            `Ta meilleure journée jusqu'ici : ${ctr(aujourdhui)}. Ce n'est pas de la chance si tu as réussi à le refaire — c'est que ta méthode commence à tenir.`
+          ], seed+'|recrue-jour-record')
+        : seedPick([
+            `${ctr(aujourdhui)} aujourd'hui. Chaque journée où tu signes confirme que tu sais faire — c'est exactement ce qu'on regarde en ce moment.`,
+            `${ctr(aujourdhui)} de plus au compteur aujourd'hui. Tu avances${record ? ` — ta meilleure journée reste à ${record}, tu sais donc que tu peux monter plus haut` : ''}.`,
+            `Bien joué : ${ctr(aujourdhui)} aujourd'hui. Ce qui compte à ce stade, ce n'est pas le volume, c'est que ça se reproduise.`
+          ], seed+'|recrue-jour-ok'), SAGE, SAGE_BG));
+    } else if(rec && rec.aBesoinDePression){
+      // ── ③ LA PRESSION, quand elle est méritée — seul endroit où le ton durcit ──────────────
+      // Déclenchée uniquement après RECRUE_JOURS_AVANT_PRESSION jours ouvrés RÉELLEMENT travaillés
+      // sans AUCUN contrat depuis l'arrivée. Le ton monte encore avec le nombre de jours : à 3 jours
+      // on alerte, à 8 on prévient franchement que ça ne peut pas durer.
+      const j = rec.joursOuvres;
+      const dur = j >= 8;
+      lines.push(mkS('jour', dur ? '🚨' : '🔥', dur
+        ? seedPick([
+            `${j} jours travaillés, toujours aucun contrat. Ce n'est plus une question de mise en route : quelque chose ne fonctionne pas dans ta façon de faire, et ça doit se régler cette semaine. Va voir ton superviseur aujourd'hui, pas vendredi.`,
+            `${j} jours ici, le compteur est encore à 0. Je ne vais pas te raconter que c'est normal — ça ne l'est plus. Demande à te faire écouter en direct sur tes 10 prochains appels.`,
+            `Aucun contrat en ${j} jours travaillés. Il faut que ça change maintenant : choisis UN appel aujourd'hui où tu vas jusqu'au bout de l'argumentaire, sans lâcher au premier non.`
+          ], seed+'|recrue-pression-dure')
+        : seedPick([
+            `${j} jours travaillés et toujours pas de premier contrat. Ce n'est pas grave, mais ça ne doit pas s'installer : aujourd'hui, va chercher UN contrat, pas dix.`,
+            `Le compteur est encore à 0 après ${j} jours. C'est le moment de changer quelque chose — fais-toi écouter par quelqu'un qui signe et copie ce qu'il fait.`,
+            `${j} jours, zéro contrat. Tu as encore toute la marge pour te lancer, mais il faut que ça bouge aujourd'hui. Le premier est celui qui débloque tous les autres.`
+          ], seed+'|recrue-pression'), dur ? TERRACOTTA : AMBER, dur ? TERRACOTTA_BG : AMBER_BG, dur));
+    } else {
+      lines.push(mkS('jour', '🌱', aSigne
+        ? seedPick([
+            `Rien signé aujourd'hui pour l'instant — mais tu as déjà ${ctr(depuisArrivee)} depuis ton arrivée : tu sais faire. Refais ce que tu as fait ces jours-là.`,
+            `Compteur du jour encore à 0. Tu as déjà prouvé que tu peux signer (${ctr(depuisArrivee)}) : c'est une question de volume d'appels, pas de capacité.`
+          ], seed+'|recrue-jour-relance')
+        : seedPick([
+            `Pas encore de contrat aujourd'hui, et c'est normal à ce stade. Vise UN contrat, pas dix.`,
+            `Le compteur n'est pas encore lancé. Concentre-toi sur le nombre d'appels passés — les contrats suivent toujours le volume.`,
+            `Choisis une seule chose à améliorer aujourd'hui — l'accroche, par exemple — et travaille-la sur tous tes appels.`
+          ], seed+'|recrue-jour-0'), aSigne ? BLUE : BLUE, aSigne ? BLUE_BG : BLUE_BG));
     }
 
-    // mois1 — on compare à lui-même, jamais à l'équipe, et on introduit doucement l'objectif.
-    // ⚠️ CORRIGÉ — ces 4 phrases mélangeaient deux compteurs différents : "jours" (ancienneté réelle,
-    // depuis la date d'embauche, qui peut chevaucher deux mois civils) et "monthlyRealized" (contrats
-    // du mois CIVIL en cours uniquement, remis à zéro le 1er de chaque mois). Formulées en "X au total"
-    // ou "tu as Y" sans préciser "ce mois-ci", elles laissaient croire que Y était le cumul depuis
-    // l'arrivée — flagrant le 1er du mois pour une recrue embauchée le mois précédent : monthlyRealized
-    // ne contient alors que le tout premier jour du nouveau mois, mais le texte disait "tu as Y contrats
-    // depuis que tu es là". Chaque variante nomme désormais explicitement "ce mois-ci", jamais un total.
-    const rythmeRecrue = daysElapsed > 0 ? (monthlyRealized / daysElapsed) : 0;
-    lines.push(mk('🌱', seedPick([
-      `${ordinalJourFr(jours+1)} jour chez nous. Ce mois-ci : ${ctr(monthlyRealized)} (${fmtNum(rythmeRecrue)}/jour en moyenne). Tu es encore en montée en compétence : compare-toi à ta propre semaine dernière, pas au reste de l'équipe.`,
-      `Tu es là depuis ${jours+1} jours. Ce mois-ci, tu as déjà ${ctr(monthlyRealized)} — ce qui compte à ce stade, c'est que la courbe monte, pas le classement.`,
-      `Premier mois en cours (${ordinalJourFr(jours+1)} jour chez nous, ${ctr(monthlyRealized)} ce mois-ci). Continue à construire ta régularité, l'objectif complet viendra après.`,
-      `${ctr(monthlyRealized)} ce mois-ci, pour ton ${ordinalJourFr(jours+1)} jour chez nous. Fixe-toi un petit défi personnel cette semaine plutôt que de viser l'objectif de l'équipe.`
-    ], seed+'|recrue-m1'), TEAL, TEAL_BG));
+    // ── ④ SA PROGRESSION depuis l'arrivée — son seul vrai repère ────────────────────────────
+    if(rec && rec.joursOuvres > 1){
+      const moyenne = rec.contrats / rec.joursOuvres;
+      const jourTxt = `${ordinalJourFr(jours+1)} jour chez nous`;
+      if(rec.contrats > 0){
+        lines.push(mkS('mois', '📈', seedPick([
+          `Depuis ton arrivée : ${ctr(rec.contrats)} en ${rec.joursOuvres} jours travaillés, soit ${fmtNum(moyenne)}/jour${rec.meilleure > 0 ? ` — meilleure journée : ${rec.meilleure}` : ''}. C'est ta courbe à toi, la seule qui compte pour l'instant.`,
+          `${jourTxt} : ${ctr(rec.contrats)} au total, ${fmtNum(moyenne)}/jour de moyenne. Ne te compare à personne d'autre qu'à toi la semaine dernière.`,
+          `Ton parcours ici : ${ctr(rec.contrats)} en ${rec.joursOuvres} jours travaillés${rec.meilleure > 0 ? `, avec un pic à ${rec.meilleure} en une journée` : ''}. Ce qu'on regarde, c'est que ça monte.`
+        ], seed+'|recrue-progression'), TEAL, TEAL_BG));
+      } else {
+        lines.push(mkS('mois', '📉', `Depuis ton arrivée : ${rec.joursOuvres} jours travaillés, aucun contrat. C'est ce chiffre-là qu'il faut débloquer — le reste viendra tout seul après.`, AMBER, AMBER_BG));
+      }
+    }
+
+    // ── ⑤ LE CAP — un objectif perso, jamais l'objectif d'équipe ────────────────────────────
     if(vise > 0 && monthlyRealized >= vise){
-      lines.push(mk('🚀', `Et tu as déjà dépassé l'objectif que tu t'étais fixé (${vise}) — chapeau pour un premier mois.`, SAGE, SAGE_BG));
+      lines.push(mkS('mois', '🚀', `Et tu as déjà dépassé l'objectif que tu t'étais fixé (${vise}) — chapeau pour un début.`, SAGE, SAGE_BG));
+    } else if(vise > 0){
+      lines.push(mkS('mois', '🎯', `Ton objectif perso du mois : ${monthlyRealized}/${vise}. Personne ne t'impose le quota de l'équipe pour l'instant — celui-là, c'est le tien, et il est atteignable.`, BLUE, BLUE_BG));
+    } else if(palierAnc === 'mois1'){
+      lines.push(mkS('mois', '🎯', `Tu n'as pas encore fixé d'objectif perso ce mois-ci. Choisis un chiffre que TU crois atteignable et fixe-le dans l'Arena : c'est bien plus motivant qu'un quota imposé.`, BLUE, BLUE_BG));
     }
     return lines;
   }
@@ -12753,6 +12802,68 @@ function agentAncienneteJours(agentName, refDateStr){
   const ref = refDateStr || todayStr();
   return Math.floor((new Date(ref+'T00:00:00') - new Date(start+'T00:00:00')) / 86400000);
 }
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🌱 LE CONTEXTE D'UNE RECRUE
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Une recrue ne recevait qu'UNE SEULE ligne de commentaire, et tout le reste du bilan s'arrêtait là
+// (le code faisait un `return` immédiat) : ni conseil du jour, ni progression, ni cap. « On ne leur
+// dit rien », mot pour mot. Et le discours rassurant n'expirait JAMAIS : un agent à son 28ᵉ jour
+// toujours à 0 contrat lisait encore « continue à construire ta régularité » — personne ne lui
+// disait que ça n'allait pas, et un mois de salaire passait avant qu'on s'en aperçoive.
+//
+// Pour lui parler correctement il faut trois chiffres que le commentaire ne peut pas aller chercher
+// lui-même (il est synchrone) : ce qu'il a fait DEPUIS SON ARRIVÉE — et pas depuis le 1er du mois,
+// qui remet tout à zéro et ment sur une recrue arrivée le mois précédent —, combien de jours ouvrés
+// il a réellement travaillés, et sa meilleure journée.
+const RECRUE_JOURS_AVANT_PRESSION = 3;   // jours ouvrés travaillés sans AUCUN contrat (décision patron)
+
+async function contexteRecrue(agentName, dateStr){
+  const debut = getAgentStartDate(agentName);
+  if(!debut) return null;
+  const fin = dateStr || todayStr();
+  if(fin < debut) return null;
+
+  // Jours ouvrés entre l'arrivée et aujourd'hui, week-ends et jours fériés exclus. Sans ça, quelqu'un
+  // arrivé un vendredi se ferait mettre la pression le mardi suivant pour deux jours de week-end.
+  const jours = [];
+  let cur = new Date(debut + 'T00:00:00');
+  const stop = new Date(fin + 'T00:00:00');
+  let garde = 0;
+  while(cur <= stop && garde++ < 400){
+    const ds = todayStr(cur);
+    if(isWorkingDay(ds) && !estHorsContrat(agentName, ds)) jours.push(ds);
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  const boards = await Promise.all(jours.map(async ds=>{
+    if(prodBoardCache[ds]) return prodBoardCache[ds];
+    const b = await getProdBoard(ds);
+    prodBoardCache[ds] = b;
+    return b;
+  }));
+
+  let total = 0, meilleure = 0, meilleureDate = null, joursTravailles = 0;
+  const parJour = [];
+  jours.forEach((ds, i)=>{
+    const v = (getAgentProd(boards[i], agentName).realized) || 0;
+    parJour.push({ date: ds, v });
+    total += v;
+    joursTravailles++;
+    if(v > meilleure){ meilleure = v; meilleureDate = ds; }
+  });
+
+  return {
+    depuis: debut,
+    joursOuvres: joursTravailles,
+    contrats: total,
+    meilleure, meilleureDate,
+    parJour,
+    // Aucun contrat depuis l'arrivée, et assez de jours écoulés pour que ce ne soit plus de
+    // l'apprentissage : c'est le seul cas où le ton durcit.
+    aBesoinDePression: total === 0 && joursTravailles >= RECRUE_JOURS_AVANT_PRESSION
+  };
+}
+
 function agentPalierAnciennete(agentName, refDateStr){
   const j = agentAncienneteJours(agentName, refDateStr);
   if(j == null || j < 0) return 'confirme';
@@ -13383,6 +13494,13 @@ async function buildBriefingRows(baseRows){
     // --- Ancienneté ---
     r.palierAnc = agentPalierAnciennete(r.agent, dateStr);
     r.ancienneteJours = agentAncienneteJours(r.agent, dateStr);
+    // 🌱 Parcours complet DEPUIS L'ARRIVÉE (voir contexteRecrue) — uniquement pour les non-confirmés.
+    // C'est ce qui permet de lui parler de sa progression réelle et de durcir le ton s'il n'a toujours
+    // rien signé, au lieu de la seule ligne rassurante qu'il recevait jusqu'ici.
+    if(r.palierAnc !== 'confirme' && !r.isIndep){
+      try{ r.recrue = await contexteRecrue(r.agent, dateStr); }
+      catch(e){ console.warn('contexteRecrue', r.agent, e); r.recrue = null; }
+    }
   }));
 
   // 🏆 Records de la journée — calculés ici pour tout le monde d'un coup (un seul document lu), puis
@@ -13537,7 +13655,8 @@ async function buildDailyBriefingHtml(baseRows){
       todayRealized: r.todayRealized, todayObjective: r.todayObjective,
       weekRealized: r.weekRealized, weekDaysElapsed: r.weekDaysElapsed,
       absentToday: r.absentToday, absenceLabel: r.absenceLabelToday, absenceJustifiee: r.absenceJustifiee,
-      enDecouverte: r.enDecouverte, nowHour: nowHourMA
+      enDecouverte: r.enDecouverte, nowHour: nowHourMA,
+      recrue: r.recrue || null
     };
     const monthlyLines = personalDailyComment(r.agent, r.monthlyRealized, r.mini, r.vise, agentDaysElapsed, remainingDays, rankInfo, null, dateStr, ctxJour);
     const dayLine = dayNudgeLine(r, nowHourMA, dateStr);
@@ -14091,7 +14210,9 @@ function messageRecordDuJour(agentName, r){
   if(r.type === 'perso'){
     return `🏆 Nouveau record personnel : ${ctr(r.valeur)} aujourd'hui, ${n} — ton meilleur était ${r.ancien} le ${r.ancienDate}. Savoure, tu l'as gagné.`;
   }
-  return `🥇 Tu égales ta meilleure journée (${ctr(r.valeur)}, comme le ${r.ancienDate}). Un contrat de plus et le record est à toi.`;
+  // « le record est à toi » laissait croire que l'agent le DÉTENAIT déjà. On dit explicitement ce
+  // qu'il reste à faire, et on nomme le chiffre à dépasser.
+  return `🥇 Tu égales ta meilleure journée : ${ctr(r.valeur)}, comme le ${r.ancienDate}. Encore 1 contrat aujourd'hui et tu la bats.`;
 }
 // Version courte pour le superviseur (« qui féliciter, et pourquoi »).
 function resumeRecordDuJour(agentName, r){
@@ -14508,7 +14629,7 @@ function dessinerPointDuJourModal(){
                 ? `« Stop, tout le monde écoute : ${firstName(f.agent)} vient de faire la meilleure journée de l'histoire de la boîte. ${f.record.valeur} contrats. Applaudissez. »`
                 : (f.record.type === 'perso'
                   ? `« ${firstName(f.agent)}, tu viens de battre ton propre record. ${f.record.valeur} en une journée. Retiens exactement ce que tu as fait aujourd'hui. »`
-                  : `« ${firstName(f.agent)}, tu égales ta meilleure journée. Un de plus et c'est un record — il te reste du temps. »`))}</div>
+                  : `« ${firstName(f.agent)}, tu égales ta meilleure journée. Encore 1 contrat aujourd'hui et tu la bats — il te reste du temps. »`))}</div>
             </div>
           </div>`).join('')}
       </div>`
