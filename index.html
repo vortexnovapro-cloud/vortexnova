@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-08-r206';
+const APP_VERSION = '2026-09-08-r207';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -14276,6 +14276,43 @@ function creneauxEcoulesPointDuJour(now){
 }
 const pdjDoneKey = (d, c, a)=> `pdjDone:${d}:${c}:${a}`;
 const pdjSeenKey = (d, c, sup)=> `pdjSeen:${d}:${c}:${sup}`;
+const pdjPhotoKey = (d, c)=> `pdjPhoto:${d}:${c}`;
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// 📸 LA PHOTO DU CRÉNEAU — sans elle, ce panneau n'a aucune mémoire
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// 🐛 LE BUG CENTRAL DE CE MODULE. La liste des agents à voir était RECALCULÉE en direct à chaque
+// affichage. Conséquence, sur une vraie journée :
+//   • à midi, Ali, Sam et Kone sont à 0 → le superviseur va voir les trois, Ali et Sam signent ;
+//   • à 17 h, le patron ouvre le bloc « 12 h » : Ali et Sam ont DISPARU de la liste (ils ne sont
+//     plus en difficulté), et leur confirmation « ✅ Fait par Ahmed » a disparu avec eux. Le travail
+//     du superviseur ne laisse aucune trace ;
+//   • pire, Dina qui allait très bien à midi mais décroche à 16 h APPARAÎT dans le bloc « 12 h »
+//     marquée « ❌ Jamais confirmé » : on reproche au superviseur de ne pas avoir vu quelqu'un qui
+//     n'avait aucun problème à ce moment-là.
+// On fige donc la liste au moment où le créneau s'ouvre, une seule fois, et c'est cette photo que le
+// panneau admin lit. Ce qui s'est passé à midi reste ce qui s'est passé à midi.
+async function photoPointDuJour(dateStr, creneau, alertesActuelles){
+  const cle = pdjPhotoKey(dateStr, creneau.key);
+  try{
+    const res = await storageGet(cle);
+    if(res && res.value){
+      const p = JSON.parse(res.value);
+      if(p && Array.isArray(p.agents)) return p;
+    }
+  }catch(e){}
+  // Pas encore de photo : on la prend maintenant. On ne garde que ce qui décrit la situation À CET
+  // INSTANT — le reste (conseils) se régénère et n'a pas à être figé.
+  const photo = {
+    at: new Date().toISOString(),
+    agents: (alertesActuelles || []).map(a => ({
+      agent: a.agent, fait: a.fait, obj: a.obj, urgence: a.urgence, niveau: a.niveau, constat: a.constat
+    }))
+  };
+  try{ await storageSet(cle, JSON.stringify(photo)); }
+  catch(e){ console.warn('photo du point du jour non enregistrée', e); }
+  return photo;
+}
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 // Qui doit faire l'objet d'un point, et à quel niveau de gravité ?
@@ -14288,6 +14325,12 @@ const pdjSeenKey = (d, c, sup)=> `pdjSeen:${d}:${c}:${sup}`;
 function evaluerPointDuJour(r, creneau, dateStr){
   if(!r || r.absentToday) return null;                    // il n'est pas là : rien à lui reprocher
   if(estHorsContrat(r.agent, dateStr)) return null;
+  // 🐛 BUG CORRIGÉ — un agent en 🌱 formation écoute ou en 🎯 sans objectif était convoqué comme les
+  // autres dès qu'il était à 0, et il tombait dans la branche « confirmé à zéro » avec la pression qui
+  // va avec. On ne réclame pas de chiffre à quelqu'un à qui on n'en demande pas. La découverte 🔍 et
+  // les recrues, elles, RESTENT dans la liste : elles ont leurs propres conseils, adaptés, et c'est
+  // justement la période où le superviseur doit passer le plus souvent.
+  if(r.noObjectif) return null;
   const fait = r.todayRealized || 0;
   const obj  = r.todayObjective || 0;
   if(fait === 0) return { niveau: 'zero' };
@@ -14356,6 +14399,10 @@ function conseilPointDuJour(r, creneau, remainingDays){
   }
 
   // ─── 3. CONFIRMÉ, ZÉRO CONTRAT ──────────────────────────────────────────────────────────────
+  // Un agent indépendant passe volontairement par ici comme les autres : pas d'objectif mensuel
+  // imposé ne veut pas dire pas de comptes à rendre, et une journée à 0 se traite chez lui avec
+  // exactement le même niveau d'exigence. Seules deux phrases plus bas sont ajustées : il n'a ni
+  // prime d'assiduité ni salaire fixe, on ne peut donc pas lui parler de « sa prime » ni de « sa paie ».
   if(fait === 0){
     if(semaineVide){
       urgence = 3;
@@ -14366,7 +14413,9 @@ function conseilPointDuJour(r, creneau, remainingDays){
       // des faits vérifiables devant l'agent. On reprend le vrai compteur, comme le constat au-dessus.
       conseils.push(`Commence par écouter : ${r.weekDaysElapsed} jour${r.weekDaysElapsed>1?'s':''} à 0 chez quelqu'un de confirmé, il y a toujours une cause (fichier, moral, santé, un dossier qui a mal tourné).`);
       conseils.push("Repars avec un engagement écrit et vérifiable pour demain matin : un objectif chiffré et une heure de contrôle.");
-      conseils.push(`Rappelle-lui concrètement ce que ça coûte : sa prime et son objectif mensuel se jouent sur ces jours-là.`);
+      conseils.push(r.isIndep
+        ? `Rappelle-lui concrètement ce que ça coûte : il n'est payé que sur ses contrats — ces journées-là ne se rattrapent jamais.`
+        : `Rappelle-lui concrètement ce que ça coûte : sa prime et son objectif mensuel se jouent sur ces jours-là.`);
       aDire = `« ${n}, ${r.weekDaysElapsed} jour${r.weekDaysElapsed>1?'s':''} sans rien, ce n'est pas toi. Je ne suis pas là pour te taper dessus, je suis là pour comprendre ce qui bloque. Dis-moi. »`;
     } else if(habituellementBon){
       urgence = tard ? 2 : 1;
@@ -14384,7 +14433,7 @@ function conseilPointDuJour(r, creneau, remainingDays){
       constat = `${ctr(0)} aujourd'hui : c'est sa ${nbZeros}ᵉ journée à 0 sur ses ${joursUtiles.length + 1} derniers jours travaillés. Le problème est installé, il ne se réglera pas tout seul.`;
       conseils.push("Change de registre : ce qui a été dit les fois précédentes n'a pas fonctionné, le répéter ne servira à rien.");
       conseils.push("Passe une heure à écouter ses appels en direct, sans prévenir à l'avance. Le problème se voit en trois appels.");
-      conseils.push(`Sois explicite sur les conséquences, calmement : à ce rythme, son objectif du mois et sa prime ne sont pas atteignables.`);
+      conseils.push(`Sois explicite sur les conséquences, calmement : à ce rythme, ${r.isIndep ? "son objectif du mois n'est pas atteignable" : "son objectif du mois et sa prime ne sont pas atteignables"}.`);
       conseils.push("Note ce point du jour — s'il faut un jour formaliser, c'est cette trace-là qui comptera.");
       aDire = `« ${n}, c'est ta ${nbZeros}ᵉ journée à 0. On a déjà parlé. Aujourd'hui, on ne parle plus : je t'écoute travailler. »`;
     } else {
@@ -14417,7 +14466,7 @@ function conseilPointDuJour(r, creneau, remainingDays){
     if(resteMini > 0 && remainingDays > 0){
       const rythmeNecessaire = resteMini / remainingDays;
       if(rythmeNecessaire > 1.5){
-        conseils.push(`Parle-lui aussi du mois, pas seulement de la journée : il lui manque ${ctr(resteMini)} en ${remainingDays} jour${remainingDays>1?'s':''} ouvré${remainingDays>1?'s':''}, soit ${fmtNum(rythmeNecessaire)}/jour. C'est sa paie qui se joue là.`);
+        conseils.push(`Parle-lui aussi du mois, pas seulement de la journée : il lui manque ${ctr(resteMini)} en ${remainingDays} jour${remainingDays>1?'s':''} ouvré${remainingDays>1?'s':''}, soit ${fmtNum(rythmeNecessaire)}/jour. C'est ${r.isIndep ? 'son revenu du mois' : 'sa paie'} qui se joue là.`);
         if(urgence < 2) urgence = 2;
       }
     }
@@ -14445,6 +14494,8 @@ async function calculerPointDuJour(creneau){
   const brutes = rows
     .map(r => ({ r, ev: evaluerPointDuJour(r, creneau, dateStr) }))
     .filter(x => x.ev);
+  const idxCreneau = POINT_DU_JOUR_CRENEAUX.findIndex(c => c.key === creneau.key);
+  const creneauPrec = idxCreneau > 0 ? POINT_DU_JOUR_CRENEAUX[idxCreneau - 1] : null;
   const alertes = await Promise.all(brutes.map(async x=>{
     const conseil = conseilPointDuJour(x.r, creneau, remainingDays);
     let done = null;
@@ -14452,10 +14503,41 @@ async function calculerPointDuJour(creneau){
       const res = await storageGet(pdjDoneKey(dateStr, creneau.key, x.r.agent));
       if(res && res.value) done = JSON.parse(res.value);
     }catch(e){}
-    return { ...conseil, niveau: x.ev.niveau, isIndep: x.r.isIndep, done };
+    // 🔁 CONSEIL AJOUTÉ — l'information la plus utile de la journée manquait complètement : à 15 h,
+    // le superviseur relisait mot pour mot le conseil de midi pour quelqu'un qu'il avait DÉJÀ vu à
+    // midi. Répéter le même message à quelqu'un chez qui il n'a pas fonctionné est la faute
+    // d'encadrement la plus courante. On le signale, et on monte d'un cran (jamais pour une recrue,
+    // une découverte ou un indépendant : chez eux, la répétition est normale et attendue).
+    let relance = null;
+    if(creneauPrec){
+      try{
+        const resPrec = await storageGet(pdjDoneKey(dateStr, creneauPrec.key, x.r.agent));
+        if(resPrec && resPrec.value){
+          const vPrec = JSON.parse(resPrec.value);
+          relance = { creneau: creneauPrec, by: vPrec && vPrec.by };
+        }
+      }catch(e){}
+    }
+    if(relance){
+      conseil.conseils.unshift(`⚠️ Tu l'as DÉJÀ vu au point de ${relance.creneau.heure}h${relance.by ? ' (' + relance.by + ')' : ''} et il est toujours en difficulté : ce que tu lui as dit n'a pas pris. Ne le redis pas. Cette fois, assieds-toi à côté de lui pour deux appels au lieu de lui parler.`);
+      // Recrue et découverte seulement : chez elles, repasser deux fois dans la journée est normal.
+      // Un indépendant, lui, monte d'un cran comme un salarié — il a les mêmes comptes à rendre.
+      const menage = x.r.enDecouverte || (x.r.palierAnc && x.r.palierAnc !== 'confirme');
+      if(!menage && conseil.urgence < 3) conseil.urgence += 1;
+    }
+    return { ...conseil, niveau: x.ev.niveau, isIndep: x.r.isIndep, relance: !!relance, done };
   }));
   // Le plus grave en premier : c'est l'ordre dans lequel le superviseur doit se déplacer.
   alertes.sort((a,b)=> b.urgence !== a.urgence ? b.urgence - a.urgence : (a.fait - b.fait) || a.agent.localeCompare(b.agent));
+
+  // 📸 On fige la liste dès le premier calcul suivant l'ouverture du créneau (voir photoPointDuJour).
+  // Prise ici, donc dès qu'UNE page — superviseur ou admin — est ouverte après l'heure du créneau.
+  let photo = null;
+  const heureMaintenant = nowMA().getHours();
+  if(dateStr === todayStr() && heureMaintenant >= creneau.heure){
+    try{ photo = await photoPointDuJour(dateStr, creneau, alertes); }
+    catch(e){ console.warn('photo du créneau', e); }
+  }
   // 🏆 L'autre moitié du travail d'un superviseur : féliciter. Un record qui tombe et que personne ne
   // relève, c'est une occasion perdue — et l'agent le remarque. Ceux-là ne sont pas « à aller voir »
   // au sens d'un problème : ils sont à aller voir tout de suite, devant l'équipe.
@@ -14463,7 +14545,40 @@ async function calculerPointDuJour(creneau){
     .filter(r => r.recordJour && !r.absentToday)
     .map(r => ({ agent: r.agent, record: r.recordJour, texte: resumeRecordDuJour(r.agent, r.recordJour), fait: r.todayRealized || 0 }))
     .sort((a,b)=> (a.record.type === 'global' ? -1 : 0) - (b.record.type === 'global' ? -1 : 0) || b.fait - a.fait);
-  return { creneau, dateStr, alertes, felicitations };
+  return { creneau, dateStr, alertes, felicitations, photo };
+}
+
+// Ce que l'admin doit voir pour un créneau : la PHOTO (qui était en difficulté au moment du créneau),
+// enrichie de qui a confirmé — plus les agents qui ont décroché APRÈS, signalés comme tels pour ne
+// jamais les compter comme un manquement du superviseur.
+async function bilanCreneauPourAdmin(creneau, dateStr, etat){
+  const photo = etat.photo;
+  const parAgent = {};
+  (etat.alertes || []).forEach(a=>{ parAgent[a.agent] = a; });
+
+  const lignes = [];
+  const vusDansLaPhoto = new Set();
+  for(const p of (photo && photo.agents) || []){
+    vusDansLaPhoto.add(p.agent);
+    let done = null;
+    try{
+      const res = await storageGet(pdjDoneKey(dateStr, creneau.key, p.agent));
+      if(res && res.value) done = JSON.parse(res.value);
+    }catch(e){}
+    const actuel = parAgent[p.agent];
+    lignes.push({
+      agent: p.agent, fait: p.fait, obj: p.obj, urgence: p.urgence, constat: p.constat,
+      done,
+      // Il était en difficulté au créneau, il ne l'est plus : c'est une bonne nouvelle, pas un oubli.
+      redresse: !actuel
+    });
+  }
+  // Ceux qui ont décroché après la photo : on les montre, mais jamais comme un manquement.
+  const apparusApres = (etat.alertes || [])
+    .filter(a => !vusDansLaPhoto.has(a.agent))
+    .map(a => ({ agent: a.agent, fait: a.fait, obj: a.obj, urgence: a.urgence, constat: a.constat, done: a.done || null, apresPhoto: true }));
+
+  return { lignes, apparusApres, photoAt: photo ? photo.at : null };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -14483,11 +14598,23 @@ async function renderPointDuJourSupervision(supervisorName){
   if(!banner) return;
   const now = nowMA();
   const dateStr = todayStr();
-  const creneau = creneauPointDuJour(now);
+  let creneau = creneauPointDuJour(now);
   // Hors jour ouvré, ou avant le premier créneau : rien à demander à personne.
   if(!creneau || !isWorkingDay(dateStr)){ banner.style.display = 'none'; return; }
 
-  const etat = await calculerPointDuJour(creneau);
+  // 🐛 RATTRAPAGE CORRIGÉ. Le bandeau n'affichait QUE le dernier créneau passé : à 15h01, les alertes
+  // de midi que le superviseur n'avait pas encore confirmées disparaissaient de son écran. Il ne
+  // pouvait plus les valider — même s'il avait fait le point à 14 h — et elles restaient « ❌ jamais
+  // confirmé » à vie côté patron. On repart donc sur le PLUS ANCIEN créneau encore incomplet : tant
+  // qu'il reste quelqu'un à voir de midi, c'est midi qu'on lui remet sous les yeux.
+  const ecoules = creneauxEcoulesPointDuJour(now);
+  let etat = null;
+  for(const c of ecoules){
+    const e = await calculerPointDuJour(c);
+    if(e.alertes.some(a => !a.done)){ creneau = c; etat = e; break; }
+  }
+  if(!etat) etat = await calculerPointDuJour(creneau);
+  const enRetard = creneau.key !== (creneauPointDuJour(now) || creneau).key;
   _pdjEtatCourant = { ...etat, supervisor: supervisorName };
   const restants = etat.alertes.filter(a => !a.done);
 
@@ -14526,6 +14653,7 @@ async function renderPointDuJourSupervision(supervisorName){
         <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
           <span style="font-size:19px; font-weight:900; color:${toutFait ? '#5cb896' : col.c};">${creneau.titre}</span>
           <span style="font-size:11px; font-weight:800; background:${toutFait ? '#5cb896' : col.c}; color:#141a22; border-radius:20px; padding:3px 11px; letter-spacing:0.4px;">${creneau.badge}</span>
+          ${enRetard ? `<span style="font-size:11px; font-weight:800; background:#e5a83d; color:#141a22; border-radius:20px; padding:3px 11px; letter-spacing:0.4px;" title="Ce créneau est passé mais tous les points n'ont pas été confirmés. Tant qu'il en reste, c'est lui qu'on te remet devant les yeux : il ne disparaîtra pas de ton écran.">⏱️ RATTRAPAGE</span>` : ''}
         </div>
         <div style="font-size:13.5px; font-weight:600; color:var(--text); opacity:0.9; margin-top:3px;">
           ${toutFait
@@ -14533,6 +14661,7 @@ async function renderPointDuJourSupervision(supervisorName){
             : `<b style="color:${col.c};">${restants.length} agent${restants.length>1?'s':''}</b> à aller voir maintenant : ${restants.map(a=>escapeHtml(a.agent)).join(', ')}.`}
         </div>
         <div style="font-size:12px; color:var(--muted); margin-top:3px;">${creneau.sousTitre}</div>
+        ${enRetard ? `<div style="font-size:12px; font-weight:700; color:#e5a83d; margin-top:4px;">⏱️ Créneau de ${creneau.heure}h non terminé — tu le finis d'abord. Le point suivant s'affichera juste après.</div>` : ''}
         ${blocFelicitations}
       </div>
     </div>
@@ -14728,8 +14857,16 @@ async function renderPointDuJourAdmin(){
   const blocs = await Promise.all(creneaux.map(async creneau=>{
     const estEnCours = creneauEnCours && creneauEnCours.key === creneau.key;
     const etat = await calculerPointDuJour(creneau);
-    const faits = etat.alertes.filter(a=>a.done);
-    const restants = etat.alertes.filter(a=>!a.done);
+    // 📸 Le décompte se fait sur la PHOTO du créneau, pas sur la situation de maintenant : sinon le
+    // badge « 4 EN ATTENTE » ne dit pas ce qui était en attente à ce créneau-là, mais ce qui l'est à
+    // l'instant où on regarde le panneau. C'était la même erreur que pour la liste elle-même.
+    const bilan = await bilanCreneauPourAdmin(creneau, dateStr, etat);
+    const toutes = bilan.lignes.concat(bilan.apparusApres);
+    // « En attente » = toujours en difficulté ET jamais confirmé. Un agent qui s'est redressé tout
+    // seul n'est pas un point manqué : il ne compte pas dans le rouge.
+    const restants = toutes.filter(a => !a.done && !a.redresse);
+    const faits = toutes.filter(a => a.done);
+    const redresses = toutes.filter(a => !a.done && a.redresse);
 
     // Statut reçu/lu de chaque superviseur pour ce créneau.
     const statuts = await Promise.all(superviseurs.map(async sup=>{
@@ -14742,44 +14879,86 @@ async function renderPointDuJourAdmin(){
     }));
     const hhmm = iso => { try{ return new Date(iso).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
     const ligneSup = statuts.map(x=>{
-      if(!x.st) return `<span style="color:#b5595c;">⛔ ${escapeHtml(x.sup)} — pas reçu (page fermée)</span>`;
+      // Le « reçu » n'est écrit que pour le superviseur SÉLECTIONNÉ dans l'onglet Supervision : un
+      // superviseur qui travaille sans cliquer son propre nom n'apparaît jamais comme ayant reçu.
+      // Le libellé le dit, pour ne pas reprocher une négligence qui n'existe pas.
+      if(!x.st) return `<span style="color:#b5595c;" title="Soit sa page Supervision n'était pas ouverte, soit il ne s'est pas sélectionné dans la liste des agents de cet onglet.">⛔ ${escapeHtml(x.sup)} — pas reçu (page fermée, ou pas sélectionné)</span>`;
       if(!x.st.readAt) return `<span style="color:#e5a83d;">📨 ${escapeHtml(x.sup)} — reçu à ${hhmm(x.st.receivedAt)}, pas encore ouvert</span>`;
       return `<span style="color:#5cb896;">👁️ ${escapeHtml(x.sup)} — lu à ${hhmm(x.st.readAt)}</span>`;
     }).join(' · ');
 
     const entete = `<div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:16px 0 8px;">
         <b style="font-size:15.5px; font-weight:900; color:var(--text);">${creneau.heure}h — ${creneau.titre}</b>
-        <span style="font-size:11px; font-weight:800; letter-spacing:.4px; border-radius:20px; padding:2px 10px; background:${restants.length ? 'rgba(229,72,77,0.16)' : 'rgba(92,184,150,0.16)'}; border:1px solid ${restants.length ? 'rgba(229,72,77,0.45)' : 'rgba(92,184,150,0.45)'}; color:${restants.length ? '#e5484d' : '#5cb896'};">${etat.alertes.length === 0 ? 'PERSONNE À VOIR' : (restants.length ? `${restants.length} EN ATTENTE` : 'TOUT EST FAIT')}</span>
+        <span style="font-size:11px; font-weight:800; letter-spacing:.4px; border-radius:20px; padding:2px 10px; background:${restants.length ? 'rgba(229,72,77,0.16)' : 'rgba(92,184,150,0.16)'}; border:1px solid ${restants.length ? 'rgba(229,72,77,0.45)' : 'rgba(92,184,150,0.45)'}; color:${restants.length ? '#e5484d' : '#5cb896'};">${toutes.length === 0 ? 'PERSONNE À VOIR' : (restants.length ? `${restants.length} EN ATTENTE` : `TOUT EST TRAITÉ (${faits.length} confirmé${faits.length>1?'s':''})`)}</span>
       </div>
       ${superviseurs.length ? `<div style="font-size:12px; font-weight:700; margin-bottom:9px;">${ligneSup}</div>`
         : `<div style="font-size:12px; color:var(--muted); margin-bottom:9px;">Aucun superviseur désigné (Réglages → Agents → 📊 Superviseur) — personne ne reçoit ces alertes.</div>`}
       ${(etat.felicitations || []).length ? `<div style="font-size:12.5px; font-weight:800; color:#d8b26e; background:rgba(184,147,90,0.14); border:1px solid rgba(184,147,90,0.45); border-radius:9px; padding:8px 11px; margin-bottom:9px;">🏆 Records du jour à faire applaudir : ${etat.felicitations.map(f=>escapeHtml(f.texte)).join(' · ')}</div>` : ''}`;
 
-    if(!etat.alertes.length){
-      return entete + `<div style="font-size:13px; color:#5cb896;">✅ Aucun agent à 0 ni sous son objectif à ce créneau.</div>`;
+    const stats = { key: creneau.key, heure: creneau.heure, estEnCours,
+                    total: toutes.length, faits: faits.length, restants: restants.length, redresses: redresses.length };
+    if(!toutes.length){
+      return { ...stats, html: entete + `<div style="font-size:13px; color:#5cb896;">✅ Aucun agent à 0 ni sous son objectif à ce créneau.</div>` };
     }
-    // ⚠️ À SAVOIR EN LISANT CE PANNEAU : la liste est recalculée en direct, sur les chiffres de
-    // MAINTENANT. Un agent qui était à 0 à midi et qui a signé depuis n'y figure plus — c'est voulu
-    // (on suit les agents à aider, pas un registre d'archives), mais il faut le savoir avant de
-    // conclure qu'un superviseur « n'a rien eu à faire » à midi.
-    const noteVivante = `<div style="font-size:11.5px; color:var(--muted); margin:0 0 8px;">Liste recalculée en direct : un agent qui a signé depuis ce créneau n'y apparaît plus.</div>`;
-    const cartes = etat.alertes.map(a=>{
+    const hhmmPhoto = bilan.photoAt ? (()=>{ try{ return new Date(bilan.photoAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } })() : '';
+    const noteVivante = `<div style="font-size:11.5px; color:var(--muted); margin:0 0 8px;">${bilan.photoAt
+      ? `Liste figée à ${hhmmPhoto}, au moment du créneau — elle ne bouge plus. Un agent qui a signé depuis reste affiché, avec la mention « redressé ».`
+      : `Liste en cours de constitution.`}</div>`;
+    const cartes = toutes.map(a=>{
       const col = pdjCouleurUrgence(a.urgence);
       const fini = !!a.done;
       const heure = fini ? (()=>{ try{ return new Date(a.done.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } })() : '';
-      return `<div style="border:1px solid ${fini ? 'rgba(92,184,150,0.4)' : col.bd}; background:${fini ? 'rgba(92,184,150,0.06)' : col.bg}; border-radius:11px; padding:11px 14px;">
+      // Trois états très différents, qu'on ne doit surtout pas confondre :
+      //   ✅ fait          — le superviseur a confirmé le point ;
+      //   🟢 redressé      — l'agent a signé depuis : plus de problème, même sans confirmation ;
+      //   ⏳ / ❌          — toujours en difficulté, et personne n'est allé le voir.
+      const statut = fini
+        ? { txt: `✅ Fait par ${escapeHtml(a.done.by || '?')}${heure ? ' à ' + heure : ''}`, c: '#5cb896' }
+        : (a.redresse
+            ? { txt: '🟢 Redressé depuis (a signé)', c: '#5cb896' }
+            : (estEnCours ? { txt: '⏳ En attente', c: '#e5a83d' } : { txt: '❌ Jamais confirmé', c: '#b5595c' }));
+      return `<div style="border:1px solid ${fini || a.redresse ? 'rgba(92,184,150,0.4)' : col.bd}; background:${fini || a.redresse ? 'rgba(92,184,150,0.06)' : col.bg}; border-radius:11px; padding:11px 14px;">
         <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
           <b style="font-size:14px;">${escapeHtml(a.agent)}</b>
           <span style="font-size:12.5px; font-weight:800; color:${col.c};">${a.fait}${a.obj ? ` / ${a.obj}` : ''}</span>
-          <span style="margin-left:auto; font-size:11px; font-weight:800; color:${fini ? '#5cb896' : (estEnCours ? '#e5a83d' : '#b5595c')};">${fini ? `✅ Fait par ${escapeHtml(a.done.by || '?')}${heure ? ' à ' + heure : ''}` : (estEnCours ? '⏳ En attente' : '❌ Jamais confirmé')}</span>
+          ${a.apresPhoto ? `<span style="font-size:10.5px; font-weight:800; letter-spacing:.3px; color:var(--muted); border:1px solid var(--border); border-radius:5px; padding:1px 6px;" title="Cet agent allait bien au moment du créneau. Il a décroché depuis : ce n'est donc pas un point manqué par le superviseur.">DÉCROCHÉ APRÈS</span>` : ''}
+          <span style="margin-left:auto; font-size:11px; font-weight:800; color:${statut.c};">${statut.txt}</span>
         </div>
         ${fini && a.done.note ? `<div style="font-size:12px; color:var(--muted); margin-top:5px; font-style:italic;">« ${escapeHtml(a.done.note)} »</div>` : ''}
-        ${!fini ? `<div style="font-size:12px; color:var(--muted); margin-top:5px;">${escapeHtml(a.constat)}</div>` : ''}
+        ${!fini ? `<div style="font-size:12px; color:var(--muted); margin-top:5px;">${escapeHtml(a.constat || '')}</div>` : ''}
       </div>`;
     }).join('');
-    return entete + noteVivante + `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:9px;">${cartes}</div>`;
+    return { ...stats, html: entete + noteVivante + `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:9px;">${cartes}</div>` };
   }));
-  el.innerHTML = blocs.join('');
+
+  // 📊 CHIFFRE MANQUANT — le panneau détaillait chaque créneau mais ne donnait JAMAIS le seul chiffre
+  // qui intéresse le patron d'un coup d'œil : combien de points ont été demandés aujourd'hui, et
+  // combien ont réellement été faits. Il fallait additionner de tête, créneau par créneau.
+  // Un agent qui apparaît à midi ET à 15 h compte pour deux : ce sont bien deux passages distincts.
+  const gTotal     = blocs.reduce((s,b)=> s + b.total, 0);
+  const gFaits     = blocs.reduce((s,b)=> s + b.faits, 0);
+  const gRedresses = blocs.reduce((s,b)=> s + b.redresses, 0);
+  const gRestants  = blocs.reduce((s,b)=> s + b.restants, 0);
+  const pct = gTotal ? Math.round((gFaits / gTotal) * 100) : 0;
+  const couleurG = gRestants ? '#e5484d' : (gTotal ? '#5cb896' : 'var(--muted)');
+  const compteur = `<div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:12px 15px; border-radius:12px; border:1px solid ${gRestants ? 'rgba(229,72,77,0.45)' : 'rgba(92,184,150,0.45)'}; background:${gRestants ? 'rgba(229,72,77,0.08)' : 'rgba(92,184,150,0.08)'};">
+      <div style="min-width:140px;">
+        <div style="font-size:11px; font-weight:800; letter-spacing:.5px; color:var(--muted);">AUJOURD'HUI, TOUS CRÉNEAUX</div>
+        <div style="font-size:26px; font-weight:900; color:${couleurG}; line-height:1.15;">${gFaits} / ${gTotal}<span style="font-size:13px; font-weight:800; opacity:.75;"> point${gTotal>1?'s':''} confirmé${gTotal>1?'s':''}</span></div>
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <div style="height:9px; border-radius:6px; background:var(--border); overflow:hidden;"><div style="height:100%; width:${pct}%; background:${couleurG};"></div></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;" title="Un même agent signalé à midi puis à 15 h compte pour deux points : ce sont deux passages différents. « Redressé » = l'agent a signé depuis, sans qu'un superviseur ait confirmé être passé.">
+          ${gTotal === 0
+            ? 'Aucun agent en difficulté aujourd\'hui — rien n\'a été demandé à personne.'
+            : `${gRedresses ? `${gRedresses} redressé${gRedresses>1?'s':''} sans confirmation · ` : ''}<b style="color:${couleurG};">${gRestants} en attente</b>`}
+        </div>
+      </div>
+    </div>`;
+
+  // Le créneau EN COURS d'abord : c'est le seul sur lequel le patron peut encore agir aujourd'hui.
+  // Les créneaux passés restent dessous, dans l'ordre, pour la trace.
+  el.innerHTML = compteur + blocs.slice().reverse().map(b=>b.html).join('');
 }
 
 // Notification au patron dès qu'un superviseur confirme un point — même mécanique que
