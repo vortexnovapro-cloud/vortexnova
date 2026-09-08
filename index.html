@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-07-r203';
+const APP_VERSION = '2026-09-08-r204';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -26133,6 +26133,15 @@ async function deleteContractFromMonth(monthVal, key, silent){
       await saveMonthlyRetractCount(row.agent, yy, mm, exact);
     }
   }
+  // 🐛 INCOHÉRENCE CORRIGÉE — la suppression mettait bien à jour la facturation et la paie, mais PAS
+  // le tableau du jour, d'où sort le compteur de l'agent dans l'Arena, le Bilan et la Supervision.
+  // Le contrat supprimé y restait compté jusqu'au prochain import ou jusqu'au contrôle automatique du
+  // démarrage : pendant ce temps, deux écrans du même CRM affichaient deux chiffres différents pour la
+  // même journée. On recalcule donc tout de suite la journée concernée, et elle seule.
+  try{
+    const isoJour = parseContractDate(row.datePropre || row.date);
+    if(isoJour) await syncProdBoardRealizedForDates([isoJour]);
+  }catch(e){ console.warn('recalcul du jour après suppression du contrat', e); }
   logAudit('Admin', 'Contrat supprimé', `${row.numContrat || key} — ${monthVal} — ${row.agent || 'sans agent'}`);
   billingContractIndexCache = null;
   billingInvalidate();
