@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-08-r205';
+const APP_VERSION = '2026-09-08-r206';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -12432,13 +12432,13 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
       const moyenne = rec.contrats / rec.joursOuvres;
       const jourTxt = `${ordinalJourFr(jours+1)} jour chez nous`;
       if(rec.contrats > 0){
-        lines.push(mkS('mois', '📈', seedPick([
-          `Depuis ton arrivée : ${ctr(rec.contrats)} en ${rec.joursOuvres} jours travaillés, soit ${fmtNum(moyenne)}/jour${rec.meilleure > 0 ? ` — meilleure journée : ${rec.meilleure}` : ''}. C'est ta courbe à toi, la seule qui compte pour l'instant.`,
-          `${jourTxt} : ${ctr(rec.contrats)} au total, ${fmtNum(moyenne)}/jour de moyenne. Ne te compare à personne d'autre qu'à toi la semaine dernière.`,
-          `Ton parcours ici : ${ctr(rec.contrats)} en ${rec.joursOuvres} jours travaillés${rec.meilleure > 0 ? `, avec un pic à ${rec.meilleure} en une journée` : ''}. Ce qu'on regarde, c'est que ça monte.`
+        lines.push(mkS('arrivee', '📈', seedPick([
+          `${ctr(rec.contrats)} en ${rec.joursOuvres} jours travaillés, soit ${fmtNum(moyenne)}/jour${rec.meilleure > 0 ? ` — ta meilleure journée : ${rec.meilleure}` : ''}. C'est ta courbe à toi, la seule qui compte pour l'instant.`,
+          `${ctr(rec.contrats)} au total pour ton ${jourTxt}, ${fmtNum(moyenne)}/jour de moyenne. Ne te compare à personne d'autre qu'à toi la semaine dernière.`,
+          `${ctr(rec.contrats)} en ${rec.joursOuvres} jours travaillés${rec.meilleure > 0 ? `, avec un pic à ${rec.meilleure} en une journée` : ''}. Ce qu'on regarde, c'est que ça monte.`
         ], seed+'|recrue-progression'), TEAL, TEAL_BG));
       } else {
-        lines.push(mkS('mois', '📉', `Depuis ton arrivée : ${rec.joursOuvres} jours travaillés, aucun contrat. C'est ce chiffre-là qu'il faut débloquer — le reste viendra tout seul après.`, AMBER, AMBER_BG));
+        lines.push(mkS('arrivee', '📉', `${rec.joursOuvres} jours travaillés, aucun contrat. C'est ce chiffre-là qu'il faut débloquer — le reste viendra tout seul après.`, AMBER, AMBER_BG));
       }
     }
 
@@ -12737,10 +12737,15 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
 // L'étiquette est portée par la ligne elle-même (champ `scope`, posé dans les deux fonctions qui les
 // fabriquent), pas par l'appelant : aucune carte ne peut donc l'oublier, et les ~200 phrases existantes
 // n'ont pas eu à être réécrites une par une.
+// 🐛 ÉTIQUETTE FAUSSE CORRIGÉE — le parcours d'une recrue portait la pastille « CE MOIS » alors que
+// la phrase disait « depuis ton arrivée » et additionnait des contrats d'août ET de septembre. La
+// pastille contredisait le texte juste à côté d'elle. Une recrue arrivée le mois dernier compte sur
+// deux mois civils : il lui faut sa propre étiquette, sinon aucune des deux n'est vraie.
 const COMMENT_SCOPE_LABELS = {
-  jour:    { txt: "Aujourd'hui",   color: '#5680ab', bg: 'rgba(86,128,171,0.16)' },
-  semaine: { txt: 'Cette semaine', color: '#4a9891', bg: 'rgba(74,152,145,0.16)' },
-  mois:    { txt: 'Ce mois',       color: '#7d739e', bg: 'rgba(125,115,158,0.16)' }
+  jour:    { txt: "Aujourd'hui",       color: '#5680ab', bg: 'rgba(86,128,171,0.16)' },
+  semaine: { txt: 'Cette semaine',     color: '#4a9891', bg: 'rgba(74,152,145,0.16)' },
+  mois:    { txt: 'Ce mois',           color: '#7d739e', bg: 'rgba(125,115,158,0.16)' },
+  arrivee: { txt: 'Depuis ton arrivée', color: '#4a9891', bg: 'rgba(74,152,145,0.16)' }
 };
 function commentScopeChip(scope){
   const s = COMMENT_SCOPE_LABELS[scope];
@@ -14210,9 +14215,10 @@ function messageRecordDuJour(agentName, r){
   if(r.type === 'perso'){
     return `🏆 Nouveau record personnel : ${ctr(r.valeur)} aujourd'hui, ${n} — ton meilleur était ${r.ancien} le ${r.ancienDate}. Savoure, tu l'as gagné.`;
   }
-  // « le record est à toi » laissait croire que l'agent le DÉTENAIT déjà. On dit explicitement ce
-  // qu'il reste à faire, et on nomme le chiffre à dépasser.
-  return `🥇 Tu égales ta meilleure journée : ${ctr(r.valeur)}, comme le ${r.ancienDate}. Encore 1 contrat aujourd'hui et tu la bats.`;
+  // Deux formulations écartées : « le record est à toi » (on croit qu'il le détient DÉJÀ) et « tu la
+  // bats » (le pronom renvoyait à « journée », mais se lisait comme « record » — d'où l'impression
+  // d'une faute d'accord). On nomme les choses, sans pronom, et on dit ce qui reste à faire.
+  return `🥇 Tu égales ta meilleure journée : ${ctr(r.valeur)}, comme le ${r.ancienDate}. Signe 1 contrat de plus aujourd'hui et tu établis un nouveau record.`;
 }
 // Version courte pour le superviseur (« qui féliciter, et pourquoi »).
 function resumeRecordDuJour(agentName, r){
@@ -14629,7 +14635,7 @@ function dessinerPointDuJourModal(){
                 ? `« Stop, tout le monde écoute : ${firstName(f.agent)} vient de faire la meilleure journée de l'histoire de la boîte. ${f.record.valeur} contrats. Applaudissez. »`
                 : (f.record.type === 'perso'
                   ? `« ${firstName(f.agent)}, tu viens de battre ton propre record. ${f.record.valeur} en une journée. Retiens exactement ce que tu as fait aujourd'hui. »`
-                  : `« ${firstName(f.agent)}, tu égales ta meilleure journée. Encore 1 contrat aujourd'hui et tu la bats — il te reste du temps. »`))}</div>
+                  : `« ${firstName(f.agent)}, tu égales ta meilleure journée. Signe 1 contrat de plus aujourd'hui et tu établis un nouveau record — il te reste du temps. »`))}</div>
             </div>
           </div>`).join('')}
       </div>`
