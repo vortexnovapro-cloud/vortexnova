@@ -2191,9 +2191,9 @@ async function tryDeviceGateAdmin(){
 
         <div class="settings-box" style="border-color:rgba(52,183,116,0.45);">
           <label>📡 Réception automatique des contrats validés</label>
-          <div class="section-sub">Le backoffice valide un contrat → Telegram → Pabbly → il apparaît ici tout seul, rangé <b>à la date du contrat</b> (un contrat signé le 10 et envoyé le 11 compte pour le 10). Aucun import à faire. Le relevé tourne automatiquement toutes les 40 secondes tant que tu es sur l'onglet Admin.</div>
+          <div class="section-sub">Le backoffice valide un contrat → Telegram → Pabbly → il apparaît ici tout seul, rangé <b>à la date du contrat</b> (un contrat signé le 10 et envoyé le 11 compte pour le 10). Aucun import à faire. Le relevé tourne automatiquement toutes les 30 secondes dès qu'un poste (le tien ou celui d'un agent) a le CRM ouvert.</div>
           <div class="admin-toolbar" style="margin-top:12px;">
-            <button onclick="manualSyncBackoffice()" title="Va chercher tout de suite les contrats validés déposés par Pabbly, sans attendre le relevé automatique des 40 secondes." style="padding:10px 18px;border-radius:8px;border:1px solid var(--green);background:rgba(52,183,116,0.14);color:var(--green);font-weight:700;cursor:pointer;">📡 Relever maintenant</button>
+            <button onclick="manualSyncBackoffice()" title="Va chercher tout de suite les contrats validés déposés par Pabbly, sans attendre le relevé automatique des 30 secondes." style="padding:10px 18px;border-radius:8px;border:1px solid var(--green);background:rgba(52,183,116,0.14);color:var(--green);font-weight:700;cursor:pointer;">📡 Relever maintenant</button>
             <button class="link-btn" onclick="toggleRawInbox()" title="Affiche les champs reçus tels quels — sert à vérifier le réglage Pabbly">🔍 Voir ce qui arrive</button>
           </div>
           <div id="backofficeInboxPanel" style="margin-top:12px;"></div>
@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-08-r207';
+const APP_VERSION = '2026-09-10-r208';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3804,6 +3804,12 @@ function startAutoRefresh(kind){
         if(rapideDu){
           if(document.getElementById('view-arena')?.classList.contains('active')) await renderArena();
           if(document.getElementById('view-cash')?.classList.contains('active')) await renderCash();
+          // Contrats validés arrivés du backoffice (Telegram → Pabbly → CRM) : déclenché aussi depuis
+          // l'écran agent, pas seulement depuis Admin — sinon rien ne se relève tant qu'aucun admin ne
+          // garde l'onglet Admin ouvert et au premier plan. Protégé par un verrou partagé (voir
+          // acquireBackofficeSyncLock) : un seul poste fait le relevé à un instant donné, même si
+          // plusieurs agents ont leur écran ouvert en même temps.
+          syncBackofficeInbox();
         }
       }
     }catch(e){ console.warn('Auto-refresh error:', e); }
@@ -24636,8 +24642,50 @@ function toggleRawInbox(){
 let backofficeSyncBusy = false;
 let backofficeLastResult = null;
 
+// ═══ VERROU PARTAGÉ DU RELEVÉ — un seul poste range la boîte à la fois ═══════════════════════════
+// Le relevé automatique ne dépendait QUE de l'onglet Admin : si personne ne le gardait ouvert et au
+// premier plan, rien n'arrivait jamais chez les agents, parfois pendant des heures. Il tourne
+// maintenant aussi depuis l'écran de chaque agent (Arena/Cash) — voir startAutoRefresh, branche
+// 'agent'. Mais du coup, PLUSIEURS postes (jusqu'à un par agent connecté) peuvent tenter le relevé
+// au même moment : sans protection, deux postes pourraient lire la même boîte en même temps et
+// ranger CHACUN son propre exemplaire du même contrat avant que l'un des deux n'ait fini de vider
+// la boîte — exactement le genre de doublon/écrasement déjà corrigé une fois sur le tableau du jour
+// (voir updateProdBoardTx). Ce verrou est un simple document Firestore : grâce à la transaction,
+// Firestore garantit que si deux postes tentent de le prendre au même instant, un seul gagne (l'autre
+// est automatiquement rejoué et voit alors le verrou déjà pris). Le verrou expire tout seul au bout de
+// BACKOFFICE_LOCK_MS — plus court que le rythme du relevé (30 s) — pour qu'un poste ne puisse jamais
+// se bloquer lui-même à son propre tour suivant, et qu'un poste qui plante ou perd sa connexion en
+// plein milieu libère automatiquement la main à un autre sans qu'on ait à intervenir.
+const BACKOFFICE_LOCK_KEY = 'backofficeSyncLock';
+const BACKOFFICE_LOCK_MS = 20000;
+const backofficeClientId = Math.random().toString(36).slice(2) + '-' + Date.now().toString(36);
+
+async function acquireBackofficeSyncLock(){
+  if(!firebaseReady || !db) return true; // pas de Firestore = pas de risque de concurrence, on laisse passer
+  try{
+    const ref = db.collection('vortexnova').doc(BACKOFFICE_LOCK_KEY);
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const current = (snap.exists && snap.data().value) ? JSON.parse(snap.data().value) : null;
+      const now = Date.now();
+      const detenuParAutrePosteEtEncoreFrais = current
+        && current.owner !== backofficeClientId
+        && (now - (current.at || 0)) < BACKOFFICE_LOCK_MS;
+      if(detenuParAutrePosteEtEncoreFrais) return false; // un autre poste a déjà la main, encore fraîche
+      tx.set(ref, { value: JSON.stringify({ owner: backofficeClientId, at: now }) });
+      return true;
+    });
+  }catch(e){
+    console.warn('acquireBackofficeSyncLock:', e);
+    return true; // en cas de doute (ex: règles pas encore à jour côté Firestore), on laisse passer
+                 // plutôt que de bloquer tout relevé automatique sur toute l'équipe.
+  }
+}
+
 // Vide les boîtes de réception et range les contrats. Appelée automatiquement à chaque tour
-// d'auto-refresh Admin, et à la main par le bouton "Relever maintenant".
+// d'auto-refresh — depuis Admin ET depuis l'écran de chaque agent (protégé par le verrou ci-dessus) —
+// et à la main par le bouton "Relever maintenant" (qui, lui, ne passe jamais par le verrou : un clic
+// explicite doit répondre tout de suite, jamais attendre derrière un autre poste).
 //
 // DEUX BOÎTES SONT RELEVÉES, et elles aboutissent au même endroit :
 //   • Realtime Database (`backoffice_inbox`) — la voie normale, celle branchée sur Pabbly. Son API
@@ -24648,6 +24696,10 @@ async function syncBackofficeInbox(opts){
   const silent = !(opts && opts.manual);
   if(backofficeSyncBusy) return backofficeLastResult;
   if(!firebaseReady) return null;
+  if(silent){
+    const gagne = await acquireBackofficeSyncLock();
+    if(!gagne) return backofficeLastResult; // un autre poste s'en occupe déjà ce tour-ci
+  }
   backofficeSyncBusy = true;
 
   const result = { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [], datesSuspectes: [], byMonthCount: {}, fixes: [], warnings: [], error: null, rtdbError: null };
@@ -25173,7 +25225,7 @@ async function renderBackofficeInboxPanel(lastResult){
     const ok = r && r.imported > 0;
     html += `<div style="padding:12px 14px; border-radius:10px; background:${ok ? 'rgba(52,183,116,0.12)' : 'var(--panel2)'}; border:1px solid ${ok ? 'rgba(52,183,116,0.35)' : 'var(--border)'};">
       <div style="font-weight:700; color:${ok ? 'var(--green)' : 'var(--text)'};">${ok ? `✅ ${r.imported} contrat${r.imported>1?'s':''} rangé${r.imported>1?'s':''} au dernier relevé` : '📭 Rien de nouveau au dernier relevé'}${r && r.duplicates ? ` · ${r.duplicates} doublon${r.duplicates>1?'s':''} ignoré${r.duplicates>1?'s':''}` : ''}</div>
-      <div style="font-size:12.5px; color:var(--muted); margin-top:5px;">Le CRM relève la boîte tout seul toutes les 40 secondes tant que tu es sur l'onglet Admin.${pendingKnown ? ` En attente dans la boîte : <b>${pending}</b>.` : ''}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:5px;">Le CRM relève la boîte tout seul toutes les 30 secondes, dès qu'un poste (Admin ou agent) est ouvert.${pendingKnown ? ` En attente dans la boîte : <b>${pending}</b>.` : ''}</div>
       ${ok && Object.keys(r.byMonthCount || {}).length ? `<div style="font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--border);">
         📅 Rangés dans : ${Object.keys(r.byMonthCount).sort().map(mv=> `<b>${escapeHtml(billingMonthLabel(mv))}</b> (${r.byMonthCount[mv]})`).join(' · ')}
         <div style="font-size:12px; color:var(--muted); margin-top:4px;">Chaque contrat va au mois de <b>sa</b> date. Pour le voir dans les tableaux plus bas, sélectionne ce mois-là.</div>
