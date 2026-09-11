@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-11-r215';
+const APP_VERSION = '2026-09-11-r217';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3817,17 +3817,24 @@ function startAutoRefresh(kind){
         }
       } else if(autoRefreshKind === 'supervision'){
         // Le tableau d'équipe est ce que le superviseur surveille en continu : il reste en RAPIDE.
-        if(rapideDu) await renderSupervision();
+        // Les compteurs sont mis à jour AVANT le rendu, sinon le superviseur verrait la situation
+        // d'il y a 30 secondes. Lecture seule de la boîte, aucune écriture dans la facturation.
+        if(rapideDu){
+          await majCompteursDepuisBoite();
+          await renderSupervision();
+        }
       } else if(autoRefreshKind === 'agent'){
         if(rapideDu){
+          // 🐛 BUG CORRIGÉ (r217) — c'est ICI qu'était le blocage. Le poste de l'agent appelait
+          // syncBackofficeInbox(), donc prenait le tour de relevé partagé… puis se faisait refuser
+          // l'écriture dans la facturation par les règles Firestore, et le contrat restait coincé dans
+          // la boîte pour TOUT LE MONDE jusqu'au prochain passage d'un admin. Le poste d'un agent ne
+          // range plus rien : il COMPTE ce qui attend dans la boîte (lecture seule) et met à jour le
+          // tableau du jour, qu'il a le droit d'écrire. Le contrat apparaît donc chez lui, chez son
+          // superviseur et dans le total d'équipe dans les 30 secondes, sans aucun onglet Admin ouvert.
+          await majCompteursDepuisBoite();
           if(document.getElementById('view-arena')?.classList.contains('active')) await renderArena();
           if(document.getElementById('view-cash')?.classList.contains('active')) await renderCash();
-          // Contrats validés arrivés du backoffice (Telegram → Pabbly → CRM) : déclenché aussi depuis
-          // l'écran agent, pas seulement depuis Admin — sinon rien ne se relève tant qu'aucun admin ne
-          // garde l'onglet Admin ouvert et au premier plan. Protégé par un verrou partagé (voir
-          // acquireBackofficeSyncLock) : un seul poste fait le relevé à un instant donné, même si
-          // plusieurs agents ont leur écran ouvert en même temps.
-          syncBackofficeInbox();
         }
       }
     }catch(e){ console.warn('Auto-refresh error:', e); }
@@ -24714,11 +24721,41 @@ const BACKOFFICE_LOCK_KEY = 'backofficeSyncLock';
 const BACKOFFICE_LOCK_MS = 20000;
 const backofficeClientId = Math.random().toString(36).slice(2) + '-' + Date.now().toString(36);
 
+// 🛡️ GARDE-FOU GÉNÉRIQUE (r216) — une promesse qui ne se résout NI ne rejette jamais (un appel réseau
+// qui reste accroché, quelle qu'en soit la cause exacte) est indétectable par un simple try/catch :
+// aucune exception n'est jamais levée, donc rien n'atteint jamais le catch NI le finally qui l'attend.
+// C'EST TRÈS PROBABLEMENT CE QUI BLOQUAIT LE RELEVÉ DES CONTRATS BACKOFFICE POUR DE BON : le verrou
+// partagé (juste en dessous) fait une transaction Firestore AVANT même que syncBackofficeInbox ait pu
+// marquer un relevé "en cours" — si CETTE transaction précise reste accrochée indéfiniment, le
+// garde-fou anti-blocage ajouté juste avant (voir BACKOFFICE_STUCK_MS) ne sert à rien : on ne l'atteint
+// jamais. withTimeout donne une limite de temps ferme à N'IMPORTE QUELLE promesse : passé ce délai, on
+// continue avec une valeur de repli plutôt que d'attendre pour toujours.
+function withTimeout(promise, ms, valeurDeRepli){
+  return new Promise((resolve) => {
+    let reglee = false;
+    const minuteur = setTimeout(() => {
+      if(reglee) return;
+      reglee = true;
+      console.warn('withTimeout: dépassement de', ms, 'ms — on continue avec la valeur de repli.');
+      resolve(valeurDeRepli);
+    }, ms);
+    promise.then(
+      (v)=>{ if(reglee) return; reglee = true; clearTimeout(minuteur); resolve(v); },
+      (e)=>{ if(reglee) return; reglee = true; clearTimeout(minuteur); console.warn('withTimeout: promesse rejetée:', e); resolve(valeurDeRepli); }
+    );
+  });
+}
+const BACKOFFICE_LOCK_TIMEOUT_MS = 8000;
+
 async function acquireBackofficeSyncLock(){
   if(!firebaseReady || !db) return true; // pas de Firestore = pas de risque de concurrence, on laisse passer
   try{
     const ref = db.collection('vortexnova').doc(BACKOFFICE_LOCK_KEY);
-    return await db.runTransaction(async (tx) => {
+    // Enveloppée dans withTimeout : si cette transaction reste accrochée plus de
+    // BACKOFFICE_LOCK_TIMEOUT_MS (ex: Firestore injoignable sans jamais renvoyer d'erreur nette), on
+    // laisse passer le relevé plutôt que de bloquer TOUTE l'équipe indéfiniment derrière un verrou qui
+    // ne se prendra peut-être jamais.
+    return await withTimeout(db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const current = (snap.exists && snap.data().value) ? JSON.parse(snap.data().value) : null;
       const now = Date.now();
@@ -24728,7 +24765,7 @@ async function acquireBackofficeSyncLock(){
       if(detenuParAutrePosteEtEncoreFrais) return false; // un autre poste a déjà la main, encore fraîche
       tx.set(ref, { value: JSON.stringify({ owner: backofficeClientId, at: now }) });
       return true;
-    });
+    }), BACKOFFICE_LOCK_TIMEOUT_MS, true);
   }catch(e){
     console.warn('acquireBackofficeSyncLock:', e);
     return true; // en cas de doute (ex: règles pas encore à jour côté Firestore), on laisse passer
@@ -24746,8 +24783,106 @@ async function acquireBackofficeSyncLock(){
 //     REST accepte du JSON à plat, exactement ce que le module API de Pabbly sait produire.
 //   • Firestore (`vortexnova_backoffice`) — conservée au cas où une autre source (un script, un
 //     autre outil que Pabbly) préférerait écrire là. Rien à faire si elle reste vide.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 📬 COMPTER ET RANGER SONT DEUX CHOSES DIFFÉRENTES (r217)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// LE BUG QUE ÇA CORRIGE, ET IL ÉTAIT GRAVE. Ranger un contrat, c'est l'écrire dans le classeur de
+// facturation — et les règles Firestore réservent cette écriture au compte admin, à juste titre :
+// c'est de l'argent. Mais le CRM ne savait COMPTER un contrat qu'une fois rangé. Le compteur du jour
+// était donc pris en otage par une écriture qui n'a rien à voir avec lui.
+// CE QUI SE PASSAIT CONCRÈTEMENT : pour éviter que 15 postes rangent le même contrat en même temps,
+// un seul poste à la fois prend le « tour de relevé ». Ce tour était ouvert à TOUS les postes. Un
+// poste d'agent le prenait, se faisait refuser l'écriture dans la facturation (à raison), laissait le
+// contrat dans la boîte — et le poste admin, lui, n'avait pas eu le tour. Le contrat restait coincé
+// indéfiniment : invisible chez l'agent, chez son superviseur et dans le total d'équipe, jusqu'à ce
+// que l'admin clique « Relever maintenant » ou réimporte le CSV à la main.
+// LA SÉPARATION :
+//   • COMPTER — n'importe quel poste, toutes les 30 s. Lecture seule de la boîte (les règles de la
+//     Realtime Database l'autorisent à tout compte connecté) + lecture du classeur, puis mise à jour
+//     du tableau du jour, que les agents ont déjà le droit d'écrire : c'est là que vivent leurs
+//     objectifs. AUCUNE écriture dans la facturation.
+//   • RANGER — le poste admin seul, quand il est ouvert. C'est ce qui alimente la PAIE.
+// Résultat : le contrat compte 30 secondes après le message Telegram sans qu'aucun onglet Admin ne
+// soit ouvert, et la règle « les agents n'écrivent pas dans la facturation » reste intacte.
+let _enAttenteCache = null;
+let _enAttenteCacheAt = 0;
+const EN_ATTENTE_CACHE_MS = 15000;
+function oublierContratsEnAttente(){ _enAttenteCache = null; _enAttenteCacheAt = 0; }
+
+// Lecture SEULE de la boîte : renvoie les contrats en attente déjà rattachés à un agent et à une
+// date. Volontairement silencieuse sur ce qu'elle n'arrive pas à lire — un contrat dont l'agent ou la
+// date est illisible ne peut pas être compté, il attend que l'admin le règle (le panneau Facturation
+// lui dit lesquels et pourquoi). On ne devine jamais à qui appartient un contrat.
+async function lireContratsEnAttente(){
+  if(_enAttenteCache && (Date.now() - _enAttenteCacheAt) < EN_ATTENTE_CACHE_MS) return _enAttenteCache;
+  const sortie = [];
+  if(firebaseReady && rtdb){
+    try{
+      const snap = await rtdb.ref(BACKOFFICE_RTDB_PATH).limitToFirst(500).once('value');
+      const val = snap.val();
+      if(val){
+        Object.keys(val).forEach(k=>{
+          const data = val[k] || {};
+          const r = backofficeReadFields(data);
+          if(!r.dateISO) return;
+          const agent = billingResolveAgent(r.agent) || billingFindAgentInRow(data);
+          if(!agent) return;
+          sortie.push({ agent, date: r.dateISO, cles: billingRowKeys(r) });
+        });
+      }
+    }catch(e){
+      // Boîte injoignable à cet instant : on garde le dernier état connu plutôt que de faire
+      // brutalement retomber les compteurs à leur seule valeur « rangée ».
+      return _enAttenteCache || [];
+    }
+  }
+  _enAttenteCache = sortie;
+  _enAttenteCacheAt = Date.now();
+  return sortie;
+}
+
+// Le passage LÉGER, celui qui tourne sur tous les postes : il ne range rien, il compte.
+// 💰 POURQUOI LA SIGNATURE. Recompter, c'est relire les classeurs de facturation (jusqu'à trois mois).
+// Sans garde-fou, chaque poste les relirait toutes les 30 secondes toute la journée pour réécrire
+// exactement la même chose — quinze postes × deux fois par minute × trois documents, uniquement pour
+// constater que rien n'a changé. On retient donc l'empreinte du contenu de la boîte : tant qu'elle est
+// identique à celle du dernier passage ABOUTI de ce poste, il n'y a rien de neuf à compter et on ne
+// lit rien du tout. Un contrat qui arrive, ou un contrat qui est rangé, change l'empreinte et relance
+// le calcul immédiatement.
+let _signatureBoiteTraitee = null;
+async function majCompteursDepuisBoite(){
+  if(!firebaseReady) return;
+  try{
+    const enAttente = await lireContratsEnAttente();
+    const signature = enAttente
+      .map(c => `${c.agent}|${c.date}|${c.cles[0] || ''}`)
+      .sort()
+      .join(',');
+    if(signature === _signatureBoiteTraitee) return;
+    const dates = [...new Set(enAttente.map(c => c.date))];
+    // Boîte vide : tout est rangé, le tableau du jour a déjà été mis à jour par le poste qui a rangé.
+    // On mémorise l'empreinte pour ne pas y revenir, et on ne lit ni n'écrit rien.
+    if(!dates.length){ _signatureBoiteTraitee = signature; return; }
+    // L'empreinte n'est retenue que si le calcul a réellement abouti : un classeur illisible
+    // (coupure réseau) doit être retenté au tour suivant, pas oublié.
+    if(await syncProdBoardRealizedForDates(dates)) _signatureBoiteTraitee = signature;
+  }catch(e){ console.warn('majCompteursDepuisBoite', e); }
+}
+
 async function syncBackofficeInbox(opts){
   const silent = !(opts && opts.manual);
+  // 🔐 RANGER EST RÉSERVÉ À L'ADMIN. `configPriveeChargee` n'est vrai que sur un poste dont la session
+  // Firebase a pu lire le document `config` — ce que les règles n'accordent qu'à admin@vortexnova.local.
+  // C'est donc le test exact, celui qui reflète les droits réels et pas une supposition. Un poste
+  // d'agent ne prend plus le tour de relevé : il ne peut pas ranger, il n'a rien à bloquer.
+  if(!configPriveeChargee){
+    if(!silent){
+      return { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [],
+               datesSuspectes: [], byMonthCount: {}, fixes: [], warnings: [], rtdbError: null,
+               error: "Ce poste n'est pas connecté en Admin : ranger un contrat dans la facturation demande le compte Admin." };
+    }
+    return backofficeLastResult;
+  }
   if(backofficeSyncBusy){
     if((Date.now() - backofficeSyncStartedAt) <= BACKOFFICE_STUCK_MS) return backofficeLastResult;
     // Le tour précédent tourne depuis trop longtemps pour être normal : on ne reste plus jamais
@@ -24961,6 +25096,12 @@ async function syncBackofficeInbox(opts){
       if(failedMonths[monthVal]) continue;
       try{ await rtdb.ref(`${BACKOFFICE_RTDB_PATH}/${key}`).remove(); }catch(e){ console.warn('backoffice rtdb delete', e); }
     }
+
+    // La boîte vient de changer : le cache de lecture des contrats en attente est périmé. Sans ça,
+    // pendant 15 s, un contrat tout juste rangé serait compté à la fois dans le classeur ET dans la
+    // boîte. Le dédoublonnage par numéro le rattraperait, mais autant ne pas créer l'ambiguïté.
+    oublierContratsEnAttente();
+    _signatureBoiteTraitee = null;
 
     if(result.imported > 0){
       billingContractIndexCache = null;
@@ -25492,7 +25633,7 @@ async function backofficeRealizedForDate(agent, dateStr){
 // continuer à fonctionner sans qu'aucun ne lise plus jamais une saisie d'agent.
 async function syncProdBoardRealizedForDates(dateStrs){
   const uniqueDates = [...new Set(dateStrs)].filter(Boolean);
-  if(!uniqueDates.length) return;
+  if(!uniqueDates.length) return false;
 
   // ⚡ PERFORMANCE — un seul passage sur les contrats, au lieu d'un par agent ET par jour.
   // Avant : pour chaque jour, pour chaque agent, on reparcourait TOUT le mois pour compter ses
@@ -25529,19 +25670,54 @@ async function syncProdBoardRealizedForDates(dateStrs){
   const index = Object.create(null);
   const agentsVusParJour = Object.create(null);   // dateStr → Set d'agents ayant au moins 1 contrat ce jour
   const datesVoulues = new Set(uniqueDates);
+  const clesDuClasseur = new Set();               // tous les numéros déjà rangés (pour le dédoublonnage)
+  // 🛡️ GARDE-FOU (r217) — cette fonction écrit des compteurs AUTORITAIRES : elle remet à 0 tout agent
+  // qu'elle ne retrouve pas dans les contrats. Si la lecture d'un classeur échoue (coupure réseau le
+  // temps d'une requête), l'index est incomplet et on écraserait les compteurs de toute l'équipe avec
+  // des zéros. Tant que cette fonction ne tournait qu'après un rangement réussi côté admin, le risque
+  // restait théorique ; maintenant qu'elle tourne sur tous les postes toutes les 30 s, il ne l'est
+  // plus. En cas de lecture ratée on ne touche à rien et on retentera au tour suivant.
+  let lectureClasseurOk = true;
   for(const mv of moisConcernes){
     let data;
-    try{ data = await getBillingProd(mv); }catch(e){ continue; }
+    try{ data = await getBillingProd(mv); }
+    catch(e){ lectureClasseurOk = false; console.warn('syncProdBoardRealizedForDates: classeur illisible', mv, e); continue; }
     const rows = (data && data.rows) || [];
     for(let i = 0; i < rows.length; i++){
       const r = rows[i];
       if(!r || !r.agent || !r.date) continue;
+      billingRowKeys(r).forEach(k => clesDuClasseur.add(k));
       if(!datesVoulues.has(r.date)) continue;      // une seule des journées demandées nous intéresse
       index[r.agent + '|' + r.date] = (index[r.agent + '|' + r.date] || 0) + 1;
       (agentsVusParJour[r.date] || (agentsVusParJour[r.date] = new Set())).add(r.agent);
     }
   }
+  if(!lectureClasseurOk) return false;   // rien écrit : l'appelant doit retenter au tour suivant
 
+  // 📬 LES CONTRATS ENCORE DANS LA BOÎTE COMPTENT AUSSI (r217, voir le grand commentaire plus haut).
+  // Ils ne sont pas encore dans le classeur de facturation — seul l'admin peut les y mettre — mais ils
+  // sont validés par le backoffice, donc ils sont acquis. Les faire attendre l'ouverture d'un onglet
+  // Admin pour apparaître au compteur n'avait aucun sens.
+  // DÉDOUBLONNAGE PAR NUMÉRO DE CONTRAT : si un contrat vient d'être rangé et que la boîte n'a pas
+  // encore fini d'être vidée, il est déjà compté dans l'index — on l'ignore ici. Sans ce test, un
+  // contrat pouvait compter double pendant quelques secondes.
+  try{
+    const enAttente = await lireContratsEnAttente();
+    for(const c of enAttente){
+      if(!datesVoulues.has(c.date)) continue;
+      if(c.cles.length && c.cles.some(k => clesDuClasseur.has(k))) continue;
+      index[c.agent + '|' + c.date] = (index[c.agent + '|' + c.date] || 0) + 1;
+      (agentsVusParJour[c.date] || (agentsVusParJour[c.date] = new Set())).add(c.agent);
+    }
+  }catch(e){ console.warn('syncProdBoardRealizedForDates: boîte illisible', e); }
+
+  // 🐛 BUG CORRIGÉ (r217) — bumpProdPulse (tout en bas) écrit dans Firestore ET déclenche un
+  // redessin complet chez TOUS les postes connectés. Il partait à chaque passage, même quand rien
+  // n'avait changé. Tant que cette fonction ne tournait qu'après un rangement, c'était sans
+  // conséquence. Maintenant qu'elle tourne sur chaque poste toutes les 30 s, un signal systématique
+  // ferait clignoter les écrans de toute l'équipe en boucle et écrirait pour rien. On ne signale donc
+  // que si un compteur a VRAIMENT bougé.
+  let quelqueChoseAChange = false;
   for(const dateStr of uniqueDates){
     // 🔒 Écriture transactionnelle (voir updateProdBoardTx) — remplace l'ancien correctif "lecture
     // toujours fraîche avant d'écrire" : celui-ci fermait la fenêtre ouverte par le cache de LECTURE,
@@ -25562,6 +25738,7 @@ async function syncProdBoardRealizedForDates(dateStrs){
         if(!board.agents[agent]) board.agents[agent] = { objective: 0, realized: 0 };
         if(board.agents[agent].realized !== count){ board.agents[agent].realized = count; changed = true; }
       }
+      if(changed) quelqueChoseAChange = true;
       return changed;
     });
   }
@@ -25570,7 +25747,8 @@ async function syncProdBoardRealizedForDates(dateStrs){
   // agent bouge tout seul, en direct, dès que le backoffice valide un contrat ou qu'un CSV est importé —
   // y compris pour des contrats datés d'un jour PASSÉ, que le listener du tableau du jour ne voyait pas.
   // Placé ici parce que c'est le passage OBLIGÉ des deux chemins d'arrivée (Pabbly et import CSV).
-  if(uniqueDates.length) await bumpProdPulse(uniqueDates);
+  if(uniqueDates.length && quelqueChoseAChange) await bumpProdPulse(uniqueDates);
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
