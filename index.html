@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-11-r209';
+const APP_VERSION = '2026-09-11-r210';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9475,10 +9475,15 @@ async function renderObjectifSnapshot(){
     const dateStr = dateList[0];
     const board = boards[dateStr];
 
+    // ⚠️ Un ex-agent ne doit JAMAIS avoir sa carte sur le Bilan du jour après son départ : il ne
+    // travaillait plus ici, une carte « objectif pas fixé » ou « 0 contrat » à son nom est une
+    // information fausse. Même règle que le tableau de présence (renderReport) : estSousContrat
+    // tient compte de la date d'embauche ET de la date de départ, en gardant l'historique des
+    // journées réellement travaillées (aLaisseUneTrace) intact.
     const rows = config.agents.filter(a => !isIndependant(a)).map(agent=>{
       const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
       return { agent, objective: p.objective || 0, realized: p.realized || 0 };
-    });
+    }).filter(r => estSousContrat(r.agent, dateStr, r.realized > 0 || r.objective > 0));
     // Même convention partout dans l'appli : classé du plus au moins de contrats réalisés, alphabétique
     // si égalité (cohérent avec Explorateur, Supervision, classements...).
     rows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
@@ -9488,7 +9493,7 @@ async function renderObjectifSnapshot(){
     const indepRows = config.agents.filter(a => isIndependant(a)).map(agent=>{
       const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
       return { agent, objective: p.objective || 0, realized: p.realized || 0, isIndep: true };
-    });
+    }).filter(r => estSousContrat(r.agent, dateStr, r.realized > 0 || r.objective > 0));
     indepRows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
 
     await renderObjSnapSingleDay(container, rows, indepRows, dateStr);
@@ -9501,7 +9506,15 @@ async function renderObjectifSnapshot(){
   // le mode "un seul jour" (juste au-dessus) les inclut — un indépendant qui se fixe un défi perso
   // disparaissait entièrement dès qu'on choisissait une période de plus d'un jour, y compris de la carte
   // récap (indepRealized était figé à 0). On les inclut maintenant exactement comme en mode jour unique.
-  const rows = config.agents.map(agent=>{
+  // ⚠️ Même règle que le mode « jour unique » juste au-dessus : un ex-agent ne doit pas avoir de
+  // carte sur une période où il n'était plus sous contrat. On garde l'agent dans la liste s'il était
+  // sous contrat au moins UN jour de la période choisie (comme ça, un départ EN COURS de période
+  // laisse bien apparaître les jours réellement travaillés avant son départ).
+  const rows = config.agents.filter(agent => dateList.some(d=>{
+    const board = boards[d];
+    const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
+    return estSousContrat(agent, d, (p.realized || 0) > 0 || (p.objective || 0) > 0);
+  })).map(agent=>{
     const isIndep = isIndependant(agent);
     let daysWithObjective = 0, daysHit = 0, totalRealized = 0, totalObjective = 0;
     dateList.forEach(d=>{
