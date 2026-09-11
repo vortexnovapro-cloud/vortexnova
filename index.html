@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-11-r211';
+const APP_VERSION = '2026-09-11-r214';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3790,7 +3790,17 @@ function startAutoRefresh(kind){
         // le sous-onglet ouvert. C'est le seul bloc à 30 secondes côté admin.
         if(rapideDu){
           renderAnomalyBanner();
-          syncBackofficeInbox();   // contrats validés arrivés du backoffice (Telegram → Pabbly → CRM)
+          // 🐛 BUG CORRIGÉ — le panneau "Réception automatique des contrats validés" ne se repeignait
+          // QUE quand un contrat était effectivement rangé (imported > 0). Un contrat qui NE PEUT PAS
+          // être rangé automatiquement (agent introuvable, date illisible...) reste volontairement
+          // dans la boîte — mais l'écran, lui, restait figé sur son tout premier affichage, compteur
+          // "en attente" compris, sans jamais dire pourquoi. Ça donnait l'impression que le relevé
+          // automatique était mort, alors qu'il tournait très bien et laissait le contrat de côté à
+          // raison. On repeint maintenant le panneau après CHAQUE relevé, qu'il y ait du nouveau ou
+          // non — seulement si l'onglet Facturation est ouvert (jamais de rendu invisible pour rien).
+          syncBackofficeInbox().then(()=>{   // contrats validés arrivés du backoffice (Telegram → Pabbly → CRM)
+            if(document.getElementById('admin-billing')?.classList.contains('active')) renderBackofficeInboxPanel();
+          });
         }
         // COURANT — les tableaux de bord en lecture seule. "Production" reste volontairement exclu :
         // son tableau de rémunération est un grand formulaire éditable, le rafraîchir effacerait une
@@ -9963,7 +9973,11 @@ let pauseTotalsLastComputed = 0;
 async function renderPauseTotalsToday(force){
   const container = document.getElementById('pauseTotalsToday');
   if(!container) return;
-  const nonIndep = config.agents.filter(a => !isIndependant(a));
+  const dateStr = todayStr();
+  // ⚠️ BUG CORRIGÉ — un ex-agent (date de départ dépassée) restait dans cette liste et s'affichait
+  // « Pas encore arrivé(e) » indéfiniment après son départ, comme s'il était toujours censé pointer.
+  // Même règle que partout ailleurs dans l'appli (renderReport, Bilan du jour) : estSousContrat.
+  const nonIndep = config.agents.filter(a => !isIndependant(a) && estSousContrat(a, dateStr, false));
   if(nonIndep.length===0){
     container.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; pauseTotalsLastComputed = Date.now();
     return;
@@ -9973,7 +9987,6 @@ async function renderPauseTotalsToday(force){
   // Bouton "🔄 Actualiser" pour un point à jour immédiat quand on le veut vraiment.
   if(!force && (Date.now() - pauseTotalsLastComputed) < READ_TIME_REFRESH_MS) return;
   pauseTotalsLastComputed = Date.now();
-  const dateStr = todayStr();
   const freeBudget = config.freeBreakMinutes != null ? config.freeBreakMinutes : 35;
   // Jour non ouvré (week-end ou jour férié français) : personne n'est censé pointer, donc le statut "en
   // direct" ne doit jamais laisser penser à une absence/un retard — cf. isWorkingDay().
@@ -24787,7 +24800,13 @@ async function syncBackofficeInbox(opts){
       retracted: false, source: 'backoffice', receivedAt: (data && data.receivedAt) || new Date().toISOString(),
       _fixes: r._fixes, _warnings: r._warnings
     });
-    return true;
+    // 🐛 BUG CORRIGÉ (r214) — renvoie maintenant le MOIS plutôt qu'un simple true/false, pour que
+    // l'appelant sache à quel mois rattacher chaque document/clé source. Indispensable pour ne
+    // supprimer une entrée de la boîte QUE si son mois a été sauvegardé avec succès (voir plus bas) :
+    // avant, un mois qui échouait à l'enregistrement (ex : document Firestore trop volumineux après un
+    // gros import CSV de rattrapage) faisait échouer TOUT le relevé, et plus rien — d'AUCUN mois,
+    // même ceux qui n'avaient aucun souci — n'était jamais rangé ni retiré de la boîte, indéfiniment.
+    return monthVal;
   };
 
   try{
@@ -24798,7 +24817,8 @@ async function syncBackofficeInbox(opts){
         const val = snapR.val();
         if(val){
           Object.keys(val).forEach(key=>{
-            if(ingest(val[key], key, 'rtdb')) processedKeys.push(key);
+            const monthVal = ingest(val[key], key, 'rtdb');
+            if(monthVal) processedKeys.push({ key, monthVal });
           });
         }
       }catch(e){
@@ -24813,7 +24833,8 @@ async function syncBackofficeInbox(opts){
       try{
         const snap = await db.collection(BACKOFFICE_COLLECTION).limit(500).get();
         snap.forEach(doc=>{
-          if(ingest(doc.data() || {}, doc.id, 'firestore')) processedDocs.push(doc.ref);
+          const monthVal = ingest(doc.data() || {}, doc.id, 'firestore');
+          if(monthVal) processedDocs.push({ ref: doc.ref, monthVal });
         });
       }catch(e){ console.warn('inbox Firestore:', e); }
     }
@@ -24822,40 +24843,74 @@ async function syncBackofficeInbox(opts){
 
     const touchedDates = new Set();
 
+    const failedMonths = {};
+
     for(const monthVal of Object.keys(byMonth)){
-      // ⏳ RETARDATAIRE : le backoffice peut valider plusieurs jours après la signature (week-end,
-      // congés, jours fériés). La plupart du temps ça n'a aucune importance — le contrat est rangé à sa
-      // date, point. Mais si le mois concerné a DÉJÀ été figé (donc payé), un contrat qui arrive après
-      // coup ne peut plus être payé sur ce mois-là : il faut que le patron le voie et décide de le
-      // rattraper sur le mois en cours. On l'importe quand même (la donnée est juste), on alerte.
-      const frozen = await getBillingPayslips(monthVal);
-      if(frozen && frozen.entries && frozen.entries.length){
-        byMonth[monthVal].forEach(r=> result.lateForFrozen.push({
-          numContrat: r.numContrat, agent: r.agent, nom: r.nom, date: r.date, monthVal
-        }));
+      // 🛡️ ISOLATION PAR MOIS (r214) — chaque mois est traité dans son propre try/catch. AVANT, tout le
+      // relevé (documents ET clés de TOUS les mois) partageait un seul try/catch avec la suppression
+      // finale : si UN SEUL mois plantait (ex : document de production trop volumineux après un gros
+      // import CSV de rattrapage), plus rien n'était jamais supprimé de la boîte — même les contrats
+      // d'autres mois qui s'étaient parfaitement bien rangés — et ça recommençait à l'identique à
+      // CHAQUE relevé suivant, indéfiniment : un contrat resté coincé restait coincé pour toujours.
+      // Désormais : un mois qui échoue est signalé (result.error / result.failedMonths) et ses
+      // contrats source restent VOLONTAIREMENT dans la boîte (rien n'est perdu, on retentera au
+      // prochain relevé) — mais tous les AUTRES mois continuent d'être rangés et vidés normalement.
+      try{
+        // ⏳ RETARDATAIRE : le backoffice peut valider plusieurs jours après la signature (week-end,
+        // congés, jours fériés). La plupart du temps ça n'a aucune importance — le contrat est rangé à sa
+        // date, point. Mais si le mois concerné a DÉJÀ été figé (donc payé), un contrat qui arrive après
+        // coup ne peut plus être payé sur ce mois-là : il faut que le patron le voie et décide de le
+        // rattraper sur le mois en cours. On l'importe quand même (la donnée est juste), on alerte.
+        const frozen = await getBillingPayslips(monthVal);
+        const lateEntries = [];
+        if(frozen && frozen.entries && frozen.entries.length){
+          byMonth[monthVal].forEach(r=> lateEntries.push({
+            numContrat: r.numContrat, agent: r.agent, nom: r.nom, date: r.date, monthVal
+          }));
+        }
+        const store = await getBillingProd(monthVal);
+        store.rows = store.rows || [];
+        const seen = new Set();
+        store.rows.forEach(r => billingRowKeys(r).forEach(k => seen.add(k)));
+        let importedCount = 0;
+        let duplicateCount = 0;
+        const monthTouchedDates = new Set();
+        byMonth[monthVal].forEach(row=>{
+          const keys = billingRowKeys(row);
+          // Sans identifiant exploitable, on ne peut pas dédoublonner de façon sûre : on ajoute quand
+          // même (mieux vaut un doublon visible dans le tableau qu'un contrat perdu), le tableau de
+          // l'agent le rendra évident.
+          if(keys.length && keys.some(k => seen.has(k))){ duplicateCount++; return; }
+          keys.forEach(k => seen.add(k));
+          store.rows.push(row);
+          if(row.date) monthTouchedDates.add(row.date);
+          importedCount++;
+        });
+        store.importedAt = new Date().toISOString();
+        store.month = monthVal;
+        await billingSave(billingProdKey(monthVal), store);
+        // Le mois est bien enregistré : on ne comptabilise (imported/duplicates/byMonthCount) et on ne
+        // retient ses dates touchées qu'À PARTIR D'ICI — jamais avant que billingSave ait réussi.
+        result.imported += importedCount;
+        result.duplicates += duplicateCount;
+        if(importedCount){
+          // Mémorise DANS QUEL MOIS chaque contrat a été rangé. Indispensable à afficher : un contrat
+          // daté du 02/02 arrive dans février, pas dans le mois courant — sans cette ligne, on cherche
+          // le compteur au mauvais endroit et on croit que rien n'est arrivé.
+          result.byMonthCount[monthVal] = (result.byMonthCount[monthVal] || 0) + importedCount;
+        }
+        lateEntries.forEach(e => result.lateForFrozen.push(e));
+        monthTouchedDates.forEach(d => touchedDates.add(d));
+      }catch(e){
+        console.error('syncBackofficeInbox mois', monthVal, e);
+        failedMonths[monthVal] = e && e.message ? e.message : String(e);
       }
-      const store = await getBillingProd(monthVal);
-      store.rows = store.rows || [];
-      const seen = new Set();
-      store.rows.forEach(r => billingRowKeys(r).forEach(k => seen.add(k)));
-      byMonth[monthVal].forEach(row=>{
-        const keys = billingRowKeys(row);
-        // Sans identifiant exploitable, on ne peut pas dédoublonner de façon sûre : on ajoute quand
-        // même (mieux vaut un doublon visible dans le tableau qu'un contrat perdu), le tableau de
-        // l'agent le rendra évident.
-        if(keys.length && keys.some(k => seen.has(k))){ result.duplicates++; return; }
-        keys.forEach(k => seen.add(k));
-        store.rows.push(row);
-        if(row.date) touchedDates.add(row.date);
-        result.imported++;
-        // Mémorise DANS QUEL MOIS chaque contrat a été rangé. Indispensable à afficher : un contrat
-        // daté du 02/02 arrive dans février, pas dans le mois courant — sans cette ligne, on cherche
-        // le compteur au mauvais endroit et on croit que rien n'est arrivé.
-        result.byMonthCount[monthVal] = (result.byMonthCount[monthVal] || 0) + 1;
-      });
-      store.importedAt = new Date().toISOString();
-      store.month = monthVal;
-      await billingSave(billingProdKey(monthVal), store);
+    }
+
+    if(Object.keys(failedMonths).length){
+      result.failedMonths = failedMonths;
+      const msg = Object.entries(failedMonths).map(([m, e]) => `${m}: ${e}`).join(' | ');
+      result.error = result.error ? `${result.error} | ${msg}` : msg;
     }
 
     // Le tableau de production du jour (celui que les agents consultent) est recalculé à partir des
@@ -24874,10 +24929,15 @@ async function syncBackofficeInbox(opts){
     // ne soit relu deux fois. Les documents illisibles (date ou agent introuvable) sont VOLONTAIREMENT
     // laissés en place : ils réapparaîtront au prochain relevé une fois le nom d'agent corrigé dans
     // Réglages, plutôt que d'être perdus silencieusement.
-    for(const ref of processedDocs){
+    // ⚠️ Un mois resté en échec (voir failedMonths ci-dessus) garde volontairement ses documents/clés
+    // source dans la boîte : rien n'est supprimé tant que le mois correspondant n'a pas été rangé avec
+    // succès, pour qu'un contrat en échec ne soit jamais perdu silencieusement.
+    for(const { ref, monthVal } of processedDocs){
+      if(failedMonths[monthVal]) continue;
       try{ await ref.delete(); }catch(e){ console.warn('backoffice delete', e); }
     }
-    for(const key of processedKeys){
+    for(const { key, monthVal } of processedKeys){
+      if(failedMonths[monthVal]) continue;
       try{ await rtdb.ref(`${BACKOFFICE_RTDB_PATH}/${key}`).remove(); }catch(e){ console.warn('backoffice rtdb delete', e); }
     }
 
