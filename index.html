@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-11-r210';
+const APP_VERSION = '2026-09-11-r211';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9475,15 +9475,18 @@ async function renderObjectifSnapshot(){
     const dateStr = dateList[0];
     const board = boards[dateStr];
 
-    // ⚠️ Un ex-agent ne doit JAMAIS avoir sa carte sur le Bilan du jour après son départ : il ne
-    // travaillait plus ici, une carte « objectif pas fixé » ou « 0 contrat » à son nom est une
-    // information fausse. Même règle que le tableau de présence (renderReport) : estSousContrat
-    // tient compte de la date d'embauche ET de la date de départ, en gardant l'historique des
-    // journées réellement travaillées (aLaisseUneTrace) intact.
+    // 🐛 RÉGRESSION CORRIGÉE (r210) — exclure les ex-agents ICI, avant le calcul des totaux, faisait
+    // disparaître leurs contrats RÉELS du chiffre d'affaires du jour dès que leur fiche portait une
+    // date de départ (estSousContrat l'emporte alors sur toute trace réelle, par design — voir sa
+    // définition). Le total de l'équipe doit toujours refléter TOUS les contrats réellement rangés,
+    // quel que soit le statut RH de qui les a faits. La correction du problème d'origine (la carte
+    // personnelle d'un ex-agent qui traîne après son départ) se fait plus bas, à l'affichage de
+    // CHAQUE carte individuellement (voir plus bas dans combinedDayRows.forEach) — jamais ici, sur
+    // les totaux.
     const rows = config.agents.filter(a => !isIndependant(a)).map(agent=>{
       const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
       return { agent, objective: p.objective || 0, realized: p.realized || 0 };
-    }).filter(r => estSousContrat(r.agent, dateStr, r.realized > 0 || r.objective > 0));
+    });
     // Même convention partout dans l'appli : classé du plus au moins de contrats réalisés, alphabétique
     // si égalité (cohérent avec Explorateur, Supervision, classements...).
     rows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
@@ -9493,7 +9496,7 @@ async function renderObjectifSnapshot(){
     const indepRows = config.agents.filter(a => isIndependant(a)).map(agent=>{
       const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
       return { agent, objective: p.objective || 0, realized: p.realized || 0, isIndep: true };
-    }).filter(r => estSousContrat(r.agent, dateStr, r.realized > 0 || r.objective > 0));
+    });
     indepRows.sort((a,b)=> b.realized !== a.realized ? b.realized - a.realized : a.agent.localeCompare(b.agent));
 
     await renderObjSnapSingleDay(container, rows, indepRows, dateStr);
@@ -9506,15 +9509,11 @@ async function renderObjectifSnapshot(){
   // le mode "un seul jour" (juste au-dessus) les inclut — un indépendant qui se fixe un défi perso
   // disparaissait entièrement dès qu'on choisissait une période de plus d'un jour, y compris de la carte
   // récap (indepRealized était figé à 0). On les inclut maintenant exactement comme en mode jour unique.
-  // ⚠️ Même règle que le mode « jour unique » juste au-dessus : un ex-agent ne doit pas avoir de
-  // carte sur une période où il n'était plus sous contrat. On garde l'agent dans la liste s'il était
-  // sous contrat au moins UN jour de la période choisie (comme ça, un départ EN COURS de période
-  // laisse bien apparaître les jours réellement travaillés avant son départ).
-  const rows = config.agents.filter(agent => dateList.some(d=>{
-    const board = boards[d];
-    const p = (board.agents && board.agents[agent]) || { objective: 0, realized: 0 };
-    return estSousContrat(agent, d, (p.realized || 0) > 0 || (p.objective || 0) > 0);
-  })).map(agent=>{
+  // 🐛 Même régression que le mode « jour unique » (voir commentaire au-dessus) : ne JAMAIS exclure
+  // un agent d'ici, ça retirerait ses contrats réels du total de la période. La carte individuelle
+  // d'un agent sans aucune activité ET plus sous contrat au dernier jour de la période est masquée
+  // plus bas (voir rows.forEach ci-dessous), pas ici.
+  const rows = config.agents.map(agent=>{
     const isIndep = isIndependant(agent);
     let daysWithObjective = 0, daysHit = 0, totalRealized = 0, totalObjective = 0;
     dateList.forEach(d=>{
@@ -9544,7 +9543,13 @@ async function renderObjectifSnapshot(){
   let html = `<div class="section-sub" style="margin-top:-4px; margin-bottom:10px;">Du ${dateList[0]} au ${dateList[dateList.length-1]} (${dateList.length} jour${dateList.length>1?'s':''}).</div>`;
   html += renderVisReelSquareCard(totalRealizedRange, totalTargetRange, rowsWithAnyObj.length, indepRealizedRange, `${dateList[0]}_${dateList[dateList.length-1]}`);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;">';
+  // Même logique que le mode « jour unique » : pas de carte pour un agent resté totalement inactif
+  // sur toute la période ET plus sous contrat à la fin de celle-ci (parti avant, ou pas encore
+  // embauché) — mais s'il a le moindre contrat réel sur la période, sa carte reste affichée, départ
+  // en cours de période ou non.
+  const dernierJourPeriode = dateList[dateList.length - 1];
   rows.forEach(r=>{
+    if(r.totalRealized === 0 && r.daysWithObjective === 0 && !estSousContrat(r.agent, dernierJourPeriode, false)) return;
     const hasAny = r.daysWithObjective > 0;
     const rate = hasAny ? Math.round((r.daysHit/r.daysWithObjective)*100) : 0;
     const barColor = !hasAny ? 'var(--muted)' : (rate>=100 ? 'var(--green)' : (rate>=50 ? 'var(--amber)' : 'var(--red)'));
@@ -9814,6 +9819,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   }));
 
   combinedDayRows.forEach(r=>{
+    // Corrige le cas d'origine (Brunelle) SANS toucher aux totaux calculés plus haut : un ex-agent
+    // n'a plus de carte personnelle passé son dernier jour travaillé, mais ses contrats réels de ce
+    // jour-là (s'il y en a) restent comptés dans le total de l'équipe ci-dessus.
+    if(!estSousContrat(r.agent, dateStr, r.realized > 0 || r.objective > 0)) return;
     if(!r.isIndep){
       const noObj = r.objective === 0;
       const pct = noObj ? 0 : Math.min(100, Math.round((r.realized/r.objective)*100));
