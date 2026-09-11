@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-11-r214';
+const APP_VERSION = '2026-09-11-r215';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -24684,6 +24684,17 @@ function toggleRawInbox(){
 
 let backofficeSyncBusy = false;
 let backofficeLastResult = null;
+let backofficeSyncStartedAt = 0;
+let backofficeSyncGeneration = 0;
+// 🛡️ GARDE-FOU CONTRE UN RELEVÉ BLOQUÉ POUR TOUJOURS (r215) — backofficeSyncBusy ne se remettait à
+// false QUE dans le "finally" de syncBackofficeInbox. Si UN SEUL appel Firebase à l'intérieur restait
+// bloqué sans jamais se résoudre NI échouer (ex: connexion coupée en plein milieu d'une écriture),
+// ce "finally" n'était jamais atteint : backofficeSyncBusy restait vrai pour toujours sur ce poste,
+// et plus AUCUN relevé n'était même tenté ensuite (retour immédiat au tout début de la fonction) —
+// jamais d'erreur affichée, jamais rien dans la boîte qui bouge, jusqu'à un rechargement manuel de la
+// page. Au-delà de BACKOFFICE_STUCK_MS, on considère ce tour précédent comme mort et on retente quand
+// même, sans attendre que l'utilisateur recharge quoi que ce soit.
+const BACKOFFICE_STUCK_MS = 25000;
 
 // ═══ VERROU PARTAGÉ DU RELEVÉ — un seul poste range la boîte à la fois ═══════════════════════════
 // Le relevé automatique ne dépendait QUE de l'onglet Admin : si personne ne le gardait ouvert et au
@@ -24737,13 +24748,23 @@ async function acquireBackofficeSyncLock(){
 //     autre outil que Pabbly) préférerait écrire là. Rien à faire si elle reste vide.
 async function syncBackofficeInbox(opts){
   const silent = !(opts && opts.manual);
-  if(backofficeSyncBusy) return backofficeLastResult;
+  if(backofficeSyncBusy){
+    if((Date.now() - backofficeSyncStartedAt) <= BACKOFFICE_STUCK_MS) return backofficeLastResult;
+    // Le tour précédent tourne depuis trop longtemps pour être normal : on ne reste plus jamais
+    // bloqué en silence, voir l'explication au-dessus de BACKOFFICE_STUCK_MS.
+    console.warn('syncBackofficeInbox: relevé précédent resté bloqué plus de', BACKOFFICE_STUCK_MS, 'ms — nouvelle tentative forcée, sans attendre de rechargement de page.');
+  }
   if(!firebaseReady) return null;
   if(silent){
     const gagne = await acquireBackofficeSyncLock();
     if(!gagne) return backofficeLastResult; // un autre poste s'en occupe déjà ce tour-ci
   }
+  // Identifie CE relevé précis : si un relevé bloqué (voir ci-dessus) finit quand même par se terminer
+  // APRÈS qu'on ait forcé une nouvelle tentative, il ne doit surtout pas écraser le résultat plus
+  // récent ni retoucher backofficeSyncBusy à sa place — seul le relevé le plus récent compte.
+  const monRelevé = ++backofficeSyncGeneration;
   backofficeSyncBusy = true;
+  backofficeSyncStartedAt = Date.now();
 
   const result = { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [], datesSuspectes: [], byMonthCount: {}, fixes: [], warnings: [], error: null, rtdbError: null };
   // Regroupé par mois de contrat avant écriture : un seul enregistrement par mois touché, au lieu
@@ -24839,7 +24860,7 @@ async function syncBackofficeInbox(opts){
       }catch(e){ console.warn('inbox Firestore:', e); }
     }
 
-    if(Object.keys(byMonth).length === 0){ backofficeLastResult = result; return result; }
+    if(Object.keys(byMonth).length === 0){ if(monRelevé === backofficeSyncGeneration) backofficeLastResult = result; return result; }
 
     const touchedDates = new Set();
 
@@ -24954,9 +24975,9 @@ async function syncBackofficeInbox(opts){
     console.error('syncBackofficeInbox:', e);
     result.error = e && e.message ? e.message : String(e);
   }finally{
-    backofficeSyncBusy = false;
+    if(monRelevé === backofficeSyncGeneration) backofficeSyncBusy = false;
   }
-  backofficeLastResult = result;
+  if(monRelevé === backofficeSyncGeneration) backofficeLastResult = result;
   return result;
 }
 
