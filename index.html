@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-11-r217';
+const APP_VERSION = '2026-09-11-r218';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3732,10 +3732,17 @@ function userIsTypingInForm(){
   const type = (el.type || '').toLowerCase();
   // Cases à cocher, boutons radio, boutons : aucun texte en cours, rien à protéger.
   if(type === 'checkbox' || type === 'radio' || type === 'button' || type === 'submit') return false;
-  // Champ vide et jamais tapé dedans : l'utilisateur a cliqué puis est passé à autre chose.
-  if(!String(el.value || '').length && !derniereFrappeAt) return false;
+  // 🐛 BUG CORRIGÉ (r218) — un champ DÉJÀ REMPLI dans lequel personne n'a jamais tapé (le sélecteur
+  // de mois de Facturation, par exemple, qui contient toujours une valeur) suffisait à faire répondre
+  // « oui, il est en train d'écrire » indéfiniment : la valeur n'était pas vide, donc le premier test
+  // ne s'appliquait pas, et `derniereFrappeAt` étant nul, la règle des 90 secondes ne s'appliquait pas
+  // non plus. Un simple clic sur ce champ gelait donc TOUT le rafraîchissement automatique de la page
+  // — relevé des contrats compris — jusqu'à ce qu'on clique ailleurs. Sans le moindre signe.
+  // Ce qu'on protège, c'est une saisie EN COURS : s'il n'y a jamais eu de frappe, il n'y a rien à
+  // protéger, quel que soit le contenu du champ.
+  if(!derniereFrappeAt) return false;
   // Saisie abandonnée : au-delà de 90 s sans frappe, on relance le rafraîchissement.
-  if(derniereFrappeAt && (Date.now() - derniereFrappeAt) > SAISIE_INACTIVE_MS) return false;
+  if((Date.now() - derniereFrappeAt) > SAISIE_INACTIVE_MS) return false;
   return true;
 }
 
@@ -24691,6 +24698,12 @@ function toggleRawInbox(){
 
 let backofficeSyncBusy = false;
 let backofficeLastResult = null;
+// 🔎 DIAGNOSTIC QUI MANQUAIT DEPUIS LE DÉBUT. Le panneau affichait le résultat du dernier relevé
+// ABOUTI sur ce poste — sans jamais dire quand. Quand le relevé automatique ne partait plus du tout,
+// l'écran continuait donc d'afficher fièrement « 5 contrats rangés » (le clic manuel d'il y a deux
+// heures) pendant que le compteur « en attente », lui, montait en direct. Impossible de comprendre.
+// On horodate désormais le dernier relevé réellement effectué ici, et on l'affiche.
+let backofficeDernierReleveAt = 0;
 let backofficeSyncStartedAt = 0;
 let backofficeSyncGeneration = 0;
 // 🛡️ GARDE-FOU CONTRE UN RELEVÉ BLOQUÉ POUR TOUJOURS (r215) — backofficeSyncBusy ne se remettait à
@@ -24759,11 +24772,23 @@ async function acquireBackofficeSyncLock(){
       const snap = await tx.get(ref);
       const current = (snap.exists && snap.data().value) ? JSON.parse(snap.data().value) : null;
       const now = Date.now();
-      const detenuParAutrePosteEtEncoreFrais = current
+      // 🐛 BUG CORRIGÉ (r218) — LE BLOCAGE QUI SURVIVAIT AU DÉPLOIEMENT.
+      // Depuis r217, seul un poste admin range la boîte : lui seul arrive jusqu'ici. Mais les postes
+      // des agents qui ont encore l'ANCIENNE version chargée dans leur onglet (déployer met à jour le
+      // fichier en ligne, pas les pages déjà ouvertes) continuent, eux, de prendre ce tour toutes les
+      // 30 secondes — puis de se faire refuser l'écriture dans la facturation. Le poste admin se
+      // retrouvait donc encore bloqué derrière des postes incapables de faire le travail, et ça
+      // pouvait durer des jours, jusqu'à ce que le dernier agent pense à fermer son onglet.
+      // Le verrou dit désormais si son détenteur SAIT ranger. Un tour pris par quelqu'un qui ne sait
+      // pas (ancienne version, ou poste non admin) n'a aucune raison d'être respecté : on le reprend.
+      // Deux onglets Admin ouverts en même temps, eux, continuent de se respecter — c'est le seul cas
+      // où ce verrou sert encore à quelque chose.
+      const detenuParUnPosteQuiSaitRanger = current
         && current.owner !== backofficeClientId
+        && current.peutRanger === true
         && (now - (current.at || 0)) < BACKOFFICE_LOCK_MS;
-      if(detenuParAutrePosteEtEncoreFrais) return false; // un autre poste a déjà la main, encore fraîche
-      tx.set(ref, { value: JSON.stringify({ owner: backofficeClientId, at: now }) });
+      if(detenuParUnPosteQuiSaitRanger) return false;
+      tx.set(ref, { value: JSON.stringify({ owner: backofficeClientId, at: now, peutRanger: true }) });
       return true;
     }), BACKOFFICE_LOCK_TIMEOUT_MS, true);
   }catch(e){
@@ -25118,7 +25143,10 @@ async function syncBackofficeInbox(opts){
   }finally{
     if(monRelevé === backofficeSyncGeneration) backofficeSyncBusy = false;
   }
-  if(monRelevé === backofficeSyncGeneration) backofficeLastResult = result;
+  if(monRelevé === backofficeSyncGeneration){
+    backofficeLastResult = result;
+    backofficeDernierReleveAt = Date.now();
+  }
   return result;
 }
 
@@ -25422,6 +25450,20 @@ async function renderBackofficeInboxPanel(lastResult){
     }catch(e){ rtdbOk = false; }
   }
 
+  // État réel du relevé automatique SUR CE POSTE — la seule information qui permettait de
+  // comprendre ce qui se passait, et qui n'était affichée nulle part.
+  const etatReleve = (()=>{
+    if(!configPriveeChargee) return { txt: "⛔ Ce poste n'est pas connecté en Admin : il ne range rien (les contrats comptent quand même).", couleur: 'var(--amber)' };
+    if(!backofficeDernierReleveAt) return { txt: "⏳ Aucun relevé automatique abouti depuis l'ouverture de cette page — le premier part dans les 30 secondes.", couleur: 'var(--muted)' };
+    const secondes = Math.round((Date.now() - backofficeDernierReleveAt) / 1000);
+    const quand = secondes < 90 ? `il y a ${secondes} s` : `il y a ${Math.round(secondes/60)} min`;
+    // Au-delà de 3 minutes sans relevé abouti, quelque chose empêche l'automatique de tourner : on le
+    // dit en clair plutôt que de laisser croire que tout va bien.
+    return secondes > 180
+      ? { txt: `⚠️ Dernier relevé automatique de ce poste : ${quand} — il devrait tourner toutes les 30 s. Recharge la page si ça persiste.`, couleur: 'var(--red)' }
+      : { txt: `🔄 Dernier relevé automatique de ce poste : ${quand}.`, couleur: 'var(--green)' };
+  })();
+
   let html = '';
 
   // 🔍 CONTENU BRUT DE LA BOÎTE — indispensable pour mettre au point le réglage Pabbly : on voit
@@ -25477,13 +25519,14 @@ async function renderBackofficeInboxPanel(lastResult){
     const ok = r && r.imported > 0;
     html += `<div style="padding:12px 14px; border-radius:10px; background:${ok ? 'rgba(52,183,116,0.12)' : 'var(--panel2)'}; border:1px solid ${ok ? 'rgba(52,183,116,0.35)' : 'var(--border)'};">
       <div style="font-weight:700; color:${ok ? 'var(--green)' : 'var(--text)'};">${ok ? `✅ ${r.imported} contrat${r.imported>1?'s':''} rangé${r.imported>1?'s':''} au dernier relevé` : '📭 Rien de nouveau au dernier relevé'}${r && r.duplicates ? ` · ${r.duplicates} doublon${r.duplicates>1?'s':''} ignoré${r.duplicates>1?'s':''}` : ''}</div>
-      <div style="font-size:12.5px; color:var(--muted); margin-top:5px;">Le CRM relève la boîte tout seul toutes les 30 secondes, dès qu'un poste (Admin ou agent) est ouvert.${pendingKnown ? ` En attente dans la boîte : <b>${pending}</b>.` : ''}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:5px;">Ce poste relève la boîte tout seul toutes les 30 secondes tant que l'onglet Admin est ouvert. Les contrats qui attendent ici comptent <b>déjà</b> dans les tableaux et chez les agents — les ranger ne sert qu'à la <b>paie</b>.${pendingKnown ? ` En attente dans la boîte : <b>${pending}</b>.` : ''}</div>
+      <div style="font-size:12px; margin-top:5px; color:${etatReleve.couleur};">${etatReleve.txt}</div>
       ${ok && Object.keys(r.byMonthCount || {}).length ? `<div style="font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--border);">
         📅 Rangés dans : ${Object.keys(r.byMonthCount).sort().map(mv=> `<b>${escapeHtml(billingMonthLabel(mv))}</b> (${r.byMonthCount[mv]})`).join(' · ')}
         <div style="font-size:12px; color:var(--muted); margin-top:4px;">Chaque contrat va au mois de <b>sa</b> date. Pour le voir dans les tableaux plus bas, sélectionne ce mois-là.</div>
       </div>` : ''}
       ${pendingKnown && pending > 0 && !ok ? `<div style="font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--border); color:var(--amber);">
-        👉 <b>${pending} contrat${pending>1?'s':''} attend${pending>1?'ent':''} dans la boîte.</b> Clique sur « 📡 Relever maintenant » pour le${pending>1?'s':''} ranger.
+        👉 <b>${pending} contrat${pending>1?'s':''} en attente de rangement.</b> ${pending>1?'Ils comptent':'Il compte'} déjà dans les tableaux et chez ${pending>1?'leurs':'son'} agent${pending>1?'s':''} — seul le classeur de paie ${pending>1?'les':'le'} attend encore. Ça se fait tout seul, ou tout de suite avec « 📡 Relever maintenant ».
       </div>` : ''}
     </div>`;
 
