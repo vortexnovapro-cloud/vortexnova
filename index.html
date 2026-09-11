@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-10-r208';
+const APP_VERSION = '2026-09-11-r209';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3751,7 +3751,15 @@ function startAutoRefresh(kind){
   const maintenantDemarrage = Date.now();
   refreshTierLastRun = { rapide: maintenantDemarrage, courant: maintenantDemarrage, lent: maintenantDemarrage };
   autoRefreshTimer = setInterval(async ()=>{
-    if(document.hidden) return; // onglet en arrière-plan : on ne consomme rien pour rien
+    // 🐛 CAUSE DU "IL FAUT TOUJOURS CLIQUER ACTUALISER" CÔTÉ ADMIN — l'onglet Admin reste souvent
+    // ouvert en ARRIÈRE-PLAN (un autre onglet au premier plan, un deuxième écran pas actif) :
+    // document.hidden devenait vrai, et TOUT le rafraîchissement automatique s'arrêtait net —
+    // contrats, pauses, présences/absences, chiffre d'affaires du jour compris — jusqu'au prochain
+    // clic manuel sur "Actualiser". Les agents restent concernés par la pause en arrière-plan (pour
+    // ménager batterie/données mobiles), mais l'Admin continue désormais de se rafraîchir même en
+    // arrière-plan : c'est justement l'écran qu'on veut pouvoir laisser ouvert sans le garder au
+    // premier plan en permanence.
+    if(document.hidden && autoRefreshKind !== 'admin') return; // onglet en arrière-plan : on ne consomme rien pour rien (agents/supervision)
     if(autoRefreshBusy) return; // un tour précédent tourne encore (ex: connexion lente) : on ne s'empile pas dessus
     if(userIsTypingInForm()) return; // ne jamais couper quelqu'un en pleine saisie
 
