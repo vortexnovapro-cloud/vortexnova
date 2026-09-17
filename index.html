@@ -1582,7 +1582,7 @@ async function tryDeviceGateAdmin(){
           <div id="bossRevenuePanel" class="money-sensitive"></div>
 
           <div class="section-title">💼 Masse salariale prévisionnelle du mois</div>
-          <div class="section-sub">Deux montants côte à côte, à ne jamais confondre. <b style="color:var(--green);">✅ Acquis</b> = le fixe complet du mois + les commissions et primes <b>réellement gagnées à ce jour</b> ; aucun contrat futur n'est deviné, ce total ne monte que quand de vrais contrats rentrent. <b style="color:var(--amber);">🔮 Projeté</b> = le même calcul, mais en prolongeant le rythme actuel de chaque agent jusqu'à la fin du mois : une estimation, qui n'engage rien. Le détail complet de ce que contient chacun est dépliable sous les cartes. Pour « combien je dois si je m'arrête maintenant », c'est 💸 Dépenses temps réel plus haut.</div>
+          <div class="section-sub">Deux montants côte à côte, tous les deux pour la <b>paie de fin de mois</b>. <b style="color:var(--green);">✅ Avec les contrats actuels</b> = ce que tu paieras si plus aucun contrat ne rentre d'ici la fin du mois. Le fixe du mois entier y est déjà compté, pas seulement les jours déjà passés : c'est un plancher, il ne peut que monter. <b style="color:var(--amber);">🔮 Au rythme actuel</b> = le même calcul, mais en prolongeant le rythme de chaque agent jusqu'à la fin du mois — une estimation, qui n'engage rien. Le détail de ce que contient chacun est dépliable sous les cartes. ⚠️ Aucun des deux ne répond à « combien je dois si je m'arrête <b>aujourd'hui</b> » : ça, c'est 💸 Dépenses temps réel plus haut, où le fixe est compté au prorata des jours écoulés.</div>
           <div id="payrollSummaryPanel" class="money-sensitive"></div>
 
           <div class="section-title">🧾 Bilan net du mois</div>
@@ -1611,7 +1611,7 @@ async function tryDeviceGateAdmin(){
           <div id="inactiveAgentsPanel"></div>
 
           <div class="section-title">📅 Projection fin de mois</div>
-          <div class="section-sub">Toute l'équipe au rythme actuel de chacun — salariés, backoffice et indépendants compris. Pour les salariés à objectif : qui va atteindre son mini obligatoire et qui non (vert = en bonne voie, rouge = à risque). Pour tous, y compris ceux sans objectif : les contrats projetés d'ici la fin du mois et, en dessous, <b>le salaire déjà acquis et le salaire projeté</b> qui en découle. Ces montants viennent du même calcul que « 💼 Masse salariale prévisionnelle » ci-dessus, jamais d'un second moteur.</div>
+          <div class="section-sub">Toute l'équipe au rythme actuel de chacun — salariés, backoffice et indépendants compris. Pour les salariés à objectif : qui va atteindre son mini obligatoire et qui non (vert = en bonne voie, rouge = à risque). Pour tous, y compris ceux sans objectif : les contrats projetés d'ici la fin du mois et, en dessous, <b>sa paie de fin de mois</b> : d'abord avec son nombre de contrats actuel, puis au rythme qu'il tient. Ces montants viennent du même calcul que « 💼 Masse salariale prévisionnelle » ci-dessus, jamais d'un second moteur.</div>
           <div id="projectionPanel"></div>
 
           <div class="section-title">🎓 ADF/écoutes oubliés en cours</div>
@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-17-r220';
+const APP_VERSION = '2026-09-17-r221';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -11294,11 +11294,11 @@ async function renderPayrollSummary(force){
   const carteProjetee = proj.available
     ? `<div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px dashed rgba(229,168,61,0.65);">
          <div style="display:flex; align-items:center; gap:8px; font-size:11px; color:var(--amber); text-transform:uppercase; letter-spacing:0.7px; font-weight:800; margin-bottom:7px;">
-           🔮 Projeté fin de mois
+           🔮 Au rythme actuel
            <span style="text-transform:none; letter-spacing:0; font-weight:700; font-size:10.5px; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.45); border-radius:20px; padding:2px 9px;">estimation</span>
          </div>
          <div style="font-size:30px; font-weight:900; color:var(--amber);">${Math.round(proj.grandTotal).toLocaleString('fr-FR')} DH</div>
-         <div style="font-size:12.5px; font-weight:800; color:var(--amber); margin-top:4px;">+ ${ecart.toLocaleString('fr-FR')} DH par rapport à l'acquis</div>
+         <div style="font-size:12.5px; font-weight:800; color:var(--amber); margin-top:4px;">+ ${ecart.toLocaleString('fr-FR')} DH par rapport aux contrats actuels</div>
          <div style="font-size:11.5px; color:var(--muted); margin-top:7px; line-height:1.6;">Si chacun garde son rythme actuel jusqu'au ${proj.remainingWorkingDays} j ouvré${proj.remainingWorkingDays>1?'s':''} restant${proj.remainingWorkingDays>1?'s':''} — soit <b style="color:var(--text);">~${proj.extraContracts} contrat${proj.extraContracts>1?'s':''}</b> en plus. Rien n'est signé : ce montant n'engage personne.</div>
          ${parts(proj.totalTeam, proj.totalBackoffice, proj.totalIndep)}
        </div>`
@@ -11313,9 +11313,9 @@ async function renderPayrollSummary(force){
     </div>
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(290px, 1fr)); gap:14px;">
       <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid rgba(52,183,116,0.5);">
-        <div style="font-size:11px; color:var(--green); text-transform:uppercase; letter-spacing:0.7px; font-weight:800; margin-bottom:7px;">✅ Acquis — déjà dû</div>
+        <div style="font-size:11px; color:var(--green); text-transform:uppercase; letter-spacing:0.7px; font-weight:800; margin-bottom:7px;">✅ Avec les contrats actuels</div>
         <div style="font-size:30px; font-weight:900; color:var(--green);">${Math.round(grandTotal).toLocaleString('fr-FR')} DH</div>
-        <div style="font-size:11.5px; color:var(--muted); margin-top:7px; line-height:1.6;">Le fixe complet du mois + uniquement les primes et commissions <b style="color:var(--text);">réellement gagnées à ce jour</b>. Aucun contrat futur n'est deviné. C'est le minimum que tu paieras, même si plus rien ne rentre.</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:7px; line-height:1.6;">Ce que tu paieras à la fin du mois <b style="color:var(--text);">si plus aucun contrat ne rentre</b>. Le fixe du mois entier est déjà compté dedans, pas seulement les jours déjà passés. C'est un plancher : il ne peut que monter.</div>
         ${parts(totalTeam, totalBackoffice, totalIndep)}
       </div>
       ${carteProjetee}
@@ -11334,7 +11334,7 @@ async function renderPayrollSummary(force){
           • la <b style="color:var(--text);">prime de supervision d'équipe</b> et la <b style="color:var(--text);">commission sur agents indépendants</b> des superviseurs ;<br>
           • <b style="color:var(--text);">moins</b> les retenues retards, absences et infractions constatées.
         </div>
-        <div style="margin:12px 0 6px;"><b style="color:var(--amber);">Seule différence du montant projeté</b> : le nombre de contrats de chaque agent est porté à celui qu'il atteindrait en gardant son rythme du mois jusqu'à la fin (même calcul de rythme que « 📅 Projection fin de mois » dans Alertes). Tout le reste — paliers, primes, retenues — passe par le même moteur de paie. Une prime d'objectif <b style="color:var(--text);">pas encore atteinte peut donc apparaître</b> dans ce montant, et pas dans l'acquis.</div>
+        <div style="margin:12px 0 6px;"><b style="color:var(--amber);">Seule différence du montant projeté</b> : le nombre de contrats de chaque agent est porté à celui qu'il atteindrait en gardant son rythme du mois jusqu'à la fin (même calcul de rythme que « 📅 Projection fin de mois » dans Alertes). Tout le reste — paliers, primes, retenues — passe par le même moteur de paie. Une prime d'objectif <b style="color:var(--text);">pas encore atteinte peut donc apparaître</b> dans ce montant, et pas dans le premier.</div>
         <div style="margin-top:12px;"><b style="color:var(--red);">Ce qui n'est dans aucun des deux</b> : les charges de l'entreprise (loyer, lignes, internet…) — elles n'entrent qu'au « 🧾 Bilan net du mois » ; les retours de facturation pas encore importés ; et toute rétractation à venir, qui fera baisser ces montants.</div>
         <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--border);">💡 Pour « combien je dois si je m'arrête <b style="color:var(--text);">maintenant</b> », ce n'est ni l'un ni l'autre : c'est « 💸 Dépenses temps réel » plus haut, où le fixe est compté au prorata des jours déjà écoulés.</div>
       </div>
@@ -11624,9 +11624,9 @@ async function renderProjectionPanel(){
         ${badge}
       </div>
       <div style="margin-top:7px; font-size:12.5px; color:var(--muted);">
-        Salaire : <b style="color:var(--green);">${fdh(d.total)} DH</b> acquis${proj.available && delta > 0
-          ? ` → <b style="color:var(--amber);">${fdh(d.projTotal)} DH</b> projeté <b style="color:var(--amber);">(+${fdh(delta)})</b>`
-          : (proj.available ? ' <span style="opacity:0.75;">— aucun gain supplémentaire projeté</span>' : '')}
+        Salaire : <b style="color:var(--green);">${fdh(d.total)} DH</b> avec le nombre de contrats actuel${proj.available && delta > 0
+          ? ` → <b style="color:var(--amber);">${fdh(d.projTotal)} DH</b> au rythme actuel <b style="color:var(--amber);">(+${fdh(delta)})</b>`
+          : (proj.available ? ' <span style="opacity:0.75;">— son rythme n\'ajoute rien de plus</span>' : '')}
       </div>
     </div>`;
   };
@@ -11651,7 +11651,7 @@ async function renderProjectionPanel(){
       ${proj.available
         ? `<div style="font-size:12.5px; color:var(--muted); line-height:1.7;">
              Au rythme actuel, l'équipe signerait <b style="color:var(--text);">~${proj.extraContracts} contrat${proj.extraContracts>1?'s':''}</b> de plus d'ici la fin du mois (${proj.remainingWorkingDays}\u00a0j ouvré${proj.remainingWorkingDays>1?'s':''} restant${proj.remainingWorkingDays>1?'s':''}).<br>
-             Masse salariale : <b style="color:var(--green);">${fdh(payroll.grandTotal)} DH</b> acquis → <b style="color:var(--amber);">${fdh(proj.grandTotal)} DH</b> projeté <b style="color:var(--amber);">(+${fdh(ecartTotal)} DH)</b>
+             Masse salariale : <b style="color:var(--green);">${fdh(payroll.grandTotal)} DH</b> avec les contrats actuels → <b style="color:var(--amber);">${fdh(proj.grandTotal)} DH</b> au rythme actuel <b style="color:var(--amber);">(+${fdh(ecartTotal)} DH)</b>
            </div>`
         : `<div style="font-size:12.5px; color:var(--muted); line-height:1.7;">Aucune projection possible : il faut être sur le mois en cours, qu'il reste des jours ouvrés, et qu'au moins un agent ait déjà produit.<br>Masse salariale du mois : <b style="color:var(--green);">${fdh(payroll.grandTotal)} DH</b>.</div>`}
     </div>`;
