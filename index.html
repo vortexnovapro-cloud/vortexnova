@@ -1611,7 +1611,7 @@ async function tryDeviceGateAdmin(){
           <div id="inactiveAgentsPanel"></div>
 
           <div class="section-title">📅 Projection fin de mois</div>
-          <div class="section-sub">Au rythme actuel de chacun, qui va atteindre son mini obligatoire et qui non — vert = en bonne voie, rouge = à risque.</div>
+          <div class="section-sub">Toute l'équipe au rythme actuel de chacun — salariés, backoffice et indépendants compris. Pour les salariés à objectif : qui va atteindre son mini obligatoire et qui non (vert = en bonne voie, rouge = à risque). Pour tous, y compris ceux sans objectif : les contrats projetés d'ici la fin du mois et, en dessous, <b>le salaire déjà acquis et le salaire projeté</b> qui en découle. Ces montants viennent du même calcul que « 💼 Masse salariale prévisionnelle » ci-dessus, jamais d'un second moteur.</div>
           <div id="projectionPanel"></div>
 
           <div class="section-title">🎓 ADF/écoutes oubliés en cours</div>
@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-17-r219';
+const APP_VERSION = '2026-09-17-r220';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -3647,6 +3647,9 @@ let refreshTierLastRun = { rapide: 0, courant: 0, lent: 0 };
 function clearRenderCaches(){
   prodBoardCache = {};
   dayLogCache = {};
+  // La masse salariale dépend directement des contrats et des pointages relus ci-dessus : la garder en
+  // cache après un « Tout recharger » afficherait l'ancien montant à côté des nouveaux chiffres.
+  if(typeof invalidatePayrollMonthCache === 'function') invalidatePayrollMonthCache();
   if(typeof invalidateBriefingRowsCache === 'function') invalidateBriefingRowsCache();
   if(typeof invalidateDayRecordsCache === 'function') invalidateDayRecordsCache();
   infrCache = {};
@@ -10740,7 +10743,9 @@ async function renderBossRevenue(force){
 // obligatoire, qu'ils n'ont pas), et elle renvoie les contrats EN PLUS, jamais un total.
 async function projectedExtraContracts(agent, year, month){
   const now = nowMA();
-  if(!(year === now.getFullYear() && month === now.getMonth()+1)) return 0;
+  if(!(year === now.getFullYear() && month === now.getMonth()+1)){
+    return { extra: 0, pace: 0, remainingWorkingDays: 0, realized: await monthlyRealizedContracts(agent, year, month) };
+  }
 
   let remainingWorkingDays = workingDaysRemainingFrom(todayStr());
   const term = getAgentTermination(agent);
@@ -10749,10 +10754,10 @@ async function projectedExtraContracts(agent, year, month){
     const effectiveEnd = term.lastDay < monthEndStr ? term.lastDay : monthEndStr;
     remainingWorkingDays = Math.max(0, workingDaysInMonthUntil(year, month, effectiveEnd) - workingDaysInMonthUntil(year, month, todayStr()));
   }
-  if(remainingWorkingDays <= 0) return 0;
-
   const realized = await monthlyRealizedContracts(agent, year, month);
-  if(realized <= 0) return 0;
+  const vide = { extra: 0, pace: 0, remainingWorkingDays: Math.max(0, remainingWorkingDays), realized };
+  if(remainingWorkingDays <= 0) return vide;
+  if(realized <= 0) return vide;
 
   // Un indépendant ne pointe pas : workingDaysElapsedForAgent n'aurait aucun sens pour lui (il repose sur
   // les jours réellement pointés), on prend les jours ouvrés écoulés du mois.
@@ -10764,14 +10769,20 @@ async function projectedExtraContracts(agent, year, month){
     const doneToday = boardToday ? ((boardToday.agents && boardToday.agents[agent] && boardToday.agents[agent].realized) || 0) : 0;
     if(doneToday === 0) paceDays -= 1;
   }
-  if(paceDays <= 0) return 0;
+  if(paceDays <= 0) return vide;
   // Arrondi à l'unité ICI, une fois pour toutes : un contrat ne se découpe pas, et surtout le même
   // nombre doit servir à TOUT ce qui découle de cet agent — sa propre paie, la prime d'équipe de son
   // superviseur, la commission indé. Sans cet arrondi commun, un indépendant était payé sur 16 contrats
   // projetés pendant que son superviseur touchait une commission sur 16,36.
   // `realized` étant entier, realized + round(extra) == round(realized + extra) : la projection reste
   // rigoureusement identique à celle affichée par « 📅 Projection fin de mois » (computeMonthProjection).
-  return Math.round((realized / paceDays) * remainingWorkingDays);
+  const pace = realized / paceDays;
+  return {
+    extra: Math.round(pace * remainingWorkingDays),
+    pace: Math.round(pace * 10) / 10,
+    remainingWorkingDays,
+    realized
+  };
 }
 
 // Commission superviseur sur indépendants, calculée à partir d'un nombre de contrats fourni au lieu
@@ -10815,11 +10826,12 @@ async function computeTotalPayrollMonth(year, month){
   ]);
 
   // Contrats supplémentaires attendus d'ici la fin du mois, agent par agent (0 sur un mois déjà clos).
-  const extraList = await Promise.all(config.agents.map(async agent=> ({
-    agent, extra: isCurrentMonth ? await projectedExtraContracts(agent, year, month) : 0
-  })));
-  const extraBy = {};
-  extraList.forEach(e=>{ extraBy[e.agent] = e.extra; });
+  const extraList = await Promise.all(config.agents.map(async agent=>{
+    const p = await projectedExtraContracts(agent, year, month);
+    return { agent, extra: isCurrentMonth ? p.extra : 0, pace: p.pace, remainingWorkingDays: p.remainingWorkingDays, realized: p.realized };
+  }));
+  const extraBy = {}, projInfo = {};
+  extraList.forEach(e=>{ extraBy[e.agent] = e.extra; projInfo[e.agent] = e; });
   const totalExtra = extraList.reduce((s,e)=> s + e.extra, 0);
   // Assiette de la prime de supervision d'équipe : ni superviseur, ni indépendant (voir
   // supervisorBonusForDates — les indés en sont exclus depuis le r218, ils ont leur commission dédiée).
@@ -10830,10 +10842,10 @@ async function computeTotalPayrollMonth(year, month){
     Object.fromEntries(config.agents.filter(a=>isIndependant(a)).map(a=> [a, extraBy[a] || 0]))
   );
 
-  let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
-  let projTeam = 0, projIndep = 0, projBackoffice = 0;
-
-  await Promise.all(config.agents.map(async agent=>{
+  // Une ligne par agent, renvoyee telle quelle dans `details` : c'est ce que lit la Projection fin de
+  // mois pour afficher le salaire acquis et projete de chacun. Un seul calcul de paie alimente donc le
+  // total ET le detail par agent - les deux ecrans ne peuvent pas se contredire.
+  const details = await Promise.all(config.agents.map(async agent=>{
     const pay = getAgentPay(agent, year, month);
     const monthStats = await monthlyStats(agent, year, month);
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
@@ -10848,10 +10860,6 @@ async function computeTotalPayrollMonth(year, month){
     // de la prime d'équipe depuis le r218.
     const indepCommission = isSupervisor(agent) ? Math.round((indepCommMap[agent] || {}).amount || 0) : 0;
     const total = (res ? res.total : 0) + supervisorBonus + indepCommission;
-
-    if(pay.isIndep) totalIndep += total;
-    else if(pay.noObjectif) totalBackoffice += total;
-    else totalTeam += total;
 
     // ── Le même agent, mais au rythme projeté jusqu'à la fin du mois ──────────────────────────────
     let projTotal = total;
@@ -10880,14 +10888,35 @@ async function computeTotalPayrollMonth(year, month){
     }
     if(projTotal < total) projTotal = total;
 
-    if(pay.isIndep) projIndep += projTotal;
-    else if(pay.noObjectif) projBackoffice += projTotal;
-    else projTeam += projTotal;
+    const info = projInfo[agent] || { extra:0, pace:0, remainingWorkingDays:0, realized:0 };
+    const mini = (pay.isIndep || pay.noObjectif) ? 0 : (pay.objectifMensuel || 0);
+    const projectedContracts = info.realized + (isCurrentMonth ? info.extra : 0);
+    return {
+      agent,
+      isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif, isSupervisor: isSupervisor(agent),
+      mini, realized: info.realized, projectedContracts,
+      // payableNow : contrats reellement PAYES a ce jour (apres retours), souvent inferieur a `realized`.
+      // C'est lui qui decide des primes ; `realized` est ce que l'agent voit dans son Arena.
+      payableNow: (res && res.breakdown) ? res.breakdown.payable : 0,
+      pace: info.pace, remainingWorkingDays: info.remainingWorkingDays,
+      extraContracts: isCurrentMonth ? info.extra : 0,
+      onTrack: mini > 0 ? (info.realized >= mini || projectedContracts >= mini) : null,
+      total: Math.round(total), projTotal: Math.round(projTotal),
+      supervisorBonus: Math.round(supervisorBonus), indepCommission
+    };
   }));
+
+  let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
+  let projTeam = 0, projIndep = 0, projBackoffice = 0;
+  details.forEach(d=>{
+    if(d.isIndep){ totalIndep += d.total; projIndep += d.projTotal; }
+    else if(d.noObjectif){ totalBackoffice += d.total; projBackoffice += d.projTotal; }
+    else { totalTeam += d.total; projTeam += d.projTotal; }
+  });
 
   const grandTotal = totalTeam + totalBackoffice + totalIndep;
   return {
-    totalTeam, totalIndep, totalBackoffice, grandTotal,
+    totalTeam, totalIndep, totalBackoffice, grandTotal, details,
     projection: {
       available: isCurrentMonth && totalExtra > 0,
       totalTeam: projTeam, totalIndep: projIndep, totalBackoffice: projBackoffice,
@@ -10896,6 +10925,38 @@ async function computeTotalPayrollMonth(year, month){
       remainingWorkingDays: isCurrentMonth ? workingDaysRemainingFrom(todayStr()) : 0
     }
   };
+}
+
+// ============================================================
+// ♻️ CACHE PARTAGÉ DE LA MASSE SALARIALE
+// ============================================================
+// computeTotalPayrollMonth est le calcul le plus coûteux de l'appli : une paie complète pour chaque
+// agent, deux fois (acquis + projeté). Trois panneaux en ont besoin — 💼 Masse salariale, 🧾 Bilan net
+// et 📅 Projection fin de mois — et les deux premiers le relançaient chacun de leur côté. Pire : la
+// Projection tourne sur le rafraîchissement général (25 s), pas sur le cycle financier (5 min) : la
+// brancher directement aurait relancé toute la paie plus de deux fois par minute.
+// Un seul résultat est donc calculé puis partagé pendant HEAVY_FINANCIAL_REFRESH_MS, et les appels
+// simultanés se raccrochent à la même promesse au lieu d'en lancer un deuxième.
+let payrollMonthCache = { key: null, at: 0, data: null, inflight: null };
+function invalidatePayrollMonthCache(){ payrollMonthCache = { key: null, at: 0, data: null, inflight: null }; }
+async function getPayrollMonth(year, month, force){
+  const key = `${year}-${month}`;
+  if(!force && payrollMonthCache.key === key){
+    if(payrollMonthCache.data && (Date.now() - payrollMonthCache.at) < HEAVY_FINANCIAL_REFRESH_MS) return payrollMonthCache.data;
+    if(payrollMonthCache.inflight) return payrollMonthCache.inflight;
+  }
+  const prevAt = payrollMonthCache.key === key ? payrollMonthCache.at : 0;
+  const prevData = payrollMonthCache.key === key ? payrollMonthCache.data : null;
+  const p = computeTotalPayrollMonth(year, month).then(data=>{
+    payrollMonthCache = { key, at: Date.now(), data, inflight: null };
+    return data;
+  }).catch(err=>{
+    // Un échec ne doit jamais rester coincé en « inflight » : le prochain appel doit pouvoir réessayer.
+    if(payrollMonthCache.key === key) payrollMonthCache.inflight = null;
+    throw err;
+  });
+  payrollMonthCache = { key, at: prevAt, data: prevData, inflight: p };
+  return p;
 }
 
 // ============================================================
@@ -11216,7 +11277,7 @@ async function renderPayrollSummary(force){
   payrollSummaryLastMonthKey = monthKey;
 
   el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
-  const payroll = await computeTotalPayrollMonth(year, month);
+  const payroll = await getPayrollMonth(year, month, force);
   const { totalTeam, totalIndep, totalBackoffice, grandTotal } = payroll;
   const proj = payroll.projection || { available: false };
   const ecart = Math.round((proj.grandTotal || grandTotal) - grandTotal);
@@ -11314,7 +11375,7 @@ async function renderNetBalance(force){
 
   const [monthContracts, payroll] = await Promise.all([
     getTotalContractsMonth(year, month),
-    computeTotalPayrollMonth(year, month)
+    getPayrollMonth(year, month, force)
   ]);
   const revenue = computeBossRevenue(monthContracts);
   const charges = totalMonthlyCharges();
@@ -11517,27 +11578,88 @@ async function computeMonthProjection(agent, year, month){
 async function renderProjectionPanel(){
   const el = document.getElementById('projectionPanel');
   if(!el) return;
-  const nonIndep = config.agents.filter(a=>!isIndependant(a));
-  if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent salarié.</div>'; return; }
+  if(config.agents.length===0){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
   const now = nowMA();
   const monthVal = document.getElementById('monthSelect')?.value;
   const [year, month] = monthVal ? monthVal.split('-').map(Number) : [now.getFullYear(), now.getMonth()+1];
 
-  const results = (await Promise.all(nonIndep.map(a=> computeMonthProjection(a, year, month)))).filter(r=>r);
-  if(results.length===0){ el.innerHTML = '<div class="empty">Aucun agent avec un mini réglé ce mois.</div>'; return; }
-  results.sort((a,b)=>{
-    if(a.onTrack !== b.onTrack) return a.onTrack ? 1 : -1;
-    return (a.projected-a.mini) - (b.projected-b.mini);
-  });
+  // Ce panneau lit le MÊME calcul que « 💼 Masse salariale » (getPayrollMonth, résultat partagé et mis
+  // en cache) au lieu de refaire une projection dans son coin : les contrats projetés affichés ici et le
+  // montant projeté affiché là-bas viennent du même passage, ils ne peuvent donc pas diverger. Sans ce
+  // cache, brancher une paie complète sur un panneau rafraîchi toutes les 25 s serait intenable.
+  if(!el.innerHTML.trim() || el.querySelector('.empty')) el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
+  const payroll = await getPayrollMonth(year, month);
+  const details = payroll.details || [];
+  const proj = payroll.projection || { available:false };
+  if(details.length === 0){ el.innerHTML = '<div class="empty">Aucun agent à projeter ce mois.</div>'; return; }
 
-  el.innerHTML = results.map(r=>{
-    const bg = r.onTrack ? 'var(--panel2)' : 'var(--red-bg)';
-    const border = r.onTrack ? 'rgba(52,183,116,0.4)' : 'rgba(229,90,90,0.4)';
-    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:10px; background:${bg}; border:1px solid ${border}; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-      <div><b>${r.agent}</b> <span style="color:var(--muted); font-size:12.5px;">— ${r.realized}/${r.mini} actuellement, rythme ${r.pace}/jour, ${r.remainingWorkingDays}j ouvrés restants</span></div>
-      <span class="tag ${r.onTrack?'ok':'late'}">${r.onTrack ? `✅ Projeté ${r.projected} — en bonne voie` : `⚠️ Projeté ${r.projected} — objectif à risque`}</span>
+  const fdh = v => Math.round(v).toLocaleString('fr-FR');
+
+  const ligne = d => {
+    const hasMini = d.mini > 0;
+    const atRisk  = hasMini && d.onTrack === false;
+    const bg      = atRisk ? 'var(--red-bg)' : 'var(--panel2)';
+    const border  = atRisk ? 'rgba(229,90,90,0.4)'
+                  : hasMini ? 'rgba(52,183,116,0.4)'
+                  : d.isIndep ? 'rgba(155,89,182,0.35)' : 'var(--border)';
+    const delta = d.projTotal - d.total;
+    // Les primes se décident sur les contrats PAYÉS (après retours), pas sur les contrats signés que
+    // l'agent voit dans son Arena. Quand les deux diffèrent, on le dit au survol plutôt que de laisser
+    // croire à une incohérence entre cet écran et la fiche de paie.
+    const ecartPaye = d.payableNow < d.realized
+      ? ` title="${d.realized} contrat(s) signé(s), mais ${d.payableNow} payé(s) après retours — ce sont les contrats payés qui décident des primes."`
+      : '';
+    const contrats = hasMini ? `${d.realized}/${d.mini} actuellement` : `${d.realized} contrat${d.realized>1?'s':''}`;
+    const rythme = proj.available ? `, rythme ${d.pace}/jour, ${d.remainingWorkingDays}j ouvrés restants` : '';
+    const badge = !proj.available ? ''
+      : hasMini
+        ? `<span class="tag ${d.onTrack?'ok':'late'}">${d.onTrack ? `✅ Projeté ${d.projectedContracts} — en bonne voie` : `⚠️ Projeté ${d.projectedContracts} — objectif à risque`}</span>`
+        : `<span class="tag" style="background:rgba(229,168,61,0.18); color:var(--amber);">🔮 Projeté ${d.projectedContracts} contrat${d.projectedContracts>1?'s':''}</span>`;
+    const etiquette = d.isIndep ? ' <span class="tag independant">Indé</span>'
+                    : d.noObjectif ? ' <span class="tag absent">Sans objectif</span>' : '';
+    const sup = d.isSupervisor ? ' <span class="tag" style="background:rgba(255,215,0,0.15); color:var(--gold);">📊 Sup</span>' : '';
+    return `<div style="padding:12px 16px; border-radius:10px; background:${bg}; border:1px solid ${border}; margin-bottom:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div><b>${d.agent}</b>${etiquette}${sup} <span style="color:var(--muted); font-size:12.5px;"${ecartPaye}>— ${contrats}${rythme}</span></div>
+        ${badge}
+      </div>
+      <div style="margin-top:7px; font-size:12.5px; color:var(--muted);">
+        Salaire : <b style="color:var(--green);">${fdh(d.total)} DH</b> acquis${proj.available && delta > 0
+          ? ` → <b style="color:var(--amber);">${fdh(d.projTotal)} DH</b> projeté <b style="color:var(--amber);">(+${fdh(delta)})</b>`
+          : (proj.available ? ' <span style="opacity:0.75;">— aucun gain supplémentaire projeté</span>' : '')}
+      </div>
     </div>`;
-  }).join('');
+  };
+
+  const groupe = (titre, liste, couleur) => {
+    if(!liste.length) return '';
+    const tot = liste.reduce((s,d)=>s+d.total, 0);
+    const totProj = liste.reduce((s,d)=>s+d.projTotal, 0);
+    return `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; margin:18px 0 8px;">
+        <div style="font-size:12px; font-weight:800; color:${couleur}; text-transform:uppercase; letter-spacing:0.6px;">${titre} · ${liste.length}</div>
+        <div style="font-size:12px; color:var(--muted);"><b style="color:var(--green);">${fdh(tot)} DH</b>${proj.available ? ` → <b style="color:var(--amber);">${fdh(totProj)} DH</b>` : ''}</div>
+      </div>` + liste.map(ligne).join('');
+  };
+
+  const salaries  = details.filter(d=> !d.isIndep && !d.noObjectif)
+                           .sort((a,b)=> (a.onTrack===b.onTrack) ? (a.projectedContracts-a.mini)-(b.projectedContracts-b.mini) : (a.onTrack ? 1 : -1));
+  const backoffice = details.filter(d=> !d.isIndep && d.noObjectif).sort((a,b)=> b.projectedContracts - a.projectedContracts);
+  const indeps     = details.filter(d=> d.isIndep).sort((a,b)=> b.projectedContracts - a.projectedContracts);
+
+  const ecartTotal = Math.round((proj.grandTotal || payroll.grandTotal) - payroll.grandTotal);
+  const entete = `<div style="padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
+      ${proj.available
+        ? `<div style="font-size:12.5px; color:var(--muted); line-height:1.7;">
+             Au rythme actuel, l'équipe signerait <b style="color:var(--text);">~${proj.extraContracts} contrat${proj.extraContracts>1?'s':''}</b> de plus d'ici la fin du mois (${proj.remainingWorkingDays}\u00a0j ouvré${proj.remainingWorkingDays>1?'s':''} restant${proj.remainingWorkingDays>1?'s':''}).<br>
+             Masse salariale : <b style="color:var(--green);">${fdh(payroll.grandTotal)} DH</b> acquis → <b style="color:var(--amber);">${fdh(proj.grandTotal)} DH</b> projeté <b style="color:var(--amber);">(+${fdh(ecartTotal)} DH)</b>
+           </div>`
+        : `<div style="font-size:12.5px; color:var(--muted); line-height:1.7;">Aucune projection possible : il faut être sur le mois en cours, qu'il reste des jours ouvrés, et qu'au moins un agent ait déjà produit.<br>Masse salariale du mois : <b style="color:var(--green);">${fdh(payroll.grandTotal)} DH</b>.</div>`}
+    </div>`;
+
+  el.innerHTML = entete
+    + groupe('👤 Salariés à objectif', salaries, 'var(--accent)')
+    + groupe('🗂️ Backoffice / sans objectif', backoffice, 'var(--muted)')
+    + groupe('🟣 Indépendants', indeps, 'var(--independant)');
 }
 
 // ============================================================
