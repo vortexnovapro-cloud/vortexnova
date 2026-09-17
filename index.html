@@ -1582,7 +1582,7 @@ async function tryDeviceGateAdmin(){
           <div id="bossRevenuePanel" class="money-sensitive"></div>
 
           <div class="section-title">💼 Masse salariale prévisionnelle du mois</div>
-          <div class="section-sub">Ce que l'équipe coûtera à la paie de fin de mois : le fixe complet du mois (réduit au prorata pour une embauche ou un départ en cours de mois) + les commissions et primes <b>réellement acquises à ce jour</b>. Aucun contrat futur n'est deviné : ce total ne monte que quand de vrais contrats rentrent. Pour « combien je dois si je m'arrête maintenant », c'est 💸 Dépenses temps réel plus haut.</div>
+          <div class="section-sub">Deux montants côte à côte, à ne jamais confondre. <b style="color:var(--green);">✅ Acquis</b> = le fixe complet du mois + les commissions et primes <b>réellement gagnées à ce jour</b> ; aucun contrat futur n'est deviné, ce total ne monte que quand de vrais contrats rentrent. <b style="color:var(--amber);">🔮 Projeté</b> = le même calcul, mais en prolongeant le rythme actuel de chaque agent jusqu'à la fin du mois : une estimation, qui n'engage rien. Le détail complet de ce que contient chacun est dépliable sous les cartes. Pour « combien je dois si je m'arrête maintenant », c'est 💸 Dépenses temps réel plus haut.</div>
           <div id="payrollSummaryPanel" class="money-sensitive"></div>
 
           <div class="section-title">🧾 Bilan net du mois</div>
@@ -2828,7 +2828,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-11-r218';
+const APP_VERSION = '2026-09-17-r219';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -10732,21 +10732,170 @@ async function renderBossRevenue(force){
 // ============================================================
 // 💼 MASSE SALARIALE PRÉVISIONNELLE DU MOIS
 // ============================================================
+// 🔮 CONTRATS SUPPLÉMENTAIRES ATTENDUS d'ici la fin du mois, au rythme actuel de l'agent.
+// Même moteur de rythme que « 📅 Projection fin de mois » (computeMonthProjection) — mêmes jours ouvrés
+// restants, même correction du jour en cours, même plafonnement au dernier jour travaillé d'un agent qui
+// part. Deux différences assumées : cette version s'applique à TOUS les agents (computeMonthProjection
+// écarte volontairement indépendants et agents sans objectif, puisqu'il ne sert qu'à comparer au mini
+// obligatoire, qu'ils n'ont pas), et elle renvoie les contrats EN PLUS, jamais un total.
+async function projectedExtraContracts(agent, year, month){
+  const now = nowMA();
+  if(!(year === now.getFullYear() && month === now.getMonth()+1)) return 0;
+
+  let remainingWorkingDays = workingDaysRemainingFrom(todayStr());
+  const term = getAgentTermination(agent);
+  if(term && term.lastDay){
+    const monthEndStr = `${year}-${String(month).padStart(2,'0')}-${String(new Date(year, month, 0).getDate()).padStart(2,'0')}`;
+    const effectiveEnd = term.lastDay < monthEndStr ? term.lastDay : monthEndStr;
+    remainingWorkingDays = Math.max(0, workingDaysInMonthUntil(year, month, effectiveEnd) - workingDaysInMonthUntil(year, month, todayStr()));
+  }
+  if(remainingWorkingDays <= 0) return 0;
+
+  const realized = await monthlyRealizedContracts(agent, year, month);
+  if(realized <= 0) return 0;
+
+  // Un indépendant ne pointe pas : workingDaysElapsedForAgent n'aurait aucun sens pour lui (il repose sur
+  // les jours réellement pointés), on prend les jours ouvrés écoulés du mois.
+  let paceDays = isIndependant(agent) ? workingDaysElapsedInMonth() : workingDaysElapsedForAgent(agent, todayStr());
+  // Le jour en cours ne pèse dans la moyenne qu'une fois que l'agent y a produit — sinon tout le monde
+  // paraît plus lent chaque matin (même correction que computeMonthProjection).
+  if(isWorkingDay(todayStr()) && paceDays > 1){
+    const boardToday = prodBoardCache[todayStr()];
+    const doneToday = boardToday ? ((boardToday.agents && boardToday.agents[agent] && boardToday.agents[agent].realized) || 0) : 0;
+    if(doneToday === 0) paceDays -= 1;
+  }
+  if(paceDays <= 0) return 0;
+  // Arrondi à l'unité ICI, une fois pour toutes : un contrat ne se découpe pas, et surtout le même
+  // nombre doit servir à TOUT ce qui découle de cet agent — sa propre paie, la prime d'équipe de son
+  // superviseur, la commission indé. Sans cet arrondi commun, un indépendant était payé sur 16 contrats
+  // projetés pendant que son superviseur touchait une commission sur 16,36.
+  // `realized` étant entier, realized + round(extra) == round(realized + extra) : la projection reste
+  // rigoureusement identique à celle affichée par « 📅 Projection fin de mois » (computeMonthProjection).
+  return Math.round((realized / paceDays) * remainingWorkingDays);
+}
+
+// Commission superviseur sur indépendants, calculée à partir d'un nombre de contrats fourni au lieu
+// d'être relu en base — le seul moyen de l'appliquer aussi à des contrats PROJETÉS. Les taux et le
+// superviseur attribué restent ceux réglés dans Production : une seule table de taux pour tout le monde.
+function indepSupervisorCommissionFromCounts(countsByAgent){
+  const pc = getProdConfig();
+  const agentPay = pc.agentPay || {};
+  const result = {};
+  Object.keys(countsByAgent || {}).forEach(agent=>{
+    const c = agentPay[agent] || {};
+    const sup = c.indepCommissionSupervisor;
+    const rate = Number(c.indepCommissionRate) || 0;
+    const contracts = countsByAgent[agent] || 0;
+    if(!sup || !rate || contracts <= 0) return;
+    const amount = Math.round(contracts * rate);
+    if(!result[sup]) result[sup] = { amount: 0, detail: [] };
+    result[sup].amount += amount;
+    result[sup].detail.push({ agent, rate, contracts, amount });
+  });
+  return result;
+}
+
+// Même commission, mais sur une FENÊTRE de dates libre — nécessaire pour « 💸 Dépenses temps réel »,
+// qui peut porter sur une seule journée : y afficher la commission du mois entier serait faux.
+async function indepSupervisorCommissionForDateRange(fromDateStr, toDateStr){
+  const counts = {};
+  await Promise.all(config.agents.filter(a => isIndependant(a)).map(async agent=>{
+    counts[agent] = await realizedContractsForDateRange(agent, fromDateStr, toDateStr);
+  }));
+  return indepSupervisorCommissionFromCounts(counts);
+}
+
 async function computeTotalPayrollMonth(year, month){
-  const supervisionBonus = await supervisorMonthlyBonus(year, month);
+  const now = nowMA();
+  const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth()+1);
+
+  const [supervisionBonus, indepCommMap] = await Promise.all([
+    supervisorMonthlyBonus(year, month),
+    indepSupervisorCommissionForMonth(year, month)
+  ]);
+
+  // Contrats supplémentaires attendus d'ici la fin du mois, agent par agent (0 sur un mois déjà clos).
+  const extraList = await Promise.all(config.agents.map(async agent=> ({
+    agent, extra: isCurrentMonth ? await projectedExtraContracts(agent, year, month) : 0
+  })));
+  const extraBy = {};
+  extraList.forEach(e=>{ extraBy[e.agent] = e.extra; });
+  const totalExtra = extraList.reduce((s,e)=> s + e.extra, 0);
+  // Assiette de la prime de supervision d'équipe : ni superviseur, ni indépendant (voir
+  // supervisorBonusForDates — les indés en sont exclus depuis le r218, ils ont leur commission dédiée).
+  const extraTeamPool = extraList
+    .filter(e=> !isSupervisor(e.agent) && !isIndependant(e.agent))
+    .reduce((s,e)=> s + e.extra, 0);
+  const indepCommProjected = indepSupervisorCommissionFromCounts(
+    Object.fromEntries(config.agents.filter(a=>isIndependant(a)).map(a=> [a, extraBy[a] || 0]))
+  );
+
   let totalTeam = 0, totalIndep = 0, totalBackoffice = 0;
+  let projTeam = 0, projIndep = 0, projBackoffice = 0;
+
   await Promise.all(config.agents.map(async agent=>{
     const pay = getAgentPay(agent, year, month);
     const monthStats = await monthlyStats(agent, year, month);
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const res = await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise);
+
     const supervisorBonus = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
-    const total = (res ? res.total : 0) + supervisorBonus;
+    // 🤝 COMMISSION SUR AGENTS INDÉPENDANTS — ABSENTE DE CE TOTAL JUSQU'AU r219. Un superviseur touchant
+    // une commission indé était sous-évalué ici, alors que le bilan CSV/PDF (computeMonthlyBilanRows) et
+    // sa fiche de paie (billingComputeAgent) la comptaient déjà : la masse salariale ET le bilan net
+    // étaient donc faux tous les deux. Aucun risque de double compte — estimateSalaryMonthReal ne
+    // contient ni cette commission ni la prime d'équipe, et les contrats des indés sont exclus du pool
+    // de la prime d'équipe depuis le r218.
+    const indepCommission = isSupervisor(agent) ? Math.round((indepCommMap[agent] || {}).amount || 0) : 0;
+    const total = (res ? res.total : 0) + supervisorBonus + indepCommission;
+
     if(pay.isIndep) totalIndep += total;
     else if(pay.noObjectif) totalBackoffice += total;
     else totalTeam += total;
+
+    // ── Le même agent, mais au rythme projeté jusqu'à la fin du mois ──────────────────────────────
+    let projTotal = total;
+    if(isCurrentMonth && totalExtra > 0){
+      const extra = extraBy[agent] || 0;
+      const resProj = extra > 0
+        ? await estimateSalaryMonthReal(agent, year, month, assiduiteAcquise,
+            ((res && res.breakdown) ? res.breakdown.payable : 0) + extra)
+        : res;
+      // Prime de supervision projetée : on étend le taux EFFECTIF déjà constaté ce mois-ci (prime gagnée
+      // ÷ contrats comptés) aux contrats supplémentaires attendus de l'équipe de base. Passer par le taux
+      // effectif plutôt que par le taux réglé conserve l'effet des jours où le superviseur n'était pas
+      // éligible — sinon la projection le paierait comme s'il avait été présent tous les jours.
+      let supProj = supervisorBonus;
+      if(isSupervisor(agent) && extraTeamPool > 0){
+        const counted = supervisionBonus.contracts ? (supervisionBonus.contracts[agent] || 0) : 0;
+        const effRate = counted > 0
+          ? (supervisionBonus.dh[agent] || 0) / counted
+          : (getAgentPay(agent).supervisorPrimePerContract || 0);
+        supProj = supervisorBonus + effRate * extraTeamPool;
+      }
+      const indepProj = isSupervisor(agent)
+        ? indepCommission + Math.round((indepCommProjected[agent] || {}).amount || 0)
+        : 0;
+      projTotal = (resProj ? resProj.total : 0) + supProj + indepProj;
+    }
+    if(projTotal < total) projTotal = total;
+
+    if(pay.isIndep) projIndep += projTotal;
+    else if(pay.noObjectif) projBackoffice += projTotal;
+    else projTeam += projTotal;
   }));
-  return { totalTeam, totalIndep, totalBackoffice, grandTotal: totalTeam + totalBackoffice + totalIndep };
+
+  const grandTotal = totalTeam + totalBackoffice + totalIndep;
+  return {
+    totalTeam, totalIndep, totalBackoffice, grandTotal,
+    projection: {
+      available: isCurrentMonth && totalExtra > 0,
+      totalTeam: projTeam, totalIndep: projIndep, totalBackoffice: projBackoffice,
+      grandTotal: projTeam + projBackoffice + projIndep,
+      extraContracts: Math.round(totalExtra),
+      remainingWorkingDays: isCurrentMonth ? workingDaysRemainingFrom(todayStr()) : 0
+    }
+  };
 }
 
 // ============================================================
@@ -10831,14 +10980,22 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   // vue dans monthlyStats/monthlyDeductions, version symétrique côté paye). Dès qu'il pointe, sa part du
   // jour apparaît immédiatement dans "Dépenses temps réel".
   const todayIncludedInRange = !pay.isIndep && dateRange.to === todayStr() && isWorkingDay(todayStr());
-  const [ded, realizedCount, supervisionBonus, monthToDateRealized, todayLog] = await Promise.all([
+  const [ded, realizedCount, supervisionBonus, monthToDateRealized, todayLog, indepCommMap] = await Promise.all([
     monthlyDeductions(agent, year, month, dateRange),
     realizedContractsForDateRange(agent, dateRange.from, dateRange.to),
     isFullMonthToDate ? supervisorMonthlyBonus(year, month) : supervisorBonusForDates(dateStrsInRange(dateRange.from, dateRange.to)),
     // (devenu inutile depuis que le palier se calcule sur payableContractsBreakdown plus bas — on ne
     //  relit plus le mois une 2e fois pour rien)
     Promise.resolve(null),
-    todayIncludedInRange ? getDayLog(agent, todayStr()) : Promise.resolve(null)
+    todayIncludedInRange ? getDayLog(agent, todayStr()) : Promise.resolve(null),
+    // 🤝 Commission sur agents indépendants — suit exactement la même règle de fenêtre que la prime
+    // d'équipe juste au-dessus : le mois entier quand la fenêtre est « du 1er à aujourd'hui », sinon
+    // recalculée sur la période choisie. Rien à calculer pour un agent qui n'est pas superviseur.
+    isSupervisor(agent)
+      ? (isFullMonthToDate
+          ? indepSupervisorCommissionForMonth(year, month)
+          : indepSupervisorCommissionForDateRange(dateRange.from, dateRange.to))
+      : Promise.resolve({})
   ]);
   const clockedInToday = todayLog && todayLog.events && todayLog.events.length > 0;
   const totalWorkingDaysMonth = workingDaysInMonth(year, month);
@@ -10962,8 +11119,13 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   const extraPart = hasPalierRT ? Math.round((ceRT.postCount || 0) * (pay.primeExtraContrat || 0)) : 0;
 
   const supervisorBonusAmt = isSupervisor(agent) ? (supervisionBonus.dh[agent] || 0) : 0;
+  // 🤝 COMMISSION SUR AGENTS INDÉPENDANTS — même oubli que dans computeTotalPayrollMonth, corrigé au
+  // r219 : elle manquait ici alors que la fiche de paie de l'agent (billingComputeAgent) la compte.
+  // « 💸 Dépenses temps réel » et « 💰 Ton salaire réel » sous-évaluaient donc tout superviseur qui
+  // encadre un indépendant.
+  const indepCommissionAmt = isSupervisor(agent) ? Math.round((indepCommMap[agent] || {}).amount || 0) : 0;
 
-  const total = fixedProrated + contractPart + extraPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt - (ded.total||0);
+  const total = fixedProrated + contractPart + extraPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt + indepCommissionAmt - (ded.total||0);
   return {
     agent, isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif,
     total: Math.round(total),
@@ -10991,6 +11153,7 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     deductionsTotal: ded.total || 0,
     manualPrimesTotal: manualPrimesTotal || 0,
     supervisorBonus: Math.round(supervisorBonusAmt),
+    indepCommission: Math.round(indepCommissionAmt),
     assiduiteAcquise
   };
 }
@@ -11053,18 +11216,69 @@ async function renderPayrollSummary(force){
   payrollSummaryLastMonthKey = monthKey;
 
   el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
-  const { totalTeam, totalIndep, totalBackoffice, grandTotal } = await computeTotalPayrollMonth(year, month);
-  el.innerHTML = `
-    <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid var(--border);">
-      <button onclick="renderPayrollSummary(true)" title="Recalculer maintenant" style="float:right; padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button>
-      <div style="font-size:13px; color:var(--muted); margin-bottom:6px;">Total tout compris (salariés + backoffice + indépendants)</div>
-      <div style="font-size:30px; font-weight:900; color:var(--green);">${Math.round(grandTotal).toLocaleString('fr-FR')} DH</div>
-      <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:12px; font-size:13px; color:var(--muted);">
-        <span>Salariés : <b style="color:var(--text);">${Math.round(totalTeam).toLocaleString('fr-FR')} DH</b></span>
-        ${totalBackoffice>0 ? `<span>Backoffice/sans objectif : <b style="color:var(--text);">${Math.round(totalBackoffice).toLocaleString('fr-FR')} DH</b></span>` : ''}
-        ${totalIndep>0 ? `<span>Indépendants : <b style="color:var(--independant);">${Math.round(totalIndep).toLocaleString('fr-FR')} DH</b></span>` : ''}
-      </div>
+  const payroll = await computeTotalPayrollMonth(year, month);
+  const { totalTeam, totalIndep, totalBackoffice, grandTotal } = payroll;
+  const proj = payroll.projection || { available: false };
+  const ecart = Math.round((proj.grandTotal || grandTotal) - grandTotal);
+
+  // Les trois sous-totaux, écrits une seule fois pour les deux cartes : impossible qu'un libellé
+  // change d'un côté sans l'autre.
+  const parts = (team, back, indep) => `
+    <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:11px; font-size:12.5px; color:var(--muted);">
+      <span>Salariés : <b style="color:var(--text);">${Math.round(team).toLocaleString('fr-FR')} DH</b></span>
+      ${back>0 ? `<span>Backoffice : <b style="color:var(--text);">${Math.round(back).toLocaleString('fr-FR')} DH</b></span>` : ''}
+      ${indep>0 ? `<span>Indépendants : <b style="color:var(--independant);">${Math.round(indep).toLocaleString('fr-FR')} DH</b></span>` : ''}
     </div>`;
+
+  const carteProjetee = proj.available
+    ? `<div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px dashed rgba(229,168,61,0.65);">
+         <div style="display:flex; align-items:center; gap:8px; font-size:11px; color:var(--amber); text-transform:uppercase; letter-spacing:0.7px; font-weight:800; margin-bottom:7px;">
+           🔮 Projeté fin de mois
+           <span style="text-transform:none; letter-spacing:0; font-weight:700; font-size:10.5px; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.45); border-radius:20px; padding:2px 9px;">estimation</span>
+         </div>
+         <div style="font-size:30px; font-weight:900; color:var(--amber);">${Math.round(proj.grandTotal).toLocaleString('fr-FR')} DH</div>
+         <div style="font-size:12.5px; font-weight:800; color:var(--amber); margin-top:4px;">+ ${ecart.toLocaleString('fr-FR')} DH par rapport à l'acquis</div>
+         <div style="font-size:11.5px; color:var(--muted); margin-top:7px; line-height:1.6;">Si chacun garde son rythme actuel jusqu'au ${proj.remainingWorkingDays} j ouvré${proj.remainingWorkingDays>1?'s':''} restant${proj.remainingWorkingDays>1?'s':''} — soit <b style="color:var(--text);">~${proj.extraContracts} contrat${proj.extraContracts>1?'s':''}</b> en plus. Rien n'est signé : ce montant n'engage personne.</div>
+         ${parts(proj.totalTeam, proj.totalBackoffice, proj.totalIndep)}
+       </div>`
+    : `<div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px dashed var(--border); display:flex; align-items:center;">
+         <div style="font-size:12.5px; color:var(--muted); line-height:1.6;">🔮 <b style="color:var(--text);">Projection indisponible</b><br>Elle n'existe que sur le mois en cours, tant qu'il reste des jours ouvrés et qu'au moins un agent a déjà produit. Sur un mois terminé, le montant définitif est celui de gauche.</div>
+       </div>`;
+
+  el.innerHTML = `
+  <div>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+      <button onclick="renderPayrollSummary(true)" title="Recalculer maintenant" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(290px, 1fr)); gap:14px;">
+      <div style="padding:18px; border-radius:12px; background:var(--panel2); border:1px solid rgba(52,183,116,0.5);">
+        <div style="font-size:11px; color:var(--green); text-transform:uppercase; letter-spacing:0.7px; font-weight:800; margin-bottom:7px;">✅ Acquis — déjà dû</div>
+        <div style="font-size:30px; font-weight:900; color:var(--green);">${Math.round(grandTotal).toLocaleString('fr-FR')} DH</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:7px; line-height:1.6;">Le fixe complet du mois + uniquement les primes et commissions <b style="color:var(--text);">réellement gagnées à ce jour</b>. Aucun contrat futur n'est deviné. C'est le minimum que tu paieras, même si plus rien ne rentre.</div>
+        ${parts(totalTeam, totalBackoffice, totalIndep)}
+      </div>
+      ${carteProjetee}
+    </div>
+
+    <details style="margin-top:12px; border:1px solid var(--border); border-radius:10px; background:var(--panel2);">
+      <summary style="cursor:pointer; padding:11px 14px; font-size:12.5px; font-weight:700; color:var(--muted); list-style:none;">ℹ️ Ce que contiennent exactement ces deux chiffres</summary>
+      <div style="padding:0 14px 14px; font-size:12px; color:var(--muted); line-height:1.75;">
+        <div style="margin-bottom:10px;"><b style="color:var(--green);">Les deux chiffres contiennent</b>, pour chaque agent :</div>
+        <div style="padding-left:12px; border-left:2px solid var(--border);">
+          • le <b style="color:var(--text);">fixe complet du mois</b> (salaire de base + prime fixe), compté en entier dès le 1er — réduit au prorata uniquement en cas d'embauche, de départ ou de période hors contrat en cours de mois ;<br>
+          • la <b style="color:var(--text);">prime d'assiduité</b>, seulement si elle n'est pas perdue ;<br>
+          • la <b style="color:var(--text);">commission sur les contrats payés</b> = signés − rétractés − retours (divisés par 3, 2 ou 1 selon le barème), avec la règle du palier ;<br>
+          • la <b style="color:var(--text);">prime d'objectif</b> et le bonus par contrat au-delà, si l'objectif est atteint ;<br>
+          • les <b style="color:var(--text);">primes et retenues manuelles</b> du mois ;<br>
+          • la <b style="color:var(--text);">prime de supervision d'équipe</b> et la <b style="color:var(--text);">commission sur agents indépendants</b> des superviseurs ;<br>
+          • <b style="color:var(--text);">moins</b> les retenues retards, absences et infractions constatées.
+        </div>
+        <div style="margin:12px 0 6px;"><b style="color:var(--amber);">Seule différence du montant projeté</b> : le nombre de contrats de chaque agent est porté à celui qu'il atteindrait en gardant son rythme du mois jusqu'à la fin (même calcul de rythme que « 📅 Projection fin de mois » dans Alertes). Tout le reste — paliers, primes, retenues — passe par le même moteur de paie. Une prime d'objectif <b style="color:var(--text);">pas encore atteinte peut donc apparaître</b> dans ce montant, et pas dans l'acquis.</div>
+        <div style="margin-top:12px;"><b style="color:var(--red);">Ce qui n'est dans aucun des deux</b> : les charges de l'entreprise (loyer, lignes, internet…) — elles n'entrent qu'au « 🧾 Bilan net du mois » ; les retours de facturation pas encore importés ; et toute rétractation à venir, qui fera baisser ces montants.</div>
+        <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--border);">💡 Pour « combien je dois si je m'arrête <b style="color:var(--text);">maintenant</b> », ce n'est ni l'un ni l'autre : c'est « 💸 Dépenses temps réel » plus haut, où le fixe est compté au prorata des jours déjà écoulés.</div>
+      </div>
+    </details>
+  </div>`;
 }
 
 // ============================================================
@@ -16902,11 +17116,20 @@ async function payableContractsBreakdown(agent, year, month){
   };
 }
 
-async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise){
+async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise, payableOverride){
   const pay = getAgentPay(agent, year, month);
   const ded = await monthlyDeductions(agent, year, month);
   // Contrats réellement payés = validés − rétractés − retours convertis en contrats (voir ci-dessus).
-  const br = await payableContractsBreakdown(agent, year, month);
+  let br = await payableContractsBreakdown(agent, year, month);
+  // 🔮 MODE PROJECTION (payableOverride) — utilisé UNIQUEMENT par la carte « projeté fin de mois » de la
+  // masse salariale (computeTotalPayrollMonth). On remplace le nombre de contrats payés par le nombre
+  // PROJETÉ au rythme actuel, et TOUT le reste du calcul se déroule exactement comme d'habitude : palier
+  // objectif, prime d'objectif, bonus au-delà, primes manuelles conditionnelles, retenues. Aucune règle
+  // de paie n'est réécrite ici, donc la projection ne peut pas diverger de la paie réelle.
+  // Jamais à la baisse : une projection ne retire jamais un contrat déjà signé.
+  if(payableOverride != null && payableOverride > br.payable){
+    br = { ...br, payable: Math.round(payableOverride), projected: true };
+  }
 
   // 🔍 DÉCOUVERTE — bascule en plein milieu de CE mois (voir getDecouverteState/getAgentPay). Le fixe
   // ci-dessus est déjà réduit à la part après-bascule, mais les CONTRATS ont besoin d'un calcul à part :
