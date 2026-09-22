@@ -2763,6 +2763,23 @@ async function tryDeviceGateAdmin(){
           </div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(61,139,253,0.45);">
+          <label>📅 Historique des horaires — quand l'heure officielle a changé</label>
+          <div class="section-sub" style="margin-top:-6px;">L'heure d'arrivée d'un agent est enregistrée comme un texte figé (« 09:28 »). Pour savoir s'il était en retard, le CRM la compare à l'heure de début ci-dessus. Tant qu'aucune période n'est enregistrée ici, il utilise l'heure de début <b>actuelle</b> pour toutes les dates : changer d'horaire (heure d'hiver, heure d'été, réorganisation) transforme donc rétroactivement des journées à l'heure en retards, avec retenues, prime d'assiduité perdue et prime de supervision annulée — sur des mois parfois déjà payés.</div>
+          <div class="section-sub" style="margin-top:6px;">👉 À chaque changement d'heure, ajoute une période ici avec les <b>anciens</b> horaires et la date du <b>dernier jour</b> où ils s'appliquaient. Le passé garde alors ses vrais horaires, et les horaires de Réglages ne valent plus que pour la suite.</div>
+          <div id="scheduleHistoryPanel" style="margin-top:14px;"></div>
+          <button class="add-break-btn" onclick="addSchedulePeriod()">+ Ajouter une période passée</button>
+
+          <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">
+            <label style="margin-bottom:6px;">🔎 Vérifier une date</label>
+            <div class="section-sub" style="margin-top:-6px;">Quels horaires le CRM applique-t-il à une journée précise ? À utiliser dès qu'un retard ou une prime perdue paraît inexplicable.</div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+              <input type="date" id="scheduleTestDate" onchange="renderScheduleTester()" style="padding:8px 11px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);">
+            </div>
+            <div id="scheduleTestResult" style="margin-top:12px;"></div>
+          </div>
+        </div>
+
         <div class="settings-box">
           <label>🔒 Journal d'activité (audit)</label>
           <div class="section-sub" style="margin-top:-6px;">Trace horodatée des actions sensibles faites depuis ce panneau Admin (mots de passe, corrections de pointage/absence, agents, réglages de paie) — pour repérer une action que tu n'as pas faite toi-même. "Admin" = quelqu'un connaissait le mot de passe admin au moment de l'action (mot de passe partagé entre tous ceux qui le connaissent, ce n'est pas une identité individuelle).</div>
@@ -2843,7 +2860,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-18-r222';
+const APP_VERSION = '2026-09-22-r223';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2915,6 +2932,12 @@ let config = {
   //   beneficiaire    : qui récupère sa part retirée. Vide = partage égal entre les superviseurs qui
   //                     touchent ce jour-là, exactement comme la règle automatique.
   supervisorDayOverrides: {},
+  // 📅 HISTORIQUE DES HORAIRES — voir scheduleBaseForDate.
+  // [{ until:"2026-09-19", start:"09:30", end:"18:30", breaks:[{name,start,end}] }]
+  // « jusqu'au 19/09 inclus, la journée commençait à 09:30 ». Les horaires de Réglages restent les
+  // horaires ACTUELS : ils s'appliquent à toute date postérieure à la dernière période enregistrée.
+  // Vide = comportement d'origine, les horaires actuels valent pour toute l'histoire.
+  scheduleHistory: [],
   adminPassword: DEFAULT_ADMIN_PASSWORD,
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
@@ -4709,7 +4732,7 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderPointDuJourAdmin(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); renderSupervisorDayOverridePanel(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); renderProdBoardHistoryPanel(); }
-  if(sub==='settings'){ majBandeauSauvegarde(); }
+  if(sub==='settings'){ majBandeauSauvegarde(); renderScheduleHistoryPanel(); renderScheduleTester(); }
   if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderAssistanceQuotaPanel(); }
 }
 
@@ -8022,9 +8045,142 @@ function extractBreakPairs(events){
   return pairs;
 }
 
+// Écran de gestion des périodes d'horaires passées (Réglages).
+function renderScheduleHistoryPanel(){
+  const c = document.getElementById('scheduleHistoryPanel');
+  if(!c) return;
+  const hist = Array.isArray(config.scheduleHistory) ? config.scheduleHistory : [];
+  const inp = 'padding:7px 9px; border-radius:7px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:13px;';
+  let html = '';
+  if(hist.length === 0){
+    html = `<div class="empty" style="padding:18px; line-height:1.7;">Aucune période enregistrée.<br>Tes horaires actuels (<b>${config.start} – ${config.end}</b>) s'appliquent donc à <b>toute l'histoire de l'appli</b>, y compris aux mois déjà payés.</div>`;
+    c.innerHTML = html;
+    return;
+  }
+  hist.map((p,i)=>({p,i}))
+      .sort((a,b)=> String(a.p.until||'').localeCompare(String(b.p.until||'')))
+      .forEach(({p,i})=>{
+    const brk = Array.isArray(p.breaks) ? p.breaks : [];
+    html += `<div style="padding:13px 15px; border-radius:10px; background:var(--panel2); border:1px solid var(--border); margin-bottom:10px;">
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+        <div><label style="margin-bottom:4px;">Jusqu'au (inclus)</label><br><input type="date" value="${p.until||''}" style="${inp}" onchange="updateSchedulePeriod(${i},'until',this.value)"></div>
+        <div><label style="margin-bottom:4px;">Début</label><br><input type="time" value="${p.start||''}" style="${inp}" onchange="updateSchedulePeriod(${i},'start',this.value)"></div>
+        <div><label style="margin-bottom:4px;">Fin</label><br><input type="time" value="${p.end||''}" style="${inp}" onchange="updateSchedulePeriod(${i},'end',this.value)"></div>
+        <button type="button" onclick="removeSchedulePeriod(${i})" style="padding:8px 13px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--red); font-weight:700; font-size:12.5px; cursor:pointer;">🗑 Supprimer</button>
+      </div>
+      ${brk.length ? `<div style="margin-top:11px; padding-top:11px; border-top:1px dashed var(--border);">
+        <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Créneaux fixes de cette période (le déjeuner décale lui aussi quand l'heure change)</div>
+        ${brk.map((b,bi)=>`<div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
+          <input type="text" value="${escapeHtml(b.name||'')}" style="${inp} min-width:170px;" onchange="updateSchedulePeriodBreak(${i},${bi},'name',this.value)">
+          <input type="time" value="${b.start||''}" style="${inp}" onchange="updateSchedulePeriodBreak(${i},${bi},'start',this.value)">
+          <input type="time" value="${b.end||''}" style="${inp}" onchange="updateSchedulePeriodBreak(${i},${bi},'end',this.value)">
+        </div>`).join('')}
+      </div>` : ''}
+    </div>`;
+  });
+  c.innerHTML = html;
+}
+
+// La période est préremplie avec les horaires ACTUELS : c'est un point de départ à corriger, puisque
+// ce sont justement les anciens horaires qu'il faut y saisir. Les créneaux de pause sont copiés tels
+// quels pour n'avoir qu'à ajuster les heures.
+async function addSchedulePeriod(){
+  if(!Array.isArray(config.scheduleHistory)) config.scheduleHistory = [];
+  const hier = new Date(); hier.setDate(hier.getDate() - 1);
+  config.scheduleHistory.push({
+    until: todayStr(hier),
+    start: config.start,
+    end: config.end,
+    breaks: (config.breaks || []).map(b=>({ name: b.name, start: b.start, end: b.end }))
+  });
+  await saveScheduleHistory('Période d\'horaires ajoutée');
+}
+
+async function updateSchedulePeriod(idx, field, value){
+  const hist = config.scheduleHistory || [];
+  if(!hist[idx]) return;
+  hist[idx][field] = value;
+  await saveScheduleHistory('Période d\'horaires modifiée');
+}
+
+async function updateSchedulePeriodBreak(idx, bidx, field, value){
+  const hist = config.scheduleHistory || [];
+  if(!hist[idx] || !Array.isArray(hist[idx].breaks) || !hist[idx].breaks[bidx]) return;
+  hist[idx].breaks[bidx][field] = value;
+  await saveScheduleHistory('Créneau d\'une période d\'horaires modifié');
+}
+
+async function removeSchedulePeriod(idx){
+  const hist = config.scheduleHistory || [];
+  if(!hist[idx]) return;
+  if(!confirm(`Supprimer cette période ?\n\nLes journées qu'elle couvrait repasseront aux horaires actuels (${config.start}–${config.end}), ce qui peut rendre des arrivées à l'heure en retards rétroactifs.`)) return;
+  hist.splice(idx, 1);
+  await saveScheduleHistory('Période d\'horaires supprimée');
+}
+
+async function saveScheduleHistory(action){
+  await saveConfigSilent();
+  logAudit('Admin', action, JSON.stringify(config.scheduleHistory || []).slice(0, 300));
+  // Un horaire passé qui change recalcule retards, absences, primes et retenues sur TOUT l'historique :
+  // sans vider les caches de lecture, l'écran continuerait d'afficher les anciens chiffres.
+  if(typeof clearRenderCaches === 'function') clearRenderCaches();
+  showToast('✅ Enregistré', 'ok', 2000);
+  renderScheduleHistoryPanel();
+  renderScheduleTester();
+}
+
+// Testeur : « quels horaires s'appliquaient le ... ? » — la vérification la plus directe quand un retard
+// ou une prime perdue paraît inexplicable sur une journée passée.
+function renderScheduleTester(){
+  const out = document.getElementById('scheduleTestResult');
+  if(!out) return;
+  const el = document.getElementById('scheduleTestDate');
+  if(el && !el.value) el.value = todayStr();
+  const dateStr = (el && el.value) || todayStr();
+  const s = scheduleForDate(dateStr);
+  const hist = Array.isArray(config.scheduleHistory) ? config.scheduleHistory : [];
+  const couvrante = hist.filter(p=> p && p.until && dateStr <= p.until)
+                        .sort((a,b)=> String(a.until).localeCompare(String(b.until)))[0];
+  const jj = dateStr.split('-').reverse().join('/');
+  const origine = couvrante
+    ? `période enregistrée « jusqu'au ${String(couvrante.until).split('-').reverse().join('/')} »`
+    : 'horaires actuels de Réglages — aucune période passée ne couvre cette date';
+  out.innerHTML = `<div style="padding:12px 15px; border-radius:10px; background:var(--panel2); border:1px solid ${couvrante?'rgba(52,183,116,0.45)':'var(--border)'};">
+      <div style="font-size:13.5px;">Le <b>${jj}</b>, la journée était <b style="color:var(--green);">${s.start} → ${s.end}</b></div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:5px;">${origine}</div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:5px;">Une arrivée après <b style="color:var(--text);">${s.start}</b> comptait en retard ce jour-là ; au-delà de 10 minutes, un superviseur perdait sa prime.</div>
+    </div>`;
+}
+
+// 📅 QUELS HORAIRES S'APPLIQUAIENT À CETTE DATE ?
+// Avant le r223, il n'y avait qu'une seule réponse possible : les horaires du moment. Changer l'heure
+// de début (passage à l'heure d'hiver, d'été, réorganisation) déplaçait donc la référence pour TOUTE
+// l'histoire de l'appli : l'heure d'arrivée est stockée comme un texte figé ("09:28") et se retrouvait
+// comparée à la nouvelle heure de début. Des journées parfaitement à l'heure devenaient rétroactivement
+// des retards, avec toutes leurs conséquences : retenues sur salaire, prime d'assiduité perdue, prime de
+// supervision annulée — sur des paies parfois déjà versées.
+// Chaque période passée enregistrée dans config.scheduleHistory vaut « jusqu'à cette date incluse ».
+// La plus ancienne qui couvre la date gagne. Aucune période enregistrée = comportement d'origine.
+function scheduleBaseForDate(dateStr){
+  const courant = { start: config.start, end: config.end, breaks: config.breaks || [] };
+  const hist = Array.isArray(config.scheduleHistory) ? config.scheduleHistory : [];
+  if(hist.length === 0) return courant;
+  const couvrantes = hist
+    .filter(p=> p && p.until && dateStr <= p.until)
+    .sort((a,b)=> String(a.until).localeCompare(String(b.until)));
+  const p = couvrantes[0];
+  if(!p) return courant;
+  return {
+    start: p.start || courant.start,
+    end: p.end || courant.end,
+    breaks: (Array.isArray(p.breaks) && p.breaks.length) ? p.breaks : courant.breaks
+  };
+}
+
 function scheduleForDate(dateStr){
   const dow = new Date(dateStr + 'T00:00:00').getDay();
-  const breaks = config.breaks.map(b=>({...b}));
+  const base = scheduleBaseForDate(dateStr || todayStr());
+  const breaks = (base.breaks || []).map(b=>({...b}));
   let note = null;
   if(dow===5 && config.fridayLunch && config.fridayLunch.enabled){
     const idx = breaks.findIndex(b=>/d.jeuner|dejeuner|lunch/i.test(b.name));
@@ -8033,7 +8189,7 @@ function scheduleForDate(dateStr){
       note = `Vendredi : ${breaks[idx].name} ${config.fridayLunch.start}–${config.fridayLunch.end} (2h)`;
     }
   }
-  return { start: config.start, end: config.end, breaks, note };
+  return { start: base.start, end: base.end, breaks, note };
 }
 
 // Une pause "déjeuner" (nom du créneau) a sa propre tolérance de démarrage (config.tolerance —
