@@ -1824,6 +1824,21 @@ async function tryDeviceGateAdmin(){
           </div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(255,215,0,0.4);">
+          <label style="margin-bottom:6px;">📊 Prime de supervision — ajuster une journée</label>
+          <div class="section-sub" style="margin-top:-6px;">Par défaut, le CRM décide seul : un superviseur présent et à l'heure touche sa prime, un superviseur absent ou en retard de plus de 10 minutes la perd, et sa part est partagée à parts égales entre les présents. Ici tu peux le contredire sur <b>une journée précise</b> : retirer sa prime à quelqu'un, la donner à quelqu'un que le CRM avait exclu, et surtout <b>choisir qui récupère la part retirée</b> au lieu du partage automatique.</div>
+          <div class="section-sub" style="margin-top:6px;">Chaque changement s'enregistre tout seul et se répercute partout : Supervision, Mon argent, masse salariale et fiche de paie. ⚠️ La prime n'est jamais reportée : ce qui n'est donné à personne un jour est perdu pour tout le monde.</div>
+          <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
+            <div>
+              <label style="margin-bottom:4px;">Date</label>
+              <input type="date" id="supOverrideDate" onchange="renderSupervisorDayOverridePanel()">
+            </div>
+            <button type="button" onclick="supOverrideToday()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📅 Aujourd'hui</button>
+            <button type="button" onclick="renderSupervisorDayOverridePanel()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:700; font-size:12.5px; cursor:pointer;">🔄 Actualiser</button>
+          </div>
+          <div id="supervisorDayOverridePanel" style="margin-top:12px;"></div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(155,89,182,0.35);">
           <label style="margin-bottom:6px;">🔻 Rétractations clients (réservé à l'admin)</label>
           <div class="section-sub" style="margin-top:-6px;">Les agents ne peuvent plus déclarer eux-mêmes une rétraction — c'est désormais uniquement toi qui l'enregistres ici, une fois le retour client confirmé. Ça retire 1 contrat du compteur du mois choisi, sans que ce soit une faute de l'agent.</div>
@@ -2828,7 +2843,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-17-r221';
+const APP_VERSION = '2026-09-18-r222';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2893,6 +2908,13 @@ let config = {
   // l'être. Rempli uniquement par la réintégration d'un agent licencié — vide pour tout le monde
   // tant que personne n'a été réintégré.
   agentsGaps: {},
+  // 📊 RÉGLAGES MANUELS DE LA PRIME DE SUPERVISION, JOUR PAR JOUR (voir resolveSupervisorDay).
+  // { "2026-09-18": { "Modou": { prime:'retiree', beneficiaire:'Allan' } } }
+  //   prime 'retiree' : il ne touche rien ce jour-là, même si le pointage le dit présent et à l'heure.
+  //   prime 'donnee'  : il touche sa part, même si le CRM l'avait exclu (retard > 10 min, absence).
+  //   beneficiaire    : qui récupère sa part retirée. Vide = partage égal entre les superviseurs qui
+  //                     touchent ce jour-là, exactement comme la règle automatique.
+  supervisorDayOverrides: {},
   adminPassword: DEFAULT_ADMIN_PASSWORD,
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
@@ -4685,7 +4707,7 @@ function showAdminSub(sub){
     renderBillingHistory();
   }
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderPointDuJourAdmin(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
-  if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); }
+  if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); renderSupervisorDayOverridePanel(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); renderProdBoardHistoryPanel(); }
   if(sub==='settings'){ majBandeauSauvegarde(); }
   if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderAssistanceQuotaPanel(); }
@@ -18670,6 +18692,48 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
   return ev.lateMinutes <= 10;
 }
 
+// 📊 RÉGLAGE MANUEL DE LA PRIME DE SUPERVISION D'UNE JOURNÉE — Admin → Journée.
+// Le CRM décide seul qui touche sa prime (isSupervisorEligibleOnDay : présent et ≤ 10 min de retard).
+// Ces réglages permettent de le contredire sur une journée précise, dans les deux sens, et surtout de
+// DIRIGER la part retirée vers un superviseur nommé au lieu du partage égal automatique.
+function getSupervisorDayOverrides(dateStr){
+  return (config.supervisorDayOverrides && config.supervisorDayOverrides[dateStr]) || {};
+}
+
+// Source UNIQUE de vérité pour une journée : qui touche, qui ne touche pas, et le supplément de taux de
+// chacun. Utilisée par le calcul de la prime (supervisorBonusForDates), par l'affichage du taux du jour
+// côté superviseur (supervisorRateBoostToday) ET par l'écran de réglage lui-même — impossible que l'un
+// des trois applique une règle que les deux autres ignorent.
+async function resolveSupervisorDay(dateStr, board, supervisors, rates){
+  const auto = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
+  const ov = getSupervisorDayOverrides(dateStr);
+  const statut = auto.map(a=>{
+    const o = ov[a.sup] || null;
+    let ok = a.ok;
+    if(o && o.prime === 'retiree') ok = false;
+    else if(o && o.prime === 'donnee') ok = true;
+    return { sup: a.sup, auto: a.ok, ok, override: o };
+  });
+  const eligible = statut.filter(s=>s.ok).map(s=>s.sup);
+  const ineligible = statut.filter(s=>!s.ok).map(s=>s.sup);
+
+  const bonusRateBySup = {};
+  eligible.forEach(s=>{ bonusRateBySup[s] = 0; });
+  let poolRate = 0;
+  ineligible.forEach(sup=>{
+    const o = ov[sup];
+    const benef = o && o.beneficiaire;
+    // Un bénéficiaire nommé qui ne touche pas lui-même ce jour-là ne peut rien recevoir : sa part
+    // retombe dans le partage égal plutôt que de disparaître au passage.
+    if(benef && eligible.indexOf(benef) !== -1) bonusRateBySup[benef] += (rates[sup] || 0);
+    else poolRate += (rates[sup] || 0);
+  });
+  const parEligible = eligible.length > 0 ? poolRate / eligible.length : 0;
+  eligible.forEach(s=>{ bonusRateBySup[s] += parEligible; });
+
+  return { statut, eligible, ineligible, bonusRateBySup };
+}
+
 // BUG CORRIGÉ (affichage) : "Ton taux" sur le tableau de bord Supervision ne montrait le taux boosté
 // (collègue en retard/absent → sa part reversée) QUE s'il y avait déjà des contrats saisis aujourd'hui
 // (contractsDay > 0) — tant qu'aucun contrat n'était encore saisi (typiquement tôt le matin), l'écran
@@ -18679,21 +18743,134 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
 // arrière-plan, juste invisible tant que dayPool valait 0. Cette fonction calcule le boost projeté pour
 // AUJOURD'HUI à partir de la seule éligibilité (pas des contrats déjà saisis), pour que l'info soit
 // visible dès le matin, avant même le premier contrat.
+// Écran de réglage (Admin → Journée). Les noms des superviseurs sont mémorisés ici plutôt qu'injectés
+// dans les attributs onchange : un nom contenant une apostrophe (O'Brien) casserait le HTML généré.
+let supOverrideRenderedSups = [];
+
+async function supOverrideToday(){
+  const el = document.getElementById('supOverrideDate');
+  if(el) el.value = todayStr();
+  await renderSupervisorDayOverridePanel();
+}
+
+async function renderSupervisorDayOverridePanel(){
+  const container = document.getElementById('supervisorDayOverridePanel');
+  if(!container) return;
+  const input = document.getElementById('supOverrideDate');
+  if(input && !input.value) input.value = todayStr();
+  const dateStr = (input && input.value) || todayStr();
+
+  const supervisors = listSupervisors();
+  if(supervisors.length === 0){
+    container.innerHTML = '<div class="empty">Aucun superviseur pour le moment — marque d\'abord un agent <b>📊 Superviseur</b> dans Réglages → Agents.</div>';
+    return;
+  }
+
+  const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
+  prodBoardCache[dateStr] = board;
+  const rates = {};
+  supervisors.forEach(s=>{ rates[s] = getAgentPay(s).supervisorPrimePerContract || 0; });
+  const { statut, eligible, bonusRateBySup } = await resolveSupervisorDay(dateStr, board, supervisors, rates);
+  supOverrideRenderedSups = statut.map(s=>s.sup);
+
+  // Assiette de la prime : les contrats de l'équipe de base ce jour-là (ni superviseurs, ni indépendants),
+  // exactement la même que dans supervisorBonusForDates.
+  let dayPool = 0;
+  config.agents.forEach(a=>{
+    if(isSupervisor(a) || isIndependant(a)) return;
+    dayPool += getAgentProd(board, a).realized || 0;
+  });
+
+  const sel = 'padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--panel2); color:var(--text); min-width:180px;';
+  let html = '';
+  if(dayPool <= 0){
+    html += `<div style="padding:10px 13px; border-radius:9px; background:rgba(229,168,61,0.10); border:1px solid rgba(229,168,61,0.35); font-size:12.5px; color:var(--muted); margin-bottom:12px;">⚠️ Aucun contrat d'équipe enregistré ce jour-là : personne ne touche de prime de supervision, quels que soient les réglages ci-dessous. Ils resteront enregistrés et s'appliqueront si des contrats arrivent.</div>`;
+  }
+  if(eligible.length === 0){
+    html += `<div style="padding:10px 13px; border-radius:9px; background:var(--red-bg); border:1px solid rgba(229,90,90,0.4); font-size:12.5px; color:var(--red); margin-bottom:12px;">⚠️ Aucun superviseur ne touche sa prime ce jour-là. La prime n'est jamais reportée : elle est simplement perdue pour tout le monde.</div>`;
+  }
+
+  html += '<div style="overflow-x:auto;"><table><thead><tr><th>Superviseur</th><th>Ce que dit le pointage</th><th>Ton réglage</th><th>Sa part retirée va à</th><th>Résultat ce jour-là</th></tr></thead><tbody>';
+  statut.forEach((s, i)=>{
+    const o = s.override || {};
+    const prime = o.prime || '';
+    const benef = o.beneficiaire || '';
+    const autoTxt = s.auto
+      ? '<span class="tag ok">Présent, à l\'heure</span>'
+      : '<span class="tag late">Absent ou +10 min</span>';
+    const forceTxt = (prime === 'retiree' && s.auto) ? '<div style="font-size:11px;color:var(--red);margin-top:3px;">retirée par toi</div>'
+                   : (prime === 'donnee' && !s.auto) ? '<div style="font-size:11px;color:var(--green);margin-top:3px;">donnée par toi</div>' : '';
+    const rateEff = s.ok ? (rates[s.sup] + (bonusRateBySup[s.sup] || 0)) : 0;
+    const gain = Math.round(dayPool * rateEff);
+    const recu = (bonusRateBySup[s.sup] || 0) > 0
+      ? `<div style="font-size:11px;color:var(--gold);margin-top:3px;">dont +${(Math.round((bonusRateBySup[s.sup])*100)/100).toLocaleString('fr-FR')} DH reçus d'un autre</div>` : '';
+    const resultat = s.ok
+      ? `<b style="color:var(--green);">${(Math.round(rateEff*100)/100).toLocaleString('fr-FR')} DH/contrat</b><div style="font-size:11px;color:var(--muted);">${dayPool} contrat${dayPool>1?'s':''} → ${gain.toLocaleString('fr-FR')} DH</div>${recu}`
+      : '<span style="color:var(--muted);">Aucune prime</span>';
+    const autres = supervisors.filter(x=> x !== s.sup);
+    const benefCell = prime === 'retiree'
+      ? `<select onchange="setSupervisorDayOverride(${i},'beneficiaire',this.value)" style="${sel}">
+           <option value="" ${benef===''?'selected':''}>— À partager entre les présents —</option>
+           ${autres.map(a=>`<option value="${escapeHtml(a)}" ${benef===a?'selected':''}>${escapeHtml(a)}</option>`).join('')}
+         </select>${(benef && eligible.indexOf(benef) === -1) ? '<div style="font-size:11px;color:var(--amber);margin-top:3px;">⚠️ Il ne touche pas non plus ce jour-là : la part repart au partage.</div>' : ''}`
+      : '<span style="color:var(--muted); font-size:12px;">—</span>';
+    html += `<tr>
+      <td><b>${escapeHtml(s.sup)}</b><div style="font-size:11px;color:var(--muted);">${rates[s.sup]} DH/contrat de base</div></td>
+      <td>${autoTxt}${forceTxt}</td>
+      <td><select onchange="setSupervisorDayOverride(${i},'prime',this.value)" style="${sel}">
+        <option value="" ${prime===''?'selected':''}>Auto (suit le pointage)</option>
+        <option value="retiree" ${prime==='retiree'?'selected':''}>🚫 Retirer sa prime</option>
+        <option value="donnee" ${prime==='donnee'?'selected':''}>✅ Lui donner sa prime</option>
+      </select></td>
+      <td>${benefCell}</td>
+      <td>${resultat}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+async function setSupervisorDayOverride(idx, field, value){
+  const sup = supOverrideRenderedSups[idx];
+  if(!sup) return;
+  const input = document.getElementById('supOverrideDate');
+  const dateStr = (input && input.value) || todayStr();
+  if(!config.supervisorDayOverrides) config.supervisorDayOverrides = {};
+  if(!config.supervisorDayOverrides[dateStr]) config.supervisorDayOverrides[dateStr] = {};
+  const jour = config.supervisorDayOverrides[dateStr];
+  if(!jour[sup]) jour[sup] = {};
+
+  if(field === 'prime'){
+    if(value) jour[sup].prime = value; else delete jour[sup].prime;
+    // Un bénéficiaire n'a de sens que sur une prime RETIRÉE : le garder ailleurs laisserait un réglage
+    // invisible dans la base, qui reviendrait au prochain passage en « retirer ».
+    if(value !== 'retiree') delete jour[sup].beneficiaire;
+  } else if(field === 'beneficiaire'){
+    if(value) jour[sup].beneficiaire = value; else delete jour[sup].beneficiaire;
+  }
+  // On ne laisse jamais de coquille vide en base : un jour sans réglage disparaît complètement.
+  if(Object.keys(jour[sup]).length === 0) delete jour[sup];
+  if(Object.keys(jour).length === 0) delete config.supervisorDayOverrides[dateStr];
+
+  await saveConfigSilent();
+  logAudit('Admin', 'Prime de supervision ajustée', `${sup} — ${dateStr} — ${field} = ${value || 'auto'}`);
+  if(typeof invalidatePayrollMonthCache === 'function') invalidatePayrollMonthCache();
+  showToast('✅ Enregistré', 'ok', 2000);
+  await renderSupervisorDayOverridePanel();
+}
+
 async function supervisorRateBoostToday(supervisor){
   const supervisors = listSupervisors();
-  if(supervisors.length <= 1) return 0; // seul superviseur : rien à redistribuer
+  if(supervisors.length === 0) return 0;
   const dateStr = todayStr();
   const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
-  const eligibility = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
-  const me = eligibility.find(e=>e.sup === supervisor);
-  if(!me || !me.ok) return 0; // pas éligible moi-même aujourd'hui : pas de taux boosté à afficher
-  const eligibleCount = eligibility.filter(e=>e.ok).length;
-  const ineligible = eligibility.filter(e=>!e.ok);
-  if(ineligible.length === 0) return 0;
   const rates = {};
   supervisors.forEach(s=> rates[s] = getAgentPay(s).supervisorPrimePerContract || 0);
-  const forfeitedRateTotal = ineligible.reduce((s,e)=> s + rates[e.sup], 0);
-  return forfeitedRateTotal / eligibleCount;
+  // Même résolveur que le calcul de la prime : un ajustement manuel fait dans Admin → Journée se voit
+  // donc immédiatement dans le taux affiché au superviseur, sans règle recopiée ici.
+  const { eligible, bonusRateBySup } = await resolveSupervisorDay(dateStr, board, supervisors, rates);
+  if(eligible.indexOf(supervisor) === -1) return 0;
+  return bonusRateBySup[supervisor] || 0;
 }
 
 // Calcule, jour par jour, le montant en DH de la prime de supervision de CHAQUE superviseur sur une liste
@@ -18734,14 +18911,11 @@ async function supervisorBonusForDates(dateStrs, retirerRetractations){
     });
     if(dayPool <= 0) return null;
 
-    const eligibility = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
-    const eligible = eligibility.filter(e=>e.ok).map(e=>e.sup);
-    const ineligible = eligibility.filter(e=>!e.ok).map(e=>e.sup);
+    // Éligibilité automatique + tes réglages manuels du jour, et répartition de la part retirée (vers un
+    // superviseur nommé si tu en as désigné un, sinon partage égal comme avant) — voir resolveSupervisorDay.
+    const { eligible, bonusRateBySup } = await resolveSupervisorDay(dateStr, board, supervisors, rates);
     if(eligible.length === 0) return null;
-
-    const forfeitedRateTotal = ineligible.reduce((s,sup)=> s + rates[sup], 0);
-    const bonusRatePerEligible = forfeitedRateTotal / eligible.length;
-    return { dayPool, eligible, bonusRatePerEligible };
+    return { dayPool, eligible, bonusRateBySup };
   }));
 
   // ⚠️ BUG CORRIGÉ — le pool venait du BRUT du tableau de production, alors que le nombre de contrats
@@ -18776,7 +18950,7 @@ async function supervisorBonusForDates(dateStrs, retirerRetractations){
   perDayResults.forEach(res=>{
     if(!res || res.dayPool <= 0) return;
     res.eligible.forEach(sup=>{
-      const effectiveRate = rates[sup] + res.bonusRatePerEligible;
+      const effectiveRate = rates[sup] + (res.bonusRateBySup[sup] || 0);
       dh[sup] += res.dayPool * effectiveRate;
       contracts[sup] += res.dayPool;
     });
