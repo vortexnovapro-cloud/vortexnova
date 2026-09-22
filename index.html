@@ -2763,6 +2763,26 @@ async function tryDeviceGateAdmin(){
           </div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(229,90,90,0.45);">
+          <label>🌍 Heure du Maroc — utilisée pour tous les pointages</label>
+          <div class="section-sub" style="margin-top:-6px;">L'appli convertit l'heure en heure du Maroc sur <b>chaque poste</b>, à partir de la base de fuseaux de son navigateur. Quand le pays change d'heure, un poste dont Chrome n'est pas à jour continue d'appliquer l'ancienne règle : il enregistre alors les pointages avec <b>une heure d'écart</b>, ce qui crée de faux retards et des retenues injustifiées, sans le moindre avertissement.</div>
+          <div class="section-sub" style="margin-top:6px;">En forçant le décalage ici, la valeur vient de la base : <b>tous les postes s'alignent d'un coup</b>, quelle que soit leur version de Chrome. À remettre sur « Automatique » une fois les postes à jour.</div>
+          <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
+            <div>
+              <label style="margin-bottom:4px;">Décalage appliqué</label>
+              <select id="cfgTzForced" style="min-width:230px;">
+                <option value="">Automatique (Africa/Casablanca)</option>
+                <option value="0">Forcer UTC+0 (heure d'hiver)</option>
+                <option value="1">Forcer UTC+1 (heure d'été)</option>
+              </select>
+            </div>
+            <button type="button" onclick="saveTzForcedOffset()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer</button>
+            <button type="button" onclick="renderTzPanel()" style="padding:10px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:700; font-size:12.5px; cursor:pointer;">🔄 Rafraîchir</button>
+          </div>
+          <div id="tzPanel" style="margin-top:14px;"></div>
+          <div class="section-sub" style="margin-top:10px;">ℹ️ Ce réglage ne touche qu'aux pointages à venir. Les heures déjà enregistrées sont figées et ne bougent pas — pour corriger une journée passée, passe par Admin → Journée.</div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(61,139,253,0.45);">
           <label>📅 Historique des horaires — quand l'heure officielle a changé</label>
           <div class="section-sub" style="margin-top:-6px;">L'heure d'arrivée d'un agent est enregistrée comme un texte figé (« 09:28 »). Pour savoir s'il était en retard, le CRM la compare à l'heure de début ci-dessus. Tant qu'aucune période n'est enregistrée ici, il utilise l'heure de début <b>actuelle</b> pour toutes les dates : changer d'horaire (heure d'hiver, heure d'été, réorganisation) transforme donc rétroactivement des journées à l'heure en retards, avec retenues, prime d'assiduité perdue et prime de supervision annulée — sur des mois parfois déjà payés.</div>
@@ -2860,7 +2880,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-22-r223';
+const APP_VERSION = '2026-09-22-r224';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -2938,6 +2958,11 @@ let config = {
   // horaires ACTUELS : ils s'appliquent à toute date postérieure à la dernière période enregistrée.
   // Vide = comportement d'origine, les horaires actuels valent pour toute l'histoire.
   scheduleHistory: [],
+  // 🌍 DÉCALAGE HORAIRE FORCÉ (voir nowMA). null = automatique via Africa/Casablanca.
+  // 0 ou 1 = on impose UTC+0 / UTC+1 à TOUS les postes, quelle que soit la base de fuseaux de leur
+  // navigateur. Indispensable quand le Maroc change d'heure : les postes pas à jour continuent sinon
+  // d'enregistrer les pointages avec une heure d'écart, donc de faux retards pour tout le monde.
+  tzForcedOffset: null,
   adminPassword: DEFAULT_ADMIN_PASSWORD,
   agentPasswords: {},
   fridayLunch: { enabled: true, start: "12:00", end: "14:00" },
@@ -3427,7 +3452,38 @@ function infrSanctionText(inf){
 // (getHours/getMinutes/getFullYear/etc.) — jamais pour des mesures de durée (garder Date.now()) ni pour
 // des horodatages d'audit (garder new Date().toISOString()).
 function nowMA(){
+  // Réglage forcé (Réglages → 🌍 Heure du Maroc) : il vient de la base, donc il s'applique d'un coup à
+  // tous les postes. C'est le seul moyen fiable quand le pays change d'heure : la conversion
+  // automatique ci-dessous dépend de la base de fuseaux du navigateur de CHAQUE poste, et un Chrome
+  // pas à jour continue d'appliquer l'ancienne règle sans que rien ne le signale.
+  const forced = (typeof config !== 'undefined' && config && config.tzForcedOffset != null)
+    ? Number(config.tzForcedOffset) : null;
+  if(forced != null && !isNaN(forced)){
+    const now = new Date();
+    // On repasse par UTC, puis on applique le décalage voulu : les getters locaux (getHours, getDate...)
+    // rendent alors l'heure du Maroc, exactement comme la version automatique.
+    return new Date(now.getTime() + now.getTimezoneOffset() * 60000 + forced * 3600000);
+  }
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Casablanca' }));
+}
+
+// Ce que chaque source d'heure raconte, pour diagnostiquer un écart sans ouvrir la console.
+function tzDiagnostic(){
+  const now = new Date();
+  const fmt = d => String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  const utc = new Date(now.getTime() + now.getTimezoneOffset()*60000);
+  let auto = null;
+  try{ auto = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Casablanca' })); }catch(e){ auto = null; }
+  const appli = nowMA();
+  return {
+    utc: fmt(utc),
+    poste: fmt(now),
+    auto: auto ? fmt(auto) : '—',
+    autoOffset: auto ? Math.round((auto.getTime() - utc.getTime())/3600000) : null,
+    appli: fmt(appli),
+    appliOffset: Math.round((appli.getTime() - utc.getTime())/3600000),
+    force: (config && config.tzForcedOffset != null) ? Number(config.tzForcedOffset) : null
+  };
 }
 
 function todayStr(d){
@@ -4732,7 +4788,7 @@ function showAdminSub(sub){
   if(sub==='overview'){ initExploDefaults(); initObjSnapDefaults(); renderAllMonthly(); renderExplorateur(); renderNotifStatusPanel(); renderPointDuJourAdmin(); renderDailyBriefingSection('dailyBriefingAdmin'); renderWeeklyBriefingSection('weeklyBriefingAdmin', 'weeklyBriefingWeekSelectAdmin'); applyPrivacyMode(); }
   if(sub==='day'){ renderReport(); renderCorrBreaksEditor([]); corrLockoutRows=[]; renderCorrLockoutEditor(); corrFreeBreakRows=[]; renderCorrFreeBreakEditor(); renderSupervisorDayOverridePanel(); }
   if(sub==='prod'){ renderAgentPayTable(); renderProdAdmin(); renderMonthlyObjectif(); renderProdBoardHistoryPanel(); }
-  if(sub==='settings'){ majBandeauSauvegarde(); renderScheduleHistoryPanel(); renderScheduleTester(); }
+  if(sub==='settings'){ majBandeauSauvegarde(); renderTzPanel(); renderScheduleHistoryPanel(); renderScheduleTester(); }
   if(sub==='settings'){ renderAuditLog(); renderAssistanceSupervisorSelect(); renderAssistanceHistory(); subscribeAssistPresence(); renderAssistantsPanel(); renderAssistanceQuotaPanel(); }
 }
 
@@ -8045,6 +8101,47 @@ function extractBreakPairs(events){
   return pairs;
 }
 
+// 🌍 Écran du fuseau horaire (Réglages) — montre côte à côte ce que dit chaque source d'heure, pour
+// qu'un écart se voie tout de suite au lieu de se découvrir dans de faux retards une semaine plus tard.
+function renderTzPanel(){
+  const el = document.getElementById('tzPanel');
+  if(!el) return;
+  const sel = document.getElementById('cfgTzForced');
+  if(sel) sel.value = (config.tzForcedOffset == null) ? '' : String(config.tzForcedOffset);
+  const d = tzDiagnostic();
+  const sign = v => (v == null) ? '\u2014' : (v >= 0 ? 'UTC+' + v : 'UTC' + v);
+  const desaccord = (d.autoOffset != null && d.force != null && d.autoOffset !== d.force);
+  const ligne = (label, valeur, detail, couleur) => `
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px;">
+      <span style="color:var(--muted);">${label}</span>
+      <span><b style="color:${couleur||'var(--text)'};">${valeur}</b> <span style="color:var(--muted); font-size:11.5px;">${detail||''}</span></span>
+    </div>`;
+  el.innerHTML = `
+    <div style="padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
+      ${ligne('Heure UTC', d.utc, '')}
+      ${ligne('Heure de ce poste', d.poste, '')}
+      ${ligne('Ce que dit Africa/Casablanca sur ce poste', d.auto, sign(d.autoOffset))}
+      ${ligne("Heure utilis\u00e9e par l'appli pour les pointages", d.appli, sign(d.appliOffset), 'var(--green)')}
+      <div style="font-size:12px; color:var(--muted); margin-top:10px;">${d.force == null
+        ? 'Mode <b style="color:var(--text);">automatique</b> : l\'appli suit la base de fuseaux de chaque poste.'
+        : `Mode <b style="color:var(--text);">forc\u00e9 \u00e0 ${sign(d.force)}</b> : la m\u00eame valeur s\'applique \u00e0 tous les postes, depuis la base.`}</div>
+      ${desaccord ? `<div style="margin-top:11px; padding:10px 13px; border-radius:9px; background:rgba(229,168,61,0.10); border:1px solid rgba(229,168,61,0.4); font-size:12.5px; color:var(--amber);">\u26a0\ufe0f Ce poste calcule ${sign(d.autoOffset)} pour le Maroc, alors que tu as forc\u00e9 ${sign(d.force)}. Sa base de fuseaux n\'est donc pas \u00e0 jour \u2014 c\'est pr\u00e9cis\u00e9ment ce que le r\u00e9glage forc\u00e9 corrige. Sans lui, ce poste enregistrerait les pointages avec ${Math.abs(d.autoOffset - d.force)} h d\'\u00e9cart.</div>` : ''}
+    </div>`;
+}
+
+async function saveTzForcedOffset(){
+  const sel = document.getElementById('cfgTzForced');
+  const v = sel ? sel.value : '';
+  config.tzForcedOffset = (v === '') ? null : Number(v);
+  await saveConfigSilent();
+  logAudit('Admin', 'D\u00e9calage horaire du Maroc', v === '' ? 'automatique' : ('forc\u00e9 UTC+' + v));
+  // Ne touche QU'AUX lectures futures : les heures d\u00e9j\u00e0 enregistr\u00e9es sont des textes fig\u00e9s, elles ne
+  // bougent pas. Les caches tombent quand m\u00eame, puisque \u00ab aujourd'hui \u00bb peut changer de jour.
+  if(typeof clearRenderCaches === 'function') clearRenderCaches();
+  showToast('\u2705 Enregistr\u00e9', 'ok', 2000);
+  renderTzPanel();
+}
+
 // Écran de gestion des périodes d'horaires passées (Réglages).
 function renderScheduleHistoryPanel(){
   const c = document.getElementById('scheduleHistoryPanel');
@@ -8068,6 +8165,15 @@ function renderScheduleHistoryPanel(){
         <div><label style="margin-bottom:4px;">Fin</label><br><input type="time" value="${p.end||''}" style="${inp}" onchange="updateSchedulePeriod(${i},'end',this.value)"></div>
         <button type="button" onclick="removeSchedulePeriod(${i})" style="padding:8px 13px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--red); font-weight:700; font-size:12.5px; cursor:pointer;">🗑 Supprimer</button>
       </div>
+      ${(()=>{ const fl = p.fridayLunch || { enabled:false, start:'12:00', end:'14:00' };
+        return `<div style="margin-top:11px; padding-top:11px; border-top:1px dashed var(--border); display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <label style="margin:0; display:flex; align-items:center; gap:7px; cursor:pointer;">
+            <input type="checkbox" ${fl.enabled?'checked':''} style="width:auto; margin:0;" onchange="updateSchedulePeriodFriday(${i},'enabled',this.checked)">
+            <span style="font-size:12.5px; color:var(--text);">Vendredi : déjeuner spécial</span>
+          </label>
+          <input type="time" value="${fl.start||''}" style="${inp}" onchange="updateSchedulePeriodFriday(${i},'start',this.value)">
+          <input type="time" value="${fl.end||''}" style="${inp}" onchange="updateSchedulePeriodFriday(${i},'end',this.value)">
+        </div>`; })()}
       ${brk.length ? `<div style="margin-top:11px; padding-top:11px; border-top:1px dashed var(--border);">
         <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Créneaux fixes de cette période (le déjeuner décale lui aussi quand l'heure change)</div>
         ${brk.map((b,bi)=>`<div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
@@ -8091,7 +8197,10 @@ async function addSchedulePeriod(){
     until: todayStr(hier),
     start: config.start,
     end: config.end,
-    breaks: (config.breaks || []).map(b=>({ name: b.name, start: b.start, end: b.end }))
+    breaks: (config.breaks || []).map(b=>({ name: b.name, start: b.start, end: b.end })),
+    fridayLunch: config.fridayLunch
+      ? { enabled: !!config.fridayLunch.enabled, start: config.fridayLunch.start, end: config.fridayLunch.end }
+      : { enabled: false, start: '12:00', end: '14:00' }
   });
   await saveScheduleHistory('Période d\'horaires ajoutée');
 }
@@ -8101,6 +8210,14 @@ async function updateSchedulePeriod(idx, field, value){
   if(!hist[idx]) return;
   hist[idx][field] = value;
   await saveScheduleHistory('Période d\'horaires modifiée');
+}
+
+async function updateSchedulePeriodFriday(idx, field, value){
+  const hist = config.scheduleHistory || [];
+  if(!hist[idx]) return;
+  if(!hist[idx].fridayLunch) hist[idx].fridayLunch = { enabled:false, start:'12:00', end:'14:00' };
+  hist[idx].fridayLunch[field] = value;
+  await saveScheduleHistory('Déjeuner du vendredi d\'une période modifié');
 }
 
 async function updateSchedulePeriodBreak(idx, bidx, field, value){
@@ -8173,7 +8290,10 @@ function scheduleBaseForDate(dateStr){
   return {
     start: p.start || courant.start,
     end: p.end || courant.end,
-    breaks: (Array.isArray(p.breaks) && p.breaks.length) ? p.breaks : courant.breaks
+    breaks: (Array.isArray(p.breaks) && p.breaks.length) ? p.breaks : courant.breaks,
+    // Le déjeuner du vendredi suit la période lui aussi : si les 2h ont changé d'horaire, les vendredis
+    // passés doivent garder les leurs. Absent de la période = on retombe sur le réglage actuel.
+    fridayLunch: p.fridayLunch || null
   };
 }
 
@@ -8182,11 +8302,15 @@ function scheduleForDate(dateStr){
   const base = scheduleBaseForDate(dateStr || todayStr());
   const breaks = (base.breaks || []).map(b=>({...b}));
   let note = null;
-  if(dow===5 && config.fridayLunch && config.fridayLunch.enabled){
+  const fl = base.fridayLunch || config.fridayLunch;
+  if(dow===5 && fl && fl.enabled){
     const idx = breaks.findIndex(b=>/d.jeuner|dejeuner|lunch/i.test(b.name));
     if(idx>=0){
-      breaks[idx] = { ...breaks[idx], start: config.fridayLunch.start, end: config.fridayLunch.end };
-      note = `Vendredi : ${breaks[idx].name} ${config.fridayLunch.start}–${config.fridayLunch.end} (2h)`;
+      breaks[idx] = { ...breaks[idx], start: fl.start, end: fl.end };
+      // Durée calculée, jamais écrite en dur : « (2h) » restait affiché même après un changement d'horaire.
+      const mins = (toMinutes(fl.end) || 0) - (toMinutes(fl.start) || 0);
+      const duree = mins > 0 ? (mins % 60 === 0 ? `${mins/60}h` : `${Math.floor(mins/60)}h${String(mins%60).padStart(2,'0')}`) : '';
+      note = `Vendredi : ${breaks[idx].name} ${fl.start}–${fl.end}${duree ? ` (${duree})` : ''}`;
     }
   }
   return { start: base.start, end: base.end, breaks, note };
