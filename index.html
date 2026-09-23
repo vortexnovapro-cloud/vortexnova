@@ -2880,7 +2880,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-22-r224';
+const APP_VERSION = '2026-09-23-r225';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -9436,7 +9436,76 @@ function calendarizeRelativeDays(text, dateStr){
     .replace(/\bhier\b/g, m => applyCase(m, yesterday));
 }
 
-function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRealized, seed, refDateStr){
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 🏆 RECORD D'ÉQUIPE SUR UNE JOURNÉE (r225)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Les records existants portaient sur le MOIS (équipe, agent) et sur la meilleure journée d'UN agent.
+// Il manquait le plus parlant : le total de contrats de toute l'équipe en une seule journée. On garde
+// en base le total de chaque jour ouvré (≈ 1 an) — le record « avant tel jour » se lit alors pour
+// n'importe quelle date, y compris un bilan de la veille consulté le lendemain matin. Les 5 derniers
+// jours sont relus à chaque calcul pour intégrer les contrats importés en retard.
+const TEAM_DAY_TOTALS_KEY = 'teamDayTotals';
+let _teamDayTotalsCache = null, _teamDayTotalsDay = null, _teamDayTotalsInflight = null;
+function totalContratsDuTableau(board){
+  const ags = (board && board.agents) || {};
+  return Object.keys(ags).reduce((s,a)=> s + ((ags[a] && ags[a].realized) || 0), 0);
+}
+async function getTeamDayTotals(){
+  const today = todayStr();
+  if(_teamDayTotalsCache && _teamDayTotalsDay === today) return _teamDayTotalsCache;
+  if(_teamDayTotalsInflight) return _teamDayTotalsInflight;
+  _teamDayTotalsInflight = (async ()=>{
+    let rec = null;
+    try{ const res = await storageGet(TEAM_DAY_TOTALS_KEY); if(res && res.value) rec = JSON.parse(res.value); }catch(e){}
+    if(!rec || !rec.totals) rec = { totals: {} };
+    const dates = lastNWorkingDaysBefore(today, 260);          // jours ouvrés STRICTEMENT avant aujourd'hui
+    const recents = new Set(dates.slice(-5));
+    const aLire = dates.filter(d => !(d in rec.totals) || recents.has(d));
+    for(let i=0; i<aLire.length; i+=20){
+      await Promise.all(aLire.slice(i, i+20).map(async d=>{
+        try{
+          const board = prodBoardCache[d] || await getProdBoard(d);
+          prodBoardCache[d] = board;
+          rec.totals[d] = totalContratsDuTableau(board);
+        }catch(e){ console.warn('total équipe du jour', d, e); }
+      }));
+    }
+    const garder = new Set(dates);
+    Object.keys(rec.totals).forEach(d=>{ if(!garder.has(d)) delete rec.totals[d]; });
+    if(aLire.length){ try{ await storageSet(TEAM_DAY_TOTALS_KEY, JSON.stringify(rec)); }catch(e){ console.warn('teamDayTotals non enregistré', e); } }
+    _teamDayTotalsCache = rec; _teamDayTotalsDay = today;
+    return rec;
+  })();
+  try{ return await _teamDayTotalsInflight; } finally { _teamDayTotalsInflight = null; }
+}
+// Le total du jour bat-il le record de l'équipe (meilleure journée AVANT ce jour-là) ? null sinon.
+async function evaluerRecordEquipeJour(dateStr, totalDuJour){
+  if(!totalDuJour || totalDuJour <= 0 || !isWorkingDay(dateStr)) return null;
+  const rec = await getTeamDayTotals();
+  let best = null;
+  Object.keys(rec.totals).forEach(d=>{
+    if(d >= dateStr) return;
+    const v = rec.totals[d] || 0;
+    if(!best || v > best.value || (v === best.value && d > best.date)) best = { value: v, date: d };
+  });
+  if(!best || best.value <= 0 || totalDuJour <= best.value) return null;
+  return { valeur: totalDuJour, ancien: best.value, ancienDate: best.date.split('-').reverse().join('/'), ecart: totalDuJour - best.value };
+}
+function bandeauRecordEquipeJour(r, dateStr){
+  const fini = isDayOverForMessage(dateStr);
+  const titre = fini
+    ? `🏆 RECORD HISTORIQUE — ${r.valeur} contrats en une seule journée !`
+    : `🔥 RECORD EN COURS — déjà ${r.valeur} contrats aujourd'hui !`;
+  const texte = fini
+    ? `Jamais l'équipe n'avait signé autant en un jour : l'ancien record était de ${r.ancien} (le ${r.ancienDate}), il est pulvérisé de ${r.ecart} contrat${r.ecart>1?'s':''}. Félicitations à chacun d'entre vous — agents, indépendants et superviseurs — c'est une journée à retenir. Bravo !`
+    : `L'ancien record de l'équipe (${r.ancien} le ${r.ancienDate}) est déjà dépassé de ${r.ecart}. Bravo à toutes et à tous — et la journée n'est pas finie, on pousse encore !`;
+  return `<div style="width:min(520px,100%); margin:0 auto 16px; padding:16px 20px; border-radius:14px; background:linear-gradient(135deg, rgba(255,215,0,0.22), rgba(255,215,0,0.06)); border:2px solid rgba(255,215,0,0.65); text-align:center; box-shadow:0 0 24px rgba(255,215,0,0.18);">
+    <div style="font-size:17px; font-weight:900; color:var(--gold); line-height:1.3;">${titre}</div>
+    <div style="margin-top:7px; font-size:13.5px; font-weight:700; color:var(--text); line-height:1.5;">${texte}</div>
+  </div>`;
+}
+
+function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRealized, seed, refDateStr, recordEquipe){
   if(totalTarget <= 0) return '';
   const pct = Math.round((totalRealized/totalTarget)*100);
   // ⚠️ COHÉRENCE CORRIGÉE — la couleur de l'anneau utilisait 100/50 alors que le texte juste en dessous
@@ -9452,9 +9521,20 @@ function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRe
     ? `<div style="font-size:11px; color:var(--independant); margin-top:8px;">dont ${indepRealized} fait${indepRealized>1?'s':''} par les indépendants</div>`
     : '';
   const isBilan = isDayOverForMessage(refDateStr);
-  const message = calendarizeRelativeDays(pickTeamPctMessage(pct, seed || 'default', isBilan), refDateStr);
-  return `<div style="width:246px; margin:0 auto 20px; padding:22px 18px 18px; border-radius:22px; background:linear-gradient(165deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid ${pct>=100?'rgba(52,183,116,0.45)':'var(--border)'}; box-shadow:0 10px 28px rgba(0,0,0,0.35); text-align:center;">
+  // 🏆 r225 — Record d'équipe battu (plus de contrats en une journée que jamais) : il passe avant le
+  // message habituel du palier, c'est LA nouvelle du jour.
+  const message = recordEquipe
+    ? (isBilan
+        ? `👑 Record historique de l'équipe : jamais autant de contrats en une seule journée. Félicitations à toutes et à tous !`
+        : `👑 Record de l'équipe en train de tomber : jamais autant de contrats en une journée. Continuez comme ça !`)
+    : calendarizeRelativeDays(pickTeamPctMessage(pct, seed || 'default', isBilan), refDateStr);
+  const recordBadge = recordEquipe
+    ? `<div style="display:inline-block; margin-top:8px; padding:3px 10px; border-radius:20px; background:rgba(255,215,0,0.16); border:1px solid rgba(255,215,0,0.5); color:var(--gold); font-size:10.5px; font-weight:900; letter-spacing:0.6px;">🏆 RECORD · ancien ${recordEquipe.ancien} le ${recordEquipe.ancienDate}</div>`
+    : '';
+  const bordure = recordEquipe ? 'rgba(255,215,0,0.7)' : (pct>=100?'rgba(52,183,116,0.45)':'var(--border)');
+  return `<div style="width:246px; margin:0 auto 20px; padding:22px 18px 18px; border-radius:22px; background:linear-gradient(165deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid ${bordure}; box-shadow:0 10px 28px rgba(0,0,0,0.35); text-align:center;">
     <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px; font-weight:700;">🎯 Total équipe${isBilan ? ' · Bilan' : ''}</div>
+    ${recordBadge}
     <div style="position:relative; width:152px; height:152px; margin:16px auto 10px; border-radius:50%; background:conic-gradient(${color} ${ringPct}%, rgba(255,255,255,0.07) 0);">
       <div style="position:absolute; inset:9px; border-radius:50%; background:var(--panel2); display:flex; flex-direction:column; align-items:center; justify-content:center;">
         <div style="font-size:30px; font-weight:900; color:${color}; line-height:1;">${totalRealized}<span style="font-size:14px; color:var(--muted); font-weight:700;">/${totalTarget}</span></div>
@@ -10102,7 +10182,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     }catch(e){ console.warn('records du jour bilan', e); }
   }
 
-  let html = teamRecordBannerHtml + renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr);
+  let recordEquipeJour = null;
+  try{ recordEquipeJour = await evaluerRecordEquipeJour(dateStr, totalRealizedDay); }
+  catch(e){ console.warn('record équipe du jour', e); }
+  const recordEquipeJourHtml = recordEquipeJour ? bandeauRecordEquipeJour(recordEquipeJour, dateStr) : '';
+  let html = recordEquipeJourHtml + teamRecordBannerHtml + renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr, recordEquipeJour);
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">';
 
   // Une seule liste, un seul ordre d'affichage : classement combiné équipe + indépendants, du plus
@@ -10534,6 +10618,10 @@ async function renderNotifStatusPanel(){
 async function buildTodayProblemRow(agent, dateStr, board){
   if(isIndependant(agent)){
     return { agent, isIndep: true, problem: false, hasAnyEvent: false };
+  }
+  // r225 — licencié (dernier jour dépassé) ou hors contrat ce jour-là : aucune alerte possible.
+  if(!estSousContrat(agent, dateStr, true)){
+    return { agent, isIndep: false, problem: false, hasAnyEvent: false };
   }
   // Si la date n'est pas ouvrable, on ne signale aucun problème
   if(!isWorkingDay(dateStr)){
@@ -12241,7 +12329,9 @@ async function renderNearBonusPanel(){
 async function renderInactiveAgentsPanel(){
   const el = document.getElementById('inactiveAgentsPanel');
   if(!el) return;
-  const nonIndep = config.agents.filter(a=>!isIndependant(a));
+  // r225 — un agent licencié (dernier jour dépassé) ou hors contrat aujourd'hui n'a rien à faire ici :
+  // « 0 contrat depuis 3 jours » pour quelqu'un qui ne travaille plus chez nous est une fausse alerte.
+  const nonIndep = config.agents.filter(a=>!isIndependant(a) && estSousContrat(a, todayStr(), true));
   if(nonIndep.length===0){ el.innerHTML = '<div class="empty">Aucun agent salarié.</div>'; return; }
 
   // Les 5 derniers jours ouvrés (lundi-vendredi), pour repérer une série de 0 consécutifs jusqu'à
@@ -12282,7 +12372,7 @@ async function renderInactiveAgentsPanel(){
       const log = (journauxParAgent[agent] || {})[jour] || {};
       // Congé, arrêt, jour hors contrat, jour d'avant son arrivée : neutre, on passe au précédent.
       const arrivee = getAgentStartDate(agent);
-      if(log.justifiedAbsence || estHorsContrat(agent, jour) || (arrivee && jour < arrivee)) continue;
+      if(log.justifiedAbsence || estHorsContrat(agent, jour) || (arrivee && jour < arrivee) || !estSousContrat(agent, jour, true)) continue;
       const board = boards[jour];
       const p = (board.agents && board.agents[agent]) || { realized: 0 };
       if((p.realized||0) === 0) streak++;
@@ -20227,7 +20317,9 @@ async function renderSupervisionReel(){
 
   // Tous les agents sont traités en parallèle (au lieu d'un par un) : c'est ce qui rendait la page très lente
   // à charger dès qu'il y avait plusieurs agents, puisque chaque agent déclenche une vingtaine de lectures.
-  const rows = await Promise.all(config.agents.map(async agent=>{
+  // r225 — les licenciés sortent du tableau en direct dès le lendemain de leur dernier jour : ils y
+  // apparaissaient « 0 contrat aujourd'hui » alors qu'ils ne font plus partie de l'équipe.
+  const rows = await Promise.all(config.agents.filter(a => estSousContrat(a, dateStr, true)).map(async agent=>{
     const isIndep = isIndependant(agent);
     const pay = getAgentPay(agent, now.getFullYear(), now.getMonth()+1);
     const dayProd = getAgentProd(dateBoard, agent);
@@ -20433,7 +20525,7 @@ async function renderSupervisionReel(){
           <span title="Contrats réalisés ÷ objectif visé de l'équipe." style="cursor:help;">${visePct}% du visé</span> · ${resteVise > 0
             ? `<b style="color:var(--gold);" title="Ce qu'il reste à signer, tous agents confondus, pour que l'équipe tienne sa propre promesse. C'est le chiffre à annoncer en briefing." >encore ${resteVise} contrat${resteVise>1?'s':''}</b> pour y être`
             : `<b style="color:var(--gold);">visé atteint 🎉</b>`}
-          · <span title="Les agents qui n'ont pas fixé d'objectif visé dans l'Arena comptent pour leur minimum obligatoire dans ce total." style="cursor:help;">${nbDesiredSet} agent${nbDesiredSet>1?'s':''} sur ${config.agents.filter(a=>!isIndependant(a)).length} ${nbDesiredSet>1?'ont':'a'} fixé le leur ⓘ</span>
+          · <span title="Les agents qui n'ont pas fixé d'objectif visé dans l'Arena comptent pour leur minimum obligatoire dans ce total." style="cursor:help;">${nbDesiredSet} agent${nbDesiredSet>1?'s':''} sur ${config.agents.filter(a=>!isIndependant(a) && estSousContrat(a, todayStr(), true)).length} ${nbDesiredSet>1?'ont':'a'} fixé le leur ⓘ</span>
         </div>
       </div>` : '';
 
