@@ -1748,6 +1748,14 @@ async function tryDeviceGateAdmin(){
               <div class="section-sub" style="margin-top:6px;">Ex : 2h d'absence = 120 minutes. La retenue est calculée au même taux minute que les retards.</div>
             </div>
           </div>
+          <div style="margin-bottom:14px; padding:12px 14px; border-radius:10px; background:rgba(229,90,90,0.07); border:1px solid rgba(229,90,90,0.3);">
+            <div id="corrDepartInfo" style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">🏃 Départ avant l'heure : le reste de la journée est automatiquement non payé (au prorata de la minute, même taux que les retards).</div>
+            <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-weight:700; color:var(--red);">
+              <input type="checkbox" id="corrDepartSansJustif" style="width:auto; margin:0;">
+              🚪 Départ SANS justificatif — l'agent perd sa prime d'assiduité du mois
+            </label>
+            <div class="section-sub" style="margin-top:6px;">À cocher uniquement si l'agent est parti avant l'heure sans justificatif. Un seul départ coché suffit à faire perdre la prime d'assiduité du mois. Décoche pour la lui rendre.</div>
+          </div>
           <div style="margin-bottom:14px;">
             <label style="margin-bottom:6px;">📝 Motif / commentaire (optionnel)</label>
             <input type="text" id="corrAbsenceComment" placeholder="Ex: certificat médical, rendez-vous CNSS, absence non justifiée depuis 14h...">
@@ -2880,7 +2888,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-23-r225';
+const APP_VERSION = '2026-09-28-r226';
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -6756,6 +6764,7 @@ async function loadDayCorrectionForm(){
     document.getElementById('corrAbsenceComment').value = '';
     document.getElementById('corrAbsenceDurationMinutes').value = '';
     document.getElementById('corrAbsenceDurationHours').value = '';
+    { const cb = document.getElementById('corrDepartSansJustif'); if(cb) cb.checked = false; }
     toggleAbsenceDurationField();
     document.getElementById('corrAttachmentFile').value = '';
     document.getElementById('corrAttachmentStatus').textContent = '';
@@ -6774,6 +6783,16 @@ async function loadDayCorrectionForm(){
   document.getElementById('corrAbsenceComment').value = log.absenceComment || '';
   document.getElementById('corrAbsenceDurationMinutes').value = log.absenceDurationMinutes || '';
   document.getElementById('corrAbsenceDurationHours').value = log.absenceDurationMinutes ? Math.round((log.absenceDurationMinutes/60)*100)/100 : '';
+  { const cb = document.getElementById('corrDepartSansJustif'); if(cb) cb.checked = !!log.departSansJustif; }
+  {
+    const info = document.getElementById('corrDepartInfo');
+    const depA = departAnticipe(log.events, dateStr);
+    if(info){
+      info.innerHTML = depA
+        ? `🏃 <b style="color:var(--red);">Parti à ${depA.depart} au lieu de ${depA.finPrevue}</b> — ${depA.minutes} min non payées automatiquement.`
+        : `🏃 Départ avant l'heure : le reste de la journée est automatiquement non payé (au prorata de la minute, même taux que les retards).`;
+    }
+  }
   toggleAbsenceDurationField();
   document.getElementById('corrAttachmentFile').value = '';
   document.getElementById('corrAttachmentStatus').textContent = '';
@@ -6872,6 +6891,7 @@ async function saveDayCorrection(){
     if(justifiedAbsence) logToSave.justifiedAbsence = justifiedAbsence;
     if(absenceComment) logToSave.absenceComment = absenceComment;
     if(absenceDurationMinutes) logToSave.absenceDurationMinutes = absenceDurationMinutes;
+    { const cb = document.getElementById('corrDepartSansJustif'); if(cb && cb.checked) logToSave.departSansJustif = true; }
 
     // Pièce jointe : encodée en base64 et écrite directement sur le log Firestore (pas de Firebase
     // Storage — forfait gratuit du projet). saveDayLog remplace tout le log à chaque sauvegarde, donc une
@@ -7978,7 +7998,7 @@ async function refreshAgentStatus(){
   html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont retards à l'arrivée</span><span>${stats.retards}</span></div>`;
   html += `<div class="agent-status-row"><span>&nbsp;&nbsp;↳ dont absences</span><span>${stats.absences}</span></div>`;
   html += `<div class="agent-status-row"><span>Retours de pause en retard <span style="opacity:0.7;">(info, sans impact sur la prime)</span></span><span>${stats.pauseOver}</span></div>`;
-  html += `<div class="agent-status-row"><span>Statut prime d'assiduité</span><span class="tag ${stats.retardsCumules>=3?'late':(stats.retardsCumules>=1?'warn':'ok')}">${stats.retardsCumules>=3?'Perdue (-500 DH)':(stats.retardsCumules>=1?'Décompte activé':'Acquise')}</span></div>`;
+  html += `<div class="agent-status-row"><span>Statut prime d'assiduité</span><span class="tag ${!isAssiduiteAcquise(stats)?'late':(stats.retardsCumules>=1?'warn':'ok')}">${!isAssiduiteAcquise(stats)?'Perdue (-500 DH)':(stats.retardsCumules>=1?'Décompte activé':'Acquise')}</span></div>`;
   if(tier.level>=5){
     html += `<div class="agent-status-row"><span>Niveau retours</span><span class="tag late">${tier.label}</span></div>`;
   }
@@ -8352,6 +8372,24 @@ function matchBreaksToSchedule(breakPairs, schedBreaks){
   });
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 🏃 DÉPART AVANT L'HEURE (r226)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// L'agent a pointé son départ (fin de journée) avant l'heure de fin prévue ce jour-là, sans revenir
+// ensuite. Le reste de la journée n'est pas payé : minutes manquantes × taux minute (le même que pour
+// les retards et les dépassements de pause). Renvoie null si la journée a été faite jusqu'au bout.
+// Une absence saisie par l'admin (justifiée, autorisée…) prend le dessus : elle est traitée ailleurs.
+function departAnticipe(events, dateStr){
+  if(!events || !events.length || !isWorkingDay(dateStr)) return null;
+  if(lastEventType(events) !== 'out') return null;             // revenu après, ou pas de départ pointé
+  const outEvt = [...events].reverse().find(e=>e.type==='out');
+  if(!outEvt || !outEvt.time) return null;
+  const sched = scheduleForDate(dateStr);
+  const minutes = toMinutes(sched.end) - toMinutes(outEvt.time.slice(0,5));
+  if(minutes <= 0) return null;
+  return { minutes, depart: outEvt.time.slice(0,5), finPrevue: sched.end };
+}
+
 function evaluateDay(events, dateStr, freeBreakBonusMin){
   const sched = scheduleForDate(dateStr || todayStr());
   const inEvt = events.find(e=>e.type==='in');
@@ -8596,7 +8634,8 @@ function tierForCount(count){
 // Centralisé ici pour ne plus avoir ce "3" recopié à 7 endroits différents dans le fichier — un seul
 // endroit à changer si la règle évolue un jour, zéro risque d'en oublier un.
 function isAssiduiteAcquise(monthStats){
-  return monthStats.retardsCumules < 3;
+  // r226 — un seul départ sans justificatif (coché par l'admin dans Admin → Journée) suffit à la perdre.
+  return monthStats.retardsCumules < 3 && !(monthStats.departsSansJustif > 0);
 }
 
 // ⚡ Mémoïsé : monthlyStats rejoue evaluateDay sur TOUS les jours ouvrés du mois, et il est appelé 3 à 5
@@ -8654,7 +8693,11 @@ async function monthlyStatsCompute(agent, year, month){
   }));
   const pauseThreshold = config.pauseOverrunRetardThresholdMin != null ? config.pauseOverrunRetardThresholdMin : 10;
   let retards = 0, pauseOver = 0, pauseOverSmall = 0, pauseOverBig = 0, absences = 0, phoneYoutube = 0, objectif = 0, justifiedAbsenceCount = 0;
+  let departsSansJustif = 0, departsAnticipes = 0;
   dayData.forEach(({dateStr, log, infr, board})=>{
+    // 🏃 r226 — départ avant l'heure (info) et départ SANS justificatif coché par l'admin (prime perdue).
+    if(isWorkingDay(dateStr) && !log.justifiedAbsence && departAnticipe(log.events, dateStr)) departsAnticipes++;
+    if(isWorkingDay(dateStr) && log.departSansJustif) departsSansJustif++;
     // Retard/pause/absence ne sont évalués QUE les jours ouvrés (règlement : horaires lundi-vendredi,
     // jours fériés français exclus) — un week-end ou un jour férié sans pointage n'est jamais une
     // absence, personne n'y est censé travailler. Les infractions manuelles (téléphone, objectif), elles,
@@ -8721,7 +8764,8 @@ async function monthlyStatsCompute(agent, year, month){
   const total = retards + pauseOver + absences + phoneYoutube + objectif;
   return {
     agent, retards, pauseOver, pauseOverSmall, pauseOverBig, pauseOverSmallGroups, pauseOverEquivalentRetards,
-    absences, justifiedAbsenceCount, retardsCumules, phoneYoutube, objectif, total
+    absences, justifiedAbsenceCount, retardsCumules, phoneYoutube, objectif, total,
+    departsSansJustif, departsAnticipes
   };
 }
 
@@ -10669,8 +10713,10 @@ if(!justifiedAbsence && isWorkingDay(dateStr)){
   // 🚨 Jamais pointé "Départ (fin de journée)" alors que la journée est terminée — a pointé une arrivée,
   // mais pas de départ.
   const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr) && isWorkingDay(dateStr);
-  const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut;
-  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, attachmentData, attachmentType, attachmentName, isAbsent, missingBreakReturn, missingClockOut, problem, hasAnyEvent, isIndep: false };
+  const departAvant = !justifiedAbsence ? departAnticipe(log.events, dateStr) : null;
+  const departSansJustif = !!log.departSansJustif;
+  const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut || !!departAvant || departSansJustif;
+  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, attachmentData, attachmentType, attachmentName, isAbsent, missingBreakReturn, missingClockOut, departAvant, departSansJustif, problem, hasAnyEvent, isIndep: false };
 }
 
 // Clic sur une ligne d'alerte (ou sur la notification correspondante) → ouvre directement Admin →
@@ -10747,6 +10793,8 @@ async function renderTodaySnapshot(){
       if(r.anyBreakOver) tags += `<span class="tag warn">Pause dépassée</span>`;
       if(r.missingBreakReturn) tags += `<span class="tag late">🍽️ Pas de retour de pause pointé</span>`;
       if(r.missingClockOut) tags += `<span class="tag late">🚪 Pas de départ (fin de journée) pointé</span>`;
+      if(r.departAvant) tags += `<span class="tag late">🏃 Parti à ${r.departAvant.depart} au lieu de ${r.departAvant.finPrevue} — ${r.departAvant.minutes} min non payées</span>`;
+      if(r.departSansJustif) tags += `<span class="tag late">🚪 Sans justificatif — prime d'assiduité perdue</span>`;
       if(r.lockoutMin>0) tags += `<span class="tag warn">🔒 Inactivité ${r.lockoutMin}min (info)</span>`;
       if(r.stillLockedOut) tags += `<span class="tag late">🔒 Toujours délogué — pas reconnecté</span>`;
       r.infr.forEach(i=>{
@@ -11288,6 +11336,12 @@ async function computeTotalPayrollMonth(year, month){
       // payableNow : contrats reellement PAYES a ce jour (apres retours), souvent inferieur a `realized`.
       // C'est lui qui decide des primes ; `realized` est ce que l'agent voit dans son Arena.
       payableNow: (res && res.breakdown) ? res.breakdown.payable : 0,
+      // r226 — rétractations et retours du mois, pour les voir directement dans la Projection.
+      validated: (res && res.breakdown) ? (res.breakdown.validated || 0) : 0,
+      retractions: (res && res.breakdown) ? (res.breakdown.retractions || 0) : 0,
+      returnsCount: (res && res.breakdown) ? (res.breakdown.returnsCount || 0) : 0,
+      returnsDivisor: (res && res.breakdown) ? (res.breakdown.returnsDivisor || 1) : 1,
+      returnsDeducted: (res && res.breakdown) ? (res.breakdown.returnsDeducted || 0) : 0,
       pace: info.pace, remainingWorkingDays: info.remainingWorkingDays,
       extraContracts: isCurrentMonth ? info.extra : 0,
       onTrack: mini > 0 ? (info.realized >= mini || projectedContracts >= mini) : null,
@@ -12013,6 +12067,12 @@ async function renderProjectionPanel(){
         <div><b>${d.agent}</b>${etiquette}${sup} <span style="color:var(--muted); font-size:12.5px;"${ecartPaye}>— ${contrats}${rythme}</span></div>
         ${badge}
       </div>
+      ${(d.retractions > 0 || d.returnsCount > 0) ? `<div style="margin-top:7px; font-size:12.5px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap;">
+        <span>📝 ${d.validated} signé${d.validated>1?'s':''}</span>
+        <span style="color:${d.retractions>0?'var(--red)':'var(--muted)'};">❌ ${d.retractions} rétracté${d.retractions>1?'s':''}</span>
+        <span style="color:${d.returnsCount>0?'var(--amber)':'var(--muted)'};" title="Les retours ne retirent pas 1 contrat chacun : ils sont divisés (÷${d.returnsDivisor}) selon le règlement.">↩️ ${d.returnsCount} retour${d.returnsCount>1?'s':''}${d.returnsCount>0 ? ` (÷${d.returnsDivisor} → −${d.returnsDeducted})` : ''}</span>
+        <span>💰 <b style="color:var(--text);">${d.payableNow}</b> payé${d.payableNow>1?'s':''}</span>
+      </div>` : ''}
       <div style="margin-top:7px; font-size:12.5px; color:var(--muted);">
         Salaire : <b style="color:var(--green);">${fdh(d.total)} DH</b> avec le nombre de contrats actuel${proj.available && delta > 0
           ? ` → <b style="color:var(--amber);">${fdh(d.projTotal)} DH</b> au rythme actuel <b style="color:var(--amber);">(+${fdh(delta)})</b>`
@@ -12037,6 +12097,14 @@ async function renderProjectionPanel(){
   const indeps     = details.filter(d=> d.isIndep).sort((a,b)=> b.projectedContracts - a.projectedContracts);
 
   const ecartTotal = Math.round((proj.grandTotal || payroll.grandTotal) - payroll.grandTotal);
+  const totRetract = details.reduce((s,d)=>s+(d.retractions||0), 0);
+  const totRetours = details.reduce((s,d)=>s+(d.returnsCount||0), 0);
+  const totRetoursDeduits = details.reduce((s,d)=>s+(d.returnsDeducted||0), 0);
+  const blocRetours = `<div style="margin-top:8px; font-size:12.5px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap;">
+      <span>Ce mois, toute l'équipe :</span>
+      <span style="color:${totRetract>0?'var(--red)':'var(--muted)'};">❌ <b>${totRetract}</b> rétractation${totRetract>1?'s':''}</span>
+      <span style="color:${totRetours>0?'var(--amber)':'var(--muted)'};">↩️ <b>${totRetours}</b> retour${totRetours>1?'s':''} (→ −${totRetoursDeduits} contrat${totRetoursDeduits>1?'s':''} payé${totRetoursDeduits>1?'s':''})</span>
+    </div>`;
   const entete = `<div style="padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid var(--border);">
       ${proj.available
         ? `<div style="font-size:12.5px; color:var(--muted); line-height:1.7;">
@@ -12044,6 +12112,7 @@ async function renderProjectionPanel(){
              Masse salariale : <b style="color:var(--green);">${fdh(payroll.grandTotal)} DH</b> avec les contrats actuels → <b style="color:var(--amber);">${fdh(proj.grandTotal)} DH</b> au rythme actuel <b style="color:var(--amber);">(+${fdh(ecartTotal)} DH)</b>
            </div>`
         : `<div style="font-size:12.5px; color:var(--muted); line-height:1.7;">Aucune projection possible : il faut être sur le mois en cours, qu'il reste des jours ouvrés, et qu'au moins un agent ait déjà produit.<br>Masse salariale du mois : <b style="color:var(--green);">${fdh(payroll.grandTotal)} DH</b>.</div>`}
+      ${blocRetours}
     </div>`;
 
   el.innerHTML = entete
@@ -12467,7 +12536,7 @@ async function renderAllMonthly(){
       <td>${isIndep ? '—' : s.absences}</td>
       <td>${isIndep ? '—' : (s.justifiedAbsenceCount>0 ? `<span title="Hors compteur, ne compte pas dans le cumul assiduité">${s.justifiedAbsenceCount}</span>` : '0')}</td>
       <td>${isIndep ? '—' : `<b>${s.retardsCumules}</b>`}</td>
-      <td>${isIndep ? '—' : `<span class="tag ${s.retardsCumules>=3?'late':'ok'}">${s.retardsCumules>=3?'Perdue':'Acquise'}</span>`}</td>
+      <td>${isIndep ? '—' : `<span class="tag ${!isAssiduiteAcquise(s)?'late':'ok'}" ${s.departsSansJustif>0?`title="Départ sans justificatif (${s.departsSansJustif}×)"`:''}>${!isAssiduiteAcquise(s)?'Perdue':'Acquise'}</span>`}</td>
       <td>${isIndep ? '—' : s.phoneYoutube}</td>
       <td>${isIndep ? '—' : s.objectif}</td>
       <td>
@@ -12534,7 +12603,7 @@ function exportOverviewCSV(){
   _lastMonthlyStats.forEach(s=>{
     const isIndep = isIndependant(s.agent);
     const tier = tierForCount(s.retardsCumules);
-    csv += `${csvSafe(s.agent)};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.absences};${isIndep?'':s.justifiedAbsenceCount};${isIndep?'':s.retardsCumules};${isIndep?'':(s.retardsCumules>=3?'Perdue':'Acquise')};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
+    csv += `${csvSafe(s.agent)};${isIndep?'Oui':'Non'};${isIndep?'':s.retards};${isIndep?'':s.pauseOver};${isIndep?'':s.absences};${isIndep?'':s.justifiedAbsenceCount};${isIndep?'':s.retardsCumules};${isIndep?'':(!isAssiduiteAcquise(s)?'Perdue':'Acquise')};${isIndep?'':s.phoneYoutube};${isIndep?'':s.objectif};${isIndep?'':s.total};${isIndep?'Indépendant':(s.total===0?'Conforme':tier.label)}\n`;
   });
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -17344,6 +17413,17 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
           if(ev.freeBreakOverMin > 0) detailParts.push(`${ev.freeBreakOverMin}min pause libre`);
           items.push({ date: dateStr, label: `Dépassement pause ${totalBreakOverMin}min (${detailParts.join(' + ')}) — retenue au prorata`, amount: Math.round(amt) });
         }
+        // 🏃 r226 — Départ avant l'heure : le reste de la journée n'est pas payé (au prorata de la minute).
+        // Pas appliqué quand le retard >10 min a déjà fait tomber toute la journée (branche au-dessus).
+        const depA = departAnticipe(log.events, dateStr);
+        if(depA){
+          const amt = depA.minutes * minuteRate;
+          total += amt;
+          items.push({ date: dateStr, label: `Départ avant l'heure (${depA.depart} au lieu de ${depA.finPrevue}) — ${depA.minutes}min non payées${log.departSansJustif ? ' · sans justificatif : prime d\'assiduité perdue' : ''}`, amount: Math.round(amt) });
+        }
+      }
+      if(log.departSansJustif && !departAnticipe(log.events, dateStr) || (log.departSansJustif && ev.lateMinutes > 10)){
+        items.push({ date: dateStr, label: `Départ sans justificatif — prime d'assiduité perdue`, amount: 0 });
       }
 
       // Inactivité (déconnexion auto) : purement informatif, AUCUNE déduction de salaire — l'admin voit
@@ -20339,7 +20419,10 @@ async function renderSupervisionReel(){
     ]);
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const monthRes = await estimateSalaryMonthReal(agent, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
-    const tier = isIndep ? null : tierForCount(monthStats.retardsCumules);
+    const tier = isIndep ? null
+      : (monthStats.departsSansJustif > 0
+          ? { level: 3, label: "Prime d'assiduité perdue (départ sans justificatif)", cls: 'tier-3' }
+          : tierForCount(monthStats.retardsCumules));
 
     // Statut de pointage du jour — BUG CORRIGÉ : "Repos" s'affichait dès que le jour n'était pas ouvré,
     // MÊME si l'agent avait quand même pointé (test, rattrapage, jour spécial...) — son vrai statut
@@ -20754,7 +20837,7 @@ async function renderSupervisionReel(){
         <td class="lb-pct ${pctCls}">${r.monthObj>0 ? r.pctMonth+'%' : '—'}</td>
         <td>${projHtml}</td>
         <td>${pauseHtml}${pauseMonthNote}</td>
-        <td><span class="tag ${r.retardsCumules>=3?'late':(r.retardsCumules>=1?'warn':'ok')}">${r.tier ? r.tier.label : 'Aucun retard'}</span></td>
+        <td><span class="tag ${(r.retardsCumules>=3 || (r.tier && r.tier.level>=3))?'late':(r.retardsCumules>=1?'warn':'ok')}">${r.tier ? r.tier.label : 'Aucun retard'}</span></td>
         <td>${isMe
               ? `<span class="sup-perso-val"><b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></span><span class="sup-perso-dots">••••• DH</span>`
               : `<b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b>`}</td>
