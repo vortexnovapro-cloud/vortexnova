@@ -350,6 +350,14 @@
   .mega-section-title{ font-size: 23px; font-weight: 900; margin-bottom: 4px; display:flex; align-items:center; gap:10px; letter-spacing:-0.2px; text-shadow:0 1px 0 rgba(0,0,0,0.15); }
   .mega-section-sub{ font-size: 13px; color: var(--muted); margin-bottom: 18px; }
   .section-sub{ font-size:12.5px; color:var(--muted); margin: -8px 0 16px; }
+  /* r227 — Admin allégé : les explications passent derrière une icône ⓘ (survol = lecture, clic = déplier) */
+  #view-admin .aide-cachee{ display:none !important; }
+  .aide-ico{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-left:8px; border-radius:50%; border:1px solid var(--border); background:transparent; font:700 11px/1 Georgia, serif; font-style:italic; color:var(--muted); cursor:pointer; vertical-align:middle; text-transform:none; letter-spacing:0; padding:0; flex-shrink:0; }
+  .aide-ico:hover, .aide-ico.on{ color:var(--accent); border-color:var(--accent); }
+  .aide-chip{ display:inline-flex; align-items:center; gap:6px; margin:2px 0 10px; padding:3px 10px 3px 4px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:11.5px; font-weight:600; cursor:pointer; }
+  .aide-chip .aide-ico{ margin-left:0; border:none; }
+  .aide-chip:hover, .aide-chip.on{ color:var(--accent); border-color:var(--accent); }
+  #aidePopup{ position:fixed; z-index:99999; max-width:min(440px, calc(100vw - 24px)); padding:11px 13px; border-radius:10px; background:var(--panel2); border:1px solid var(--border); box-shadow:0 12px 32px rgba(0,0,0,0.5); font-size:12.5px; line-height:1.6; color:var(--muted); display:none; pointer-events:none; text-align:left; font-weight:400; text-transform:none; letter-spacing:0; }
   .settings-box{ background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 24px; }
   .settings-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 16px; margin-bottom: 18px; }
   .settings-grid label{ margin-bottom:6px; }
@@ -1533,7 +1541,7 @@ async function tryDeviceGateAdmin(){
                  l'admin veut dans 9 cas sur 10. -->
             <div style="padding:14px 16px; border-radius:11px; background:rgba(52,183,116,0.09); border:1px solid rgba(52,183,116,0.4); margin-bottom:12px;">
               <div style="font-weight:800; color:var(--green); font-size:13.5px; margin-bottom:4px;">✅ UNE SEULE IMAGE, ENVOYÉE EN PHOTO NORMALE</div>
-              <div style="font-size:12.5px; color:var(--muted); line-height:1.75; margin-bottom:11px;">
+              <div class="aide-admin" data-aide-titre="Comment l'envoyer" style="font-size:12.5px; color:var(--muted); line-height:1.75; margin-bottom:11px;">
                 Tout le monde dessus, conseils compris. Elle s'affiche <b style="color:var(--text);">directement dans la conversation</b> : rien à ouvrir, rien à cliquer. Tu l'envoies comme une photo ordinaire.<br>
                 <b style="color:var(--red);">⚠️ À faire UNE SEULE FOIS sur ton téléphone :</b> WhatsApp → Réglages → <b style="color:var(--text);">Stockage et données</b> → <b style="color:var(--text);">Qualité d'envoi des médias</b> → <b style="color:var(--text);">HD</b>.<br>
                 Sans ce réglage, WhatsApp divise l'image par deux et elle redevient floue. Avec, elle passe intacte. C'est le seul geste qui compte.
@@ -1543,7 +1551,7 @@ async function tryDeviceGateAdmin(){
             </div>
             <div style="font-size:12px; color:var(--muted); margin-bottom:7px; opacity:0.9;">Ou, si tu tiens à l'envoyer en photo normale — WhatsApp la compressera, donc plusieurs images plus petites :</div>
             <button type="button" id="objSnapExportBtn" onclick="exportObjectifSnapshotImage()" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer en photos (plusieurs images)</button>
-            <div style="margin-top:11px; padding:11px 13px; border-radius:9px; background:rgba(61,139,253,0.07); border:1px solid rgba(61,139,253,0.28); font-size:12px; line-height:1.75; color:var(--muted);">
+            <div class="aide-admin" data-aide-titre="Pourquoi le réglage HD change tout" style="margin-top:11px; padding:11px 13px; border-radius:9px; background:rgba(61,139,253,0.07); border:1px solid rgba(61,139,253,0.28); font-size:12px; line-height:1.75; color:var(--muted);">
               <b style="color:var(--accent);">Pourquoi le réglage HD change tout</b><br>
               En qualité normale, WhatsApp ramène toute photo à environ <b>1600 pixels</b> sur son côté le plus long. En <b>HD</b>, il en laisse passer près du double. C'est exactement la place qui manquait pour afficher tous les agents.<br>
               L'image est aussi mise en page <b>en carré</b> plutôt qu'en bande verticale : comme WhatsApp borne le côté le plus LONG, une image carrée conserve des cartes bien plus grandes qu'une image haute. Le nombre de colonnes est recalculé à chaque export selon le nombre d'agents.<br>
@@ -2888,7 +2896,87 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-09-28-r226';
+const APP_VERSION = '2026-10-01-r229';
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Dans l'Admin uniquement : chaque paragraphe d'explication (.section-sub, .mega-section-sub, et les
+// encadrés d'aide marqués .aide-admin) est masqué et remplacé par une icône ⓘ à côté de son titre
+// (ou à sa place s'il n'a pas de titre juste au-dessus). Survol = on lit, clic = le texte se déplie
+// sur place (pratique au téléphone), re-clic = replié.
+// Jamais touchés : un texte qui contient un bouton, un champ ou un lien (c'est un outil, pas une
+// explication), un texte qui porte un id (le code y écrit une information vivante), les textes très
+// courts, et tout ce qui est à l'intérieur d'un bloc exporté en image/PDF pour WhatsApp.
+const AIDE_EXCLUS = '#objectifSnapshot, #dailyBriefingAdmin, #weeklyBriefingAdmin, #objSnapCardsSup, #dailyBriefingSup';
+function aidePopupEl(){
+  let el = document.getElementById('aidePopup');
+  if(!el){ el = document.createElement('div'); el.id = 'aidePopup'; document.body.appendChild(el); }
+  return el;
+}
+function aideMontrer(ico, cible){
+  if(!cible.classList.contains('aide-cachee')) return;      // déjà déplié : pas de bulle en double
+  const pop = aidePopupEl();
+  pop.innerHTML = cible.innerHTML;
+  pop.style.display = 'block';
+  const r = ico.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let left = Math.min(Math.max(12, r.left - 10), window.innerWidth - w - 12);
+  let top = r.bottom + 8;
+  if(top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+}
+function aideCacher(){ const pop = document.getElementById('aidePopup'); if(pop) pop.style.display = 'none'; }
+function aideTraiter(racine){
+  if(!racine) return;
+  racine.querySelectorAll('.section-sub, .mega-section-sub, .aide-admin').forEach(el=>{
+    if(el.dataset.aideFait) return;
+    el.dataset.aideFait = '1';
+    if(el.id || el.querySelector('[id], button, input, select, textarea, a, label')) return;
+    if(el.closest(AIDE_EXCLUS)) return;
+    if((el.textContent || '').trim().length < 50) return;
+    const titre = el.previousElementSibling;
+    const aTitre = titre && (titre.classList.contains('section-title') || titre.classList.contains('mega-section-title')) && !titre.querySelector('.aide-ico');
+    const ico = document.createElement(aTitre ? 'button' : 'button');
+    ico.type = 'button';
+    let declencheur;
+    if(aTitre){
+      ico.className = 'aide-ico'; ico.textContent = 'i'; ico.title = '';
+      ico.setAttribute('aria-label', 'Explication');
+      titre.appendChild(ico);
+      declencheur = ico;
+    } else {
+      ico.className = 'aide-chip';
+      ico.innerHTML = `<span class="aide-ico">i</span>${escapeHtml(el.dataset.aideTitre || 'Explication')}`;
+      el.parentNode.insertBefore(ico, el);
+      declencheur = ico;
+    }
+    el.classList.add('aide-cachee');
+    declencheur.addEventListener('mouseenter', ()=> aideMontrer(declencheur, el));
+    declencheur.addEventListener('mouseleave', aideCacher);
+    declencheur.addEventListener('click', ev=>{
+      ev.preventDefault(); ev.stopPropagation();
+      aideCacher();
+      const ouvert = el.classList.toggle('aide-cachee') === false;
+      declencheur.classList.toggle('on', ouvert);
+    });
+  });
+}
+(function aideDemarrer(){
+  const go = ()=>{
+    const admin = document.getElementById('view-admin');
+    if(!admin) return;
+    aideTraiter(admin);
+    // Les panneaux de l'Admin se redessinent tout seuls (toutes les 25 s) : on traite au fil de l'eau.
+    let prevu = false;
+    new MutationObserver(()=>{
+      if(prevu) return; prevu = true;
+      requestAnimationFrame(()=>{ prevu = false; aideTraiter(admin); });
+    }).observe(admin, { childList: true, subtree: true });
+    window.addEventListener('scroll', aideCacher, { passive: true });
+  };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+})();
 
 // Compare deux identifiants de version au format "AAAA-MM-JJ-rN" : renvoie un nombre négatif si v1 est
 // PLUS ANCIENNE que v2, positif si v1 est PLUS RÉCENTE, 0 si identiques. Comparaison numérique réelle
@@ -19877,7 +19965,7 @@ async function renderCash(){
     hero.innerHTML = `
       <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ${retoursImportedForMonth ? 'ton salaire NET réel' : 'ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''} · <b>retours clients déjà déduits</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''}${(rt.retractions > 0 ? ` · Rétractations : <b>${rt.retractions}</b>` : '') + (retoursImportedForMonth ? ' · <b>retours clients déduits</b>' : ' · retours clients pas encore importés')}</div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
@@ -19894,7 +19982,7 @@ async function renderCash(){
     hero.innerHTML = `
       <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 ${retoursImportedForMonth ? 'Ton salaire NET réel' : 'Ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''} · <b>retours clients déjà déduits</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''}${(rt.retractions > 0 ? ` · Rétractations : <b>${rt.retractions}</b>` : '') + (retoursImportedForMonth ? ' · <b>retours clients déduits</b>' : ' · retours clients pas encore importés')}</div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div><span>Fixe + prime fixe (prorata ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>
@@ -20132,7 +20220,7 @@ function renderCashRealGrid(){
     </div>
     <div class="cash-period-card" style="border-color:rgba(255,215,0,0.35); background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015));">
       <div class="cp-label">🗓️ Ton salaire du mois, en détail</div>
-      <div class="cp-sub" style="margin-bottom:12px;">${retoursImportedForMonth ? `Depuis le 1er du mois, déjà NET — retours de facturation importés le ${retoursImportedAtLabel} et rétractations déjà déduits.` : `Depuis le 1er du mois — ⏳ ESTIMATION : les retours de facturation de ce mois ne sont pas encore importés par l'admin, ce total peut encore baisser.`} C'est le même total qu'en haut de page, juste expliqué ligne par ligne.</div>
+      <div class="cp-sub" style="margin-bottom:12px;">${retoursImportedForMonth ? `Depuis le 1er du mois — retours de facturation importés le ${retoursImportedAtLabel}.` : `Depuis le 1er du mois — ⏳ ESTIMATION : les retours de facturation de ce mois ne sont pas encore importés par l'admin, ce total peut encore baisser.`} C'est le même total qu'en haut de page, juste expliqué ligne par ligne.</div>
       <div class="cash-breakdown">
         <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:2px 0 4px;">📅 Fixe & primes (hors contrats)</div>
         <div><span>Fixe + prime fixe (${elapsedWorkingDays}/${totalWorkingDaysThisMonth}j travaillés)</span><b>${fixedOnlyToDate.toLocaleString('fr-FR')} DH</b></div>
@@ -23594,6 +23682,18 @@ async function billingAnalyzeReturns(text, monthVal){
     const found = keys.map(k => contractIndex[k]).find(Boolean);
     let agent = found ? found.agent : null;
     let agentSource = agent ? 'contrat retrouvé' : '';
+    // r227 — Un nouveau en essai, pas encore accrédité, signe sous le nom d'un collègue : le fichier
+    // de retours affiche alors ce collègue (salesman), alors que le CRM VortexNova a le bon vendeur.
+    // Le contrat retrouvé par son contract_id fait foi, le salesman du fichier est ignoré — et on le
+    // dit clairement dans l'aperçu pour que la correction soit visible.
+    let vendeurFichier = null;
+    if(found && r.agent){
+      const resolu = billingResolveAgent(r.agent);
+      if(!resolu || billingNormKey(resolu) !== billingNormKey(found.agent)){
+        vendeurFichier = String(r.agent).trim();
+        agentSource = `contrat retrouvé dans VortexNova → ${found.agent} (le fichier indiquait « ${vendeurFichier.slice(0,30)} », corrigé)`;
+      }
+    }
     if(!agent){
       agent = billingResolveAgent(r.agent);
       if(agent) agentSource = 'nom du vendeur';
@@ -23671,7 +23771,7 @@ async function billingAnalyzeReturns(text, monthVal){
     }
 
     items.push({
-      r, keys, kind, agent, agentSource, month, monthSource, confidence, aVerifier,
+      r, keys, kind, agent, agentSource, vendeurFichier, month, monthSource, confidence, aVerifier,
       duplicate: dupInFile ? 'dans ce fichier' : (dupMonth ? `déjà importé (${dupMonth})` : null),
       originMonth: found ? found.month : null,
       skip: !!(dupInFile || dupMonth)
@@ -23813,7 +23913,7 @@ function renderReturnsPreview(){
       <td><select onchange="pendingReturnsImport.items[${i}].agent=this.value" style="min-width:130px;">
         <option value="">— aucun —</option>
         ${allKnownAgents().map(a=>`<option value="${escapeHtml(a)}"${a === x.agent ? ' selected' : ''}>${escapeHtml(a)}${isArchivedAgent(a) ? ' (ancien)' : ''}</option>`).join('')}
-      </select></td>
+      </select>${x.vendeurFichier ? `<div style="font-size:11px; color:var(--amber); margin-top:3px;" title="Le contract_id a été retrouvé dans VortexNova : c'est le vendeur enregistré dans le CRM qui reçoit le retour, pas celui du fichier.">📝 fichier : ${escapeHtml(x.vendeurFichier)} → corrigé</div>` : ''}</td>
       <td>${x.kind === 'retracted'
         ? `<select onchange="pendingReturnsImport.items[${i}].forceMonth=this.value||null;" title="Par défaut : 1 pour 1 sur le mois de signature du contrat, sauf si la paie de ce mois est déjà partie (retard détecté automatiquement) — dans ce cas le CRM bascule tout seul sur le mois en cours. Choisis un mois précis ici pour forcer toi-même sur quel mois de PAIE cette rétractation doit peser." style="min-width:170px;">
              <option value="">🔍 auto (signature, ou retard détecté)</option>
