@@ -2912,7 +2912,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-01-r244';
+const APP_VERSION = '2026-10-01-r245';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -11515,7 +11515,7 @@ async function computeTotalPayrollMonth(year, month){
     // contient ni cette commission ni la prime d'équipe, et les contrats des indés sont exclus du pool
     // de la prime d'équipe depuis le r218.
     const indepCommission = isSupervisor(agent) ? Math.round((indepCommMap[agent] || {}).amount || 0) : 0;
-    const total = (res ? res.total : 0) + supervisorBonus + indepCommission;
+    let total = (res ? res.total : 0) + supervisorBonus + indepCommission;
 
     // ── Le même agent, mais au rythme projeté jusqu'à la fin du mois ──────────────────────────────
     let projTotal = total;
@@ -11544,6 +11544,23 @@ async function computeTotalPayrollMonth(year, month){
     }
     if(projTotal < total) projTotal = total;
 
+    // 🚪 r245 — Même règle que la fiche de paie (billingComputeAgent) : le mois du départ, seul le fixe
+    // au prorata (moins les retenues de pointage) est payé ; primes + commission sont retenues et
+    // versées 2 mois plus tard, moins les retours. La masse salariale et la projection l'affichent.
+    let retenueDepart = null;
+    const termP = getAgentTermination(agent);
+    if(termP && termP.lastDay && termP.lastDay.slice(0, 7) === `${year}-${String(month).padStart(2,'0')}`){
+      const fixeSeul = Math.round(pay.baseSalary || 0);
+      const dedP = (res && res.deductions && res.deductions.total) || 0;
+      const immediat = Math.max(0, Math.min(Math.round(total), fixeSeul - dedP));
+      const retenu = Math.max(0, Math.round(total) - immediat);
+      if(retenu > 0){
+        retenueDepart = { montant: retenu, versementMois: addMonthsToMonthVal(termP.lastDay.slice(0, 7), 2) };
+        total = immediat;
+        projTotal = immediat;
+      }
+    }
+
     const info = projInfo[agent] || { extra:0, pace:0, remainingWorkingDays:0, realized:0 };
     const mini = (pay.isIndep || pay.noObjectif) ? 0 : (pay.objectifMensuel || 0);
     const projectedContracts = info.realized + (isCurrentMonth ? info.extra : 0);
@@ -11564,7 +11581,7 @@ async function computeTotalPayrollMonth(year, month){
       extraContracts: isCurrentMonth ? info.extra : 0,
       onTrack: mini > 0 ? (info.realized >= mini || projectedContracts >= mini) : null,
       total: Math.round(total), projTotal: Math.round(projTotal),
-      supervisorBonus: Math.round(supervisorBonus), indepCommission
+      supervisorBonus: Math.round(supervisorBonus), indepCommission, retenueDepart
     };
   }));
 
@@ -12291,6 +12308,7 @@ async function renderProjectionPanel(){
         <span style="color:${d.returnsCount>0?'var(--amber)':'var(--muted)'};" title="Les retours ne retirent pas 1 contrat chacun : ils sont divisés (÷${d.returnsDivisor}) selon le règlement.">↩️ ${d.returnsCount} retour${d.returnsCount>1?'s':''}${d.returnsCount>0 ? ` (÷${d.returnsDivisor} → −${d.returnsDeducted})` : ''}</span>
         <span>💰 <b style="color:var(--text);">${d.payableNow}</b> payé${d.payableNow>1?'s':''}</span>
       </div>` : ''}
+      ${d.retenueDepart ? `<div style="margin-top:7px; font-size:12.5px; color:var(--amber);">🚪 Parti en cours de mois : seul le fixe au prorata est payé ce mois-ci. <b>${fdh(d.retenueDepart.montant)} DH</b> (primes + commission) retenus, versés en ${escapeHtml(billingMonthLabel(d.retenueDepart.versementMois))} moins ses retours.</div>` : ''}
       <div style="margin-top:7px; font-size:12.5px; color:var(--muted);">
         Salaire : <b style="color:var(--green);">${fdh(d.total)} DH</b> avec le nombre de contrats actuel${proj.available && delta > 0
           ? ` → <b style="color:var(--amber);">${fdh(d.projTotal)} DH</b> au rythme actuel <b style="color:var(--amber);">(+${fdh(delta)})</b>`
