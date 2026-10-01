@@ -2912,7 +2912,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-01-r235';
+const APP_VERSION = '2026-10-01-r238';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -4107,6 +4107,7 @@ async function storageSet(key, value){
     await db.collection('vortexnova').doc(key).set({ value });
     storageForget(key); // la mémo de lecture ne doit jamais servir une valeur qu'on vient de remplacer
     try{ resumeMoisInvalider(key); }catch(e){}
+    try{ figeSurveiller(key); }catch(e){}
     return { key, value };
   }catch(e){
     // BUG CORRIGÉ : avant, une écriture échouée (coupure réseau, permission...) était avalée en
@@ -4126,6 +4127,7 @@ async function storageDelete(key){
     await db.collection('vortexnova').doc(key).delete();
     storageForget(key);
     try{ resumeMoisInvalider(key); }catch(e){}
+    try{ figeSurveiller(key); }catch(e){}
     return { key, deleted: true };
   }catch(e){
     console.error('storageDelete error:', e);
@@ -13581,6 +13583,20 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
           ], seed+'|rangMoisEx'), SLATE, SLATE_BG));
         }
       }
+    } else if(rankValue === 0){
+      // r238 — Compteur du mois encore à 0 (typiquement le 1er jour du mois, où tout le monde est à 0) :
+      // « 1er avec 0 contrat, tout le monde te court après » ou « 3e avec 0 contrat » n'avaient aucun
+      // sens. On parle du départ, pas d'un classement qui n'existe pas encore.
+      lines.push(mk('🏁', (daysElapsed <= 1 && !(rankInfo.prevGap > 0))
+        ? seedPick([
+            `Nouveau mois : tout le monde repart de zéro. Le premier contrat du mois peut être le tien — vas-y dès les premiers appels.`,
+            `Compteurs remis à zéro pour toute l'équipe. Le classement du mois se construit dès aujourd'hui : prends de l'avance tout de suite.`,
+            `Nouveau mois, page blanche. Ceux qui finissent en tête sont souvent ceux qui signent le premier jour.`
+          ], seed+'|rangDepart')
+        : seedPick([
+            `Ton compteur du mois est encore à 0. Le premier contrat est le plus important : il lance tout le reste.`,
+            `Pas encore de contrat ce mois-ci. Concentre-toi sur un seul objectif aujourd'hui : ouvrir ton compteur.`
+          ], seed+'|rangZero'), SLATE, SLATE_BG));
     } else if(rankInfo.rank === 1){
       // --- Journée en cours, 1er du mois : la course est ouverte, on félicite et on entretient ---
       lines.push(mk('🏆', seedPick([
@@ -13598,16 +13614,31 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         `${ctr(rankValue)} ${periodLabel} et personne devant. C'est ça, la vie de rêve dont on parle — continue à la construire.`
       ], seed+'|rang'), GOLD, GOLD_BG));
     } else if(rankInfo.prevGap > 0){
-      // --- Journée en cours, quelqu'un devant : là, « va le chercher » a tout son sens ---
+      // --- Journée en cours, quelqu'un devant ---
+      // r238 — Le ton dépend de l'écart réel : « tu talonnes » à 6 contrats d'écart, c'était faux.
       const rivalObj = genderPick(rankInfo.prevAgent, 'le', 'la');
-      lines.push(mk('🥈', seedPick([
-        `Tu es ${rankTxt} avec ${ctr(rankValue)} ${periodLabel} — encore ${gapTxt} et tu doubles ${rival} !`,
-        `${rival} est juste devant toi (${gapTxt} d'écart). Va ${rivalObj} chercher, c'est largement jouable !`,
-        `${rankTxt} de l'équipe avec ${ctr(rankValue)} ${periodLabel}. Il te manque ${gapTxt} pour passer devant ${rival} — fais-le !`,
-        `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon coup et le classement change !`,
-        `${gapTxt} seulement entre toi et ${rival}. C'est rien, un client de plus et la place est à toi.`,
-        `${rankTxt}, à ${gapTxt} de ${rival}. Le classement n'attend qu'un déclic — que ce soit le tien aujourd'hui.`
-      ], seed+'|rang'), SLATE, SLATE_BG));
+      const gap = rankInfo.prevGap;
+      let pool;
+      if(gap <= 2){
+        pool = [
+          `Tu es ${rankTxt} avec ${ctr(rankValue)} ${periodLabel} — encore ${gapTxt} et tu doubles ${rival} !`,
+          `${rival} est juste devant toi (${gapTxt} d'écart). Va ${rivalObj} chercher, c'est largement jouable !`,
+          `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon coup et le classement change !`,
+          `${gapTxt} seulement entre toi et ${rival}. Un client de plus et la place est à toi.`
+        ];
+      } else if(gap <= 6 || remainingDays >= gap){
+        pool = [
+          `${rankTxt} avec ${ctr(rankValue)} ${periodLabel}, ${gapTxt} derrière ${rival}. À portée : un contrat de plus que ${rival} chaque jour et tu passes devant.`,
+          `${gapTxt} d'écart avec ${rival}. Ça ne se rattrape pas en un appel, mais en quelques bonnes journées, oui.`,
+          `Tu es ${rankTxt} (${ctr(rankValue)}). Pour passer ${rival}, il te faut ${gapTxt} de plus — vise une journée au-dessus de ta moyenne.`
+        ];
+      } else {
+        pool = [
+          `${rankTxt} avec ${ctr(rankValue)} ${periodLabel}. ${rival} a pris ${gapTxt} d'avance : la place se jouera sur la durée, ton objectif à toi passe en premier.`,
+          `${gapTxt} te séparent de ${rival}. Ne cours pas après le classement aujourd'hui : fais ta meilleure journée, l'écart se réduira tout seul.`
+        ];
+      }
+      lines.push(mk('🥈', seedPick(pool, seed+'|rang'), SLATE, SLATE_BG));
     } else {
       lines.push(mk('🥈', seedPick([
         `Tu es ${rankTxt} de l'équipe avec ${ctr(rankValue)} ${periodLabel}. À toi de creuser l'écart.`,
@@ -13665,42 +13696,40 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
           `Tu tiens un bon rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour, il en faut ${fmtNum(neededPace)}). Aucun souci à te faire.`,
           `Objectif minimum en bonne voie : ${fmtNum(currentPace)} contrat/jour en moyenne, bien au-dessus de ce qu'il faut.`
         ], seed+'|mini'), SAGE, SAGE_BG));
-      } else if(neededPace - currentPace <= 1){
-        lines.push(mk('📌', seedPick([
-          `Il faut ${fmtNum(neededPace)} contrat/jour pour ton objectif minimum — tu es à ${fmtNum(currentPace)}/jour. Un petit effort et c'est réglé.`,
-          `Tu es tout proche du rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
-          `Presque le bon rythme pour ton objectif minimum. Un ou deux contrats de plus et c'est bouclé.`
-        ], seed+'|mini'), AMBER, AMBER_BG));
-      } else if(neededPace - currentPace <= 2.5){
-        // ⚠️ DÉBUT DE MOIS — un rythme calculé sur 1 ou 2 jours n'a aucune valeur statistique (0 ou 1
-        // contrat le jour 1 fait mécaniquement chuter "currentPace" à 0, même pour un excellent agent).
-        // Avant, ça déclenchait "il faut réagir aujourd'hui" ou pire "danger réel, ton salaire est en
-        // jeu" dès le 1er ou le 2e jour ouvré du mois — un signal d'alarme totalement prématuré, avant
-        // même que l'agent ait eu le temps de démontrer quoi que ce soit. On attend au moins 3 jours
-        // ouvrés écoulés avant d'employer un ton alarmant ; avant ça, le rappel reste factuel et calme.
+      } else {
+        // r238 — La sévérité dépend du RAPPORT entre le rythme tenu et le rythme nécessaire (pas d'une
+        // différence fixe), et les derniers jours du mois on donne les chiffres exacts. Avant, un agent à
+        // 33/40 à 3 jours de la fin lisait « un ou deux contrats de plus et c'est bouclé » alors qu'il en
+        // manquait 7 ; un autre à 8/40 au 15 lisait « ton objectif s'éloigne un peu ».
+        const ratio = neededPace > 0 ? currentPace / neededPace : 1;
+        const jrs = `${remainingDays} jour${remainingDays>1?'s':''} ouvré${remainingDays>1?'s':''}`;
         if(daysElapsed <= 2){
           lines.push(mk('📌', seedPick([
-            `Le mois vient de commencer (jour ${daysElapsed} sur les jours ouvrés) — rythme à tenir pour ton objectif minimum : ${fmtNum(neededPace)} contrat/jour. Encore largement le temps.`,
+            `Le mois vient de commencer — rythme à tenir pour ton objectif minimum : ${fmtNum(neededPace)} contrat/jour. Encore largement le temps.`,
             `Trop tôt pour s'inquiéter, le mois démarre à peine. Vise ${fmtNum(neededPace)} contrat/jour en moyenne pour ton objectif minimum et tout ira bien.`
           ], seed+'|miniDebut'), SLATE, SLATE_BG));
-        } else {
+        } else if(remainingDays <= 5){
+          const txt = `Il te manque ${ctr(miniGap)} pour ton objectif minimum (${monthlyRealized}/${mini}), en ${jrs} : ${fmtNum(neededPace)}/jour. Tu tournes à ${fmtNum(currentPace)}/jour.`;
+          if(ratio >= 0.8) lines.push(mk('📌', `${txt} C'est jouable, mais chaque journée compte maintenant.`, AMBER, AMBER_BG));
+          else if(ratio >= 0.5) lines.push(mk('📌', `${txt} Il faut nettement accélérer — c'est ton salaire qui est en jeu.`, TERRACOTTA, TERRACOTTA_BG));
+          else lines.push(mk('📌', `${txt} Ça devient très difficile : donne tout sur ces derniers jours, chaque contrat compte pour ta paie.`, CRITICAL, CRITICAL_BG, true));
+        } else if(ratio >= 0.8){
+          lines.push(mk('📌', seedPick([
+            `Il faut ${fmtNum(neededPace)} contrat/jour pour ton objectif minimum — tu es à ${fmtNum(currentPace)}/jour. Un petit effort et c'est réglé.`,
+            `Tu es tout proche du rythme pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} requis). Encore un petit coup de collier !`,
+            `Il te manque ${ctr(miniGap)} sur ${jrs}. À peine plus que ton rythme actuel : c'est jouable.`
+          ], seed+'|mini'), AMBER, AMBER_BG));
+        } else if(ratio >= 0.5){
           lines.push(mk('📌', seedPick([
             `Le rythme est en dessous de ce qu'il faut pour ton objectif minimum (${fmtNum(currentPace)}/jour contre ${fmtNum(neededPace)} nécessaires). Il faut réagir aujourd'hui, pas la semaine prochaine.`,
-            `Attention : au rythme actuel, ton objectif minimum n'est pas encore assuré. Il en faut ${fmtNum(neededPace)}/jour — accélère.`,
-            `Ton objectif minimum s'éloigne un peu. Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
+            `Attention : au rythme actuel, ton objectif minimum n'est pas assuré. Il te manque ${ctr(miniGap)} sur ${jrs}, soit ${fmtNum(neededPace)}/jour — accélère.`,
+            `Ton objectif minimum s'éloigne (${monthlyRealized}/${mini}). Rien d'irrattrapable, mais il faut sérieusement pousser dès maintenant.`
           ], seed+'|mini'), TERRACOTTA, TERRACOTTA_BG));
-        }
-      } else {
-        if(daysElapsed <= 2){
-          lines.push(mk('📌', seedPick([
-            `Le mois vient tout juste de commencer — pas d'alerte à ce stade. Objectif minimum : ${fmtNum(neededPace)} contrat/jour en moyenne sur le mois, largement jouable avec le temps restant.`,
-            `Jour ${daysElapsed} du mois, un seul chiffre encore peu représentatif. Garde en tête ${fmtNum(neededPace)} contrat/jour pour ton objectif minimum et prends ton rythme.`
-          ], seed+'|miniDebut'), SLATE, SLATE_BG));
         } else {
           lines.push(mk('📌', seedPick([
-            `Ton objectif minimum est en danger réel. Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Bouge-toi maintenant.`,
-            `Alerte objectif minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
-            `C'est du sérieux : à ce rythme, ton objectif minimum du mois ne sera pas atteint. Il faut un vrai sursaut, maintenant, pas dans trois jours.`
+            `Ton objectif minimum est en danger réel (${monthlyRealized}/${mini}). Au rythme actuel tu ne l'atteins pas — c'est ton salaire qui est en jeu. Il faut ${fmtNum(neededPace)} contrat/jour à partir d'aujourd'hui.`,
+            `Alerte objectif minimum : l'écart se creuse (${fmtNum(neededPace)}/jour nécessaires, tu es à ${fmtNum(currentPace)}). Si ça continue comme ça, tu perds de l'argent ce mois-ci. Reprends-toi en main dès aujourd'hui.`,
+            `C'est du sérieux : à ce rythme, ton objectif minimum du mois ne sera pas atteint. Il te manque ${ctr(miniGap)} sur ${jrs} — il faut un vrai sursaut, maintenant.`
           ], seed+'|mini'), CRITICAL, CRITICAL_BG, true));
         }
       }
@@ -14242,7 +14271,7 @@ function historyStripHtml(historyFull){
       <div style="font-size:9.5px; color:${numColor}; font-weight:${(v===0||missed)?'700':'500'};">${v}</div>
     </div>`;
   }).join('');
-  return `<div style="margin-top:10px;"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours <span style="opacity:0.7;">(vert = objectif atteint, orange = objectif manqué, rouge = 0 contrat${aDesJoursNeutres ? ', gris = jour non travaillé' : ''})</span></div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
+  return `<div style="margin-top:10px;" title="Vert = objectif atteint · orange = objectif manqué · rouge = 0 contrat${aDesJoursNeutres ? ' · gris = jour non travaillé' : ''}"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours</div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
 }
 
 // Série "sans finir à 0" — en partant d'aujourd'hui et en remontant jour ouvré par jour tant que le
@@ -24232,7 +24261,15 @@ function renderReturnsPreview(){
   el.innerHTML = html;
 }
 
+// r237 — pendant l'import des retours, c'est l'encadré de fin d'import qui propose de (re)figer :
+// pas de deuxième alerte par-dessus.
+let _importRetoursEnCours = false;
 async function confirmReturnsImport(){
+  _importRetoursEnCours = true;
+  try{ return await confirmReturnsImportInterne(); }
+  finally{ _importRetoursEnCours = false; if(typeof _figeAlerte !== 'undefined') _figeAlerte.mois.clear(); }
+}
+async function confirmReturnsImportInterne(){
   if(!pendingReturnsImport){ return; }
   const items = pendingReturnsImport.items.filter(x => !x.skip);
   const sansAgent = items.filter(x => !x.agent).length;
@@ -25805,32 +25842,111 @@ async function downloadAllBillingAgentsPDF(){
 // ------------------------------------------------------------
 // 🔒 HISTORIQUE DES SALAIRES — figer un mois payé
 // ------------------------------------------------------------
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠️ MODIFICATION D'UN MOIS DÉJÀ FIGÉ (r237)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Un import, une rétractation, une prime, une correction de pointage… qui tombe dans un mois déjà figé :
+// la donnée est bien enregistrée, mais les montants figés (ce qui a été payé) ne bougent pas. On le
+// signale à l'admin et on lui propose de refiger le mois avec les nouveaux chiffres — ou de garder
+// les montants figés. Rien n'est jamais refigé sans son clic.
+const _figeAlerte = { mois: new Set(), timer: null };
+async function figeSurveiller(key){
+  if(!key || typeof key !== 'string') return;
+  if(!/^(billingProd:|billingReturns:|retract:|manualPrimes:|log:|infr:)/.test(key)) return;
+  if(_importRetoursEnCours) return;
+  const pan = document.getElementById('adminPanel');
+  if(!pan || pan.style.display !== 'block') return;          // uniquement côté Admin
+  const m = key.match(/(\d{4})-(\d{2})/);
+  if(!m) return;
+  const mv = `${m[1]}-${m[2]}`;
+  const slip = await getBillingPayslips(mv);
+  if(!slip || !slip.entries || !slip.entries.length) return;
+  _figeAlerte.mois.add(mv);
+  clearTimeout(_figeAlerte.timer);
+  _figeAlerte.timer = setTimeout(afficherAlerteFige, 1500);   // une seule alerte pour toute une série d'écritures
+}
+function afficherAlerteFige(){
+  const liste = [..._figeAlerte.mois].sort();
+  _figeAlerte.mois.clear();
+  if(!liste.length) return;
+  let box = document.getElementById('figeAlerteBox');
+  if(box) box.remove();
+  box = document.createElement('div');
+  box.id = 'figeAlerteBox';
+  box.style.cssText = 'position:fixed; right:18px; bottom:18px; z-index:99998; max-width:min(440px, calc(100vw - 36px)); padding:16px 18px; border-radius:14px; background:var(--panel2); border:2px solid #e5a83d; box-shadow:0 14px 40px rgba(0,0,0,0.55); font-size:13px; line-height:1.55; color:var(--text);';
+  const noms = liste.map(m => billingMonthLabel(m)).join(', ');
+  box.innerHTML = `
+    <div style="font-weight:900; color:#e5a83d; font-size:14.5px; margin-bottom:6px;">⚠️ Mois déjà figé : ${escapeHtml(noms)}</div>
+    <div style="color:var(--muted);">Ce que tu viens d'enregistrer touche ${liste.length > 1 ? 'des mois déjà figés' : 'un mois déjà figé'}. C'est bien enregistré, mais les <b style="color:var(--text);">montants figés</b> (ce que tu as payé, ce que voient tes agents) <b style="color:var(--text);">ne changent pas</b> tant que tu ne refiges pas.</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+      ${liste.map(m => `<button onclick="document.getElementById('figeAlerteBox')?.remove(); freezeBillingMonth('${m}')" style="padding:9px 14px; border-radius:9px; border:none; background:var(--accent); color:#fff; font-weight:800; font-size:12.5px; cursor:pointer;">🔒 Refiger ${escapeHtml(billingMonthLabel(m))}</button>`).join('')}
+      <button onclick="document.getElementById('figeAlerteBox')?.remove()" style="padding:9px 14px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">Garder les montants figés</button>
+    </div>`;
+  document.body.appendChild(box);
+}
+
 async function freezeBillingMonth(monthValForce){
   const monthVal = monthValForce || document.getElementById('billingSheetMonth')?.value;
-  if(!monthVal) return;
+  if(!monthVal){ alert('Choisis d\'abord le mois à figer.'); return; }
   if(!confirm(`Figer les salaires nets de ${billingMonthLabel(monthVal)} ?\n\nLes montants seront archivés tels qu'ils sont calculés maintenant et ne bougeront plus, même si un réglage change ensuite. Tu peux refiger le mois plus tard pour écraser l'archive.`)) return;
-  const agents = config.agents || [];
-  const entries = [];
-  for(const a of agents){
-    const d = await billingComputeAgent(a, monthVal);
-    entries.push({
-      agent: a,
-      contracts: d.counterRealized,
-      importedValid: d.importedValid,
-      retracted: d.retractCounter,
-      returns: d.returns.count,
-      returnDivisor: d.returns.divisor,
-      returnAmount: d.returns.amount,
-      brut: d.salary.brut,
-      deductions: d.salary.deductions.total,
-      net: d.salary.total
-    });
+  // r236 — Avant : les agents étaient calculés un par un, sans rien afficher, et la moindre erreur
+  // arrêtait tout en silence — on cliquait OK et « il ne se passait rien ». Maintenant : le bouton
+  // montre l'avancement, les agents sont calculés en parallèle, et toute erreur est dite clairement.
+  const btn = document.getElementById('freezeMonthBtn');
+  const libelleBtn = btn ? btn.textContent : '';
+  const setBtn = (txt, off)=>{ if(btn){ btn.textContent = txt; btn.disabled = !!off; btn.style.opacity = off ? '0.7' : ''; } };
+  try{
+    const agents = config.agents || [];
+    let faits = 0;
+    setBtn(`⏳ Calcul… 0/${agents.length}`, true);
+    const echecs = [];
+    const entries = (await Promise.all(agents.map(async a=>{
+      try{
+        const d = await billingComputeAgent(a, monthVal);
+        return {
+          agent: a,
+          contracts: d.counterRealized,
+          importedValid: d.importedValid,
+          retracted: d.retractCounter,
+          returns: d.returns.count,
+          returnDivisor: d.returns.divisor,
+          returnAmount: d.returns.amount,
+          brut: d.salary.brut,
+          deductions: d.salary.deductions.total,
+          net: d.salary.total
+        };
+      }catch(e){
+        console.error('figer', a, e);
+        echecs.push(a);
+        return null;
+      }finally{
+        faits++; setBtn(`⏳ Calcul… ${faits}/${agents.length}`, true);
+      }
+    }))).filter(Boolean);
+    if(echecs.length){
+      setBtn(libelleBtn, false);
+      alert(`⚠️ Rien n'a été figé : le calcul a échoué pour ${echecs.join(', ')}.\n\nVérifie ta connexion et réessaie. Si ça recommence, envoie-moi une capture.`);
+      return;
+    }
+    setBtn('⏳ Enregistrement…', true);
+    const payload = { month: monthVal, frozenAt: new Date().toISOString(), entries };
+    await billingSave(billingPayslipKey(monthVal), payload);
+    const verif = await storageGet(billingPayslipKey(monthVal), { fresh: true });
+    if(!verif || !verif.value){
+      setBtn(libelleBtn, false);
+      alert("⚠️ L'enregistrement n'a pas abouti (connexion ?). Rien n'a été figé — réessaie.");
+      return;
+    }
+    logAudit('Admin', 'Salaires du mois figés', `${monthVal} — ${entries.length} agents — total ${entries.reduce((s,e)=>s+e.net,0)} DH`);
+    setBtn(libelleBtn, false);
+    await renderBillingHistory();
+    const total = entries.reduce((s,e)=>s+e.net,0);
+    alert(`✅ ${billingMonthLabel(monthVal)} figé : ${entries.length} agents, ${total.toLocaleString('fr-FR')} DH net au total.\n\nTes agents voient maintenant « 🔒 Définitif » sur ce mois.`);
+  }catch(e){
+    console.error('freezeBillingMonth', e);
+    setBtn(libelleBtn, false);
+    alert(`⚠️ Le mois n'a pas pu être figé : ${e && e.message ? e.message : e}\n\nRien n'a été enregistré. Réessaie, et si ça recommence, envoie-moi une capture.`);
   }
-  const payload = { month: monthVal, frozenAt: new Date().toISOString(), entries };
-  await billingSave(billingPayslipKey(monthVal), payload);
-  logAudit('Admin', 'Salaires du mois figés', `${monthVal} — ${entries.length} agents — total ${entries.reduce((s,e)=>s+e.net,0)} DH`);
-  renderBillingHistory();
-  alert(`✅ ${entries.length} salaires archivés pour ${billingMonthLabel(monthVal)}.`);
 }
 
 // r235 — Le mois à figer se choisit juste à côté du bouton (par défaut : le mois dernier), et le
