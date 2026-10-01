@@ -2912,7 +2912,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-01-r241';
+const APP_VERSION = '2026-10-01-r244';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -5428,7 +5428,7 @@ async function terminateAgent(name){
   const val = window.prompt(
     `Dernier jour travaillé de ${name} (JJ/MM/AAAA ou AAAA-MM-JJ, ex: 14/08/2026).\n\n` +
     `À partir du lendemain : plus aucun retard/absence compté, plus attendu au pointage, sorti des classements et de l'Arena.\n` +
-    `Son salaire du mois de départ est automatiquement réduit au prorata des jours ouvrés réellement travaillés (comme une arrivée en cours de mois, mais à l'envers) — c'est son solde de tout compte, à retrouver dans son tableau habituel (Admin → Facturation & Paie) et à payer avec la paye normale du mois.\n\n` +
+    `Son salaire du mois de départ est automatiquement réduit au prorata des jours ouvrés réellement travaillés (comme une arrivée en cours de mois, mais à l'envers), et il PERD sa prime d'assiduité de ce mois. Ce mois-là, il ne touche que son FIXE au prorata : primes et commission sont retenues, puis versées 2 mois plus tard moins ses retours (tu peux l'archiver tout de suite : sa paie et son solde restent calculés et figés avec les autres) — c'est son solde de tout compte, à retrouver dans son tableau habituel (Admin → Facturation & Paie) et à payer avec la paye normale du mois.\n\n` +
     `⚠️ Ceci calcule uniquement le salaire/primes/commissions au prorata — pas d'indemnité de licenciement, de préavis ni de congés payés (à ajouter toi-même en prime manuelle si dus). Vérifie le solde légal complet avec ton comptable.\n\n` +
     `Laisse vide pour annuler un licenciement déjà enregistré.`,
     current ? current.split('-').reverse().join('/') : '');
@@ -5869,8 +5869,23 @@ function isArchivedAgent(name){ return archivedAgents().includes(name); }
 // (imports, retours, recherche, statistiques), JAMAIS pour boucler sur les agents à payer.
 function allKnownAgents(){ return (config.agents || []).concat(archivedAgents()); }
 
+// r244 — Un agent parti peut être ARCHIVÉ tout de suite (il disparaît des conseils, objectifs,
+// classements, alertes…) : sa paie du mois de départ et son solde de départ (2 mois après) restent
+// calculés et figés avec les autres. Ces deux mois-là, il est ajouté automatiquement à la paie.
+function agentsArchivesAPayer(monthVal){
+  return archivedAgents().filter(a=>{
+    const t = getAgentTermination(a);
+    if(!t || !t.lastDay) return false;
+    const md = t.lastDay.slice(0, 7);
+    return md === monthVal || addMonthsToMonthVal(md, 2) === monthVal;
+  });
+}
 async function archiveAgent(name){
-  if(!confirm(`Archiver ${name} ?\n\nIl disparaît du pointage, de l'Arena, des classements, des briefings et des calculs de paie du mois en cours.\n\nTout son passé est conservé : ses contrats restent dans les tableaux des mois écoulés, ses statistiques restent consultables, et un retour tardif sur l'un de ses contrats sera toujours reconnu.\n\nRéversible à tout moment.`)) return;
+  const termA = getAgentTermination(name);
+  const noteSolde = (termA && termA.lastDay)
+    ? `\n\n💰 Sa paie de ${billingMonthLabel(termA.lastDay.slice(0,7))} et son solde de départ (${billingMonthLabel(addMonthsToMonthVal(termA.lastDay.slice(0,7), 2))}) restent calculés et seront inclus quand tu figeras ces mois.`
+    : '';
+  if(!confirm(`Archiver ${name} ?\n\nIl disparaît du pointage, de l'Arena, des classements, des briefings et des calculs de paie du mois en cours.\n\nTout son passé est conservé : ses contrats restent dans les tableaux des mois écoulés, ses statistiques restent consultables, et un retour tardif sur l'un de ses contrats sera toujours reconnu.\n\nRéversible à tout moment.${noteSolde}`)) return;
   config.archivedAgents = archivedAgents().concat([name]).filter((v,i,a)=> a.indexOf(v)===i);
   config.agents = (config.agents || []).filter(a => a !== name);
   await saveConfigSilent();
@@ -17195,6 +17210,15 @@ function getAgentPay(agent, year, month){
       // cours de mois. Le tarif PAR CONTRAT (perContract, primeExtraContrat) n'est jamais proratisé :
       // ce sont des montants à l'unité, pas des enveloppes mensuelles.
       pay.primeObjectifJour = Math.round(pay.primeObjectifJour * factor);
+      // 🚪 r242 — DÉPART EN COURS DE MOIS (décision du patron) : la prime d'assiduité est PERDUE en
+      // entier, pas proratisée. Tout le reste (fixe, prime fixe, objectif et sa prime) reste au prorata
+      // des jours travaillés. Ne concerne que le mois du départ, et seulement s'il n'a pas travaillé
+      // le mois jusqu'au bout (facteur < 1).
+      const termPay = getAgentTermination(agent);
+      if(termPay && termPay.lastDay && termPay.lastDay.slice(0, 7) === `${year}-${String(month).padStart(2,'0')}` && pay.primeAssiduite > 0){
+        pay.primeAssiduitePerdueDepart = pay.primeAssiduite;
+        pay.primeAssiduite = 0;
+      }
     }
   }
   // 🔍 DÉCOUVERTE (voir getDecouverteState) — s'applique APRÈS le prorata embauche/licenciement
@@ -20330,7 +20354,9 @@ async function renderCashPastMonth(){
 
   // Assiduité : on dit POURQUOI elle est perdue
   let assidNote = '';
-  if(!isIndep && assidReglee > 0 && !assidAcquise){
+  if(!isIndep && pay.primeAssiduitePerdueDepart){
+    assidNote = 'Perdue — départ en cours de mois';
+  } else if(!isIndep && assidReglee > 0 && !assidAcquise){
     assidNote = stats.departsSansJustif > 0 ? 'Perdue — départ sans justificatif'
       : `Perdue — ${stats.retardsCumules} retards/absences dans le mois (perdue dès 3)`;
   }
@@ -20338,6 +20364,7 @@ async function renderCashPastMonth(){
   const salaireLignes = [
     fixe ? ligne('Salaire fixe', `${fmt(fixe)} DH`) : '',
     primeFixe ? ligne('Prime fixe', `${fmt(primeFixe)} DH`) : '',
+    (!isIndep && pay.primeAssiduitePerdueDepart) ? ligne("❌ Prime d'assiduité", '0 DH', 'miss', assidNote) :
     (!isIndep && assidReglee) ? (assidAcquise
         ? ligne("✅ Prime d'assiduité", `+${fmt(assid)} DH`, 'hit')
         : ligne("❌ Prime d'assiduité", '0 DH', 'miss', assidNote)) : '',
@@ -20353,7 +20380,9 @@ async function renderCashPastMonth(){
     }),
     supBonus ? ligne(`📊 Prime de supervision`, `+${fmt(supBonus)} DH`, 'hit') : '',
     indepComm ? ligne(`🤝 Commission sur les indépendants`, `+${fmt(indepComm)} DH`, 'hit') : '',
-    `<div style="border-top:1px solid var(--border); margin-top:4px; padding-top:6px;"><span style="font-weight:800;">Salaire brut</span><b>${fmt(d.salary.brut)} DH</b></div>`
+    d.salary.soldeDepart ? ligne(`🚪 Solde de départ (${escapeHtml(billingMonthLabel(d.salary.soldeDepart.moisDepart))})`, `+${fmt(d.salary.soldeDepart.solde)} DH`, 'hit', `${fmt(d.salary.soldeDepart.retenu)} DH retenus − ${d.salary.soldeDepart.nbRetours} retour${d.salary.soldeDepart.nbRetours>1?'s':''} × ${fmt(d.salary.soldeDepart.cout)} DH`) : '',
+    `<div style="border-top:1px solid var(--border); margin-top:4px; padding-top:6px;"><span style="font-weight:800;">Salaire brut</span><b>${fmt(d.salary.brut)} DH</b></div>`,
+    d.salary.retenueDepart ? ligne(`🔒 Retenu jusqu'en ${escapeHtml(billingMonthLabel(d.salary.retenueDepart.versementMois))}`, `-${fmt(d.salary.retenueDepart.montant)} DH`, 'miss', 'Primes et commission : versées 2 mois après ton départ, moins les retours arrivés entre-temps') : ''
   ].join('');
 
   // Retenues : jour par jour, sans aucun nom de client
@@ -25327,6 +25356,46 @@ async function billingComputeAgent(agent, monthVal){
     salary = { ...salary, brut: salary.brut + indepCommissionAmt, total: salary.total + indepCommissionAmt, indepCommission: indepCommissionAmt, indepCommissionDetail };
   }
 
+  // 🚪 r243 — DÉPART : RETENUE DE GARANTIE (décision du patron)
+  // Le mois du départ, l'agent ne touche QUE son salaire fixe au prorata (moins ses retenues de
+  // pointage). Tout le reste — primes, commission, supervision — est retenu : ça sert à couvrir les
+  // retours qui arriveront après son départ. Deux mois plus tard, on lui verse ce qui a été retenu,
+  // moins ses retours arrivés entre-temps (coût d'un retour réglé sur sa fiche, 1 pour 1, sans diviseur).
+  const termDep = getAgentTermination(agent);
+  const moisDepart = termDep && termDep.lastDay ? termDep.lastDay.slice(0, 7) : null;
+  if(moisDepart && moisDepart === monthVal){
+    // Versé tout de suite : le fixe au prorata moins les retenues de pointage (jamais négatif — si les
+    // retenues dépassent le fixe, le surplus est pris sur ce qui est retenu). Le reste du net est retenu.
+    const fixeSeul = Math.round(displayPay.baseSalary || 0);
+    const ded = (salary.deductions && salary.deductions.total) || 0;
+    const netTotal = Math.round(salary.total);
+    const immediat = Math.max(0, Math.min(netTotal, fixeSeul - ded));
+    const retenue = Math.max(0, netTotal - immediat);
+    if(retenue > 0){
+      salary = { ...salary, total: immediat,
+        retenueDepart: { montant: retenue, versementMois: addMonthsToMonthVal(moisDepart, 2) } };
+    }
+  }
+  if(moisDepart && monthVal === addMonthsToMonthVal(moisDepart, 2)){
+    try{
+      const d0 = await billingComputeAgent(agent, moisDepart);
+      const retenu = (d0.salary.retenueDepart && d0.salary.retenueDepart.montant) || 0;
+      if(retenu > 0){
+        const mois = [addMonthsToMonthVal(moisDepart, 1), monthVal];
+        let nbRetours = 0;
+        for(const mv of mois){
+          const data = await getBillingReturns(mv);
+          nbRetours += (data.rows || []).filter(r => r.agent === agent && !r.dismissed).length;
+        }
+        const cout = getAgentPay(agent).returnCost || 0;
+        const deduit = nbRetours * cout;
+        const solde = Math.max(0, retenu - deduit);
+        salary = { ...salary, brut: salary.brut + solde, total: salary.total + solde,
+          soldeDepart: { moisDepart, retenu, nbRetours, cout, deduit, solde } };
+      }
+    }catch(e){ console.warn('solde de départ', agent, e); }
+  }
+
   return {
     agent, monthVal, year, month, pay: displayPay, stats, assiduiteAcquise, paySource,
     importedTotal: rows.length,
@@ -25560,7 +25629,11 @@ function billingAgentSheetHTML(d, forImage){
 
   line('Fixe mensuel', d.pay.baseSalary, { plus: true });
   if(d.pay.primeFixeMensuelle) line('Prime fixe mensuelle', d.pay.primeFixeMensuelle, { plus: true });
+  if(d.pay.primeAssiduitePerdueDepart){
+    line(`Prime d'assiduité — perdue (départ en cours de mois, ${d.pay.primeAssiduitePerdueDepart} DH au prorata)`, 0, { color: 'var(--muted)' });
+  } else {
   line(`Prime d'assiduité${d.assiduiteAcquise ? '' : ' — perdue (3e retard/absence)'}`, d.assiduiteAcquise ? d.pay.primeAssiduite : 0, { plus: true, color: d.assiduiteAcquise ? 'var(--green)' : 'var(--muted)' });
+  }
   const st = d.salary.status || {};
   const supBonus = d.salary.supervisorBonus || 0;
   const indepComm = d.salary.indepCommission || 0;
@@ -25633,6 +25706,13 @@ function billingAgentSheetHTML(d, forImage){
     line(`Prime d'assiduité perdue (${d.stats.retardsCumules} retards/absences)`, 0, { color: 'var(--muted)' });
   }
   line('TOTAL RETENUES', -ded.total, { bold: true });
+  if(d.salary.retenueDepart){
+    line(`🔒 Retenue de départ : primes + commission, versées en ${escapeHtml(billingMonthLabel(d.salary.retenueDepart.versementMois))} après déduction des retours`, -d.salary.retenueDepart.montant, { color: 'var(--amber)' });
+  }
+  if(d.salary.soldeDepart){
+    const sd = d.salary.soldeDepart;
+    line(`🚪 Solde de départ (${escapeHtml(billingMonthLabel(sd.moisDepart))}) : ${sd.retenu} DH retenus − ${sd.nbRetours} retour${sd.nbRetours>1?'s':''} × ${sd.cout} DH`, sd.solde, { plus: true, color: 'var(--green)' });
+  }
   line('SALAIRE NET RÉEL À PAYER', d.salary.total, { bold: true, top: true, color: d.salary.total >= 0 ? 'var(--green)' : 'var(--red)' });
   html += '</tbody></table>';
 
@@ -25969,7 +26049,7 @@ async function freezeBillingMonth(monthValForce){
   const libelleBtn = btn ? btn.textContent : '';
   const setBtn = (txt, off)=>{ if(btn){ btn.textContent = txt; btn.disabled = !!off; btn.style.opacity = off ? '0.7' : ''; } };
   try{
-    const agents = config.agents || [];
+    const agents = (config.agents || []).concat(agentsArchivesAPayer(monthVal).filter(a => !(config.agents || []).includes(a)));
     let faits = 0;
     setBtn(`⏳ Calcul… 0/${agents.length}`, true);
     const echecs = [];
