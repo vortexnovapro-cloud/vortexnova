@@ -1583,11 +1583,11 @@ async function tryDeviceGateAdmin(){
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
               <div>
                 <label style="margin-bottom:4px;">📅 Période (gains & dépenses) — depuis</label>
-                <input type="date" id="expenseDateFrom" onchange="renderBossRevenue(true)">
+                <input type="date" id="expenseDateFrom" onchange="onExpensePeriodChange()">
               </div>
               <div>
                 <label style="margin-bottom:4px;">jusqu'à</label>
-                <input type="date" id="expenseDateTo" onchange="renderBossRevenue(true)">
+                <input type="date" id="expenseDateTo" onchange="onExpensePeriodChange()">
               </div>
               <button type="button" onclick="setExpenseDateToday()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12px; cursor:pointer;">📅 Aujourd'hui</button>
               <button type="button" onclick="resetExpenseDateRange()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--muted); font-weight:700; font-size:12px; cursor:pointer;">↺ Depuis le 1er du mois à aujourd'hui</button>
@@ -1595,11 +1595,11 @@ async function tryDeviceGateAdmin(){
           </div>
           <div id="bossRevenuePanel" class="money-sensitive"></div>
 
-          <div class="section-title">💼 Masse salariale prévisionnelle du mois</div>
+          <div class="section-title">💼 Masse salariale prévisionnelle du mois <span class="periode-mois-label" style="color:var(--muted); font-weight:600; font-size:.8em;"></span></div>
           <div class="section-sub">Deux montants côte à côte, tous les deux pour la <b>paie de fin de mois</b>. <b style="color:var(--green);">✅ Avec les contrats actuels</b> = ce que tu paieras si plus aucun contrat ne rentre d'ici la fin du mois. Le fixe du mois entier y est déjà compté, pas seulement les jours déjà passés : c'est un plancher, il ne peut que monter. <b style="color:var(--amber);">🔮 Au rythme actuel</b> = le même calcul, mais en prolongeant le rythme de chaque agent jusqu'à la fin du mois — une estimation, qui n'engage rien. Le détail de ce que contient chacun est dépliable sous les cartes. ⚠️ Aucun des deux ne répond à « combien je dois si je m'arrête <b>aujourd'hui</b> » : ça, c'est 💸 Dépenses temps réel plus haut, où le fixe est compté au prorata des jours écoulés.</div>
           <div id="payrollSummaryPanel" class="money-sensitive"></div>
 
-          <div class="section-title">🧾 Bilan net du mois</div>
+          <div class="section-title">🧾 Bilan net du mois <span class="periode-mois-label" style="color:var(--muted); font-weight:600; font-size:.8em;"></span></div>
           <div class="section-sub">Ton chiffre d'affaires du mois, moins les charges fixes réglées dans Réglages, moins la masse salariale prévisionnelle.</div>
           <div id="netBalancePanel" class="money-sensitive"></div>
         </div>
@@ -2912,7 +2912,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-01-r238';
+const APP_VERSION = '2026-10-01-r241';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -11109,7 +11109,45 @@ function setExpenseDateToday(){
   const toEl = document.getElementById('expenseDateTo');
   if(fromEl) fromEl.value = todayStr();
   if(toEl) toEl.value = todayStr();
+  onExpensePeriodChange();
+}
+// r239 — UNE seule période pour toute la Vue d'ensemble. Changer les dates de « Mon chiffre
+// d'affaires » change aussi le mois analysé partout ailleurs (masse salariale, bilan net, projection,
+// conformité, alertes du mois…) : c'est le mois de la date de FIN. Et inversement : changer le
+// « Mois analysé » plus bas recale la période sur ce mois (du 1er à aujourd'hui, ou au dernier jour).
+function onExpensePeriodChange(){
   renderBossRevenue(true);
+  const toEl = document.getElementById('expenseDateTo');
+  const fromEl = document.getElementById('expenseDateFrom');
+  const ref = (toEl && toEl.value) || (fromEl && fromEl.value);
+  const ms = document.getElementById('monthSelect');
+  if(ref && ms){
+    const mv = ref.slice(0, 7);
+    if(ms.value !== mv){
+      ms.value = mv;
+      ms.dispatchEvent(new Event('change', { bubbles: true }));   // relance tous les panneaux du mois
+    }
+  }
+  majLibellesMoisPeriode();
+}
+function syncPeriodeDepuisMois(){
+  const ms = document.getElementById('monthSelect');
+  const fromEl = document.getElementById('expenseDateFrom');
+  const toEl = document.getElementById('expenseDateTo');
+  if(!ms || !ms.value || !fromEl || !toEl) return false;
+  const mv = ms.value;
+  const refMois = (toEl.value || fromEl.value || '').slice(0, 7);
+  if(refMois === mv) return false;                       // déjà sur ce mois : on ne touche à rien
+  const [y, m] = mv.split('-').map(Number);
+  const dernier = `${mv}-${String(new Date(y, m, 0).getDate()).padStart(2,'0')}`;
+  fromEl.value = `${mv}-01`;
+  toEl.value = todayStr() < dernier && todayStr() >= `${mv}-01` ? todayStr() : dernier;
+  return true;
+}
+function majLibellesMoisPeriode(){
+  const ms = document.getElementById('monthSelect');
+  const txt = ms && ms.value ? `— ${billingMonthLabel(ms.value)}` : '';
+  document.querySelectorAll('.periode-mois-label').forEach(el=>{ el.textContent = txt; });
 }
 function resetExpenseDateRange(){
   const now = nowMA();
@@ -11118,7 +11156,7 @@ function resetExpenseDateRange(){
   const toEl = document.getElementById('expenseDateTo');
   if(fromEl) fromEl.value = firstOfMonth;
   if(toEl) toEl.value = todayStr();
-  renderBossRevenue(true);
+  onExpensePeriodChange();
 }
 function initExpenseDateDefaults(){
   const fromEl = document.getElementById('expenseDateFrom');
@@ -12631,6 +12669,7 @@ async function renderInactiveAgentsPanel(){
 
 async function renderAllMonthly(){
   const monthVal = document.getElementById('monthSelect').value;
+  try{ syncPeriodeDepuisMois(); majLibellesMoisPeriode(); }catch(e){}
   const kpiRow = document.getElementById('kpiRow');
   const overviewContainer = document.getElementById('overviewContainer');
   const escaladeContainer = document.getElementById('escaladeContainer');
@@ -23239,6 +23278,17 @@ function billingFindAgentInRow(raw){
 // ton fichier de retours par le hachage (6a760fa117371). Aucun des deux n'a l'identifiant de l'autre.
 // En indexant et en cherchant sur les DEUX, un retour retrouve son contrat quel que soit celui que le
 // fichier porte — sans que tu aies à ajouter une colonne où que ce soit.
+// r241 — Clé pour savoir si deux lignes sont LE MÊME contrat. La référence (le code unique du
+// fournisseur, ex. 6a760fa117371) fait foi : deux contrats avec des références différentes sont deux
+// contrats différents, même si l'agent a tapé le même numéro de contrat pour les deux (cas réel : le
+// second était écarté comme « doublon » et l'agent perdait un contrat). Le numéro ne sert que quand
+// la ligne n'a pas de référence.
+function billingDedupKeys(row){
+  const ref = String(row && row.reference != null ? row.reference : '').trim().toLowerCase();
+  if(ref) return ['ref:' + ref];
+  const num = String(row && row.numContrat != null ? row.numContrat : '').trim().toLowerCase();
+  return num ? ['num:' + num] : [];
+}
 function billingRowKeys(row){
   const keys = [];
   [row.numContrat, row.reference].forEach(v=>{
@@ -23535,7 +23585,7 @@ async function importBillingProd(text, monthVal){
     // au CRM, invisible mais stable, qui permet de la retrouver quoi qu'il arrive.
     r._rid = `r${Date.now().toString(36)}${(ridCounter++).toString(36)}`;
 
-    const rowKeys = billingRowKeys(r);
+    const rowKeys = billingDedupKeys(r);
     if(rowKeys.length && rowKeys.some(k => keysInFile.has(k))){
       duplicatesInFile.push(`${r.numContrat || rowKeys[0]} — ${r.nom || '?'}`);
       return;
@@ -23581,14 +23631,14 @@ async function importBillingProd(text, monthVal){
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
       const st = await getBillingProd(mv);
-      (st.rows || []).forEach(r => billingRowKeys(r).forEach(k => { existingByKey[k] = mv; }));
+      (st.rows || []).forEach(r => billingDedupKeys(r).forEach(k => { existingByKey[k] = mv; }));
     }
   }
   const moved = [];
   const removeFrom = {};
   for(const mv of Object.keys(rowsByMonth)){
     rowsByMonth[mv].forEach(r=>{
-      billingRowKeys(r).forEach(k=>{
+      billingDedupKeys(r).forEach(k=>{
         const was = existingByKey[k];
         if(was && was !== mv){
           (removeFrom[was] = removeFrom[was] || new Set()).add(k);
@@ -23600,7 +23650,7 @@ async function importBillingProd(text, monthVal){
   for(const mv of Object.keys(removeFrom)){
     const st = await getBillingProd(mv);
     const before = (st.rows || []).length;
-    st.rows = (st.rows || []).filter(r => !billingRowKeys(r).some(k => removeFrom[mv].has(k)));
+    st.rows = (st.rows || []).filter(r => !billingDedupKeys(r).some(k => removeFrom[mv].has(k)));
     if(st.rows.length !== before) await billingSave(billingProdKey(mv), st);
   }
   for(const mv of Object.keys(rowsByMonth)){
@@ -23609,16 +23659,16 @@ async function importBillingProd(text, monthVal){
     const retractedKeys = new Set();
     const seen = new Set();
     store.rows.forEach(r=>{
-      billingRowKeys(r).forEach(k=>{ seen.add(k); if(r.retracted) retractedKeys.add(k); });
+      billingDedupKeys(r).forEach(k=>{ seen.add(k); if(r.retracted) retractedKeys.add(k); });
     });
     const kept = [];
     rowsByMonth[mv].forEach(r=>{
-      const keys = billingRowKeys(r);
+      const keys = billingDedupKeys(r);
       r.retracted = keys.some(k => retractedKeys.has(k));
       if(keys.length && keys.some(k => seen.has(k))){
         // Déjà présent (reçu de Pabbly ou import précédent) : on remplace la ligne existante par la
         // nouvelle, plutôt que d'ajouter un doublon — le fichier corrigé fait foi.
-        const idx = store.rows.findIndex(x => billingRowKeys(x).some(k => keys.includes(k)));
+        const idx = store.rows.findIndex(x => billingDedupKeys(x).some(k => keys.includes(k)));
         if(idx >= 0){
           // 🐛 BUG CORRIGÉ — la ligne existante était remplacée EN ENTIER par celle du fichier. Or le
           // fichier ne contient que les données brutes du contrat ; il ignore tout ce que TU as décidé
@@ -23954,7 +24004,9 @@ function setReturnsFilter(f){ returnsPreviewFilter = f; renderReturnsPreview(); 
 async function billingAnalyzeReturns(text, monthVal){
   const parsed = billingParseCSV(text);
   if(!parsed.rows.length) return null;
-  const contractIndex = await billingBuildContractIndex();
+  const contractIndex = await billingBuildContractIndex(true);
+  const periodeFrom = document.getElementById('billingRetFrom')?.value || null;
+  const periodeTo = document.getElementById('billingRetTo')?.value || null;
 
   // Ordre des dates déterminé sur le FICHIER ENTIER avant toute lecture (voir detectDateOrder).
   // Les deux colonnes sont analysées ensemble : elles viennent du même export, elles ont forcément
@@ -24055,7 +24107,19 @@ async function billingAnalyzeReturns(text, monthVal){
       // qu'à VÉRIFIER la cohérence quand le contrat est retrouvé, jamais à décider du mois lui-même.
       month = monthVal;
       monthSource = 'mois choisi à l\'import';
-      if(found && addMonthsToMonthVal(found.month, offset) !== monthVal) monthMismatch = true;
+      // r240 — Le contrôle tient compte de ton découpage du 21 au 20 : un contrat signé le 25 juin
+      // appartient à la production de JUILLET (période 21/06 → 20/07), pas à celle de juin. Si la
+      // « Période couverte » est remplie, on vérifie simplement que la signature tombe dedans.
+      if(found){
+        const dSign = found.date ? (parseContractDate(found.date) || (/^\d{4}-\d{2}-\d{2}$/.test(found.date) ? found.date : null)) : null;
+        if(dSign && periodeFrom && periodeTo){
+          monthMismatch = dSign < periodeFrom || dSign > periodeTo;
+        } else {
+          const moisProd = (dSign && Number(dSign.slice(8, 10)) >= 21) ? addMonthsToMonthVal(dSign.slice(0, 7), 1) : (dSign ? dSign.slice(0, 7) : found.month);
+          monthMismatch = addMonthsToMonthVal(moisProd, offset) !== monthVal;
+        }
+        found.dateSign = dSign;
+      }
     }
 
     // La confiance sur l'AGENT ne dépend que d'une chose : le contrat d'origine a-t-il été retrouvé
@@ -24072,13 +24136,22 @@ async function billingAnalyzeReturns(text, monthVal){
     const aVerifier = [];
     if(!agent){
       aVerifier.push("Aucun agent identifié" + (r.agent ? ` pour « ${String(r.agent).slice(0,26)} »` : ' (colonne vendeur vide)') + " → choisis-le dans la liste, ou laisse vide pour trancher plus tard.");
-    } else if(agentSource !== 'contrat retrouvé'){
-      aVerifier.push(`Agent déduit du nom écrit dans le fichier, pas du contrat : celui-ci n'est pas encore dans le CRM. → importe la production du mois où il a été signé, l'agent sera alors certain.`);
+    } else if(!found){
+      // r241 — message détaillé : ce qu'on a cherché, ce qu'on a trouvé, et quoi faire.
+      const idCherche = r.reference || r.numContrat || '';
+      const dateLue = isoCreated ? isoCreated.split('-').reverse().join('/') : null;
+      aVerifier.push(`Contrat introuvable dans ta production VortexNova${idCherche ? ` (identifiant cherché : ${String(idCherche).slice(0,24)})` : ''}${r.nom ? `, client « ${String(r.nom).slice(0,30)} »` : ''}${dateLue ? `, signé le ${dateLue} d'après le fichier` : ''}. L'agent a donc été pris dans la colonne vendeur du fichier (« ${String(r.agent || '—').slice(0,26)} ») : vérifie que c'est le bon. Causes possibles : production de ce mois pas encore importée, ou numéro de contrat tapé en double par l'agent (deux contrats sous le même numéro). → cherche l'identifiant dans « Trouver un contrat ».`);
     }
     if(kind !== 'retracted'){
       if(found && monthMismatch){
-        const expected = addMonthsToMonthVal(found.month, offset);
-        aVerifier.push(`Signé en ${billingMonthLabel(found.month)} : avec un décalage de ${offset} mois, ce contrat tomberait plutôt sur la paie de ${billingMonthLabel(expected)} que sur ${billingMonthLabel(monthVal)} (le mois choisi à l'import). Vérifie que c'est bien voulu, ou corrige le mois de paie choisi en haut du formulaire d'import.`);
+        const fr = d => d ? d.split('-').reverse().join('/') : '';
+        if(found.dateSign && periodeFrom && periodeTo){
+          aVerifier.push(`Signé le ${fr(found.dateSign)}, en dehors de la période couverte par ce fichier (${fr(periodeFrom)} → ${fr(periodeTo)}). Vérifie que ce contrat a bien sa place ici, ou écarte la ligne.`);
+        } else {
+          const moisProd = (found.dateSign && Number(found.dateSign.slice(8, 10)) >= 21) ? addMonthsToMonthVal(found.dateSign.slice(0, 7), 1) : (found.dateSign ? found.dateSign.slice(0, 7) : found.month);
+          const expected = addMonthsToMonthVal(moisProd, offset);
+          aVerifier.push(`Production de ${billingMonthLabel(moisProd)}${found.dateSign ? ` (signé le ${fr(found.dateSign)})` : ''} : avec un décalage de ${offset} mois, ce contrat tomberait plutôt sur la paie de ${billingMonthLabel(expected)} que sur ${billingMonthLabel(monthVal)} (le mois choisi à l'import). Vérifie que c'est bien voulu, ou corrige le mois de paie choisi en haut du formulaire d'import.`);
+        }
       } else if(!found && isoCreated){
         aVerifier.push(`Contrat non retrouvé dans ta production : la date lue dans le fichier suggère une signature en ${billingMonthLabel(isoCreated.slice(0,7))}. Importe la production de ce mois pour confirmer que ${billingMonthLabel(monthVal)} est bien le bon mois de paie.`);
       } else if(!found){
@@ -24697,7 +24770,7 @@ async function billingBuildContractIndex(force){
       // Indexé sur le numéro ET sur la référence : le fichier de retours ne porte que l'un des deux
       // (chez toi, le hachage de la colonne Référence), on doit pouvoir retrouver le contrat par
       // n'importe lequel.
-      const entry = { agent: r.agent, nom: r.nom, produit: r.produit, month: mv };
+      const entry = { agent: r.agent, nom: r.nom, produit: r.produit, month: mv, date: r.date || '' };
       billingRowKeys(r).forEach(k => { if(!idx[k]) idx[k] = entry; });
     });
   });
@@ -26568,12 +26641,12 @@ async function syncBackofficeInbox(opts){
         const store = await getBillingProd(monthVal);
         store.rows = store.rows || [];
         const seen = new Set();
-        store.rows.forEach(r => billingRowKeys(r).forEach(k => seen.add(k)));
+        store.rows.forEach(r => billingDedupKeys(r).forEach(k => seen.add(k)));
         let importedCount = 0;
         let duplicateCount = 0;
         const monthTouchedDates = new Set();
         byMonth[monthVal].forEach(row=>{
-          const keys = billingRowKeys(row);
+          const keys = billingDedupKeys(row);
           // Sans identifiant exploitable, on ne peut pas dédoublonner de façon sûre : on ajoute quand
           // même (mieux vaut un doublon visible dans le tableau qu'un contrat perdu), le tableau de
           // l'agent le rendra évident.
