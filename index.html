@@ -2224,6 +2224,8 @@ async function tryDeviceGateAdmin(){
             <button onclick="searchContractGlobal()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Chercher</button>
           </div>
           <div id="globalSearchResults" style="margin-top:12px;"></div>
+          <button type="button" onclick="chercherContratsMalDates()" title="Retrouve les contrats rangés à une date impossible (ex : 15/09/206 au lieu de 2026) — invisibles dans la paie tant qu'ils ne sont pas corrigés." style="margin-top:10px; padding:8px 14px; border-radius:8px; border:1px solid var(--amber); background:rgba(229,168,61,0.1); color:var(--amber); font-weight:700; font-size:12.5px; cursor:pointer;">🧹 Chercher les contrats mal datés</button>
+          <div id="contratsMalDatesPanel" style="margin-top:10px;"></div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(52,183,116,0.45);">
@@ -2318,6 +2320,7 @@ async function tryDeviceGateAdmin(){
           <textarea id="billingRetPaste" rows="4" placeholder="Agent&#9;Numéro de contrat&#9;Nom&#9;Produit&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
           <button onclick="analyzeReturnsFromPaste()" title="Importe les retours collés ci-dessus et les impute au mois de paie choisi. Chaque retour est rattaché à son agent via le numéro ou la référence du contrat d'origine." style="margin-top:10px; padding:10px 18px;border-radius:8px;border:1px solid var(--red);background:rgba(229,90,90,0.18);color:var(--red);font-weight:700;cursor:pointer;">🔍 Analyser le fichier</button>
           <div id="billingRetReport" style="margin-top:14px;"></div>
+          <div id="retoursRapportsPanel"></div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
@@ -2912,7 +2915,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-01-r245';
+const APP_VERSION = '2026-10-02-r249';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -11501,7 +11504,10 @@ async function computeTotalPayrollMonth(year, month){
   // Une ligne par agent, renvoyee telle quelle dans `details` : c'est ce que lit la Projection fin de
   // mois pour afficher le salaire acquis et projete de chacun. Un seul calcul de paie alimente donc le
   // total ET le detail par agent - les deux ecrans ne peuvent pas se contredire.
-  const details = await Promise.all(config.agents.map(async agent=>{
+  // r246 — Un agent parti puis archivé reste dans la masse salariale de son mois de départ et du mois
+  // de son solde de départ (2 mois après) : c'est de l'argent réellement versé ces mois-là.
+  const agentsPaie = (config.agents || []).concat(agentsArchivesAPayer(`${year}-${String(month).padStart(2,'0')}`).filter(x => !(config.agents || []).includes(x)));
+  const details = await Promise.all(agentsPaie.map(async agent=>{
     const pay = getAgentPay(agent, year, month);
     const monthStats = await monthlyStats(agent, year, month);
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
@@ -11548,8 +11554,10 @@ async function computeTotalPayrollMonth(year, month){
     // au prorata (moins les retenues de pointage) est payé ; primes + commission sont retenues et
     // versées 2 mois plus tard, moins les retours. La masse salariale et la projection l'affichent.
     let retenueDepart = null;
+    let departLe = null;
     const termP = getAgentTermination(agent);
     if(termP && termP.lastDay && termP.lastDay.slice(0, 7) === `${year}-${String(month).padStart(2,'0')}`){
+      departLe = termP.lastDay;
       const fixeSeul = Math.round(pay.baseSalary || 0);
       const dedP = (res && res.deductions && res.deductions.total) || 0;
       const immediat = Math.max(0, Math.min(Math.round(total), fixeSeul - dedP));
@@ -11559,6 +11567,13 @@ async function computeTotalPayrollMonth(year, month){
         total = immediat;
         projTotal = immediat;
       }
+    }
+    let soldeDepart = null;
+    if(termP && termP.lastDay && addMonthsToMonthVal(termP.lastDay.slice(0, 7), 2) === `${year}-${String(month).padStart(2,'0')}`){
+      try{
+        const dd = await billingComputeAgent(agent, `${year}-${String(month).padStart(2,'0')}`);
+        if(dd.salary.soldeDepart){ soldeDepart = dd.salary.soldeDepart; total += soldeDepart.solde; projTotal += soldeDepart.solde; }
+      }catch(e){ console.warn('solde de départ (masse salariale)', agent, e); }
     }
 
     const info = projInfo[agent] || { extra:0, pace:0, remainingWorkingDays:0, realized:0 };
@@ -11581,7 +11596,7 @@ async function computeTotalPayrollMonth(year, month){
       extraContracts: isCurrentMonth ? info.extra : 0,
       onTrack: mini > 0 ? (info.realized >= mini || projectedContracts >= mini) : null,
       total: Math.round(total), projTotal: Math.round(projTotal),
-      supervisorBonus: Math.round(supervisorBonus), indepCommission, retenueDepart
+      supervisorBonus: Math.round(supervisorBonus), indepCommission, retenueDepart, soldeDepart, departLe
     };
   }));
 
@@ -12308,7 +12323,9 @@ async function renderProjectionPanel(){
         <span style="color:${d.returnsCount>0?'var(--amber)':'var(--muted)'};" title="Les retours ne retirent pas 1 contrat chacun : ils sont divisés (÷${d.returnsDivisor}) selon le règlement.">↩️ ${d.returnsCount} retour${d.returnsCount>1?'s':''}${d.returnsCount>0 ? ` (÷${d.returnsDivisor} → −${d.returnsDeducted})` : ''}</span>
         <span>💰 <b style="color:var(--text);">${d.payableNow}</b> payé${d.payableNow>1?'s':''}</span>
       </div>` : ''}
-      ${d.retenueDepart ? `<div style="margin-top:7px; font-size:12.5px; color:var(--amber);">🚪 Parti en cours de mois : seul le fixe au prorata est payé ce mois-ci. <b>${fdh(d.retenueDepart.montant)} DH</b> (primes + commission) retenus, versés en ${escapeHtml(billingMonthLabel(d.retenueDepart.versementMois))} moins ses retours.</div>` : ''}
+      ${d.soldeDepart ? `<div style="margin-top:7px; font-size:12.5px; color:var(--green);">🚪 Solde de départ inclus : ${fdh(d.soldeDepart.retenu)} DH retenus − ${d.soldeDepart.nbRetours} retour${d.soldeDepart.nbRetours>1?'s':''} × ${fdh(d.soldeDepart.cout)} DH = <b>${fdh(d.soldeDepart.solde)} DH</b>.</div>` : ''}
+      ${d.retenueDepart ? `<div style="margin-top:7px; font-size:12.5px; color:var(--amber);">🚪 Parti en cours de mois (dernier jour le ${d.departLe ? d.departLe.split('-').reverse().join('/') : '?'}) : seul le fixe au prorata est payé ce mois-ci. <b>${fdh(d.retenueDepart.montant)} DH</b> (primes + commission) retenus, versés en ${escapeHtml(billingMonthLabel(d.retenueDepart.versementMois))} moins ses retours.</div>`
+        : (d.departLe ? `<div style="margin-top:7px; font-size:12.5px; color:var(--amber);">🚪 Parti en cours de mois (dernier jour le ${d.departLe.split('-').reverse().join('/')}) : seul le fixe au prorata est payé. Rien à retenir ce mois-ci — pas de prime ni de commission gagnée${d.payableNow < d.mini ? ` (${d.payableNow} payés, objectif ${d.mini} non atteint)` : ''}.</div>` : '')}
       <div style="margin-top:7px; font-size:12.5px; color:var(--muted);">
         Salaire : <b style="color:var(--green);">${fdh(d.total)} DH</b> avec le nombre de contrats actuel${proj.available && delta > 0
           ? ` → <b style="color:var(--amber);">${fdh(d.projTotal)} DH</b> au rythme actuel <b style="color:var(--amber);">(+${fdh(delta)})</b>`
@@ -19731,7 +19748,9 @@ async function supervisorBonusForDates(dateStrs, retirerRetractations){
     const board = prodBoardCache[dateStr] || await getProdBoard(dateStr);
     prodBoardCache[dateStr] = board;
     let dayPool = 0;
-    config.agents.forEach(agent=>{
+    // r248 — allKnownAgents : un agent parti puis archivé a bien produit ces jours-là ; ses contrats
+    // doivent rester dans la prime du superviseur, même après l'archivage.
+    allKnownAgents().forEach(agent=>{
       if(isSupervisor(agent)) return;
       // ⚠️ BUG CORRIGÉ — DOUBLE PAIEMENT. Les contrats des indépendants entraient dans ce pool ET
       // étaient payés une seconde fois par indepSupervisorCommissionForMonth, la commission dédiée
@@ -19764,8 +19783,11 @@ async function supervisorBonusForDates(dateStrs, retirerRetractations){
     const retractParMois = {};
     await Promise.all(moisConcernes.map(async mv=>{
       const [y, m] = mv.split('-').map(Number);
-      const parAgent = await Promise.all(config.agents.map(agent=>
-        isSupervisor(agent) ? Promise.resolve(0) : monthlyRetractions(agent, y, m)
+      // r248 — BUG CORRIGÉ : les rétractations des INDÉPENDANTS étaient retirées de la prime du
+      // superviseur, alors que leurs contrats n'y sont jamais comptés. Exemple vérifié : 70 contrats
+      // d'équipe, 5 rétractations d'équipe + 3 d'un indépendant → 62 au lieu de 65.
+      const parAgent = await Promise.all(allKnownAgents().map(agent=>
+        (isSupervisor(agent) || isIndependant(agent)) ? Promise.resolve(0) : monthlyRetractions(agent, y, m)
       ));
       retractParMois[mv] = parAgent.reduce((a,b)=> a + (b||0), 0);
     }));
@@ -23336,6 +23358,24 @@ function billingDedupKeys(row){
   const num = String(row && row.numContrat != null ? row.numContrat : '').trim().toLowerCase();
   return num ? ['num:' + num] : [];
 }
+// r249 — Une date de CONTRAT doit être une vraie date AAAA-MM-JJ, dans une année plausible (de 2 ans
+// en arrière à l'an prochain). « 15/09/206 » (2026 mal tapé) était lu comme l'an 206 : le contrat
+// partait dans un classeur que personne ne voit, et l'agent perdait un contrat sans rien savoir.
+function dateContratPlausible(iso){
+  if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const an = Number(iso.slice(0, 4)), cur = nowMA().getFullYear();
+  return an >= cur - 2 && an <= cur + 1;
+}
+// Proposition de correction pour une date fautive : même jour et même mois, année en cours.
+function suggestionDateContrat(raw){
+  const t = String(raw || '').trim();
+  let m = t.match(/^(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{1,4})$/);
+  const cur = nowMA().getFullYear();
+  if(m){ const d = m[1].padStart(2,'0'), mo = m[2].padStart(2,'0'); if(+mo>=1 && +mo<=12 && +d>=1 && +d<=31) return `${cur}-${mo}-${d}`; }
+  m = t.match(/^(\d{1,4})-(\d{1,2})-(\d{1,2})$/);
+  if(m){ const mo = m[2].padStart(2,'0'), d = m[3].padStart(2,'0'); if(+mo>=1 && +mo<=12 && +d>=1 && +d<=31) return `${cur}-${mo}-${d}`; }
+  return todayStr();
+}
 function billingRowKeys(row){
   const keys = [];
   [row.numContrat, row.reference].forEach(v=>{
@@ -23613,7 +23653,11 @@ async function importBillingProd(text, monthVal){
     r.agent = resolved || '';
     if(shifted) r.agentShifted = true;
 
-    const iso = parseContractDate(r.datePropre || r.date, dateOrder);
+    let iso = parseContractDate(r.datePropre || r.date, dateOrder);
+    if(iso && !dateContratPlausible(iso)){
+      warningsLog.push(`${r.nom || r.numContrat || '?'} — date « ${r.datePropre || r.date} » impossible (année ${iso.slice(0,4)}) : rangé dans le mois importé, à corriger avec ✏️ Modifier dans « Trouver un contrat »`);
+      iso = null;
+    }
     const target = iso ? iso.slice(0, 7) : monthVal;
     if(!iso) undatedCount++;
     // r.datePropre garde le texte d'origine (affiché tel quel dans les tableaux) — mais r.date lui-même
@@ -24389,8 +24433,52 @@ async function confirmReturnsImport(){
   try{ return await confirmReturnsImportInterne(); }
   finally{ _importRetoursEnCours = false; if(typeof _figeAlerte !== 'undefined') _figeAlerte.mois.clear(); }
 }
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 📋 BILAN DES IMPORTS DE RETOURS (r248) — « mes 350 lignes ont-elles toutes été prises en compte ? »
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+const RAPPORTS_RETOURS_KEY = 'retoursImportRapports';
+async function enregistrerRapportRetours(rapport){
+  let liste = [];
+  try{ const res = await storageGet(RAPPORTS_RETOURS_KEY, { fresh: true }); if(res && res.value) liste = JSON.parse(res.value) || []; }catch(e){}
+  liste.unshift(rapport);
+  await storageSet(RAPPORTS_RETOURS_KEY, JSON.stringify(liste.slice(0, 12)));
+}
+function rapportRetoursHtml(r){
+  const nbImputes = Object.values(r.impayesParAgent || {}).reduce((a,b)=>a+b, 0);
+  const somme = (r.illisibles||0) + (r.doublons||0) + (r.ecartees||0) + (r.retractAppliquees||0) + (r.retractDeja||0) + (r.retractEnAttente||0) + nbImputes + (r.impayesSansAgent||0) + (r.impayesDejaPresents||0);
+  const ok = somme === r.totalFichier;
+  const aSurveiller = (r.impayesSansAgent||0) + (r.retractEnAttente||0) + (r.illisibles||0);
+  const ligne = (ic, lbl, n, couleur, aide) => n ? `<div style="display:flex; justify-content:space-between; gap:10px; padding:3px 0;"><span>${ic} ${lbl}${aide ? `<span style="color:var(--muted); font-size:11.5px;"> — ${aide}</span>` : ''}</span><b style="color:${couleur||'var(--text)'};">${n}</b></div>` : '';
+  const parAgent = Object.entries(r.impayesParAgent || {}).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]));
+  const fr = d => d ? d.split('-').reverse().join('/') : '';
+  return `<div style="margin-top:12px; padding:12px 14px; border-radius:10px; background:${ok && !aSurveiller ? 'rgba(52,183,116,0.08)' : 'rgba(229,168,61,0.08)'}; border:1px solid ${ok && !aSurveiller ? 'rgba(52,183,116,0.4)' : 'rgba(229,168,61,0.45)'}; font-size:12.5px;">
+    <div style="font-weight:900; font-size:14px; color:${ok && !aSurveiller ? 'var(--green)' : 'var(--amber)'};">${ok ? (aSurveiller ? `⚠️ ${r.totalFichier}/${r.totalFichier} lignes traitées — ${aSurveiller} à surveiller` : `✅ ${r.totalFichier}/${r.totalFichier} lignes traitées — tout est réparti`) : `❌ ${somme}/${r.totalFichier} lignes retrouvées — il en manque ${r.totalFichier - somme}`}</div>
+    <div style="color:var(--muted); font-size:11.5px; margin:2px 0 8px;">Import du ${new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}${r.moisPaie ? ` · paie de ${escapeHtml(billingMonthLabel(r.moisPaie))}` : ''}${r.periode && r.periode[0] ? ` · période ${fr(r.periode[0])} → ${fr(r.periode[1])}` : ''}</div>
+    ${ligne('📉', 'Impayés retenus à un agent', nbImputes, 'var(--green)')}
+    ${ligne('🔻', 'Rétractations appliquées', r.retractAppliquees, 'var(--green)')}
+    ${ligne('🔁', 'Rétractations déjà appliquées avant', r.retractDeja, 'var(--muted)', 'réimport, rien de compté deux fois')}
+    ${ligne('🔁', 'Impayés déjà enregistrés avant', r.impayesDejaPresents, 'var(--muted)', 'rien de compté deux fois')}
+    ${ligne('👯', 'Doublons ignorés', r.doublons, 'var(--muted)')}
+    ${ligne('🚫', 'Lignes écartées à la main', r.ecartees, 'var(--muted)')}
+    ${ligne('❓', 'Impayés SANS agent', r.impayesSansAgent, 'var(--red)', 'retenus à personne → « Retours à trancher »')}
+    ${ligne('⏳', 'Rétractations en attente', r.retractEnAttente, 'var(--amber)', 'contrat pas encore dans la production')}
+    ${ligne('⚠️', 'Lignes illisibles', r.illisibles, 'var(--red)', 'à vérifier dans le fichier')}
+    ${parAgent.length ? `<details style="margin-top:8px;"><summary style="cursor:pointer; font-weight:700;">👤 Impayés par agent (${parAgent.length} agent${parAgent.length>1?'s':''})</summary>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">${parAgent.map(([a,n])=>`<span class="tag" style="background:var(--panel2);">${escapeHtml(a)} : <b>${n}</b></span>`).join('')}</div></details>` : ''}
+  </div>`;
+}
+async function renderRapportsRetours(){
+  const el = document.getElementById('retoursRapportsPanel');
+  if(!el) return;
+  let liste = [];
+  try{ const res = await storageGet(RAPPORTS_RETOURS_KEY); if(res && res.value) liste = JSON.parse(res.value) || []; }catch(e){}
+  if(!liste.length){ el.innerHTML = ''; return; }
+  el.innerHTML = `<details style="margin-top:14px;"><summary style="cursor:pointer; font-weight:800; font-size:13px;">📋 Bilan des derniers imports de retours (${liste.length})</summary>${liste.map(rapportRetoursHtml).join('')}</details>`;
+}
+let pendingImportSauve = null;
 async function confirmReturnsImportInterne(){
   if(!pendingReturnsImport){ return; }
+  pendingImportSauve = pendingReturnsImport;
   const items = pendingReturnsImport.items.filter(x => !x.skip);
   const sansAgent = items.filter(x => !x.agent).length;
   if(!confirm(`Enregistrer ${items.length} ligne${items.length>1?'s':''} ?\n\n${sansAgent ? `⚠️ ${sansAgent} sans agent : elles seront enregistrées mais retenues à personne, tu pourras les trancher plus tard dans « Retours à trancher ».\n\n` : ''}Les rétractations marqueront leur contrat d'origine dans son mois de signature. Les impayés seront retenus sur le mois de paie affiché.`)) return;
@@ -24403,7 +24491,7 @@ async function confirmReturnsImportInterne(){
   undoDemarrer(`Import du tableau de facturation — ${items.length} ligne${items.length>1?'s':''}`);
 
   // ---- Rétractations : marquer le contrat dans SON mois, puis recaler le compteur ----
-  let retractApplied = 0, retractNotFound = 0;
+  let retractApplied = 0, retractNotFound = 0, retractDeja = 0;
   const touched = {};
   const stillPending = [];
   for(const x of items.filter(i => i.kind === 'retracted')){
@@ -24426,11 +24514,14 @@ async function confirmReturnsImportInterne(){
         if(!row.agent && x.agent) row.agent = x.agent;
         await billingSave(billingProdKey(mv), store);
         retractApplied++;
-      } else if(x.forceMonth && row.retractPayMonth !== x.forceMonth){
-        // Déjà rétractée (réimport), mais l'admin cible explicitement un autre mois de paie cette
-        // fois-ci — correction volontaire, on la respecte.
-        row.retractPayMonth = x.forceMonth;
-        await billingSave(billingProdKey(mv), store);
+      } else {
+        retractDeja++;
+        if(x.forceMonth && row.retractPayMonth !== x.forceMonth){
+          // Déjà rétractée (réimport), mais l'admin cible explicitement un autre mois de paie cette
+          // fois-ci — correction volontaire, on la respecte.
+          row.retractPayMonth = x.forceMonth;
+          await billingSave(billingProdKey(mv), store);
+        }
       }
       touched[`${mv}|${row.agent || x.agent}`] = true;
       if(row.retractPayMonth) touched[`${row.retractPayMonth}|${row.agent || x.agent}`] = true;
@@ -24478,11 +24569,16 @@ async function confirmReturnsImportInterne(){
     const r = { ...x.r, agentRaw: x.r.agent, agent: x.agent || '', matchedVia: x.agentSource, originMonth: x.originMonth || '' };
     (byMonth[x.month] = byMonth[x.month] || []).push(r);
   });
+  const impayesParAgent = {};
+  let impayesSansAgent = 0, impayesDejaPresents = 0;
   for(const mv of Object.keys(byMonth)){
     const existing = await getBillingReturns(mv);
     const seen = new Set();
     (existing.rows || []).forEach(r => billingRowKeys(r).forEach(k => seen.add(k)));
-    const merged = (existing.rows || []).concat(byMonth[mv].filter(r => !billingRowKeys(r).some(k => seen.has(k))));
+    const nouveaux = byMonth[mv].filter(r => !billingRowKeys(r).some(k => seen.has(k)));
+    impayesDejaPresents += byMonth[mv].length - nouveaux.length;
+    nouveaux.forEach(r=>{ if(r.agent) impayesParAgent[r.agent] = (impayesParAgent[r.agent] || 0) + 1; else impayesSansAgent++; });
+    const merged = (existing.rows || []).concat(nouveaux);
     await billingSave(billingRetKey(mv), {
       month: mv, rows: merged, importedAt: new Date().toISOString(),
       periodFrom: document.getElementById('billingRetFrom')?.value || existing.periodFrom || null,
@@ -24499,6 +24595,29 @@ async function confirmReturnsImportInterne(){
   pendingReturnsImport = null;
 
   const mois = Object.keys(byMonth).sort();
+
+  // 📋 r248 — BILAN LIGNE PAR LIGNE : chaque ligne du fichier est rangée dans une case, et le total des
+  // cases doit retomber exactement sur le nombre de lignes du fichier. Gardé en mémoire (12 derniers
+  // imports) pour pouvoir le relire plus tard.
+  let rapportHtml = '';
+  try{
+    const tous = (pendingImportSauve && pendingImportSauve.items) || [];
+    const rapport = {
+      at: new Date().toISOString(),
+      moisPaie: pendingImportSauve ? pendingImportSauve.monthVal : null,
+      periode: [document.getElementById('billingRetFrom')?.value || null, document.getElementById('billingRetTo')?.value || null],
+      totalFichier: (pendingImportSauve && pendingImportSauve.totalRows) || tous.length,
+      illisibles: (pendingImportSauve && pendingImportSauve.unreadable) || 0,
+      doublons: tous.filter(x => x.skip && x.duplicate).length,
+      ecartees: tous.filter(x => x.skip && !x.duplicate).length,
+      retractAppliquees: retractApplied, retractDeja, retractEnAttente: retractNotFound,
+      impayesParAgent, impayesSansAgent, impayesDejaPresents,
+      moisImpayes: mois
+    };
+    await enregistrerRapportRetours(rapport);
+    rapportHtml = rapportRetoursHtml(rapport);
+    renderRapportsRetours();
+  }catch(e){ console.warn('bilan import retours', e); }
   // r234 — Les retours d'un mois terminé viennent d'être importés : c'est en général le moment de
   // figer sa paie. On le PROPOSE (bouton), on ne le fait jamais tout seul.
   let propositionFiger = '';
@@ -24529,6 +24648,7 @@ async function confirmReturnsImportInterne(){
         ${recalced.length ? `<br>🔄 Compteurs recalés : <span style="color:var(--muted);">${recalced.slice(0,8).map(escapeHtml).join(' · ')}</span>` : ''}
       </div>
       <div style="font-size:12px; color:var(--muted); margin-top:9px;">${retractNotFound ? "Les contrats introuvables sont ceux dont le mois de signature n'a pas encore été importé — ils sont conservés dans « ⏳ Rétractations en attente » ci-dessous, rien n'est perdu. Importe la Production du bon mois, puis clique « Réessayer » là-bas." : "Vérifie le tableau d'un agent avant de figer quoi que ce soit." }</div>
+      ${rapportHtml}
       ${propositionFiger}
       <div style="margin-top:12px; padding-top:11px; border-top:1px dashed rgba(52,183,116,0.35); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <button onclick="annulerDernierImport()" style="padding:9px 16px; border-radius:9px; border:1px solid var(--red); background:rgba(229,72,77,0.10); color:var(--red); font-weight:800; font-size:12.5px; cursor:pointer;">↩️ Annuler cet import</button>
@@ -25070,6 +25190,7 @@ async function saveBillingRatioOverride(){
 }
 
 async function renderBillingImportSummary(){
+  try{ renderRapportsRetours(); }catch(e){}
   const el = document.getElementById('billingImportSummary');
   if(!el) return;
   // ═══ PÉRIODE CHOISIE, pas un mois figé ═══
@@ -26624,6 +26745,21 @@ async function syncBackofficeInbox(opts){
   // proprement. Une seule règle de lecture pour les deux boîtes : impossible qu'elles divergent.
   const ingest = (data, idForLog, source)=>{
     const r = backofficeReadFields(data || {});
+    // r249 — date corrigée à la main depuis l'écran d'attente : elle fait foi.
+    if(data && data.dateCorrigee && dateContratPlausible(data.dateCorrigee)) r.dateISO = data.dateCorrigee;
+    if(r.dateISO && !dateContratPlausible(r.dateISO)){
+      result.badDate.push({
+        id: r.numContrat || r.nom || idForLog,
+        numContrat: r.numContrat || '',
+        nom: r.nom || '',
+        agent: r.agent || '',
+        rawDate: `${(r.date || r.datePropre || r.dateISO || '').toString().trim()} (année impossible)`,
+        suggestion: suggestionDateContrat(r.date || r.datePropre || ''),
+        key: idForLog,
+        source: source || 'rtdb'
+      });
+      return false;
+    }
     if(!r.dateISO){
       result.badDate.push({
         id: r.numContrat || r.nom || idForLog,
@@ -26631,6 +26767,7 @@ async function syncBackofficeInbox(opts){
         nom: r.nom || '',
         agent: r.agent || '',
         rawDate: (r.date || r.datePropre || '').toString().trim() || '(champ date vide)',
+        suggestion: suggestionDateContrat(r.date || r.datePropre || ''),
         key: idForLog,
         source: source || 'rtdb'
       });
@@ -27096,6 +27233,21 @@ async function corrigerDateContratVersAujourdhui(numContrat, ancienneDate, btn){
 // — à utiliser une fois qu'il a été traité autrement (ex: importé à la main via un CSV corrigé), sinon
 // il resterait signalé indéfiniment à chaque relevé sans qu'aucune correction Pabbly ne puisse jamais
 // l'effacer tout seul (une donnée illisible n'est par définition jamais "corrigée" automatiquement).
+// r249 — Corrige la date d'un contrat bloqué dans la boîte d'attente, puis le range aussitôt.
+async function corrigerDateBoiteAttente(key, source, suggestion, label){
+  const saisie = prompt(`Bonne date de ce contrat ?\n\n${label}\n\nFormat JJ/MM/AAAA (ex : 15/09/2026).`, suggestion ? suggestion.split('-').reverse().join('/') : '');
+  if(saisie === null) return;
+  const iso = parseContractDate(saisie.trim(), 'dmy');
+  if(!dateContratPlausible(iso)){ alert(`« ${saisie} » n'est pas une date valide (JJ/MM/AAAA, année ${nowMA().getFullYear()-2} à ${nowMA().getFullYear()+1}). Rien n'a été changé.`); return; }
+  try{
+    if(source === 'firestore' && db) await db.collection(BACKOFFICE_COLLECTION).doc(key).update({ dateCorrigee: iso });
+    else if(rtdb) await rtdb.ref(`${BACKOFFICE_RTDB_PATH}/${key}`).update({ dateCorrigee: iso });
+    logAudit('Admin', 'Date d\'un contrat en attente corrigée', `${label} → ${iso}`);
+  }catch(e){ alert('Erreur en corrigeant la date : ' + (e && e.message ? e.message : e)); return; }
+  await syncBackofficeInbox({ manual: true });
+  renderBackofficeInboxPanel();
+  showToast(`✅ Date corrigée (${saisie}) — contrat rangé dans ${billingMonthLabel(iso.slice(0,7))}.`, 'ok', 6000);
+}
 async function discardBackofficeInboxItem(key, source, label){
   if(!confirm(`Retirer définitivement ce contrat de la boîte d'attente ?\n\n${label}\n\nÀ faire UNIQUEMENT si tu l'as déjà rangé autrement (import CSV corrigé, saisie manuelle...) — sinon il sera perdu.`)) return;
   try{
@@ -27281,6 +27433,7 @@ async function renderBackofficeInboxPanel(lastResult){
       <div style="font-size:12.5px; color:var(--muted); line-height:2.1;">${r.badDate.slice(0,15).map(x=>{
         const label = `${x.numContrat || x.nom || x.id}${x.nom && x.numContrat ? ' — '+x.nom : ''}${x.agent ? ' ('+x.agent+')' : ''} — date reçue « ${x.rawDate} »`;
         return `<span><b>${escapeHtml(x.numContrat || x.nom || x.id)}</b>${x.nom && x.numContrat ? ` — ${escapeHtml(x.nom)}` : ''}${x.agent ? ` (${escapeHtml(x.agent)})` : ''} — date reçue : « ${escapeHtml(x.rawDate)} »
+          <button onclick="corrigerDateBoiteAttente(decodeURIComponent('${jsArg(x.key)}'), decodeURIComponent('${jsArg(x.source)}'), decodeURIComponent('${jsArg(x.suggestion || '')}'), decodeURIComponent('${jsArg(label)}'))" title="Donner la bonne date à ce contrat : il est rangé tout de suite dans le bon mois." style="padding:3px 9px; border-radius:6px; border:1px solid var(--green); background:rgba(52,183,116,0.12); color:var(--green); font-weight:700; cursor:pointer; font-size:11.5px; margin-left:6px;">✏️ Corriger la date</button>
           <button onclick="discardBackofficeInboxItem(decodeURIComponent('${jsArg(x.key)}'), decodeURIComponent('${jsArg(x.source)}'), decodeURIComponent('${jsArg(label)}'))" title="Retirer définitivement — à utiliser seulement si ce contrat est déjà rangé autrement (ex: import CSV corrigé)." style="margin-left:8px; padding:2px 8px; border-radius:6px; border:1px solid var(--red); background:transparent; color:var(--red); font-size:11px; cursor:pointer;">🗑️ Retirer</button></span>`;
       }).join('<br>')}${r.badDate.length>15 ? `<br>… et ${r.badDate.length-15} de plus` : ''}</div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Ils restent en attente <b>indéfiniment</b> tant que rien n'est fait — une date illisible ne se corrige jamais toute seule. Corrige le champ <b>date</b> dans Pabbly (10/08/2026 ou 2026-08-10) pour les prochains contrats, et retire ceux déjà présents si tu les as importés autrement (ex: CSV corrigé) — sinon ils resteront affichés ici à chaque relevé.</div>
@@ -28465,6 +28618,7 @@ async function searchContractGlobal(){
       action = `<button onclick="toggleRetractedFromSearch('${mv}', '${key}')"
         title="${r.retracted ? 'Annuler la rétractation : le contrat redevient payé à l\'agent.' : 'Marquer ce contrat comme rétracté : l\'agent n\'est pas payé dessus et son compteur du mois augmente de 1.'}"
         style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '↩️ Annuler' : '🔻 Rétracter'}</button>`;
+      action += ` ${boutonModifierContrat(mv, r, key, 'srch' + idx)}`;
       action += ` <button onclick="deleteContractAndRefresh('${mv}', '${key}', 'search')" title="Supprimer définitivement ce contrat — pour une ligne fautive. S'il s'agit d'un vrai contrat mal daté, utilise plutôt « Contrats à vérifier » pour le déplacer." style="padding:5px 9px; border-radius:7px; border:1px solid rgba(229,90,90,0.5); background:transparent; color:var(--red); font-weight:700; cursor:pointer; font-size:12px;">🗑️</button>`;
       if(r._warnings && r._warnings.length){
         action += ` <span title="${escapeHtml(r._warnings.join(' · '))}" style="cursor:help;">🔎</span>`;
@@ -28490,6 +28644,112 @@ async function searchContractGlobal(){
 // date envoie un contrat dans un mois qui n'a rien à voir, et il n'a alors rien à y faire.
 // La rétractation éventuelle est retirée du compteur de l'agent en même temps, sinon le compteur
 // resterait plus haut que le nombre réel de contrats rétractés du mois.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// ✏️ CORRIGER UN CONTRAT EN PLACE (r249) — date, numéro, référence, agent, sans réimporter
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+function boutonModifierContrat(mv, r, key, uid){
+  const formId = `cfix_${uid}`;
+  const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') && dateContratPlausible(r.date) ? r.date : '';
+  return `<button onclick="var f=document.getElementById('${formId}'); f.style.display = f.style.display==='none' ? 'flex' : 'none';" title="Corriger la date, le numéro, la référence ou l'agent de ce contrat." style="padding:5px 10px; border-radius:7px; border:1px solid var(--accent); background:rgba(86,128,171,0.14); color:var(--accent); font-weight:700; cursor:pointer; font-size:12px;">✏️ Modifier</button>
+    <div id="${formId}" style="display:none; flex-direction:column; gap:5px; margin-top:8px; min-width:220px; font-size:11.5px;">
+      <label style="margin:0; font-size:11px;">Date du contrat${dateVal ? '' : ' <span style="color:var(--red);">(actuelle : « ' + escapeHtml(r.datePropre || r.date || '?') + ' »)</span>'}</label>
+      <input type="date" id="${formId}_date" value="${dateVal}" style="font-size:12px; padding:4px 6px;">
+      <label style="margin:0; font-size:11px;">N° de contrat</label>
+      <input type="text" id="${formId}_num" value="${escapeHtml(r.numContrat || '')}" style="font-size:12px; padding:4px 6px;">
+      <label style="margin:0; font-size:11px;">Référence (ID du contrat)</label>
+      <input type="text" id="${formId}_ref" value="${escapeHtml(r.reference || '')}" style="font-size:12px; padding:4px 6px;">
+      <label style="margin:0; font-size:11px;">Agent</label>
+      <select id="${formId}_agent" style="font-size:12px; padding:4px 6px;">${allKnownAgents().map(a=>`<option value="${escapeHtml(a)}"${a === r.agent ? ' selected' : ''}>${escapeHtml(a)}${isArchivedAgent(a) ? ' (ancien)' : ''}</option>`).join('')}</select>
+      <button onclick="modifierContratDepuisFormulaire('${escapeHtml(mv)}', '${String(key).replace(/'/g, "\\'")}', '${formId}')" style="padding:6px 10px; border-radius:7px; border:none; background:var(--green); color:#fff; font-weight:800; cursor:pointer; font-size:12px;">💾 Enregistrer</button>
+    </div>`;
+}
+async function modifierContratDepuisFormulaire(mv, key, formId){
+  const v = id => (document.getElementById(`${formId}_${id}`) || {}).value;
+  const date = v('date');
+  if(date && !dateContratPlausible(date)){ alert('Date impossible : choisis une date entre ' + (nowMA().getFullYear()-2) + ' et ' + (nowMA().getFullYear()+1) + '.'); return; }
+  const ok = await corrigerContrat(mv, key, { date: date || null, numContrat: v('num'), reference: v('ref'), agent: v('agent') });
+  if(!ok) return;
+  showToast('✅ Contrat corrigé.' + (date && date.slice(0,7) !== mv ? ` Rangé dans ${billingMonthLabel(date.slice(0,7))}.` : ''), 'ok', 5000);
+  if(document.getElementById('globalSearchResults') && (document.getElementById('globalSearchInput')?.value || '').length >= 3) searchContractGlobal();
+  if(document.getElementById('contratsMalDatesPanel')?.innerHTML) chercherContratsMalDates();
+}
+async function corrigerContrat(mv, key, ch){
+  const k = String(key || '').toLowerCase();
+  const from = await getBillingProd(mv);
+  from.rows = from.rows || [];
+  const idx = from.rows.findIndex(r => billingRowKeys(r).includes(k) || (r._rid && r._rid === key));
+  if(idx < 0){ alert('Contrat introuvable — il a peut-être déjà été modifié. Relance la recherche.'); return false; }
+  const avant = from.rows[idx];
+  const row = { ...avant };
+  if(ch.numContrat != null) row.numContrat = String(ch.numContrat).trim();
+  if(ch.reference != null) row.reference = String(ch.reference).trim();
+  if(ch.agent) row.agent = ch.agent;
+  let toMv = mv;
+  if(ch.date){ row.date = ch.date; row.datePropre = ch.date; toMv = ch.date.slice(0, 7); }
+  const dest = toMv === mv ? from : await getBillingProd(toMv);
+  dest.rows = dest.rows || [];
+  const cles = billingDedupKeys(row);
+  const conflit = dest.rows.find(r => r !== avant && cles.length && billingDedupKeys(r).some(x => cles.includes(x)));
+  if(conflit){
+    alert(`Un autre contrat avec ${row.reference ? 'la référence « ' + row.reference + ' »' : 'le numéro « ' + row.numContrat + ' »'} existe déjà dans ${billingMonthLabel(toMv)} (${conflit.nom || conflit.agent || '?'}). Rien n'a été changé — vérifie si ce n'est pas un doublon à supprimer.`);
+    return false;
+  }
+  if(toMv === mv){ from.rows[idx] = row; await billingSave(billingProdKey(mv), from); }
+  else {
+    from.rows.splice(idx, 1);
+    dest.rows.push(row); dest.month = toMv;
+    await billingSave(billingProdKey(mv), from);
+    await billingSave(billingProdKey(toMv), dest);
+  }
+  // Compteurs du jour (avant / après) et rétractations : tout est recalé.
+  const dates = [avant.date, row.date].filter(d => dateContratPlausible(d));
+  if(dates.length){ try{ await syncProdBoardRealizedForDates([...new Set(dates)]); }catch(e){ console.warn('sync après correction', e); } }
+  if(row.retracted){
+    const mois = new Set([mv, toMv, row.retractPayMonth].filter(m => /^\d{4}-\d{2}$/.test(m || '')));
+    for(const ag of new Set([avant.agent, row.agent].filter(Boolean))){
+      for(const m of mois){
+        try{ const [yy, mm] = m.split('-').map(Number); await saveMonthlyRetractCount(ag, yy, mm, await computeExactRetractCount(ag, yy, mm)); }catch(e){}
+      }
+    }
+  }
+  const diff = ['date','numContrat','reference','agent'].filter(f => (avant[f]||'') !== (row[f]||'')).map(f => `${f}: ${avant[f]||'—'} → ${row[f]||'—'}`).join(' · ');
+  logAudit('Admin', 'Contrat corrigé', `${row.numContrat || row.reference || key} — ${diff || 'aucun changement'}`);
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  return true;
+}
+// 🧹 Retrouve les contrats rangés dans une « année impossible » (ex : an 206), invisibles partout.
+async function chercherContratsMalDates(){
+  const el = document.getElementById('contratsMalDatesPanel');
+  if(!el) return;
+  if(!firebaseReady || !db){ el.innerHTML = '<div class="empty">Connexion à la base indisponible.</div>'; return; }
+  el.innerHTML = '<div class="empty" style="padding:12px;">⏳ Lecture de tous les classeurs de production…</div>';
+  let docs = [];
+  try{
+    const fp = firebase.firestore.FieldPath.documentId();
+    const snap = await db.collection('vortexnova').where(fp, '>=', 'billingProd:').where(fp, '<', 'billingProd;').get();
+    snap.forEach(d => docs.push({ id: d.id, value: d.data().value }));
+  }catch(e){ el.innerHTML = `<div class="empty">Recherche impossible : ${escapeHtml(e && e.message ? e.message : String(e))}</div>`; return; }
+  const cur = nowMA().getFullYear();
+  const trouves = [];
+  docs.forEach(d=>{
+    const mv = d.id.slice('billingProd:'.length);
+    const ok = /^\d{4}-\d{2}$/.test(mv) && Number(mv.slice(0,4)) >= cur - 2 && Number(mv.slice(0,4)) <= cur + 1;
+    let rows = [];
+    try{ rows = (JSON.parse(d.value || '{}').rows) || []; }catch(e){}
+    rows.forEach(r=>{ if(!ok || (r.date && !dateContratPlausible(r.date) && /^\d/.test(r.date))) trouves.push({ mv, r }); });
+  });
+  if(!trouves.length){ el.innerHTML = `<div style="padding:10px 12px; color:var(--green); font-size:13px;">✅ Aucun contrat mal daté — ${docs.length} classeurs vérifiés.</div>`; return; }
+  el.innerHTML = `<div style="font-size:13px; color:var(--amber); font-weight:800; margin:8px 0;">⚠️ ${trouves.length} contrat${trouves.length>1?'s':''} rangé${trouves.length>1?'s':''} à une date impossible — invisible${trouves.length>1?'s':''} dans la paie</div>
+    <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Classeur</th><th>Agent</th><th>Client</th><th>N° / Réf.</th><th>Date lue</th><th>Action</th></tr></thead><tbody>
+    ${trouves.slice(0, 100).map(({ mv, r }, i)=>{
+      const key = String(r.numContrat || r.reference || r._rid || '');
+      return `<tr><td>${escapeHtml(mv)}</td><td><b>${escapeHtml(r.agent || '—')}</b></td><td>${escapeHtml(r.nom || '—')}</td><td>${escapeHtml(r.numContrat || '—')}<div style="font-size:11px; color:var(--muted);">${escapeHtml(r.reference || '')}</div></td><td style="color:var(--red);">${escapeHtml(r.datePropre || r.date || '—')}</td>
+        <td>${boutonModifierContrat(mv, r, key, 'md' + i)} <button onclick="deleteContractAndRefresh('${escapeHtml(mv)}', '${key.replace(/'/g, "\\'")}', 'search').then(()=>chercherContratsMalDates())" title="Supprimer ce contrat (si le bon a déjà été importé par ailleurs)" style="padding:5px 9px; border-radius:7px; border:1px solid rgba(229,90,90,0.5); background:transparent; color:var(--red); font-weight:700; cursor:pointer; font-size:12px;">🗑️</button></td></tr>`;
+    }).join('')}</tbody></table></div>
+    <div style="font-size:12px; color:var(--muted); margin-top:6px;">✏️ Modifier → mets la bonne date : le contrat est rangé dans le bon mois et compté à l'agent. 🗑️ si le bon contrat existe déjà ailleurs (import corrigé).</div>`;
+}
 async function deleteContractFromMonth(monthVal, key, silent){
   const store = await getBillingProd(monthVal);
   const idx = (store.rows || []).findIndex(r => billingRowKeys(r).includes(String(key).toLowerCase()));
