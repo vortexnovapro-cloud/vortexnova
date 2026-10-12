@@ -3008,7 +3008,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-12-r251';
+const APP_VERSION = '2026-10-12-r252';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -15842,6 +15842,47 @@ function evaluerRecordDuJour(rec, agent, dateStr, realized){
   // avait fait 14 le matin même : deux records absolus le même jour, dont un faux.
   const refGlobal = (gl && gl.date === dateStr && gl.agent === agent) ? (gl.prev || null) : gl;
 
+  // ============================================================================================
+  // r252 -- EGALITE AU SOMMET : LE SECOND AGENT PERDAIT LE TITRE.
+  // Le carnet des records (`rec.best`) ne portait qu'UN SEUL nom. Deroulement d'une journee ou
+  // deux agents font le meme score :
+  //   1. Sylla atteint 15. Le carnet dit 11 (Ghita, 01/09). 15 > 11 -> RECORD ABSOLU. Le carnet
+  //      est reecrit : 15, par Sylla, aujourd'hui.
+  //   2. Ghita atteint 15 a son tour. Le carnet dit maintenant 15. Le test ci-dessous demande
+  //      STRICTEMENT plus : 15 > 15 est faux. Pas de record absolu pour elle -> elle retombait
+  //      sur son record personnel (15 > 11).
+  // Resultat a l'ecran : deux encarts cote a cote, MEME chiffre, statuts differents. Et la phrase
+  // de la premiere -- "personne n'avait jamais fait mieux ici" -- etait factuellement fausse.
+  //
+  // Le correctif r251 ne suffisait pas : il ne se declenche que si DEUX agents sont classes
+  // 'global' dans le MEME calcul, avant tout enregistrement. Des que le record de la premiere est
+  // ecrit dans le carnet (donc a tout rechargement de page), la seconde n'est plus jamais classee
+  // 'global' et l'incoherence revient.
+  //
+  // Desormais le carnet peut porter PLUSIEURS noms (`best.ties`, rempli par
+  // enregistrerRecordDuJour). Quiconque tombe PILE sur le chiffre du jour garde le record absolu,
+  // et recoit le nom des autres (`exAequo`) pour que la phrase dise la verite : "a egalite avec X".
+  //
+  // On exige `ref.value > 0` comme le test normal juste en dessous : sans ancien record connu, on
+  // n'a rien a citer, et on laisse le calcul suivre son cours habituel plutot que d'annoncer un
+  // "ancien record : 0".
+  //
+  // On ne demande PAS que l'agent figure deja dans `ties` : egaler le sommet pose aujourd'hui
+  // suffit a le lui reconnaitre tout de suite. Sans ca, le premier affichage aurait encore montre
+  // l'ancienne incoherence, et il aurait fallu recharger la page pour la voir se corriger.
+  // (`ties` reste indispensable pour l'agent qui a pose le sommet le premier : lui seul ne peut pas
+  // deviner qu'un collegue l'a rejoint, sauf quand les deux sont calcules ensemble.)
+  const tiesAuj = (gl && gl.date === dateStr && Array.isArray(gl.ties)) ? gl.ties : [];
+  const auSommetAuj = !!(gl && gl.date === dateStr && realized === gl.value);
+  if(auSommetAuj){
+    const autres = [gl.agent].concat(tiesAuj).filter(a => a && a !== agent);
+    const ref = gl.prev || null;
+    if(autres.length && ref && ref.value > 0){
+      return { type: 'global', valeur: realized, ancien: ref.value, ancienDate: fmtDate(ref.date),
+               ancienAgent: ref.agent || null, exAequo: autres };
+    }
+  }
+
   if(refGlobal && refGlobal.value > 0 && realized > refGlobal.value){
     return { type: 'global', valeur: realized, ancien: refGlobal.value, ancienDate: fmtDate(refGlobal.date), ancienAgent: refGlobal.agent || null };
   }
@@ -15875,7 +15916,25 @@ async function enregistrerRecordDuJour(agent, dateStr, realized){
   }
   const gl = rec.best || null;
   if(!gl || realized > gl.value){
+    // Nouveau record absolu : on repart d'une ligne propre, SANS `ties` -- celui qui passe devant
+    // est seul au sommet, les ex aequo de la veille n'ont plus lieu d'etre.
     rec.best = { value: realized, date: dateStr, agent, prev: (gl && gl.date !== dateStr) ? { value: gl.value, date: gl.date, agent: gl.agent } : (gl ? gl.prev : null) };
+    change = true;
+  } else if(gl.date === dateStr && gl.agent !== agent && realized === gl.value){
+    // r252 -- EGALITE : on INSCRIT le second nom au lieu de l'ignorer. C'est cette ligne qui permet
+    // a evaluerRecordDuJour de dire "record absolu partage" aux DEUX agents, y compris apres un
+    // rechargement de page, et meme quand les deux ne sont pas calcules ensemble.
+    const ties = Array.isArray(gl.ties) ? gl.ties.slice() : [];
+    if(ties.indexOf(agent) < 0){
+      ties.push(agent);
+      rec.best = { ...gl, ties };
+      change = true;
+    }
+  } else if(gl.date === dateStr && Array.isArray(gl.ties) && gl.ties.indexOf(agent) >= 0){
+    // Un contrat retire dans la journee fait retomber l'agent sous le sommet : son nom ne doit plus
+    // apparaitre dans l'egalite, sinon le collegue reste felicite "a egalite avec" quelqu'un qui
+    // n'y est plus. (On arrive ici uniquement si realized n'egale plus gl.value.)
+    rec.best = { ...gl, ties: gl.ties.filter(a => a !== agent) };
     change = true;
   }
   if(!change) return;
