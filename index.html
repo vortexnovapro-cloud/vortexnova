@@ -3008,7 +3008,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-12-r250';
+const APP_VERSION = '2026-10-12-r251';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -15171,9 +15171,27 @@ async function buildBriefingRows(baseRows){
     // de tout son sens. Celui qui n'est pas en tête retombe sur son record personnel, s'il l'a battu.
     const globaux = rows.filter(r => r.recordJour && r.recordJour.type === 'global');
     if(globaux.length > 1){
-      const champion = globaux.reduce((m, r)=> ((r.todayRealized || 0) > (m.todayRealized || 0) ? r : m), globaux[0]);
+      // 🐛 r251 — ÉGALITÉ AU SOMMET : LE MESSAGE SE CONTREDISAIT.
+      // Quand plusieurs agents dépassaient l'ancien record absolu le même jour, le code en désignait
+      // UN SEUL et renvoyait les autres sur leur record personnel. Avec un score STRICTEMENT plus
+      // élevé, c'est juste. Mais à égalité parfaite — deux agents à 15 contrats — le `reduce`
+      // ci-dessous gardait simplement le PREMIER de la liste, donc au hasard de l'ordre d'affichage :
+      // l'un recevait « RECORD ABSOLU — personne n'avait jamais fait mieux ici », l'autre un simple
+      // record personnel. Et la phrase du premier était factuellement fausse, puisque son collègue
+      // venait de faire exactement aussi bien, le même jour. Deux encarts côte à côte, mêmes chiffres,
+      // statuts différents : l'admin ne pouvait qu'y voir un bug.
+      //
+      // Désormais : tous ceux qui sont À ÉGALITÉ au sommet gardent le record absolu, et chacun reçoit
+      // le nom des autres (`exAequo`) pour que la phrase dise la vérité — « à égalité avec X ». Ceux
+      // qui sont en dessous du meilleur score du jour retombent sur leur record personnel, comme avant.
+      const meilleur = globaux.reduce((m, r)=> Math.max(m, r.todayRealized || 0), 0);
+      const auSommet = globaux.filter(r => (r.todayRealized || 0) === meilleur);
+      auSommet.forEach(r=>{
+        const autres = auSommet.filter(o => o !== r).map(o => o.agent);
+        if(autres.length) r.recordJour = { ...r.recordJour, exAequo: autres };
+      });
       globaux.forEach(r=>{
-        if(r === champion) return;
+        if(auSommet.includes(r)) return;
         const pa = recordsJour.perAgent ? recordsJour.perAgent[r.agent] : null;
         const refPerso = (pa && pa.date === dateStr) ? (pa.prev || null) : pa;
         r.recordJour = (refPerso && refPerso.value > 0 && (r.todayRealized || 0) > refPerso.value)
@@ -15183,12 +15201,25 @@ async function buildBriefingRows(baseRows){
     }
     // On enregistre les records réellement battus (et on prévient), une fois les comparaisons faites —
     // sinon le premier agent traité écraserait le repère utilisé pour comparer les suivants.
-    await Promise.all(rows
-      .filter(r => r.recordJour && r.recordJour.type !== 'egal')
-      .map(async r=>{
-        await enregistrerRecordDuJour(r.agent, dateStr, r.todayRealized || 0);
-        notifierRecordDuJour(r.agent, dateStr, r.recordJour);
-      }));
+    //
+    // 🐛 r250 — BUG D'ÉCRASEMENT CORRIGÉ. Ces enregistrements partaient EN PARALLÈLE (Promise.all).
+    // Or enregistrerRecordDuJour relit le document des records puis le réécrit EN ENTIER. Deux agents
+    // qui battent un record le même jour lisaient donc la MÊME version, et le second remettait une
+    // copie où le record du premier n'existait pas : effacé.
+    //
+    // À l'écran, rien ne se voyait — le message de félicitation est calculé juste au-dessus, en
+    // mémoire, et s'affichait normalement pour les deux. Le dégât était silencieux et différé : le
+    // record du premier restait à son ancienne valeur, et des semaines plus tard le CRM le félicitait
+    // à nouveau pour un score INFÉRIEUR à ce qu'il avait réellement accompli. Un record effacé, et
+    // une félicitation qui sonne faux pour celui qui se souvient de sa vraie meilleure journée.
+    //
+    // Séquentiel désormais : chacun relit le document à jour (getDayRecords(true), lecture fraîche)
+    // avant d'écrire, donc il conserve ce que le précédent vient d'y poser. Deux à cinq records le
+    // même jour, c'est au pire quelques allers-retours de plus — et ils sont tous gardés.
+    for(const r of rows.filter(r => r.recordJour && r.recordJour.type !== 'egal')){
+      await enregistrerRecordDuJour(r.agent, dateStr, r.todayRealized || 0);
+      notifierRecordDuJour(r.agent, dateStr, r.recordJour);
+    }
   }catch(e){ console.warn('records du jour', e); }
 
   // Même convention partout : classé du plus au moins de contrats réalisés CE MOIS-CI, alphabétique si
@@ -15861,11 +15892,26 @@ function messageRecordDuJour(agentName, r){
   if(!r) return null;
   const n = firstName(agentName);
   const ctr = v => `${v} contrat${v>1?'s':''}`;
+  // r251 — Liste des collègues à égalité, écrite comme on le dit à l'oral : « Ghita », « Ghita et
+  // Sylla », « Ghita, Sylla et Awa ».
+  const etPuis = noms => {
+    const l = (noms || []).map(firstName);
+    if(l.length <= 1) return l[0] || '';
+    return l.slice(0, -1).join(', ') + ' et ' + l[l.length - 1];
+  };
   if(r.type === 'global'){
-    return `👑 RECORD ABSOLU — ${ctr(r.valeur)} en une seule journée, ${n} ! Personne n'avait jamais fait mieux ici (ancien record : ${r.ancien}${r.ancienAgent ? ` par ${firstName(r.ancienAgent)}` : ''}, le ${r.ancienDate}).`;
+    // À égalité, on ne peut pas écrire « personne n'avait jamais fait mieux » sans se contredire :
+    // le collègue cité a fait exactement aussi bien, le jour même. On nomme donc l'égalité.
+    const ex = etPuis(r.exAequo);
+    return ex
+      ? `👑 RECORD ABSOLU PARTAGÉ — ${ctr(r.valeur)} en une seule journée, ${n}, à égalité avec ${ex} ! Personne n'avait jamais fait mieux ici (ancien record : ${r.ancien}${r.ancienAgent ? ` par ${firstName(r.ancienAgent)}` : ''}, le ${r.ancienDate}).`
+      : `👑 RECORD ABSOLU — ${ctr(r.valeur)} en une seule journée, ${n} ! Personne n'avait jamais fait mieux ici (ancien record : ${r.ancien}${r.ancienAgent ? ` par ${firstName(r.ancienAgent)}` : ''}, le ${r.ancienDate}).`;
   }
   if(r.type === 'perso'){
-    return `🏆 Nouveau record personnel : ${ctr(r.valeur)} aujourd'hui, ${n} — ton meilleur était ${r.ancien} le ${r.ancienDate}. Savoure, tu l'as gagné.`;
+    // r251 — « Savoure, tu l'as gagné » ne disait rien de concret. On chiffre l'écart : c'est ce qui
+    // transforme le record en repère utilisable.
+    const ecart = r.valeur - r.ancien;
+    return `🏆 Nouveau record personnel : ${ctr(r.valeur)} aujourd'hui, ${n} — ton meilleur était ${r.ancien} le ${r.ancienDate}. ${ecart} de plus que ton ancien record. Félicitations.`;
   }
   // Deux formulations écartées : « le record est à toi » (on croit qu'il le détient DÉJÀ) et « tu la
   // bats » (le pronom renvoyait à « journée », mais se lisait comme « record » — d'où l'impression
@@ -15875,7 +15921,9 @@ function messageRecordDuJour(agentName, r){
 // Version courte pour le superviseur (« qui féliciter, et pourquoi »).
 function resumeRecordDuJour(agentName, r){
   if(!r) return null;
-  if(r.type === 'global') return `${agentName} vient de battre le record de TOUTE l'équipe : ${r.valeur} en une journée (ancien : ${r.ancien} le ${r.ancienDate}).`;
+  if(r.type === 'global') return (r.exAequo && r.exAequo.length)
+    ? `${agentName} bat le record de TOUTE l'équipe, à égalité avec ${r.exAequo.join(', ')} : ${r.valeur} en une journée (ancien : ${r.ancien} le ${r.ancienDate}).`
+    : `${agentName} vient de battre le record de TOUTE l'équipe : ${r.valeur} en une journée (ancien : ${r.ancien} le ${r.ancienDate}).`;
   if(r.type === 'perso')  return `${agentName} bat son record personnel : ${r.valeur} aujourd'hui (ancien : ${r.ancien} le ${r.ancienDate}).`;
   return `${agentName} égale sa meilleure journée (${r.valeur}, comme le ${r.ancienDate}).`;
 }
