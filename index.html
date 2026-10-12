@@ -659,6 +659,50 @@
   .wolf-meter-bar{ background:var(--panel2); border:1px solid var(--border); border-radius:12px; height:22px; overflow:hidden; position:relative; }
   .wolf-meter-fill{ height:100%; border-radius:12px; transition: width .5s cubic-bezier(.4,0,.2,1); background: linear-gradient(90deg,#8b5cf6,#3d8bfd,#34b774,#ffd700); }
   .wolf-meter-label{ text-align:center; font-size:14px; font-weight:900; margin-top:10px; letter-spacing:0.3px; }
+  /* 🏦 COFFRE-FORT (r250) — section ludique de Mon argent. Tout est décoratif : aucun de ces pixels
+     ne touche à un calcul de paie. */
+  .coffre-wrap{
+    background: linear-gradient(160deg, rgba(255,215,0,0.08), rgba(61,139,253,0.05));
+    border:1px solid rgba(255,215,0,0.3); border-radius:16px;
+    padding:22px 20px; margin:0 0 24px; position:relative; overflow:hidden;
+  }
+  .coffre-wrap::before{
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background: radial-gradient(circle at 12% -10%, rgba(255,215,0,0.14), transparent 58%);
+  }
+  .coffre-head{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; position:relative; }
+  .coffre-porte{
+    width:94px; height:94px; flex:0 0 94px; border-radius:16px; position:relative;
+    background: linear-gradient(145deg,#2c3343,#161b24);
+    border:3px solid rgba(255,215,0,0.45);
+    display:flex; align-items:center; justify-content:center; font-size:42px;
+    box-shadow: inset 0 2px 12px rgba(0,0,0,0.65), 0 5px 20px rgba(0,0,0,0.38);
+  }
+  .coffre-porte .molette{
+    position:absolute; right:-10px; top:50%; width:22px; height:22px; border-radius:50%;
+    background: linear-gradient(145deg,#ffd700,#9c7a0a); border:2px solid #0d1117;
+    box-shadow:0 2px 6px rgba(0,0,0,0.5);
+    animation: coffreMolette 9s linear infinite;
+  }
+  @keyframes coffreMolette{ from{ transform:translateY(-50%) rotate(0); } to{ transform:translateY(-50%) rotate(360deg); } }
+  .coffre-porte.riche{ animation: coffrePulse 2.6s ease-in-out infinite; }
+  @keyframes coffrePulse{ 0%,100%{ box-shadow: inset 0 2px 12px rgba(0,0,0,.65), 0 5px 20px rgba(0,0,0,.38); }
+                          50%{ box-shadow: inset 0 2px 12px rgba(0,0,0,.65), 0 5px 28px rgba(255,215,0,.42); } }
+  .coffre-montant{ font-size:36px; font-weight:900; color:#ffd700; line-height:1.02; letter-spacing:-0.8px; }
+  .coffre-titre{ font-size:15px; font-weight:900; margin-top:2px; }
+  .coffre-mot{ font-size:12.5px; color:var(--muted); font-style:italic; margin-top:3px; }
+  .coffre-jauge{ background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:12px;
+                 height:16px; overflow:hidden; margin-top:16px; position:relative; }
+  .coffre-jauge-fill{
+    height:100%; border-radius:12px; transition: width .8s cubic-bezier(.4,0,.2,1);
+    background: linear-gradient(90deg,#8b5cf6,#3d8bfd,#34b774,#ffd700);
+    background-size:220% 100%; animation: coffreFlux 5s linear infinite;
+  }
+  @keyframes coffreFlux{ from{ background-position:0 0; } to{ background-position:220% 0; } }
+  .coffre-stats{ display:flex; gap:18px; flex-wrap:wrap; margin-top:14px; font-size:12.5px; color:var(--muted); }
+  .coffre-mvt{ display:flex; justify-content:space-between; align-items:center; gap:12px;
+               padding:7px 0; border-bottom:1px dashed var(--border); font-size:12.5px; }
+  .coffre-mvt:last-child{ border-bottom:none; }
   .sim-controls{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:22px; margin-bottom:22px; }
   .sim-slider-row{ display:flex; align-items:center; gap:14px; margin-bottom:6px; }
   .sim-slider-row input[type=range]{ flex:1; accent-color:#ffd700; height:6px; }
@@ -1231,6 +1275,9 @@ async function tryDeviceGateAdmin(){
         <div id="cashIndepReturnScale" style="margin:0 0 22px;"></div>
 
         <div id="cashObjectifsRecap" style="margin:0 0 24px;"></div>
+
+        <!-- 🏦 Coffre-fort — n'apparaît que si l'admin l'a activé pour cet agent (r250) -->
+        <div id="cashCoffrePanel" style="display:none;"></div>
 
         <div class="section-title" style="margin-top:0;">💵 Détail — jour, semaine, repères</div>
         <div class="section-sub">Basé sur tes contrats réellement signés (bouton +1 contrat dans l'Arena). Tous les montants ci-dessous sont des montants <b>bruts</b>, comptés à date — un contrat peut encore être annulé par le client (rétractation possible dans les 2 mois suivant la signature), ce qui ajusterait le calcul en conséquence.</div>
@@ -2678,6 +2725,52 @@ async function tryDeviceGateAdmin(){
 
             <div class="section-sub" style="margin-top:12px; padding:10px; border-radius:8px; background:rgba(245,166,35,.10); border:1px solid rgba(245,166,35,.35);">
               ⚠️ <b>À ne jamais activer</b> : dans Firebase → Authentication → <b>Settings</b> → User actions, la case <b>Enable create (sign-up)</b> doit rester <b>décochée</b>. Cochée, n'importe qui pourrait se créer un compte tout seul et lire tes données.
+            </div>
+          </details>
+
+          <!-- 🏦 r250 — Mode d'emploi du coffre-fort, même forme repliée que le mémo Firebase -->
+          <details style="margin-top:12px; border-top:1px solid var(--border); padding-top:16px;">
+            <summary style="cursor:pointer; font-weight:800; font-size:14px; color:var(--text);">🏦 Coffre-fort — bloquer une partie du salaire d'un agent</summary>
+            <div class="section-sub" style="margin-top:10px;">
+              Certains agents demandent, au moment de la paye, qu'on leur garde une partie de leur argent : « bloque-moi 500 DH ». Le coffre-fort tient ce compte à ta place. L'agent voit son magot grossir dans son écran Mon argent, toi tu gardes la main sur les montants, et chaque mouvement est daté.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px; padding:10px; border-radius:8px; background:rgba(52,183,116,.10); border:1px solid rgba(52,183,116,.35);">
+              ✅ <b>Le coffre ne touche à aucun calcul de paie.</b> Le salaire affiché reste exactement le même, avant comme après un blocage. C'est normal : l'agent te confie de l'argent qu'il a <b>déjà touché en main propre</b>. Le coffre est un carnet de comptes, jamais une retenue sur salaire.
+            </div>
+
+            <div class="section-sub" style="margin-top:14px;">
+              <b>🔓 Activer le coffre d'un agent</b><br>
+              1. Sur sa fiche ci-dessus, clique le bouton <b>🏦</b> (à côté de 🔑).<br>
+              2. Confirme. La section « Mon coffre-fort » apparaît aussitôt dans son écran Mon argent.<br>
+              👉 Le bouton 🏦 change de couleur selon l'état : <b style="opacity:.45;">grisé</b> = pas de coffre, <b style="color:var(--green);">vert</b> = coffre ouvert mais vide, <b style="color:#ffd700;">doré</b> = il a de l'argent bloqué.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px;">
+              <b>💰 Bloquer de l'argent</b> (il t'en confie)<br>
+              Bouton <b>🏦</b> → tape <b>1</b> → le montant en dirhams → une note si tu veux (« paye d'octobre ») → confirme.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px;">
+              <b>💸 Lui rendre de l'argent</b> (il réclame)<br>
+              Bouton <b>🏦</b> → tape <b>2</b> → le montant → une note (« retrait demandé ») → confirme.<br>
+              🛡️ Le CRM refuse si tu essaies de lui rendre plus qu'il n'a dans son coffre, et rien n'est enregistré tant que tu n'as pas confirmé le récapitulatif.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px;">
+              <b>📜 Voir l'historique</b><br>
+              Bouton <b>🏦</b> → tape <b>3</b>. Tu obtiens tous les mouvements avec leur date, leur montant et leur note. L'agent voit les 5 derniers dans son propre écran.<br>
+              Tout passe aussi dans le journal d'audit (Admin → Journal), avec qui a fait quoi et quand.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px;">
+              <b>🔒 Désactiver un coffre</b><br>
+              Bouton <b>🏦</b> → tape <b>4</b>. La section disparaît de son écran, mais <b>l'historique est conservé</b> : tu peux rouvrir son coffre plus tard sans rien perdre.<br>
+              ⚠️ S'il reste de l'argent bloqué, le CRM te le signale avant de désactiver. Rends-lui son argent en main propre d'abord, sinon personne ne saura plus que tu le lui dois.
+            </div>
+
+            <div class="section-sub" style="margin-top:12px; padding:10px; border-radius:8px; background:rgba(245,166,35,.10); border:1px solid rgba(245,166,35,.35);">
+              ⚠️ <b>C'est de l'argent réel.</b> Le CRM tient le compte, il ne garde pas les billets. Garde une trace de ton côté (caisse, enveloppe, virement) et saisis chaque mouvement le jour où il se produit : une somme bloquée oubliée pendant trois mois, c'est une dispute assurée.
             </div>
           </details>
         </div>
@@ -4410,7 +4503,11 @@ const CONFIG_MERGE_DICT_FIELDS = ['agentsTerminated','agentsIndep','agentsSuperv
   'agentsStatusLabel','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate',
   'assistanceMaxParAgent','agentsGaps',
   'agentsDecouverte','agentsDecouverteEndDate','agentsTraining','agentsProbation',
-  'agentsAssistant','agentPasswords','agentAliases','agentGender'];
+  'agentsAssistant','agentPasswords','agentAliases','agentGender',
+  // r250 — `agentsCoffre` tient de l'ARGENT RÉEL confié par les agents. Sans cette ligne, un onglet
+  // resté ouvert qui enregistre n'importe quel réglage réécrit le dictionnaire entier et efface un
+  // blocage ou un retrait saisi ailleurs entre-temps. Un mouvement perdu, c'est une dispute garantie.
+  'agentsCoffre'];
 // ⚠️ BUG CORRIGÉ — `agents` manquait à cette liste alors qu'archiveAgent modifie `agents` ET
 // `archivedAgents` ensemble. Un onglet resté ouvert qui enregistrait n'importe quel réglage
 // réécrivait `config.agents` en entier : l'agent archivé y revenait, pendant que la fusion le
@@ -5120,6 +5217,7 @@ function renderAgentChips(){
       <button onclick="setAgentTraining('${name.replace(/'/g,"\\'")}')" title="Formation écoute nouveau arrivant : 0 objectif pendant N jours, réglable, s'arrête toute seule (icône distincte de 🎧 Écoute autorisée et 🎓 Formateur ADF, qui sont deux autres réglages)" style="color:#3d8bfd;margin-right:2px;">🌱</button>
       <button onclick="setAgentProbation('${name.replace(/'/g,"\\'")}')" title="Période d'essai : affiche un rappel « zéro tolérance retard/absence » pendant N jours, réglable, disparaît tout seul" style="color:var(--red);margin-right:2px;">⏳</button>
       <button onclick="setAgentPassword('${name.replace(/'/g,"\\'")}')" title="Définir/changer le mot de passe" style="margin-right:4px;">🔑</button>
+      <button onclick="manageCoffre('${name.replace(/'/g,"\\'")}')" title="🏦 Coffre-fort : bloquer une partie de son salaire à sa demande, ou lui rendre quand il réclame. N'affecte AUCUN calcul de paie — c'est un compteur tenu à côté. Le voyant est doré quand il a de l'argent bloqué." style="margin-right:2px; ${coffreActif(name) ? (coffreSolde(name) > 0 ? 'color:#ffd700;' : 'color:var(--green);') : 'opacity:.45;'}">🏦</button>
       <button onclick="terminateAgent('${name.replace(/'/g,"\\'")}')" title="Licencier : enregistre son dernier jour travaillé et calcule automatiquement son solde de tout compte (prorata) sur la paye du mois concerné." style="color:var(--muted);margin-right:2px;">🚪</button>
       <button onclick="archiveAgent('${name.replace(/'/g,"\\'")}')" title="Il ne travaille plus ici : le retirer du quotidien (pointage, Arena, classements, paie) tout en gardant son historique complet et le rattachement de ses retours. Utilise-le une fois le solde de tout compte d'un licenciement payé." style="margin-right:2px;">📦</button>
       <button onclick="removeAgent('${name.replace(/'/g,"\\'")}')" title="Suppression définitive — casse son historique. Préfère 📦 Archiver.">×</button>`;
@@ -5431,7 +5529,7 @@ async function terminateAgent(name){
   const val = window.prompt(
     `Dernier jour travaillé de ${name} (JJ/MM/AAAA ou AAAA-MM-JJ, ex: 14/08/2026).\n\n` +
     `À partir du lendemain : plus aucun retard/absence compté, plus attendu au pointage, sorti des classements et de l'Arena.\n` +
-    `Son salaire du mois de départ est automatiquement réduit au prorata des jours ouvrés réellement travaillés (comme une arrivée en cours de mois, mais à l'envers), et il PERD sa prime d'assiduité de ce mois. Ce mois-là, il ne touche que son FIXE au prorata : primes et commission sont retenues, puis versées 2 mois plus tard moins ses retours (tu peux l'archiver tout de suite : sa paie et son solde restent calculés et figés avec les autres) — c'est son solde de tout compte, à retrouver dans son tableau habituel (Admin → Facturation & Paie) et à payer avec la paye normale du mois.\n\n` +
+    `Son salaire du mois de départ est automatiquement réduit au prorata des jours ouvrés réellement travaillés (comme une arrivée en cours de mois, mais à l'envers). Sa prime d'assiduité fait l'objet d'une question séparée juste après : tu choisis de la lui donner en entier, au prorata, ou pas du tout. Ce mois-là, il ne touche que son FIXE au prorata : primes et commission sont retenues, puis versées 2 mois plus tard moins ses retours (tu peux l'archiver tout de suite : sa paie et son solde restent calculés et figés avec les autres) — c'est son solde de tout compte, à retrouver dans son tableau habituel (Admin → Facturation & Paie) et à payer avec la paye normale du mois.\n\n` +
     `⚠️ Ceci calcule uniquement le salaire/primes/commissions au prorata — pas d'indemnité de licenciement, de préavis ni de congés payés (à ajouter toi-même en prime manuelle si dus). Vérifie le solde légal complet avec ton comptable.\n\n` +
     `Laisse vide pour annuler un licenciement déjà enregistré.`,
     current ? current.split('-').reverse().join('/') : '');
@@ -5455,14 +5553,238 @@ async function terminateAgent(name){
       return;
     }
     if(!confirm(`Confirmer le départ de ${name}, dernier jour travaillé le ${iso.split('-').reverse().join('/')} ?\n\nSon solde de tout compte (prorata du mois de départ) sera calculé automatiquement. Il reste dans les écrans de paie de ce mois-ci — archive-le (📦) une fois le solde payé pour qu'il sorte définitivement des mois suivants.`)) return;
-    config.agentsTerminated[name] = { lastDay: iso, terminatedAt: new Date().toISOString() };
+    // 🎖️ r250 — SORT DE LA PRIME D'ASSIDUITÉ DU MOIS DE DÉPART, choisi ici par l'admin.
+    // Jusqu'ici elle était toujours annulée (r242). C'est juste pour quelqu'un qui part en cours de
+    // mois sans prévenir, injuste pour un agent resté sérieux jusqu'à son dernier jour. On ne pose la
+    // question que si une prime d'assiduité est réellement réglée sur sa fiche — sinon il n'y a rien à
+    // décider. Le choix ne change rien s'il travaille le mois jusqu'au bout : dans ce cas sa prime lui
+    // est acquise normalement, comme pour n'importe qui (voir getAgentPay, bloc `factor < 1`).
+    let assiduiteMode = (term && term.assiduiteMode) || 'rien';
+    const primeAssidFiche = Math.round(getAgentPay(name).primeAssiduite || 0);
+    if(primeAssidFiche > 0){
+      const libelles = { rien: '1 (rien)', prorata: '2 (au prorata)', entier: '3 (en entier)' };
+      const rep = window.prompt(
+        `🎖️ PRIME D'ASSIDUITÉ de ${name} — ${primeAssidFiche.toLocaleString('fr-FR')} DH réglés sur sa fiche.\n\n` +
+        `S'il part EN COURS DE MOIS, que lui accordes-tu pour ce dernier mois ?\n\n` +
+        `   1  =  RIEN — prime perdue (règle habituelle)\n` +
+        `   2  =  AU PRORATA des jours réellement travaillés\n` +
+        `   3  =  EN ENTIER — il a été sérieux jusqu'au bout\n\n` +
+        `ℹ️ Sans effet s'il travaille le mois jusqu'au dernier jour : sa prime lui est alors acquise normalement.\n\n` +
+        `Annuler = garder le choix actuel (${libelles[assiduiteMode] || libelles.rien}).`,
+        assiduiteMode === 'entier' ? '3' : (assiduiteMode === 'prorata' ? '2' : '1'));
+      if(rep !== null){
+        const c = rep.trim();
+        if(c === '2') assiduiteMode = 'prorata';
+        else if(c === '3') assiduiteMode = 'entier';
+        else if(c === '1') assiduiteMode = 'rien';
+        else alert(`Réponse « ${c} » non reconnue — le choix actuel est conservé : ${libelles[assiduiteMode] || libelles.rien}.`);
+      }
+    }
+    config.agentsTerminated[name] = { lastDay: iso, terminatedAt: new Date().toISOString(), assiduiteMode };
     await saveConfigSilent();
-    logAudit('Admin', `Licenciement enregistré : ${name}`, `dernier jour ${iso}`);
+    const libAudit = { rien: 'prime d\'assiduité perdue', prorata: 'prime d\'assiduité au prorata', entier: 'prime d\'assiduité en entier' };
+    logAudit('Admin', `Licenciement enregistré : ${name}`, `dernier jour ${iso} — ${libAudit[assiduiteMode] || libAudit.rien}`);
   }
   billingInvalidate();
   clearRenderCaches();
   renderAgentChips();
   renderBillingAgentSheet();
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 🏦 COFFRE-FORT — épargne volontaire, bloquée à la demande de l'agent
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Des agents demandent de vive voix, au moment de la paye : « garde-moi 500 DH ». C'était jusqu'ici un
+// bout de papier dans un tiroir. Le coffre rend ça visible des deux côtés — l'agent regarde son magot
+// grossir dans Mon argent, l'admin tient le compte et rend l'argent quand on le lui réclame.
+//
+// ⚠️ RÈGLE ABSOLUE — LE COFFRE NE TOUCHE À AUCUN CALCUL DE PAIE.
+// Le salaire affiché reste exactement le même, avant comme après un blocage : les agents demandent
+// qu'on mette de côté APRÈS avoir vu leur paye, jamais avant. C'est un compteur tenu à côté, pas une
+// retenue. Aucune fonction de salaire, de prime, de masse salariale ou de fiche de paie ne lit ces
+// montants, et il faut que ça le reste — sinon un agent se retrouverait payé deux fois moins pour une
+// somme qu'il a déjà touchée en main propre.
+//
+// Chaque mouvement est conservé (jamais de solde écrasé) : le solde est TOUJOURS recalculé en
+// additionnant l'historique. Impossible d'avoir un total qui ne corresponde pas aux lignes affichées.
+function getCoffre(agent){
+  const c = (config.agentsCoffre || {})[agent];
+  return {
+    actif: !!(c && c.actif),
+    mouvements: (c && Array.isArray(c.mouvements)) ? c.mouvements : []
+  };
+}
+function coffreActif(agent){ return getCoffre(agent).actif; }
+function coffreSolde(agent){
+  return getCoffre(agent).mouvements.reduce((s, m) => s + (Number(m.montant) || 0), 0);
+}
+
+// Paliers purement décoratifs : ils ne servent qu'à donner envie d'y remettre un billet. Le ton est
+// volontairement taquin — cette section doit faire sourire, pas ressembler à un relevé de banque.
+function coffrePalier(solde){
+  if(solde <= 0)    return { emoji:'🕸️', titre:'Coffre vide',         mot:'Même les mites ont déménagé.',               seuil:500   };
+  if(solde < 500)   return { emoji:'🪙', titre:'Fond de poche',       mot:'Un début. Microscopique, mais un début.',    seuil:500   };
+  if(solde < 1500)  return { emoji:'🐷', titre:'Tirelire',            mot:'Le cochon commence à peser.',                seuil:1500  };
+  if(solde < 3000)  return { emoji:'🔐', titre:'Petit coffre',        mot:'Tu y prends goût, on dirait.',               seuil:3000  };
+  if(solde < 6000)  return { emoji:'🏦', titre:'Coffre blindé',       mot:'Là, ça sent le sérieux.',                    seuil:6000  };
+  if(solde < 10000) return { emoji:'💎', titre:'Chambre forte',       mot:'Tu négocies tes retraits avec toi-même.',    seuil:10000 };
+  if(solde < 20000) return { emoji:'🐉', titre:'Trésor de dragon',    mot:'Tu dors dessus, avoue.',                     seuil:20000 };
+  return              { emoji:'🏴‍☠️', titre:'Magot de pirate',  mot:'Il te manque une île et un perroquet.', seuil:solde };
+}
+
+// ── Gestion par l'admin (bouton 🏦 sur la fiche de l'agent) ──────────────────────────────────────
+// L'agent ne saisit jamais rien lui-même : il réclame verbalement à son superviseur, qui passe ici.
+async function manageCoffre(name){
+  const c = getCoffre(name);
+  const solde = coffreSolde(name);
+  const f = v => Math.round(v).toLocaleString('fr-FR');
+  if(!config.agentsCoffre) config.agentsCoffre = {};
+
+  if(!c.actif){
+    if(!confirm(`🏦 Activer le coffre-fort de ${name} ?\n\n` +
+      `Une section « Mon coffre-fort » apparaîtra dans son écran Mon argent, où il verra grossir ce qu'il te confie.\n\n` +
+      `⚠️ Son salaire affiché ne change pas d'un dirham : le coffre est un compteur tenu à côté, pas une retenue. ` +
+      `C'est toi seul qui saisis les montants, quand il te le demande.`)) return;
+    config.agentsCoffre[name] = { actif: true, mouvements: c.mouvements };
+    await saveConfigSilent();
+    logAudit('Admin', `Coffre-fort activé : ${name}`, '');
+    showToast(`🏦 Coffre-fort activé pour ${name}.`, 'ok');
+    renderAgentChips();
+    return;
+  }
+
+  const choix = window.prompt(
+    `🏦 COFFRE-FORT DE ${name.toUpperCase()}\n\n` +
+    `Solde bloqué : ${f(solde)} DH   —   ${c.mouvements.length} mouvement${c.mouvements.length > 1 ? 's' : ''}\n\n` +
+    `   1  =  BLOQUER un montant (il te confie de l'argent)\n` +
+    `   2  =  LUI RENDRE un montant (il le réclame)\n` +
+    `   3  =  Voir l'historique complet\n` +
+    `   4  =  Désactiver son coffre\n\n` +
+    `Annuler = ne rien faire.`, '1');
+  if(choix === null) return;
+  const ch = choix.trim();
+
+  if(ch === '3'){
+    if(!c.mouvements.length){ alert(`🏦 ${name} — aucun mouvement enregistré pour l'instant.`); return; }
+    const lignes = c.mouvements.slice().reverse().map(m =>
+      `${(m.date || '').split('-').reverse().join('/')}   ${m.montant > 0 ? '+' : '−'}${f(Math.abs(m.montant))} DH` +
+      (m.note ? `   — ${m.note}` : '')).join('\n');
+    alert(`🏦 HISTORIQUE DU COFFRE DE ${name.toUpperCase()}\n\nSolde actuel : ${f(solde)} DH\n\n${lignes}`);
+    return;
+  }
+
+  if(ch === '4'){
+    const avertissement = solde > 0
+      ? `\n\n⚠️ ATTENTION : il reste ${f(solde)} DH bloqués dans son coffre. Assure-toi de les lui avoir rendus en main propre avant de désactiver.`
+      : '';
+    if(!confirm(`Désactiver le coffre-fort de ${name} ?\n\nLa section disparaîtra de son écran Mon argent. Son historique est conservé : tu pourras le réactiver plus tard sans rien perdre.${avertissement}`)) return;
+    config.agentsCoffre[name] = { actif: false, mouvements: c.mouvements };
+    await saveConfigSilent();
+    logAudit('Admin', `Coffre-fort désactivé : ${name}`, solde > 0 ? `solde restant ${solde} DH` : 'solde à zéro');
+    showToast(`🏦 Coffre-fort désactivé pour ${name}.`, 'ok');
+    renderAgentChips();
+    return;
+  }
+
+  if(ch !== '1' && ch !== '2'){
+    alert(`Réponse « ${ch} » non reconnue. Rien n'a été modifié.`);
+    return;
+  }
+
+  const sens = (ch === '1') ? 1 : -1;
+  const verbe = sens > 0 ? 'BLOQUER' : 'RENDRE À';
+  const saisie = window.prompt(
+    `🏦 ${verbe} ${sens > 0 ? '' : ''}${name} — montant en DH (chiffres uniquement, ex : 500).\n\n` +
+    `Solde actuel du coffre : ${f(solde)} DH` +
+    (sens < 0 ? `\nTu ne peux pas lui rendre plus que ce qu'il a bloqué.` : ''), '');
+  if(saisie === null) return;
+  const montant = Math.round(Number(String(saisie).trim().replace(',', '.').replace(/\s/g, '')));
+  if(!montant || isNaN(montant) || montant <= 0){
+    alert(`Montant illisible : « ${saisie} ». Saisis un nombre positif en dirhams (ex : 500). Rien n'a été enregistré.`);
+    return;
+  }
+  if(sens < 0 && montant > solde){
+    alert(`Impossible : ${name} n'a que ${f(solde)} DH dans son coffre, tu ne peux pas lui en rendre ${f(montant)}. Rien n'a été enregistré.`);
+    return;
+  }
+  const note = (window.prompt(
+    `Note pour ce mouvement (facultatif) — ex : « paye d'octobre », « retrait demandé pour loyer ».\n\n` +
+    `Laisse vide si tu n'en veux pas.`, '') || '').trim();
+
+  const nouveauSolde = solde + sens * montant;
+  if(!confirm(`Confirmer ?\n\n${sens > 0 ? '🔒 Bloquer' : '🔓 Rendre'} ${f(montant)} DH ${sens > 0 ? 'dans le' : 'du'} coffre de ${name}.\n\n` +
+    `Solde : ${f(solde)} DH  →  ${f(nouveauSolde)} DH`)) return;
+
+  config.agentsCoffre[name] = {
+    actif: true,
+    mouvements: c.mouvements.concat([{
+      date: todayStr(), montant: sens * montant, note, ts: new Date().toISOString()
+    }])
+  };
+  await saveConfigSilent();
+  logAudit('Admin', `Coffre-fort ${sens > 0 ? 'blocage' : 'retrait'} : ${name}`,
+    `${sens > 0 ? '+' : '−'}${montant} DH — nouveau solde ${nouveauSolde} DH${note ? ` — ${note}` : ''}`);
+  showToast(`🏦 ${name} : ${sens > 0 ? '+' : '−'}${f(montant)} DH — coffre à ${f(nouveauSolde)} DH.`, 'ok');
+  renderAgentChips();
+  if(document.getElementById('view-cash')?.classList.contains('active')) renderCash();
+}
+
+// ── Affichage côté agent (Mon argent) ────────────────────────────────────────────────────────────
+function renderCashCoffre(agent){
+  const el = document.getElementById('cashCoffrePanel');
+  if(!el) return;
+  const c = getCoffre(agent);
+  // Coffre non activé par l'admin : la section n'existe simplement pas pour cet agent.
+  if(!c.actif){ el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+
+  const solde = coffreSolde(agent);
+  const pal = coffrePalier(solde);
+  const f = v => Math.round(v).toLocaleString('fr-FR');
+  const pct = pal.seuil > 0 ? Math.max(4, Math.min(100, Math.round(solde / pal.seuil * 100))) : 100;
+  const totalBloque = c.mouvements.filter(m => m.montant > 0).reduce((s, m) => s + m.montant, 0);
+  const totalRendu  = c.mouvements.filter(m => m.montant < 0).reduce((s, m) => s - m.montant, 0);
+  const restant = Math.max(0, pal.seuil - solde);
+
+  const derniers = c.mouvements.slice(-5).reverse().map(m => `
+    <div class="coffre-mvt">
+      <span style="color:var(--muted);">${(m.date || '').split('-').reverse().join('/')}${m.note ? ` <span style="opacity:.75;">— ${escapeHtml(m.note)}</span>` : ''}</span>
+      <b style="color:${m.montant > 0 ? 'var(--green)' : 'var(--amber)'}; white-space:nowrap;">${m.montant > 0 ? '🔒 +' : '🔓 −'}${f(Math.abs(m.montant))} DH</b>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="section-title" style="margin-top:0;">🏦 MON COFFRE-FORT</div>
+    <div class="section-sub">Ce que tu as mis de côté et confié à la direction. <b>Ton salaire n'est pas touché</b> : c'est de l'argent déjà gagné, gardé au chaud. Pour en récupérer, demande à ton superviseur.</div>
+    <div class="coffre-wrap">
+      <div class="coffre-head">
+        <div class="coffre-porte ${solde >= 3000 ? 'riche' : ''}">
+          ${pal.emoji}<span class="molette"></span>
+        </div>
+        <div style="flex:1; min-width:190px;">
+          <div class="coffre-montant">${f(solde)} DH</div>
+          <div class="coffre-titre" style="color:#ffd700;">${pal.titre}</div>
+          <div class="coffre-mot">${pal.mot}</div>
+        </div>
+      </div>
+      <div class="coffre-jauge"><div class="coffre-jauge-fill" style="width:${pct}%;"></div></div>
+      <div style="text-align:center; font-size:12px; color:var(--muted); margin-top:7px;">
+        ${restant > 0
+          ? `Encore <b style="color:#ffd700;">${f(restant)} DH</b> et tu passes au palier suivant 👀`
+          : `Palier maximum atteint. On va devoir agrandir le coffre. 🧨`}
+      </div>
+      <div class="coffre-stats">
+        <span>🔒 Total mis de côté : <b style="color:var(--green);">${f(totalBloque)} DH</b></span>
+        <span>🔓 Total récupéré : <b style="color:var(--amber);">${f(totalRendu)} DH</b></span>
+      </div>
+      ${derniers ? `
+      <div style="margin-top:16px;">
+        <div style="font-size:11px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:6px;">Derniers mouvements</div>
+        ${derniers}
+      </div>` : `
+      <div style="margin-top:16px; font-size:12.5px; color:var(--muted); text-align:center; font-style:italic;">
+        Rien dedans pour l'instant. Même l'écho s'ennuie.
+      </div>`}
+    </div>`;
 }
 
 // ============================================================
@@ -5883,7 +6205,68 @@ function agentsArchivesAPayer(monthVal){
     return md === monthVal || addMonthsToMonthVal(md, 2) === monthVal;
   });
 }
+// 🔐 r250 — RAPPEL FIREBASE. Archiver ou licencier quelqu'un le sort du pointage, de l'Arena, des
+// classements et de la paie — mais ne touche PAS à son compte de connexion, qui vit dans Firebase.
+// Tant que ce compte est actif, un ex-agent peut toujours se connecter et lire l'intégralité des
+// données : contrats, salaires de toute l'équipe, historique. C'est l'oubli le plus coûteux possible
+// dans ce CRM, et rien ne le rappelait au moment où il se produit. Le voici, avec l'adresse exacte à
+// chercher et un lien qui ouvre directement la bonne page.
+const FIREBASE_USERS_URL = 'https://console.firebase.google.com/project/pointage-vortex-nova/authentication/users';
+function rappelFirebase(name, action){
+  const adresse = (typeof authAdressesPour === 'function' ? authAdressesPour(name)[0] : '') || `${name.toLowerCase()}@vortexnova.local`;
+  const couper = action === 'couper';
+  const texte = couper
+    ? `⚠️ ATTENTION — ${name} PEUT ENCORE SE CONNECTER.
+
+` +
+      `L'archivage l'a sorti du pointage, de l'Arena, des classements et de la paie. Mais son compte de connexion existe toujours : il peut entrer dans le CRM et lire les contrats et les salaires de toute l'équipe.
+
+` +
+      `POUR FERMER LA PORTE :
+` +
+      `1. Ouvre Firebase → Authentication
+` +
+      `2. Cherche la ligne   ${adresse}
+` +
+      `3. Tout à droite, clique sur les trois points ⋮
+` +
+      `4. Clique sur « Disable account »
+
+` +
+      `Utilise « Disable » et non « Delete » : s'il revient un jour, tu le réactives en un clic.
+
+` +
+      `Ouvrir Firebase maintenant ?`
+    : `✅ ${name} est de retour dans l'équipe active.
+
+` +
+      `Mais s'il avait été désactivé dans Firebase, il ne pourra PAS se connecter tant que tu ne l'auras pas réactivé.
+
+` +
+      `POUR LUI RENDRE L'ACCÈS :
+` +
+      `1. Ouvre Firebase → Authentication
+` +
+      `2. Cherche la ligne   ${adresse}
+` +
+      `3. Trois points ⋮ → « Enable account »
+
+` +
+      `Si sa ligne n'apparaît pas du tout, c'est que le compte a été supprimé : recrée-le avec « Add user », cette même adresse, et le mot de passe que tu lui as mis avec 🔑.
+
+` +
+      `Ouvrir Firebase maintenant ?`;
+  if(confirm(texte)) window.open(FIREBASE_USERS_URL, '_blank', 'noopener');
+}
+
 async function archiveAgent(name){
+  // 🏦 r250 — Ne jamais laisser partir quelqu'un sans solder son coffre en silence. C'est le dernier
+  // moment où l'admin l'a en face de lui ; après, c'est une dette que plus personne ne réclame.
+  const soldeCoffre = coffreSolde(name);
+  if(soldeCoffre > 0 && !confirm(
+      `⚠️ ${name} a encore ${Math.round(soldeCoffre).toLocaleString('fr-FR')} DH dans son coffre-fort.\n\n` +
+      `Tu lui dois cette somme. Rends-la-lui et enregistre le retrait avec le bouton 🏦 avant de l'archiver.\n\n` +
+      `Archiver quand même ? (son coffre restera consultable sur sa fiche archivée)`)) return;
   const termA = getAgentTermination(name);
   const noteSolde = (termA && termA.lastDay)
     ? `\n\n💰 Sa paie de ${billingMonthLabel(termA.lastDay.slice(0,7))} et son solde de départ (${billingMonthLabel(addMonthsToMonthVal(termA.lastDay.slice(0,7), 2))}) restent calculés et seront inclus quand tu figeras ces mois.`
@@ -5898,6 +6281,7 @@ async function archiveAgent(name){
   renderAgentChips();
   populateAgentSelect();
   renderAgentPayTable();
+  rappelFirebase(name, 'couper');   // r250 — l'archivage ne coupe pas l'accès, il faut le dire ICI
 }
 
 async function unarchiveAgent(name){
@@ -5974,6 +6358,9 @@ async function unarchiveAgent(name){
   // ses journées peuvent avoir été écrites pendant son absence sans lui.
   try{ await autoReparerJourneesSiEcart(moisAVerifier(), { forcer: true }); }
   catch(e){ console.warn('autoReparerJourneesSiEcart (unarchive)', e); }
+  // r250 — Symétrique du rappel posé à l'archivage : un agent réintégré dont le compte Firebase est
+  // resté désactivé se heurte à un refus de connexion sans que personne comprenne pourquoi.
+  rappelFirebase(name, 'rendre');
 }
 
 function renderArchivedAgentChips(){
@@ -5985,12 +6372,31 @@ function renderArchivedAgentChips(){
     return;
   }
   list.innerHTML = arr.map(name=>`<div class="agent-chip" style="opacity:0.75;">
-    <span>${escapeHtml(name)} <span class="indep-badge" style="background:var(--muted);color:#111;">Ancien</span></span>
+    <span>${escapeHtml(name)} <span class="indep-badge" style="background:var(--muted);color:#111;">Ancien</span>${
+      coffreSolde(name) > 0
+        ? ` <span class="indep-badge" style="background:#ffd700;color:#1a1a1a;" title="Il reste de l'argent à lui dans son coffre-fort. Tu lui dois cette somme — rends-la-lui et saisis le retrait avec le bouton 🏦.">🏦 ${Math.round(coffreSolde(name)).toLocaleString('fr-FR')} DH dus</span>`
+        : ''}</span>
+    ${/* 🐛 r250 — Sans ce bouton, le coffre d'un agent archivé devenait INACCESSIBLE : la fiche
+          archivée n'en portait aucun, et l'admin n'avait plus aucun moyen de lui rendre son argent
+          sans le réintégrer d'abord dans l'équipe. De l'argent réel, enfermé par une absence de
+          bouton. Il n'apparaît que s'il y a vraiment quelque chose à régler. */''}
+    ${(coffreSolde(name) > 0 || getCoffre(name).mouvements.length)
+      ? `<button onclick="manageCoffre('${name.replace(/'/g,"\\'")}')" title="🏦 Coffre-fort de cet ancien agent : lui rendre ce qui lui reste, ou consulter son historique." style="margin-right:2px; ${coffreSolde(name) > 0 ? 'color:#ffd700;' : 'opacity:.55;'}">🏦</button>`
+      : ''}
     <button onclick="unarchiveAgent('${name.replace(/'/g,"\\'")}')" title="Réintégrer dans l'équipe active. S'il était licencié, le CRM te demandera s'il reprend vraiment le travail (licenciement annulé, salaire plein) ou s'il reste licencié.">↩️</button>
   </div>`).join('');
 }
 
 async function removeAgent(name){
+  // 🏦 r250 — Supprimer quelqu'un à qui on doit de l'argent effacerait la seule trace de cette dette.
+  // On bloque net : il faut d'abord solder le coffre, c'est un geste de dix secondes.
+  const soldeSupp = coffreSolde(name);
+  if(soldeSupp > 0){
+    alert(`⛔ Impossible de supprimer ${name} : il a encore ${Math.round(soldeSupp).toLocaleString('fr-FR')} DH dans son coffre-fort.\n\n` +
+      `Tu lui dois cette somme. Rends-la-lui et enregistre le retrait avec le bouton 🏦, puis recommence.\n\n` +
+      `Supprimer maintenant effacerait la seule trace de cette dette.`);
+    return;
+  }
   if(!confirm(`⚠️ SUPPRIMER DÉFINITIVEMENT ${name} ?\n\nSon nom ne sera plus reconnu : ses contrats des mois passés deviendront « non rattachés », ses statistiques disparaîtront, et un retour tardif sur un de ses contrats ne trouvera plus personne.\n\n👉 S'il quitte simplement l'équipe, utilise plutôt le bouton 📦 Archiver : tout son passé est conservé.\n\nSupprimer quand même ?`)) return;
   config.agents = config.agents.filter(a=>a!==name);
   if(config.agentPasswords) delete config.agentPasswords[name];
@@ -6000,6 +6406,9 @@ async function removeAgent(name){
   if(config.agentsADFTrainer) delete config.agentsADFTrainer[name];
   if(config.agentsEcoutesAutorisees) delete config.agentsEcoutesAutorisees[name];
   if(config.prodConfig && config.prodConfig.agentPay) delete config.prodConfig.agentPay[name];
+  // r250 — Son coffre est forcément vide à ce stade (contrôlé plus haut) : on retire la clé pour ne
+  // pas laisser traîner un historique orphelin rattaché à un nom que le CRM ne reconnaît plus.
+  if(config.agentsCoffre) delete config.agentsCoffre[name];
   await saveConfigSilent();
   logAudit('Admin', `Agent supprimé : ${name}`, '');
   renderAgentChips();
@@ -11596,7 +12005,13 @@ async function computeTotalPayrollMonth(year, month){
       extraContracts: isCurrentMonth ? info.extra : 0,
       onTrack: mini > 0 ? (info.realized >= mini || projectedContracts >= mini) : null,
       total: Math.round(total), projTotal: Math.round(projTotal),
-      supervisorBonus: Math.round(supervisorBonus), indepCommission, retenueDepart, soldeDepart, departLe
+      supervisorBonus: Math.round(supervisorBonus), indepCommission, retenueDepart, soldeDepart, departLe,
+      // r250 — La Projection a besoin de savoir qui est un ANCIEN agent : un archivé n'a ni rythme ni
+      // objectif, l'afficher dans les groupes d'actifs le faisait passer pour « objectif à risque »
+      // avec 0 contrat alors qu'il est parti. `lastDay` est repris ici car `departLe` n'est rempli que
+      // le mois du départ, alors que le solde s'affiche deux mois plus tard.
+      isArchived: isArchivedAgent(agent),
+      lastDay: (termP && termP.lastDay) || null
     };
   }));
 
@@ -12283,9 +12698,21 @@ async function renderProjectionPanel(){
   // cache, brancher une paie complète sur un panneau rafraîchi toutes les 25 s serait intenable.
   if(!el.innerHTML.trim() || el.querySelector('.empty')) el.innerHTML = '<div class="empty">⏳ Calcul…</div>';
   const payroll = await getPayrollMonth(year, month);
-  const details = payroll.details || [];
+  // 🚪 r250 — UN ANCIEN AGENT N'EST PAS UN AGENT EN RETARD. La paie garde volontairement un archivé
+  // pendant son mois de départ et celui de son solde (getPayrollMonth → agentsArchivesAPayer), parce
+  // qu'il reste de l'argent à régler. Mais cet écran-ci reprenait cette liste telle quelle et lui
+  // appliquait le traitement d'un salarié actif : rythme, objectif, projection. Résultat, quelqu'un qui
+  // est parti apparaissait « ⚠️ Projeté 0 — objectif à risque » avec 0 contrat et 0 jour restant — une
+  // alerte rouge sur une personne qui ne travaille plus ici, et qu'aucune action ne pouvait faire
+  // disparaître. On les sort donc des groupes d'actifs pour les afficher à part, avec ce qui intéresse
+  // vraiment l'admin : le détail de leur solde de départ. Et seulement s'il reste de l'argent en jeu —
+  // un ancien à 0 DH sans retenue ni solde n'a plus rien à faire sur cet écran.
+  const tousDetails = payroll.details || [];
+  const anciens = tousDetails.filter(d => d.isArchived
+    && (d.soldeDepart || d.retenueDepart || d.total > 0));
+  const details = tousDetails.filter(d => !d.isArchived);
   const proj = payroll.projection || { available:false };
-  if(details.length === 0){ el.innerHTML = '<div class="empty">Aucun agent à projeter ce mois.</div>'; return; }
+  if(details.length === 0 && anciens.length === 0){ el.innerHTML = '<div class="empty">Aucun agent à projeter ce mois.</div>'; return; }
 
   const fdh = v => Math.round(v).toLocaleString('fr-FR');
 
@@ -12334,6 +12761,48 @@ async function renderProjectionPanel(){
     </div>`;
   };
 
+  // 🚪 r250 — Bloc détaillé d'un ancien agent, à la place de la ligne « rythme / objectif » qui n'a
+  // aucun sens pour quelqu'un qui est parti. On répond aux seules questions qui se posent encore à son
+  // sujet : quand est-il parti, qu'est-ce qui lui a été retenu, combien ses retours ont mangé, et au
+  // bout du compte — qui doit quoi à qui. Le cas « il TE doit de l'argent » est affiché en rouge : il
+  // était jusqu'ici totalement invisible, écrasé à 0 par le calcul du solde.
+  const ligneAncien = d => {
+    const sd = d.soldeDepart;
+    const dette = sd ? (sd.dette || 0) : 0;
+    const bg = dette > 0 ? 'var(--red-bg)' : 'var(--panel2)';
+    const border = dette > 0 ? 'rgba(229,90,90,0.45)' : 'rgba(155,89,182,0.35)';
+    const lg = (libelle, valeur, couleur) =>
+      `<div style="display:flex; justify-content:space-between; gap:12px; padding:3px 0;">
+         <span style="color:var(--muted);">${libelle}</span>
+         <b style="color:${couleur || 'var(--text)'}; white-space:nowrap;">${valeur}</b>
+       </div>`;
+    let corps;
+    if(sd){
+      corps = lg('Retenu à son départ', `${fdh(sd.retenu)} DH`, 'var(--text)')
+            + lg(`Retours ${sd.nbRetours > 0 ? `(${sd.nbRetours} × ${fdh(sd.cout)} DH)` : ''}`,
+                 sd.deduit > 0 ? `−${fdh(sd.deduit)} DH` : 'aucun',
+                 sd.deduit > 0 ? 'var(--red)' : 'var(--muted)')
+            + `<div style="height:1px; background:var(--border); margin:7px 0;"></div>`
+            + (dette > 0
+                ? lg('⚠️ Il te doit', `${fdh(dette)} DH`, 'var(--red)')
+                : lg('À lui verser ce mois-ci', `${fdh(sd.solde)} DH`, 'var(--green)'));
+    } else if(d.retenueDepart){
+      corps = lg('Versé ce mois-ci', `${fdh(d.total)} DH`, 'var(--green)')
+            + lg('Retenu (primes + commission)', `${fdh(d.retenueDepart.montant)} DH`, 'var(--amber)')
+            + lg('Versement du solde prévu', billingMonthLabel(d.retenueDepart.versementMois), 'var(--text)');
+    } else {
+      corps = lg('Versé ce mois-ci', `${fdh(d.total)} DH`, 'var(--green)');
+    }
+    const jour = (d.departLe || d.lastDay);
+    return `<div style="padding:12px 16px; border-radius:10px; background:${bg}; border:1px solid ${border}; margin-bottom:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:7px;">
+        <div><b>${d.agent}</b> <span class="tag" style="background:var(--muted); color:#111;">📦 Ancien</span></div>
+        <span style="font-size:12.5px; color:var(--muted);">Dernier jour travaillé : <b style="color:var(--text);">${jour ? jour.split('-').reverse().join('/') : '—'}</b></span>
+      </div>
+      <div style="font-size:12.5px;">${corps}</div>
+    </div>`;
+  };
+
   const groupe = (titre, liste, couleur) => {
     if(!liste.length) return '';
     const tot = liste.reduce((s,d)=>s+d.total, 0);
@@ -12368,10 +12837,23 @@ async function renderProjectionPanel(){
       ${blocRetours}
     </div>`;
 
+  // r250 — Les anciens agents ferment la liste, dans leur propre groupe : ils ne sont plus comparables
+  // aux actifs, et leur total n'est pas un salaire en cours mais un solde à régler.
+  const groupeAnciens = () => {
+    if(!anciens.length) return '';
+    const totAnciens = anciens.reduce((s,d)=> s + d.total, 0);
+    const totDette = anciens.reduce((s,d)=> s + ((d.soldeDepart && d.soldeDepart.dette) || 0), 0);
+    return `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; margin:18px 0 8px;">
+        <div style="font-size:12px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px;" title="Agents archivés dont il reste de l'argent à régler ce mois-ci : solde de départ à verser, ou retenue en cours.">📦 Anciens agents · solde de départ · ${anciens.length}</div>
+        <div style="font-size:12px; color:var(--muted);"><b style="color:var(--green);">${fdh(totAnciens)} DH</b>${totDette > 0 ? ` · <b style="color:var(--red);">${fdh(totDette)} DH dus par d'ex-agents</b>` : ''}</div>
+      </div>` + anciens.map(ligneAncien).join('');
+  };
+
   el.innerHTML = entete
     + groupe('👤 Salariés à objectif', salaries, 'var(--accent)')
     + groupe('🗂️ Backoffice / sans objectif', backoffice, 'var(--muted)')
-    + groupe('🟣 Indépendants', indeps, 'var(--independant)');
+    + groupe('🟣 Indépendants', indeps, 'var(--independant)')
+    + groupeAnciens();
 }
 
 // ============================================================
@@ -17228,10 +17710,39 @@ function getAgentPay(agent, year, month){
       isSupervisor: isSupervisor(agent)
     };
   }
+
+  // 💸 r250 — COÛT D'UN RETOUR = CE QUE LE CONTRAT AVAIT RAPPORTÉ (décision du patron).
+  // Un retour, c'est un contrat qui se dégonfle : ce qu'il faut reprendre, c'est exactement ce qu'il
+  // avait fait gagner, à savoir le DH/contrat de CET agent — et il n'est pas le même pour tout le
+  // monde. Reprendre un montant forfaitaire identique à tous ferait payer un retour plus cher que le
+  // contrat à l'un, et presque rien à l'autre.
+  //
+  // ⚠️ CE RÉGLAGE ÉTAIT UN PIÈGE SILENCIEUX. `returnCost` ne figurait pas dans les valeurs par défaut
+  // du fichier : tant que l'admin ne l'avait pas saisi à la main, il valait 0. Chaque retour coûtait
+  // donc ZÉRO dirham, un ex-agent récupérait l'intégralité de sa retenue de garantie quel que soit le
+  // nombre de retours, et rien à l'écran ne le signalait. La retenue de départ ne protégeait de rien.
+  //
+  // Ordre de priorité, du plus explicite au plus automatique :
+  //   1. le coût réglé sur SA fiche (Admin → Facturation & Paie, par agent) — zéro compris, si c'est
+  //      un choix assumé pour quelqu'un en particulier ;
+  //   2. sinon le coût global, s'il est réglé à une valeur non nulle ;
+  //   3. sinon, automatiquement, son propre DH/contrat.
+  // Un global laissé à 0 est traité comme « pas réglé », jamais comme « les retours sont gratuits » :
+  // c'est précisément l'état par défaut qui posait problème.
+  const coutPropre  = (c.returnCost !== '' && c.returnCost != null && !isNaN(c.returnCost));
+  const coutGlobal  = (d.returnCost !== '' && d.returnCost != null && !isNaN(d.returnCost) && Number(d.returnCost) > 0);
+  if(!coutPropre && !coutGlobal){
+    pay.returnCost = pay.perContract || 0;
+    pay.returnCostAuto = true;   // pour que l'écran de réglage dise d'où vient le chiffre
+  }
+
   if(year != null && month != null){
     const factor = proratedMonthFactor(agent, year, month);
     pay.prorationFactor = factor;
     if(factor < 1){
+      // r250 — Valeur PLEINE de la prime d'assiduité mémorisée avant le prorata : le mode « entier »
+      // choisi au licenciement doit pouvoir la rendre telle quelle, pas la part déjà rognée ci-dessous.
+      const assiduitePleine = pay.primeAssiduite;
       pay.baseSalary = Math.round(pay.baseSalary * factor);
       pay.primeFixeMensuelle = Math.round(pay.primeFixeMensuelle * factor);
       pay.primeAssiduite = Math.round(pay.primeAssiduite * factor);
@@ -17249,10 +17760,27 @@ function getAgentPay(agent, year, month){
       // entier, pas proratisée. Tout le reste (fixe, prime fixe, objectif et sa prime) reste au prorata
       // des jours travaillés. Ne concerne que le mois du départ, et seulement s'il n'a pas travaillé
       // le mois jusqu'au bout (facteur < 1).
+      //
+      // 🚪 r250 — CE N'EST PLUS AUTOMATIQUE : L'ADMIN CHOISIT. Annuler la prime en entier est juste
+      // quand quelqu'un claque la porte le 12, mais injuste pour un agent resté sérieux jusqu'à son
+      // dernier jour. Le choix est fait une fois, au moment du licenciement (terminateAgent), et stocké
+      // dans `assiduiteMode` :
+      //   • 'rien'    → prime annulée (règle r242 d'origine, et valeur par défaut si rien n'est choisi,
+      //                 pour que les licenciements déjà enregistrés gardent exactement leur calcul)
+      //   • 'prorata' → prime réduite comme le fixe, au nombre de jours réellement travaillés
+      //   • 'entier'  → prime versée en totalité, malgré le départ anticipé
       const termPay = getAgentTermination(agent);
-      if(termPay && termPay.lastDay && termPay.lastDay.slice(0, 7) === `${year}-${String(month).padStart(2,'0')}` && pay.primeAssiduite > 0){
-        pay.primeAssiduitePerdueDepart = pay.primeAssiduite;
-        pay.primeAssiduite = 0;
+      if(termPay && termPay.lastDay && termPay.lastDay.slice(0, 7) === `${year}-${String(month).padStart(2,'0')}` && assiduitePleine > 0){
+        const modeAssid = termPay.assiduiteMode || 'rien';
+        pay.assiduiteDepartMode = modeAssid;
+        if(modeAssid === 'entier'){
+          pay.primeAssiduite = assiduitePleine;
+        } else if(modeAssid !== 'prorata'){
+          // 'rien' — la prime est perdue en entier, comme avant le r250.
+          pay.primeAssiduitePerdueDepart = assiduitePleine;
+          pay.primeAssiduite = 0;
+        }
+        // 'prorata' : la prime a déjà été multipliée par le facteur plus haut, rien à faire de plus.
       }
     }
   }
@@ -20317,6 +20845,7 @@ async function renderCash(){
   }
 
   renderCashRealGrid();
+  renderCashCoffre(agent);   // r250 — n'affiche rien si l'admin n'a pas activé son coffre
   renderCashSim();
   renderCashLeaderboard(salaryRankings);
   populateCashPastMonthSelect();
@@ -20396,6 +20925,12 @@ async function renderCashPastMonth(){
   let assidNote = '';
   if(!isIndep && pay.primeAssiduitePerdueDepart){
     assidNote = 'Perdue — départ en cours de mois';
+  // r250 — L'admin a pu accorder la prime malgré le départ anticipé : on le dit, sinon la ligne
+  // ressemble à une prime ordinaire et personne ne se souvient du choix fait au licenciement.
+  } else if(!isIndep && pay.assiduiteDepartMode === 'entier'){
+    assidNote = 'Accordée en entier malgré le départ en cours de mois';
+  } else if(!isIndep && pay.assiduiteDepartMode === 'prorata'){
+    assidNote = 'Accordée au prorata des jours travaillés (départ en cours de mois)';
   } else if(!isIndep && assidReglee > 0 && !assidAcquise){
     assidNote = stats.departsSansJustif > 0 ? 'Perdue — départ sans justificatif'
       : `Perdue — ${stats.retardsCumules} retards/absences dans le mois (perdue dès 3)`;
@@ -20406,7 +20941,7 @@ async function renderCashPastMonth(){
     primeFixe ? ligne('Prime fixe', `${fmt(primeFixe)} DH`) : '',
     (!isIndep && pay.primeAssiduitePerdueDepart) ? ligne("❌ Prime d'assiduité", '0 DH', 'miss', assidNote) :
     (!isIndep && assidReglee) ? (assidAcquise
-        ? ligne("✅ Prime d'assiduité", `+${fmt(assid)} DH`, 'hit')
+        ? ligne("✅ Prime d'assiduité", `+${fmt(assid)} DH`, 'hit', assidNote)
         : ligne("❌ Prime d'assiduité", '0 DH', 'miss', assidNote)) : '',
     (!isIndep && objectif > 0) ? (st.atteint
         ? ligne(`✅ Prime d'objectif`, `+${fmt(primeObj)} DH`, 'hit', `${payable}/${objectif} contrats payés`)
@@ -25528,9 +26063,17 @@ async function billingComputeAgent(agent, monthVal){
         }
         const cout = getAgentPay(agent).returnCost || 0;
         const deduit = nbRetours * cout;
-        const solde = Math.max(0, retenu - deduit);
+        // 🚪 r250 — Le solde ne pouvait QUE être positif (Math.max(0, …)) : quand les retours dépassaient
+        // ce qui avait été retenu, le CRM affichait « 0 DH » et s'arrêtait là. L'admin ne voyait donc
+        // JAMAIS le cas inverse, celui où c'est l'ex-agent qui doit de l'argent — alors que c'est
+        // précisément ce qu'on veut savoir deux mois après un départ. On garde `solde` comme le montant
+        // réellement versé (jamais négatif : on ne retire rien d'une paie), et on expose le dépassement
+        // dans `dette`, pour information. Aucun total de paie ne change.
+        const soldeBrut = retenu - deduit;
+        const solde = Math.max(0, soldeBrut);
+        const dette = soldeBrut < 0 ? -soldeBrut : 0;
         salary = { ...salary, brut: salary.brut + solde, total: salary.total + solde,
-          soldeDepart: { moisDepart, retenu, nbRetours, cout, deduit, solde } };
+          soldeDepart: { moisDepart, retenu, nbRetours, cout, deduit, solde, dette } };
       }
     }catch(e){ console.warn('solde de départ', agent, e); }
   }
@@ -29960,15 +30503,22 @@ function renderReturnCostPerAgent(){
   if(!agents.length){ el.innerHTML = '<div class="empty">Ajoute des agents dans Réglages.</div>'; return; }
   const pc = getProdConfig();
   const def = (pc.defaults && pc.defaults.returnCost) || 0;
-  let html = `<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Coût d'un retour (DH)</th><th>Appliqué</th></tr></thead><tbody>`;
+  let html = `<div class="section-sub" style="margin:0 0 10px;">Laisse la case vide et le CRM applique automatiquement le <b>DH/contrat de l'agent</b> : un retour reprend exactement ce que le contrat avait rapporté. Saisis un montant seulement si tu veux un coût différent pour quelqu'un en particulier.</div>
+    <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Coût d'un retour (DH)</th><th>Appliqué</th></tr></thead><tbody>`;
   agents.forEach(a=>{
     const c = (pc.agentPay && pc.agentPay[a]) || {};
     const own = c.returnCost;
-    const applied = getAgentPay(a).returnCost || 0;
+    const payA = getAgentPay(a);
+    const applied = payA.returnCost || 0;
+    // r250 — On dit d'OÙ vient le chiffre appliqué. Sans ça, l'admin voit un montant sans savoir s'il
+    // l'a saisi, s'il vient du réglage global, ou s'il est déduit automatiquement du DH/contrat.
+    const origine = payA.returnCostAuto
+      ? `<span style="color:var(--muted); font-size:11px; font-weight:400;"> — auto, son DH/contrat</span>`
+      : (own !== undefined && own !== '' ? '' : `<span style="color:var(--muted); font-size:11px; font-weight:400;"> — réglage global</span>`);
     html += `<tr>
       <td><b>${escapeHtml(a)}</b></td>
-      <td><input type="number" min="0" step="10" data-retcost-agent="${escapeHtml(a)}" value="${own !== undefined && own !== '' ? own : ''}" placeholder="${def || 0}" style="width:120px;"></td>
-      <td style="color:${applied ? 'var(--text)' : 'var(--red)'}; font-weight:700;">${applied ? applied.toLocaleString('fr-FR') + ' DH' : '0 DH — aucune retenue'}</td>
+      <td><input type="number" min="0" step="10" data-retcost-agent="${escapeHtml(a)}" value="${own !== undefined && own !== '' ? own : ''}" placeholder="${payA.returnCostAuto ? (payA.perContract || 0) : (def || 0)}" style="width:120px;"></td>
+      <td style="color:${applied ? 'var(--text)' : 'var(--red)'}; font-weight:700;">${applied ? applied.toLocaleString('fr-FR') + ' DH' + origine : `0 DH — aucune retenue${(payA.perContract || 0) === 0 ? ' (son DH/contrat vaut 0)' : ''}`}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
@@ -31145,11 +31695,31 @@ async function assistanceButtonClick(){
   assistAudio(); // le clic sert de feu vert du navigateur pour le son : on en profite
   const enCours = assistList.find(r => r.agent === moi && r.status === 'pending');
   if(enCours){
-    if(!confirm("Annuler ta demande d'assistance ?")) return;
+    // 🙋 r250 — ON DEMANDE POURQUOI. Toutes les annulations s'enregistraient sous le même mot,
+    // « annulé » : impossible pour l'admin de distinguer un agent qui n'avait finalement plus besoin
+    // d'aide d'un agent que personne n'est venu assister. Deux situations opposées, l'une sans
+    // importance, l'autre à régler d'urgence. Deviner d'après le temps d'attente ne marche pas — un
+    // superviseur peut mettre trois minutes à traverser le plateau sans que ce soit un abandon. Seul
+    // l'agent sait, donc c'est à lui qu'on pose la question, en un clic, au moment où il annule.
+    const motifRep = window.prompt(
+      `Tu annules ta demande d'assistance. Pourquoi ?\n\n` +
+      `   1  =  Je n'ai plus besoin d'assistance\n` +
+      `   2  =  Personne n'est venu m'aider\n` +
+      `   3  =  J'ai cliqué par erreur\n\n` +
+      `Annuler = garder ma demande en cours.`, '1');
+    if(motifRep === null) return;
+    const motifCode = String(motifRep).trim();
+    const cancelReason = motifCode === '2' ? 'personne' : (motifCode === '3' ? 'erreur' : 'resolu');
     await assistMutate(l => l.filter(r => r.id !== enCours.id));
     assistMyRequestId = null;
     // Un appel annulé est un agent resté seul : il a autant sa place dans l'historique qu'un appel pris.
-    assistHistAdd({ id: enCours.id, agent: moi, at: enCours.at, seenBy: null, seenAt: null, waitMs: Date.now() - enCours.at, cancelled: true });
+    // 🐛 BUG CORRIGÉ — `declinedBy` n'était PAS transmis ici, seulement sur le chemin « prise en charge »
+    // (assistanceTake). La colonne « Passé par » restait donc vide sur toutes les lignes annulées, c'est
+    // à dire exactement là où elle compte le plus : savoir que trois personnes ont vu la demande et sont
+    // passées devant avant que l'agent abandonne.
+    assistHistAdd({ id: enCours.id, agent: moi, at: enCours.at, seenBy: null, seenAt: null,
+      waitMs: Date.now() - enCours.at, cancelled: true, cancelReason,
+      declinedBy: Array.isArray(enCours.declinedBy) ? enCours.declinedBy : [] });
     showToast(`Demande annulée. ${assistQuotaState.max > 0 ? `Elle ne t'a rien coûté : il te reste toujours ${assistQuotaState.reste} assistance${assistQuotaState.reste>1?'s':''} aujourd'hui.` : ''}`, 'ok', 5000);
     assistQuotaRefreshMe(true);
     assistRenderButton();
@@ -31490,6 +32060,7 @@ setInterval(()=>{
     assistProcess();
   }catch(e){}
 }, 3000);
+
 
 
 // Rafraîchi tout seul quand le panneau est à l'écran — sinon les chiffres semblent figés alors que la
@@ -31851,6 +32422,37 @@ async function assistHistLoad(){
   return assistHist;
 }
 
+// 🙋 r250 — MOTIF D'ANNULATION, tel que l'agent l'a lui-même indiqué en annulant sa demande.
+// Avant, toutes les annulations s'affichaient « annulé / personne » : un agent qui n'avait plus besoin
+// d'aide et un agent que personne n'est venu assister étaient strictement indiscernables. Le temps
+// d'attente ne permettait pas de trancher non plus, un superviseur pouvant légitimement mettre
+// plusieurs minutes à se libérer. Seul l'agent sait, c'est donc lui qui répond.
+const ASSIST_MOTIFS = {
+  personne: { txt: "⚠️ personne n'est venu", couleur: 'var(--red)',
+              aide: "L'agent a attendu, puis a abandonné : personne ne s'est déplacé." },
+  resolu:   { txt: "plus besoin",            couleur: 'var(--muted)',
+              aide: "L'agent n'avait finalement plus besoin d'aide — appel terminé ou problème résolu seul." },
+  erreur:   { txt: "clic par erreur",        couleur: 'var(--muted)',
+              aide: "Fausse manipulation : la demande n'était pas voulue. À ne pas compter comme un manquement." }
+};
+// Une annulation antérieure au r250 n'a pas de motif enregistré : on le dit franchement plutôt que de
+// la ranger d'office dans « personne n'est venu », ce qui accuserait l'équipe à tort.
+function assistMotifBadge(r){
+  // Un refus de quota n'est pas une annulation de l'agent : la demande n'a jamais été lancée. Lui
+  // coller « motif inconnu » laisserait croire qu'on ignore ce qui s'est passé, alors qu'on le sait
+  // très bien — c'est le CRM lui-même qui a bloqué la demande.
+  if(r.refusedQuota) return '<span style="color:var(--amber);" title="Demande bloquée par le CRM : l\'agent avait déjà épuisé son quota d\'assistances du jour. Elle n\'a jamais été envoyée à personne.">demande bloquée</span>';
+  const m = ASSIST_MOTIFS[r.cancelReason];
+  if(!m) return '<span style="color:var(--red);" title="Annulation enregistrée avant que le motif soit demandé à l\'agent : on ignore si quelqu\'un est venu.">personne <span style="color:var(--muted); font-size:11px;">— motif inconnu</span></span>';
+  return `<span style="color:${m.couleur};" title="${m.aide}">${m.txt}</span>`;
+}
+// Un appel « resté sans réponse » au sens strict : l'agent a demandé de l'aide et personne n'est venu.
+// Les clics par erreur et les demandes devenues inutiles n'en font PAS partie — les compter gonflerait
+// le chiffre et ferait passer l'équipe pour défaillante sur des appels qui n'attendaient plus personne.
+function assistSansReponse(r){
+  return !!r.cancelled && !r.refusedQuota && (r.cancelReason === 'personne' || !r.cancelReason);
+}
+
 function assistHistFmt(ms){
   const s = Math.max(0, Math.round(ms / 1000));
   if(s < 60) return s + ' s';
@@ -31896,12 +32498,16 @@ function assistanceComptageDuJour(agent, dateStr){
 function assistanceComptageEquipeDuJour(dateStr){
   const jour = dateStr || todayStr();
   const map = Object.create(null);
-  const ligne = a => (map[a] || (map[a] = { prises: 0, annulees: 0, refusees: 0 }));
+  const ligne = a => (map[a] || (map[a] = { prises: 0, annulees: 0, refusees: 0, sansReponse: 0 }));
   (assistHist || []).forEach(r => {
     if(!r || !r.agent || !r.at) return;
     if(assistJourMA(r.at) !== jour) return;
     if(r.refusedQuota) ligne(r.agent).refusees++;
-    else if(r.cancelled) ligne(r.agent).annulees++;
+    else if(r.cancelled){
+      ligne(r.agent).annulees++;
+      // r250 — Détail du motif, pour ne pas confondre « personne n'est venu » avec un clic par erreur.
+      if(assistSansReponse(r)) ligne(r.agent).sansReponse++;
+    }
     else ligne(r.agent).prises++;
   });
   return map;
@@ -31940,15 +32546,24 @@ async function renderAssistanceHistory(){
 
   const repondus = rows.filter(r => !r.cancelled);
   const annules  = rows.filter(r => r.cancelled);
+  // r250 — Toutes les annulations ne se valent pas (voir assistSansReponse) : on ne garde ici que
+  // celles où l'agent dit que personne n'est venu, pour que le chiffre affiché soit accusateur
+  // uniquement quand il doit l'être.
+  const sansReponse = rows.filter(assistSansReponse);
+  const annulImportance = annules.length - sansReponse.length;
   const attenteMoy = repondus.length ? repondus.reduce((s, r) => s + (r.waitMs || 0), 0) / repondus.length : 0;
   const plusLong = repondus.reduce((mx, r) => (r.waitMs || 0) > (mx.waitMs || 0) ? r : mx, { waitMs: 0 });
 
   // Par agent : qui appelle, et combien de temps on le laisse attendre.
   const parAgent = {};
   rows.forEach(r=>{
-    const a = parAgent[r.agent] = parAgent[r.agent] || { appels: 0, annules: 0, total: 0, repondus: 0, dernier: 0 };
+    const a = parAgent[r.agent] = parAgent[r.agent] || { appels: 0, annules: 0, sansReponse: 0, total: 0, repondus: 0, dernier: 0 };
     a.appels++;
-    if(r.cancelled) a.annules++; else { a.total += (r.waitMs || 0); a.repondus++; }
+    // r250 — `annules` compte TOUTES les annulations, `sansReponse` uniquement celles où l'agent a
+    // indiqué que personne n'était venu. C'est ce second chiffre qui s'affiche dans la colonne, pour
+    // ne pas reprocher à l'équipe des clics par erreur ou des demandes devenues inutiles.
+    if(r.cancelled){ a.annules++; if(assistSansReponse(r)) a.sansReponse++; }
+    else { a.total += (r.waitMs || 0); a.repondus++; }
     if(r.at > a.dernier) a.dernier = r.at;
   });
   // Par superviseur : qui répond, et à quelle vitesse.
@@ -31986,13 +32601,16 @@ async function renderAssistanceHistory(){
     <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
       ${kpi('Appels', rows.length, 'var(--text)', periodeTxt)}
       ${kpi('Réponse moyenne', assistHistFmt(attenteMoy), attenteMoy > 120000 ? 'var(--red)' : (attenteMoy > 60000 ? 'var(--amber)' : 'var(--green)'), `le plus long : ${assistHistFmt(plusLong.waitMs || 0)}`)}
-      ${kpi('Restés sans réponse', annules.length, annules.length ? 'var(--red)' : 'var(--green)', annules.length ? 'agents qui ont annulé' : 'tous pris en charge')}
+      ${kpi('Restés sans réponse', sansReponse.length, sansReponse.length ? 'var(--red)' : 'var(--green)',
+            sansReponse.length
+              ? `personne ne s'est déplacé${annulImportance > 0 ? ` · ${annulImportance} autre${annulImportance > 1 ? 's' : ''} annulation${annulImportance > 1 ? 's' : ''} sans gravité` : ''}`
+              : (annulImportance > 0 ? `tous pris en charge · ${annulImportance} annulation${annulImportance > 1 ? 's' : ''} sans gravité` : 'tous pris en charge'))}
     </div>
 
     <div style="overflow-x:auto; margin-bottom:18px;">
       <div style="font-size:12.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px;">Qui appelle</div>
       <table class="salary-table">
-        <thead><tr><th>Agent</th><th>Appels</th><th>Attente moyenne</th><th title="Appels que l'agent a fini par annuler faute de réponse.">Sans réponse</th><th>Dernier appel</th></tr></thead>
+        <thead><tr><th>Agent</th><th>Appels</th><th>Attente moyenne</th><th title="Appels où l'agent a indiqué lui-même que personne n'est venu l'aider. Les clics par erreur et les demandes devenues inutiles ne sont pas comptés ici.">Sans réponse</th><th>Dernier appel</th></tr></thead>
         <tbody>${agentsTries.map(a=>{
           const d = parAgent[a];
           const moy = d.repondus ? d.total / d.repondus : 0;
@@ -32000,7 +32618,11 @@ async function renderAssistanceHistory(){
             <td><b>${escapeHtml(a)}</b></td>
             <td>${d.appels}</td>
             <td>${d.repondus ? assistHistFmt(moy) : '<span style="color:var(--muted);">—</span>'}</td>
-            <td>${d.annules ? `<span style="color:var(--red);">${d.annules}</span>` : '<span style="color:var(--muted);">0</span>'}</td>
+            <td>${d.sansReponse
+              ? `<span style="color:var(--red);" title="Appels où ${escapeHtml(a)} a indiqué que personne n'était venu l'aider.">${d.sansReponse}</span>`
+              : '<span style="color:var(--muted);">0</span>'}${(d.annules - d.sansReponse) > 0
+                ? ` <span style="color:var(--muted); font-size:11px;" title="Annulations sans gravité : clic par erreur, ou agent qui n'avait finalement plus besoin d'aide.">(+${d.annules - d.sansReponse} sans gravité)</span>`
+                : ''}</td>
             <td style="color:var(--muted);">${new Date(d.dernier).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</td>
           </tr>`;
         }).join('')}</tbody>
@@ -32032,8 +32654,10 @@ async function renderAssistanceHistory(){
         <tbody>${rows.slice(0, 15).map(r=>`<tr>
           <td style="color:var(--muted);">${new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</td>
           <td><b>${escapeHtml(r.agent || '?')}</b></td>
-          <td>${r.refusedQuota ? '<span style="color:var(--amber);" title="Demande refusée : l\'agent avait déjà atteint son nombre maximum d\'assistances pour la journée.">🛑 quota atteint</span>' : (r.cancelled ? '<span style="color:var(--red);">annulé</span>' : assistHistFmt(r.waitMs || 0))}</td>
-          <td>${r.cancelled ? '<span style="color:var(--red);">personne</span>' : escapeHtml(r.seenBy || '—')}</td>
+          <td>${r.refusedQuota
+            ? '<span style="color:var(--amber);" title="Demande refusée : l\'agent avait déjà atteint son nombre maximum d\'assistances pour la journée.">🛑 quota atteint</span>'
+            : `<span style="color:${assistSansReponse(r) && (r.waitMs || 0) > 60000 ? 'var(--red)' : 'var(--text)'};">${assistHistFmt(r.waitMs || 0)}</span>${r.cancelled ? ' <span style="color:var(--muted); font-size:11px;">avant annulation</span>' : ''}`}</td>
+          <td>${r.cancelled ? assistMotifBadge(r) : escapeHtml(r.seenBy || '—')}</td>
           <td style="color:var(--amber); font-size:12.5px;">${(r.declinedBy && r.declinedBy.length) ? escapeHtml(r.declinedBy.join(', ')) : '<span style="color:var(--muted);">—</span>'}</td>
         </tr>`).join('')}</tbody>
       </table>
