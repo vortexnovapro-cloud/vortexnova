@@ -20774,11 +20774,17 @@ async function renderCash(){
   renderTickerText();
   ensureTickerResampleLoop();
 
-  // Classement par ARGENT (le vrai classement des salaires, prime de supervision incluse) — même
-  // calcul que celui utilisé pour afficher la liste plus bas, pour que le rang affiché soit cohérent.
-  const salaryRankings = await computeSalaryLeaderboard();
-  const myRankIdx = salaryRankings.findIndex(r=>r.agent===agent);
-  const myRank = myRankIdx>=0 ? salaryRankings[myRankIdx].rank : salaryRankings.length;
+  // ⚡ r250 — LE CLASSEMENT NE BLOQUE PLUS L'AFFICHAGE.
+  // computeSalaryLeaderboard() refait la paie de TOUTE l'équipe : pour chaque agent, il rejoue chaque
+  // jour ouvré du mois (pointage + infractions + contrats). C'est de loin le poste le plus lourd de
+  // cet écran, et il grossit au fil du mois — vingt jours à repasser le 28, contre cinq le 5.
+  // Il était attendu ICI, avant la construction du HTML : l'agent attendait donc la comptabilité de
+  // ses dix collègues pour voir son propre salaire, alors que ses chiffres à lui étaient déjà prêts.
+  //
+  // On le lance maintenant APRÈS le rendu, sans l'attendre (voir la fin de la fonction). Les deux
+  // endroits qui en dépendent — sa place au classement dans le hero, et la liste en bas de page —
+  // sont remplis à l'arrivée du résultat. Aucun calcul n'est modifié : mêmes chiffres, affichés plus
+  // tôt pour ce qui le concerne, une seconde plus tard pour ce qui concerne les autres.
 
   // Hero
   const hero = document.getElementById('cashHero');
@@ -20811,7 +20817,7 @@ async function renderCash(){
       <div style="font-size:13px; color:#9b59b6; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">🧑‍💼 Indépendant — ${retoursImportedForMonth ? 'ton salaire NET réel' : 'ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#9b59b6,#ffd700); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:2px;">${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${rt.fixedFull>0 ? ` · fixe au prorata de ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j ouvrés` : ''}${(rt.retractions > 0 ? ` · Rétractations : <b>${rt.retractions}</b>` : '') + (retoursImportedForMonth ? ' · <b>retours clients déduits</b>' : ' · retours clients pas encore importés')}</div>
-      <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
+      <div style="color:var(--muted); font-size:13px; margin-top:6px;" id="cashMyRankLine">${CASH_RANG_EN_ATTENTE}</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div class="hit"><span>🧑‍💼 Indépendant</span><b>Payé dès le 1er contrat</b></div>
         ${rt.fixedFull>0 ? `<div><span>Fixe + prime fixe (prorata)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>` : ''}
@@ -20828,7 +20834,7 @@ async function renderCash(){
       <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 ${retoursImportedForMonth ? 'Ton salaire NET réel' : 'Ton salaire BRUT ESTIMÉ'}, maintenant</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''}${(rt.retractions > 0 ? ` · Rétractations : <b>${rt.retractions}</b>` : '') + (retoursImportedForMonth ? ' · <b>retours clients déduits</b>' : ' · retours clients pas encore importés')}</div>
-      <div style="color:var(--muted); font-size:13px; margin-top:6px;">#${myRank} sur ${salaryRankings.length} au classement des salaires ce mois-ci</div>
+      <div style="color:var(--muted); font-size:13px; margin-top:6px;" id="cashMyRankLine">${CASH_RANG_EN_ATTENTE}</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div><span>Fixe + prime fixe (prorata ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>
         <div class="${assiduiteAcquise?'hit':'miss'}"><span>Prime assiduité</span><b>${assiduiteAcquise ? 'incluse ci-dessus' : 'Perdue (retards)'}</b></div>
@@ -20847,8 +20853,44 @@ async function renderCash(){
   renderCashRealGrid();
   renderCashCoffre(agent);   // r250 — n'affiche rien si l'admin n'a pas activé son coffre
   renderCashSim();
-  renderCashLeaderboard(salaryRankings);
   populateCashPastMonthSelect();
+
+  // ⚡ r250 — Le classement part MAINTENANT, en arrière-plan : la page est déjà à l'écran, l'agent
+  // lit ses chiffres pendant que l'équipe se calcule. Pas de `await` ici, sinon on reviendrait au
+  // comportement d'avant. `currentCashAgent` est revérifié à l'arrivée du résultat : l'agent a pu
+  // changer de nom dans la liste entre-temps, et il ne doit pas voir le classement de quelqu'un
+  // d'autre se poser sur son écran.
+  cashRemplirClassement(agent);
+}
+
+// Texte affiché à la place de la place au classement, le temps que l'équipe se calcule.
+const CASH_RANG_EN_ATTENTE = '<span style="opacity:.6;">⏳ calcul du classement…</span>';
+
+// ⚡ r250 — Calcule le classement puis remplit les deux seuls endroits qui en dépendent. Séparé de
+// renderCash pour qu'un classement lent ne retarde jamais l'affichage du reste de la page.
+async function cashRemplirClassement(agent){
+  const lb = document.getElementById('cashLeaderboard');
+  if(lb && !lb.innerHTML.trim()){
+    lb.innerHTML = '<div class="empty">⏳ Calcul du classement de l\'équipe…</div>';
+  }
+  try{
+    const rows = await computeSalaryLeaderboard();
+    // L'agent a changé de nom dans la liste pendant le calcul : ce résultat ne le concerne plus.
+    if(currentCashAgent !== agent) return;
+    const idx = rows.findIndex(r => r.agent === agent);
+    const rang = idx >= 0 ? rows[idx].rank : rows.length;
+    const ligne = document.getElementById('cashMyRankLine');
+    if(ligne) ligne.innerHTML = `#${rang} sur ${rows.length} au classement des salaires ce mois-ci`;
+    renderCashLeaderboard(rows);
+  }catch(e){
+    console.warn('cashRemplirClassement', e);
+    if(currentCashAgent !== agent) return;
+    // Un classement qui n'arrive pas ne doit pas laisser un sablier éternel : on le dit, et le reste
+    // de la page — salaire, contrats, coffre — est de toute façon déjà affiché et juste.
+    const ligne = document.getElementById('cashMyRankLine');
+    if(ligne) ligne.innerHTML = '<span style="opacity:.6;">classement indisponible pour le moment</span>';
+    if(lb) lb.innerHTML = '<div class="empty">Classement indisponible — recharge la page pour réessayer.</div>';
+  }
 }
 
 // ---- 📅 Mes mois précédents (agent) ----
