@@ -3048,7 +3048,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-13-r253';
+const APP_VERSION = '2026-10-13-r254';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -11592,17 +11592,86 @@ function monthsBetweenISO(fromISO, toISO){
   }
   return out;
 }
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠️ UN MEME CONTRAT DANS LES DEUX CLASSEURS — DETECTE A LA LECTURE (r254)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// LE TROU QUE CA FERME. Les deux classeurs se dedoublonnaient chacun dans son coin, mais personne ne
+// comparait l'un a l'autre. Le backoffice envoie un contrat dans le groupe habituel, se rend compte
+// qu'il est non conforme et le renvoie dans le second groupe (ou l'inverse) : le contrat se retrouve
+// des DEUX cotes. Consequences, toutes silencieuses :
+//   • le chiffre d'affaires le compte DEUX FOIS (une fois en conforme, une fois en non conforme) ;
+//   • l'agent est paye dessus, puisqu'il est toujours dans le classeur de la paie ;
+//   • il compte dans son objectif, alors que la regle dit l'inverse.
+//
+// POURQUOI A LA LECTURE ET PAS A L'ECRITURE. Une etiquette posee au moment ou le contrat arrive ne
+// rattraperait que les nouveaux : un doublon deja present depuis des semaines resterait invisible.
+// La comparaison a la lecture, elle, voit TOUT ce qui est deja en base, des le prochain affichage, et
+// ne peut pas se desynchroniser puisqu'il n'y a aucun drapeau a maintenir.
+//
+// RIEN D'AUTOMATIQUE. Le CRM ne retire jamais tout seul un contrat qui paie un agent : il exclut le
+// doublon du chiffre d'affaires (le mal immediat), le signale, et l'admin tranche.
+// `marge` : un contrat corrige d'un cote et pas de l'autre peut avoir glisse d'un mois. On regarde
+// donc aussi le mois precedent et le suivant, jamais plus — au-dela, ce ne serait plus le meme contrat.
+async function clesProductionAutour(monthVal, marge){
+  const m = Number.isFinite(marge) ? marge : 1;
+  const [y, mo] = String(monthVal).split('-').map(Number);
+  const cles = {};
+  for(let d = -m; d <= m; d++){
+    const dt = new Date(y, (mo - 1) + d, 1);
+    const mv = billingMonthVal(dt.getFullYear(), dt.getMonth() + 1);
+    try{
+      const store = await getBillingProd(mv);
+      (store.rows || []).forEach(r=>{
+        billingRowKeys(r).forEach(k => { if(k && !cles[k]) cles[k] = { mv, r }; });
+      });
+    }catch(e){ console.warn('clesProductionAutour', mv, e); }
+  }
+  return cles;
+}
+
+// Les contrats du classeur NON CONFORME d'un mois qui sont AUSSI dans la production.
+async function conflitsNonConformes(monthVal){
+  const out = [];
+  if(!monthVal) return out;
+  let store;
+  try{ store = await getBillingNonConf(monthVal); }catch(e){ return out; }
+  const rows = (store && store.rows) || [];
+  if(!rows.length) return out;
+  const prod = await clesProductionAutour(monthVal, 1);
+  rows.forEach(r=>{
+    const cles = billingRowKeys(r);
+    // Une ligne sans numero NI reference ne peut pas etre rapprochee de facon sure : on ne la declare
+    // jamais en conflit sur une ressemblance de nom, ce serait pire que le probleme.
+    if(!cles.length) return;
+    const k = cles.find(c => prod[c]);
+    if(!k) return;
+    out.push({ cle: cles[0], cleTrouvee: k, nc: r, prodMois: prod[k].mv, prod: prod[k].r });
+  });
+  return out;
+}
+
 // Renvoie les contrats non conformes de la periode. Les rétractés sont écartés : un contrat rétracté
-// n'est encaissé par personne, non conforme ou pas.
+// n'est encaissé par personne, non conforme ou pas. Les contrats EN CONFLIT (aussi presents dans la
+// production) sont ecartes eux aussi : ils sont deja comptes dans le chiffre d'affaires des conformes,
+// les compter ici les compterait deux fois. Le bandeau de la liste des non conformes les signale.
 async function lireNonConformesPeriode(fromISO, toISO){
   const rows = [];
-  for(const mv of monthsBetweenISO(fromISO, toISO)){
+  const mois = monthsBetweenISO(fromISO, toISO);
+  // Un seul jeu de cles de production pour toute la periode (bornes elargies d'un mois de chaque cote).
+  const clesProd = {};
+  for(const mv of mois){
+    const c = await clesProductionAutour(mv, 1);
+    Object.keys(c).forEach(k => { if(!clesProd[k]) clesProd[k] = c[k]; });
+  }
+  for(const mv of mois){
     try{
       const store = await getBillingNonConf(mv);
       (store.rows || []).forEach(r=>{
         if(r.retracted) return;
         const d = r.datePropre || r.date;
         if(!d || d < fromISO || d > toISO) return;
+        const cles = billingRowKeys(r);
+        if(cles.length && cles.some(k => clesProd[k])) return;   // doublon conforme/non conforme
         rows.push(r);
       });
     }catch(e){ console.warn('lireNonConformesPeriode', mv, e); }
@@ -28452,6 +28521,45 @@ async function renderNonConfPanel(){
   const parAgent = {};
   rows.forEach(r=>{ if(r.retracted) return; const a = r.agent || '?'; parAgent[a] = (parAgent[a] || 0) + 1; });
   const actifs = rows.filter(r => !r.retracted).length;
+
+  // ⚠️ Bandeau des doublons conforme / non conforme (voir conflitsNonConformes). Place EN HAUT et en
+  // rouge : c'est la seule anomalie de cet ecran qui touche directement a la paie d'un agent.
+  let bandeauConflits = '';
+  try{
+    const conflits = await conflitsNonConformes(monthVal);
+    if(conflits.length){
+      const lignesC = conflits.map(c=>{
+        const d = (c.nc.datePropre || c.nc.date || '').split('-').reverse().join('/');
+        const num = c.nc.numContrat || c.nc.reference || c.cle;
+        return `<tr>
+          <td>${escapeHtml(d || '—')}</td>
+          <td><b>${escapeHtml(c.nc.agent || c.prod.agent || '—')}</b></td>
+          <td>${escapeHtml(c.nc.nom || c.prod.nom || '—')}</td>
+          <td style="font-family:monospace; font-size:11.5px;">${escapeHtml(num)}</td>
+          <td style="white-space:nowrap;">
+            <button onclick="trancherConflitNC('${escapeHtml(monthVal)}','${escapeHtml(c.cle)}','nonconforme',this)" title="Le contrat est bien NON CONFORME : il est retiré de la production. L'agent n'est plus payé dessus, et son compteur du jour est recalculé." style="padding:6px 11px;border-radius:7px;border:1px solid var(--amber);background:rgba(229,168,61,0.12);color:var(--amber);font-weight:700;font-size:11.5px;cursor:pointer;">🚫 C'est un NON CONFORME</button>
+            <button onclick="trancherConflitNC('${escapeHtml(monthVal)}','${escapeHtml(c.cle)}','conforme',this)" title="Le contrat est bien CONFORME : la ligne non conforme est retirée. La production et la paie ne bougent pas." style="padding:6px 11px;border-radius:7px;border:1px solid var(--green);background:rgba(52,183,116,0.12);color:var(--green);font-weight:700;font-size:11.5px;cursor:pointer;">✅ C'est un CONFORME</button>
+          </td>
+        </tr>`;
+      }).join('');
+      const plur = conflits.length > 1 ? 's' : '';
+      bandeauConflits = `
+        <div style="padding:13px 15px; border-radius:11px; background:rgba(229,72,77,0.10); border:1px solid rgba(229,72,77,0.45); margin-bottom:14px;">
+          <div style="font-weight:800; color:var(--red);">⚠️ ${conflits.length} contrat${conflits.length>1?'s':''} présent${conflits.length>1?'s':''} dans les DEUX classeurs</div>
+          <div style="font-size:12.5px; color:var(--muted); margin-top:5px; line-height:1.7;">
+            ${conflits.length>1?'Ces contrats sont':'Ce contrat est'} à la fois dans ta production — donc payé${plur} à l'agent et compté${plur} dans son objectif — et dans les non conformes. Le backoffice a probablement envoyé la même chose dans les deux groupes Telegram.<br>
+            <b style="color:var(--text);">En attendant ta décision, rien ${conflits.length>1?'de ces contrats':'de ce contrat'} n'est compté dans la carte « non conformes » de ton chiffre d'affaires</b> — ${conflits.length>1?'ils y seraient':'il y serait'} compté${plur} deux fois.
+          </div>
+          <div style="overflow-x:auto; margin-top:10px;">
+            <table class="salary-table">
+              <thead><tr><th>Date</th><th>Agent</th><th>Client</th><th>N° / Référence</th><th>Tranche</th></tr></thead>
+              <tbody>${lignesC}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+  }catch(e){ console.warn('bandeau conflits non conformes', e); }
+
   const lignes = tri.map(({ r, i })=>{
     // Identifiant du retrait : la reference (ou le numero de contrat) quand elle existe — elle survit
     // a un reordonnancement de la liste. Sinon, et seulement sinon, la position dans le classeur.
@@ -28467,7 +28575,7 @@ async function renderNonConfPanel(){
       <td><button onclick="retirerNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Retire cette ligne du classeur des non conformes. N'ajoute rien à la paie de l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">🗑️ Retirer</button></td>
     </tr>`;
   }).join('');
-  el.innerHTML = `
+  el.innerHTML = bandeauConflits + `
     <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.7;">
       <b style="color:var(--amber);">${actifs} contrat${actifs>1?'s':''} non conforme${actifs>1?'s':''}</b> sur ${escapeHtml(billingMonthLabel(monthVal))}${Object.keys(parAgent).length ? ' — ' + Object.keys(parAgent).sort((a,b)=> parAgent[b]-parAgent[a] || a.localeCompare(b)).map(a=> `${escapeHtml(a)} : ${parAgent[a]}`).join(' · ') : ''}.<br>
       Aucun n'est payé à l'agent et aucun ne compte dans son objectif.
@@ -28524,6 +28632,65 @@ async function retirerNonConforme(monthVal, ident, btn){
 // (par exemple un contrat non conforme ET bidonne).
 // Le non-report n'est pas « un affichage » : la ligne porte `dismissed`, le drapeau que la retenue
 // de paie, le solde de depart et le pack patron respectent tous les trois deja.
+// Tranche un doublon conforme / non conforme. Les deux chemins sont volontairement asymetriques :
+//   • 'nonconforme' TOUCHE A LA PAIE (le contrat quitte la production) → on passe par
+//     deleteContractFromMonth, la fonction deja en place, qui recalcule aussi le compteur du jour de
+//     l'agent et son decompte de retractations. Reecrire ce nettoyage a la main ici aurait laisse des
+//     ecrans affichant encore l'ancien chiffre.
+//   • 'conforme' ne touche a rien de paye : on retire seulement la ligne du classeur non conforme.
+async function trancherConflitNC(monthVal, cle, choix, btn){
+  if(!monthVal || !cle) return;
+  const conflits = await conflitsNonConformes(monthVal);
+  const c = conflits.find(x => x.cle === cle || x.cleTrouvee === cle);
+  if(!c){
+    alert('Ce doublon n\'apparaît plus — il a dû être tranché entre-temps. La liste va se rafraîchir.');
+    await renderNonConfPanel();
+    return;
+  }
+  const qui = c.nc.agent || c.prod.agent || '?';
+  const quoi = `${c.nc.nom || c.prod.nom || 'contrat'} — n° ${c.nc.numContrat || c.nc.reference || cle}`;
+
+  if(choix === 'nonconforme'){
+    if(!confirm(`Ce contrat est bien NON CONFORME ?\n\n${quoi}\nAgent : ${qui}\n\nIl sera RETIRÉ de ta production (${billingMonthLabel(c.prodMois)}) :\n• ${qui} ne sera plus payé dessus\n• il ne comptera plus dans son objectif ni dans son compteur du jour\n\nIl reste dans la liste des non conformes et dans ton chiffre d'affaires.`)) return;
+    if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+    const ok = await deleteContractFromMonth(c.prodMois, c.cleTrouvee, true);
+    if(!ok){
+      alert("Le contrat n'a pas pu être retiré de la production — il a peut-être déjà été supprimé.");
+      if(btn) btn.disabled = false;
+      await renderNonConfPanel();
+      return;
+    }
+    logAudit('Backoffice', 'Doublon tranché — NON CONFORME',
+      `${quoi} — ${qui} : retiré de la production de ${billingMonthLabel(c.prodMois)}, conservé en non conforme`);
+  }else{
+    if(!confirm(`Ce contrat est bien CONFORME ?\n\n${quoi}\nAgent : ${qui}\n\nLa ligne NON CONFORME sera retirée. Ta production et la paie de ${qui} ne changent pas.`)) return;
+    if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+    const store = await getBillingNonConf(monthVal);
+    const idx = (store.rows || []).findIndex(r => billingRowKeys(r).includes(String(c.cleTrouvee).toLowerCase()) || billingRowKeys(r).includes(String(cle).toLowerCase()));
+    if(idx < 0){
+      alert("Cette ligne n'est plus dans le classeur des non conformes.");
+      if(btn) btn.disabled = false;
+      await renderNonConfPanel();
+      return;
+    }
+    store.rows.splice(idx, 1);
+    try{
+      await billingSave(billingNonConfKey(monthVal), store);
+    }catch(e){
+      alert('Enregistrement impossible : ' + (e && e.message ? e.message : e));
+      if(btn) btn.disabled = false;
+      return;
+    }
+    logAudit('Backoffice', 'Doublon tranché — CONFORME',
+      `${quoi} — ${qui} : ligne non conforme retirée, production inchangée`);
+  }
+  billingInvalidate();
+  clearRenderCaches();
+  await renderNonConfPanel();
+  try{ if(typeof renderBossRevenue === 'function') await renderBossRevenue(true); }catch(e){}
+  try{ if(typeof renderBillingAgentSheet === 'function') renderBillingAgentSheet(); }catch(e){}
+}
+
 async function renderNonConfReturnsPanel(){
   const el = document.getElementById('ncReturnsPanel');
   if(!el) return;
