@@ -2285,6 +2285,46 @@ async function tryDeviceGateAdmin(){
           <div id="backofficeInboxPanel" style="margin-top:12px;"></div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(229,168,61,0.45);">
+          <label>🚫 Contrats non conformes</label>
+          <div class="section-sub">Les contrats que le backoffice a déclarés non conformes arrivent par le <b>second groupe Telegram</b> et sont rangés <b>à part</b>. Ils ne sont <b>pas payés à l'agent</b> et ne comptent <b>pas dans son objectif</b> — mais ils comptent pour toi, et tu les retrouves dans <b>Vue d'ensemble → 💰 Mon chiffre d'affaires</b>.<br><span style="opacity:0.85;">Si le backoffice en a envoyé un par erreur, retire-le ici.</span></div>
+          <div class="admin-toolbar" style="margin-top:12px; align-items:center;">
+            <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('ncPanelMonth',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="ncPanelMonth" onchange="renderNonConfPanel()" title="Le mois des contrats non conformes affichés."><button type="button" onclick="shiftMonthInput('ncPanelMonth',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
+            <button onclick="renderNonConfPanel()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--amber);background:rgba(229,168,61,0.12);color:var(--amber);font-weight:700;cursor:pointer;">🔄 Actualiser la liste</button>
+          </div>
+          <div id="nonConfPanel" style="margin-top:12px;"></div>
+
+          <div style="margin-top:18px; padding-top:16px; border-top:1px dashed var(--border);">
+            <label style="display:block; margin-bottom:4px;">📥 Import du fichier des non conformes</label>
+            <div class="section-sub">Pour rattraper un mois, ou recaler le CRM sur le fichier de référence du backoffice. Mêmes colonnes que la production : <b>Date, Produit, Référence, Nom, Date Naissance, Adresse, Email, Téléphone, Agent, Numéro de contrat</b>. Chaque contrat est rangé <b>au mois de sa propre date</b>.</div>
+            <div class="section-sub" style="margin-top:-8px;">Après l'import, le CRM te montre <b>les non conformes qu'il a en mémoire et qui ne sont PAS dans ton fichier</b>. Rien n'est supprimé : tu coches ce que tu veux retirer.</div>
+            <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
+              <div>
+                <label style="margin-bottom:4px;">Mois à comparer</label>
+                <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('ncImportMonth',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="ncImportMonth" title="Le mois dont le CRM sera comparé à ton fichier. Sert aussi de refuge aux lignes dont la date est illisible."><button type="button" onclick="shiftMonthInput('ncImportMonth',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
+              </div>
+              <div>
+                <label style="margin-bottom:4px;">Fichier CSV</label>
+                <input type="file" id="ncImportFile" accept=".csv,.tsv,.txt" onchange="handleNonConfFile(this)">
+              </div>
+            </div>
+            <div class="section-sub" style="margin-top:10px;">…ou colle directement le contenu :</div>
+            <textarea id="ncImportPaste" rows="4" placeholder="Date&#9;Produit&#9;Référence&#9;Nom&#9;…" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--text);"></textarea>
+            <button onclick="importNonConfFromPaste()" style="margin-top:10px; padding:10px 18px;border-radius:8px;border:none;background:var(--amber);color:#1b1b1b;font-weight:800;cursor:pointer;">Importer les non conformes</button>
+            <div id="ncImportReport" style="margin-top:14px;"></div>
+          </div>
+
+          <div style="margin-top:18px; padding-top:16px; border-top:1px dashed var(--border);">
+            <label style="display:block; margin-bottom:4px;">↩️ Retours portant sur un contrat non conforme</label>
+            <div class="section-sub">Quand un impayé tombe sur un contrat non conforme, le CRM le repère à l'import et <b>ne le retient PAS à l'agent</b> : il n'a jamais été payé sur ce contrat, il n'a rien à rembourser dessus. Le retour est quand même enregistré, et tu le vois ici.<br><span style="opacity:0.85;">Si tu estimes qu'il doit tout de même être répercuté, c'est un clic.</span></div>
+            <div class="admin-toolbar" style="margin-top:12px; align-items:center;">
+              <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('ncRetMonth',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="ncRetMonth" onchange="renderNonConfReturnsPanel()" title="Le mois de PAIE des retours affichés."><button type="button" onclick="shiftMonthInput('ncRetMonth',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
+              <button onclick="renderNonConfReturnsPanel()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--amber);background:rgba(229,168,61,0.12);color:var(--amber);font-weight:700;cursor:pointer;">🔄 Actualiser</button>
+            </div>
+            <div id="ncReturnsPanel" style="margin-top:12px;"></div>
+          </div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(229,72,77,0.4);">
           <label>🧭 Contrats égarés — dates impossibles</label>
           <div class="section-sub">Un contrat dont la date est fausse (une année mal tapée dans le « FAIT LE », par exemple) est bien enregistré, mais rangé dans un mois où personne ne regarde : <b>il ne compte ni dans la paie de l'agent, ni dans les classements, ni dans ton chiffre d'affaires</b>. L'alerte d'import ne s'affichait qu'au moment du relevé et disparaissait ensuite — ce contrôle-ci relit toute la base, à tout moment.</div>
@@ -3008,7 +3048,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-12-r252';
+const APP_VERSION = '2026-10-13-r253';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -5017,6 +5057,8 @@ function showAdminSub(sub){
     initBillingDefaults();
     renderUndoPanel();          // ↩️ rappelle qu'un import est encore annulable
     renderBackofficeInboxPanel();
+    renderNonConfPanel();       // 🚫 liste des non conformes du mois, avec le retrait
+    renderNonConfReturnsPanel();// ↩️ retours tombant sur un contrat non conforme
     renderPaySourcePanel();
     renderReturnCostPerAgent();
     renderReturnKeywordsPanel();
@@ -11528,6 +11570,46 @@ function computeBossRevenue(totalContracts){
   return { totalContracts, effectiveContracts, base, bonus, total: base + bonus };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🚫 LES NON CONFORMES, VUS DU COTE PATRON
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Ces contrats existent et sont encaisses par le patron, mais ils ne sont PAS payes a l'agent et ne
+// comptent pas dans son objectif. Ils vivent donc dans leur propre classeur (billingNonConfKey) et
+// AUCUN calcul de paie, d'objectif, de record ou de compteur du jour ne les lit. Les deux fonctions
+// ci-dessous sont les SEULES portes d'entree vers ce classeur cote affichage : si un jour un chiffre
+// non conforme apparait la ou il ne devrait pas, c'est ici qu'il faut chercher, nulle part ailleurs.
+function monthsBetweenISO(fromISO, toISO){
+  const out = [];
+  if(!fromISO || !toISO) return out;
+  let [y, m] = fromISO.slice(0, 7).split('-').map(Number);
+  const [ey, em] = toISO.slice(0, 7).split('-').map(Number);
+  // Garde-fou : une periode absurde (dates inversees malgre le tri, annee aberrante) ne doit pas
+  // faire tourner une boucle sans fin et figer l'ecran. 36 mois couvrent tout usage reel.
+  let garde = 0;
+  while((y < ey || (y === ey && m <= em)) && garde++ < 36){
+    out.push(`${y}-${String(m).padStart(2,'0')}`);
+    m++; if(m > 12){ m = 1; y++; }
+  }
+  return out;
+}
+// Renvoie les contrats non conformes de la periode. Les rétractés sont écartés : un contrat rétracté
+// n'est encaissé par personne, non conforme ou pas.
+async function lireNonConformesPeriode(fromISO, toISO){
+  const rows = [];
+  for(const mv of monthsBetweenISO(fromISO, toISO)){
+    try{
+      const store = await getBillingNonConf(mv);
+      (store.rows || []).forEach(r=>{
+        if(r.retracted) return;
+        const d = r.datePropre || r.date;
+        if(!d || d < fromISO || d > toISO) return;
+        rows.push(r);
+      });
+    }catch(e){ console.warn('lireNonConformesPeriode', mv, e); }
+  }
+  return rows;
+}
+
 // Par défaut, la période "gains & dépenses temps réel" est AUJOURD'HUI seul (gagné aujourd'hui / dépensé
 // aujourd'hui) — modifiable librement par l'admin : bouton "📅 Aujourd'hui" pour revenir à ce défaut, ou
 // "↺ Depuis le 1er du mois à aujourd'hui" pour voir le cumul du mois en cours, ou dates libres.
@@ -11651,6 +11733,14 @@ async function renderBossRevenue(force){
       : Promise.resolve(null)
   ]);
   const periodCalc = computeBossRevenue(periodTotal);
+  // Les non conformes sont lus SEPAREMENT et affiches dans leur propre carte. Ils ne sont volontairement
+  // PAS ajoutes a `periodCalc` : ce total-la est celui qui alimente « Gains Net » et qui doit rester
+  // comparable au 🧾 Bilan net du mois. Melanger les deux ferait diverger deux chiffres de la meme page,
+  // exactement le bug corrige le 26/08/2026 un peu plus haut. La carte dédiée affiche le cumul des deux.
+  const ncRows = await lireNonConformesPeriode(expenseFrom, expenseTo);
+  const ncCalc = computeBossRevenue(ncRows.length);
+  const ncParAgent = {};
+  ncRows.forEach(r=>{ const a = r.agent || '?'; ncParAgent[a] = (ncParAgent[a] || 0) + 1; });
   const isSingleDay = expenseFrom === expenseTo;
   const isTodayOnly = isSingleDay && expenseFrom === todayStr();
   const periodLabel = isTodayOnly ? "Aujourd'hui"
@@ -11706,6 +11796,25 @@ async function renderBossRevenue(force){
       <div style="font-size:28px; font-weight:900; color:${netPositive?'var(--green)':'var(--red)'};">${netPositive?'':'-'}${Math.round(Math.abs(netPeriod)).toLocaleString('fr-FR')} DH</div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
         ${periodLabel} : ${Math.round(periodCalc.total).toLocaleString('fr-FR')} DH de chiffre d'affaires moins ${Math.round(expense.grandTotal).toLocaleString('fr-FR')} DH de dépenses réelles sur la même période.
+      </div>
+    </div>`;
+
+  // 🚫 Carte des non conformes. Affichee SEULEMENT s'il y en a : une carte a 0 tous les jours de
+  // l'annee n'apprend rien et pousse les cartes utiles hors de l'ecran.
+  const ncCard = ncRows.length === 0 ? '' : `
+    <div style="padding:18px; border-radius:14px; background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid rgba(255,159,10,0.4); box-shadow:0 8px 22px rgba(0,0,0,0.3); flex:1; min-width:230px;">
+      <div style="font-size:12px; color:var(--amber); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-bottom:6px;">🚫 Non conformes</div>
+      <div style="font-size:30px; font-weight:900; color:var(--amber);">${Math.round(ncCalc.total).toLocaleString('fr-FR')} DH</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px; line-height:1.6;">
+        <b style="color:var(--text);">Pour toi, pas pour l'agent.</b> Ton client te paie dessus ; l'agent n'est pas payé dessus et ils ne comptent pas dans son objectif.
+      </div>
+      <div class="cash-breakdown" style="margin-top:12px;">
+        <div title="Contrats que le backoffice a déclarés non conformes sur la période. Rétractés exclus."><span>Contrats non conformes</span><b style="color:var(--amber);">${ncRows.length}</b></div>
+        ${Object.keys(ncParAgent).sort((a,b)=> ncParAgent[b]-ncParAgent[a] || a.localeCompare(b)).map(a=>
+          `<div><span style="opacity:0.85;">· ${escapeHtml(a)}</span><b>${ncParAgent[a]}</b></div>`).join('')}
+        <div title="Même calcul que ta commission habituelle : taux de retour estimé et bonus appliqués de la même façon."><span>Effectifs (-${config.bossReturnRatePct||0}% retour estimé)</span><b>${Math.round(ncCalc.effectiveContracts*10)/10}</b></div>
+        ${config.bossBonusPct>0 ? `<div class="hit"><span>dont bonus (+${config.bossBonusPct}%)</span><b>+${Math.round(ncCalc.bonus).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        <div class="hit" title="Ce que tu encaisses au total sur la période : les contrats conformes de la carte de gauche, plus ces non conformes. Volontairement affiché ici et pas dans « Gains Net » : ce dernier reste calé sur la même base que le 🧾 Bilan net du mois, pour que les deux chiffres de la page ne se contredisent jamais."><span>Conformes + non conformes</span><b>${Math.round(periodCalc.total + ncCalc.total).toLocaleString('fr-FR')} DH</b></div>
       </div>
     </div>`;
 
@@ -11788,7 +11897,7 @@ async function renderBossRevenue(force){
   el.innerHTML = `<div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
       <button onclick="renderBossRevenue(true)" title="Recalculer maintenant" style="padding:5px 11px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:11px; cursor:pointer;">🔄 Actualiser</button>
     </div>
-    <div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${expenseCard}${netCard}</div>
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">${card(periodLabel, periodCalc)}${ncCard}${expenseCard}${netCard}</div>
     <div id="expenseDetailPanel" style="display:${detailWasOpen?'block':'none'}; margin-top:14px; padding:16px; border-radius:12px; background:var(--panel2); border:1px solid rgba(229,72,77,0.25);">
       <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.6;"><b style="color:var(--gold);">💡 Commission à 0 DH ?</b> C'est normal tant que l'agent n'a pas <b>dépassé son objectif du mois</b> : les contrats jusqu'au minimum sont déjà payés par son salaire fixe. Le petit compteur sous chaque montant (ex. <b>12/30 ce mois</b>) te dit où il en est. Le compteur est <b>mensuel</b> même quand tu regardes une seule journée — la règle du palier se joue sur le mois entier.<br><br>Ce que chacun a réellement coûté du ${expense.fromDateStr.split('-').reverse().join('/')} au ${expense.toDateStr.split('-').reverse().join('/')} — fixe et charges au prorata de ${expense.elapsedWorkingDays}/${expense.totalWorkingDays} jours ouvrés. Modifiable dans Réglages → Charges.<br><span style="opacity:0.85;">💡 La prime d'assiduité (si acquise) suit la même règle : elle grandit chaque jour avec le fixe, sans jamais atteindre son plein montant avant la fin du mois — survole <b>ⓘ</b> dans l'en-tête pour le détail agent par agent.</span></div>
       <div style="overflow-x:auto;">
@@ -15518,6 +15627,7 @@ const BACKUP_FAMILLES = [
   { prefixe: 'log:',              nom: 'Pointages (arrivées, pauses, absences)', date: 1, agent: 2 },
   { prefixe: 'prodBoard:',        nom: 'Contrats du jour',                       date: 1 },
   { prefixe: 'billingProd:',      nom: 'Facturation et paie',                    date: 1 },
+  { prefixe: 'billingNonConf:',   nom: 'Contrats non conformes',                 date: 1 },
   { prefixe: 'infr:',             nom: 'Infractions',                            date: 1, agent: 2 },
   { prefixe: 'retract:',          nom: 'Rétractations',                          date: 1, agent: 2 },
   { prefixe: 'desiredObj:',       nom: 'Objectifs visés par les agents',         date: 1, agent: 2 },
@@ -23240,6 +23350,16 @@ const BILLING_CACHE = {};
 
 function billingProdKey(monthVal){ return `billingProd:${monthVal}`; }
 function billingRetKey(monthVal){ return `billingReturns:${monthVal}`; }
+// 🚫 LE CLASSEUR DES NON CONFORMES — DELIBEREMENT SEPARE DE CELUI DE LA PAIE (r253).
+// Un contrat non conforme n'est pas paye a l'agent et ne compte pas dans son objectif (30 signes
+// dont 2 non conformes = 28), mais le patron est paye dessus par son client : il doit en garder la
+// trace. Il aurait ete possible de les ranger dans `billingProd:` avec une etiquette et de les
+// exclure partout. REFUSE : « partout », c'est les compteurs du jour, l'objectif mensuel, les
+// records, les classements, le bilan du soir et la paie. Un seul endroit oublie, et un non conforme
+// se retrouve paye a l'agent — une erreur invisible, qui coute de l'argent et qu'on ne decouvre que
+// des mois plus tard. Ici, les non conformes ne sont pas « exclus » : ils ne sont PHYSIQUEMENT PAS
+// dans le classeur que ces calculs lisent. La separation n'a rien a maintenir.
+function billingNonConfKey(monthVal){ return `billingNonConf:${monthVal}`; }
 function billingRatioKey(monthVal){ return `billingRatio:${monthVal}`; }
 function billingPayslipKey(monthVal){ return `billingPayslip:${monthVal}`; }
 const PENDING_RETRACT_KEY = 'billingPendingRetractions';
@@ -23301,6 +23421,7 @@ function billingInvalidate(){
 }
 
 async function getBillingProd(monthVal){ return await billingLoad(billingProdKey(monthVal), { month: monthVal, rows: [], importedAt: null }); }
+async function getBillingNonConf(monthVal){ return await billingLoad(billingNonConfKey(monthVal), { month: monthVal, rows: [], importedAt: null }); }
 async function getBillingReturns(monthVal){ return await billingLoad(billingRetKey(monthVal), { month: monthVal, rows: [], importedAt: null, periodFrom: null, periodTo: null }); }
 async function getBillingRatios(monthVal){ return await billingLoad(billingRatioKey(monthVal), {}); }
 async function getBillingPayslips(monthVal){ return await billingLoad(billingPayslipKey(monthVal), null); }
@@ -24827,8 +24948,10 @@ async function billingAnalyzeReturns(text, monthVal){
     const dupMonth = keys.map(k => alreadyImported[k]).find(Boolean) || null;
 
     const found = keys.map(k => contractIndex[k]).find(Boolean);
+    // Le contrat d'origine est-il un NON CONFORME ? (voir billingBuildContractIndex)
+    const trouveNonConforme = !!(found && found.nonConforme);
     let agent = found ? found.agent : null;
-    let agentSource = agent ? 'contrat retrouvé' : '';
+    let agentSource = found && found.nonConforme ? 'contrat NON CONFORME retrouvé' : (agent ? 'contrat retrouvé' : '');
     // r227 — Un nouveau en essai, pas encore accrédité, signe sous le nom d'un collègue : le fichier
     // de retours affiche alors ce collègue (salesman), alors que le CRM VortexNova a le bon vendeur.
     // Le contrat retrouvé par son contract_id fait foi, le salesman du fichier est ignoré — et on le
@@ -24938,8 +25061,14 @@ async function billingAnalyzeReturns(text, monthVal){
         : "Contrat non retrouvé et aucune date lisible → mois de paie choisi par défaut. Choisis le mois de signature toi-même ci-contre si tu le connais.");
     }
 
+    // Signale dans l'apercu d'import, avant toute validation : l'admin doit le voir AVANT, pas le
+    // decouvrir sur une fiche de paie.
+    if(trouveNonConforme){
+      aVerifier.push(`Ce retour porte sur un contrat NON CONFORME de ${found.agent || '?'} (${billingMonthLabel(found.month)}). Il sera enregistré mais NON répercuté à l'agent : il n'a jamais été payé sur ce contrat. Tu peux le répercuter quand même depuis Réglages → 🚫 Contrats non conformes.`);
+    }
     items.push({
       r, keys, kind, agent, agentSource, vendeurFichier, month, monthSource, confidence, aVerifier,
+      nonConforme: trouveNonConforme,
       duplicate: dupInFile ? 'dans ce fichier' : (dupMonth ? `déjà importé (${dupMonth})` : null),
       originMonth: found ? found.month : null,
       skip: !!(dupInFile || dupMonth)
@@ -25251,6 +25380,18 @@ async function confirmReturnsImportInterne(){
   const byMonth = {};
   items.filter(i => i.kind !== 'retracted').forEach(x=>{
     const r = { ...x.r, agentRaw: x.r.agent, agent: x.agent || '', matchedVia: x.agentSource, originMonth: x.originMonth || '' };
+    // ═══ RETOUR SUR UN CONTRAT NON CONFORME : ENREGISTRE, MAIS PAS RETENU A L'AGENT ═══
+    // On reutilise `dismissed`, le drapeau que TOUT le CRM respecte deja (retenue de paie, solde de
+    // depart, pack patron, historiques). Creer un drapeau neuf aurait oblige a l'ajouter dans chacun
+    // de ces endroits : un seul oubli et le retour repartait sur la paie de l'agent.
+    // `dismissReason` dit POURQUOI, et `nonConforme` permet de les retrouver pour les repercuter.
+    if(x.nonConforme){
+      r.nonConforme = true;
+      r.dismissed = true;
+      r.dismissReason = 'contrat_non_conforme';
+      // L'agent reste renseigne, a l'inverse d'un retour ecarte a la main : c'est bien SON contrat,
+      // et sans ce nom on ne saurait plus a qui le repercuter si tu le decides.
+    }
     (byMonth[x.month] = byMonth[x.month] || []).push(r);
   });
   const impayesParAgent = {};
@@ -25622,6 +25763,21 @@ async function billingBuildContractIndex(force){
       // (chez toi, le hachage de la colonne Référence), on doit pouvoir retrouver le contrat par
       // n'importe lequel.
       const entry = { agent: r.agent, nom: r.nom, produit: r.produit, month: mv, date: r.date || '' };
+      billingRowKeys(r).forEach(k => { if(!idx[k]) idx[k] = entry; });
+    });
+  });
+  // ═══ LES CONTRATS NON CONFORMES SONT INDEXES AUSSI, ET MARQUES (r253) ═══
+  // POURQUOI C'EST INDISPENSABLE. Sans cette passe, un retour portant sur un contrat non conforme
+  // n'etait rattache a AUCUN contrat. Le CRM se rabattait alors sur le nom du vendeur ecrit dans le
+  // fichier de retours — et retenait le retour a l'agent. Exactement ce qu'il ne faut pas : l'agent
+  // n'a jamais ete paye sur ce contrat, il n'a donc rien a rembourser dessus.
+  // APRES les conformes, et jamais avant : si une meme reference existait dans les deux classeurs
+  // (contrat d'abord declare non conforme, puis renvoye comme conforme), c'est le conforme qui doit
+  // gagner — c'est celui sur lequel l'agent a ete paye. Le `if(!idx[k])` s'en charge.
+  const datasNC = await Promise.all(months.map(mv => getBillingNonConf(mv)));
+  months.forEach((mv, mi)=>{
+    (datasNC[mi].rows || []).forEach(r => {
+      const entry = { agent: r.agent, nom: r.nom, produit: r.produit, month: mv, date: r.date || '', nonConforme: true };
       billingRowKeys(r).forEach(k => { if(!idx[k]) idx[k] = entry; });
     });
   });
@@ -27187,6 +27343,10 @@ function backofficeReadFields(data){
 
 // Chemin de la boîte aux lettres dans la Realtime Database (voir databaseURL dans firebaseConfig).
 const BACKOFFICE_RTDB_PATH = 'backoffice_inbox';
+// Seconde boite, alimentee par le 2e bot Telegram et son propre workflow Pabbly : les contrats que
+// le backoffice a declares NON CONFORMES. Meme format de message, meme decoupage, meme secret — seule
+// la destination change, ici et dans les regles de la Realtime Database.
+const BACKOFFICE_RTDB_PATH_NC = 'backoffice_inbox_nonconforme';
 
 // Affichage du contenu brut de la boîte : coupé par défaut (bruit inutile au quotidien), allumé le
 // temps de mettre au point le réglage Pabbly.
@@ -27426,16 +27586,25 @@ async function syncBackofficeInbox(opts){
   backofficeSyncBusy = true;
   backofficeSyncStartedAt = Date.now();
 
-  const result = { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [], datesSuspectes: [], byMonthCount: {}, fixes: [], warnings: [], error: null, rtdbError: null };
+  // `importedNC` / `byMonthCountNC` sont volontairement DISTINCTS de `imported` / `byMonthCount` :
+  // tout ce qui lit `imported` parle de contrats payables a l'agent. Melanger les deux compteurs
+  // ferait afficher « 3 contrats recus » a un agent qui n'en a qu'un seul de paye.
+  const result = { imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [], datesSuspectes: [], byMonthCount: {}, fixes: [], warnings: [], error: null, rtdbError: null,
+                   importedNC: 0, duplicatesNC: 0, byMonthCountNC: {}, rtdbErrorNC: null };
   // Regroupé par mois de contrat avant écriture : un seul enregistrement par mois touché, au lieu
   // d'une écriture par contrat.
   const byMonth = {};
+  const byMonthNC = {};       // contrats NON CONFORMES — classeur separe, jamais melange au precedent
   const processedDocs = [];   // documents Firestore à supprimer une fois rangés
   const processedKeys = [];   // clés Realtime Database à supprimer une fois rangées
+  const processedKeysNC = []; // clés de la boîte NON CONFORME à supprimer une fois rangées
 
   // Transforme une ligne brute (quelle que soit sa provenance) en contrat rangeable, ou l'écarte
   // proprement. Une seule règle de lecture pour les deux boîtes : impossible qu'elles divergent.
-  const ingest = (data, idForLog, source)=>{
+  // `nonConforme` dit seulement DANS QUEL CLASSEUR la ligne part. Toute la lecture au-dessus (date,
+  // agent, lignes inversees, dates suspectes) reste IDENTIQUE pour les deux boites : un non conforme
+  // mal date doit etre signale exactement comme un conforme, sinon on ne le verrait jamais.
+  const ingest = (data, idForLog, source, nonConforme)=>{
     const r = backofficeReadFields(data || {});
     // r249 — date corrigée à la main depuis l'écran d'attente : elle fait foi.
     if(data && data.dateCorrigee && dateContratPlausible(data.dateCorrigee)) r.dateISO = data.dateCorrigee;
@@ -27489,12 +27658,18 @@ async function syncBackofficeInbox(opts){
       });
     }
     const monthVal = r.dateISO.slice(0, 7);
-    if(!byMonth[monthVal]) byMonth[monthVal] = [];
-    byMonth[monthVal].push({
+    const bac = nonConforme ? byMonthNC : byMonth;
+    if(!bac[monthVal]) bac[monthVal] = [];
+    bac[monthVal].push({
       date: r.dateISO, datePropre: r.dateISO, produit: r.produit, reference: r.reference,
       nom: r.nom, dateNaissance: r.dateNaissance, adresse: r.adresse, email: r.email,
       telephone: r.telephone, agent, agentRaw: r.agent, numContrat: r.numContrat,
-      retracted: false, source: 'backoffice', receivedAt: (data && data.receivedAt) || new Date().toISOString(),
+      retracted: false, source: nonConforme ? 'backoffice-nonconforme' : 'backoffice',
+      // `conforme: 'non'` est une etiquette de LECTURE, pas le garde-fou : le garde-fou, c'est le
+      // classeur separe. Elle sert a l'afficher a l'ecran et a reconnaitre un retour qui vient d'un
+      // non conforme, sans avoir a comparer deux listes.
+      conforme: nonConforme ? 'non' : 'oui',
+      receivedAt: (data && data.receivedAt) || new Date().toISOString(),
       _fixes: r._fixes, _warnings: r._warnings
     });
     // 🐛 BUG CORRIGÉ (r214) — renvoie maintenant le MOIS plutôt qu'un simple true/false, pour que
@@ -27525,7 +27700,26 @@ async function syncBackofficeInbox(opts){
       }
     }
 
-    // --- Boîte 2 : Firestore (voie de secours) ---
+    // --- Boîte 2 : Realtime Database, contrats NON CONFORMES (2e bot Telegram) ---
+    // Lue dans le MEME relevé que la premiere, pour qu'un seul passage suffise — mais rangee dans un
+    // classeur a part (voir billingNonConfKey). Son erreur de lecture est signalee separement : une
+    // boite NC injoignable ne doit pas laisser croire que la boite des conformes est en panne.
+    if(rtdb){
+      try{
+        const snapNC = await rtdb.ref(BACKOFFICE_RTDB_PATH_NC).limitToFirst(500).once('value');
+        const valNC = snapNC.val();
+        if(valNC){
+          Object.keys(valNC).forEach(key=>{
+            const monthVal = ingest(valNC[key], key, 'rtdb-nonconforme', true);
+            if(monthVal) processedKeysNC.push({ key, monthVal });
+          });
+        }
+      }catch(e){
+        result.rtdbErrorNC = e && e.message ? e.message : String(e);
+      }
+    }
+
+    // --- Boîte 3 : Firestore (voie de secours) ---
     if(db){
       try{
         const snap = await db.collection(BACKOFFICE_COLLECTION).limit(500).get();
@@ -27536,7 +27730,8 @@ async function syncBackofficeInbox(opts){
       }catch(e){ console.warn('inbox Firestore:', e); }
     }
 
-    if(Object.keys(byMonth).length === 0){ if(monRelevé === backofficeSyncGeneration) backofficeLastResult = result; return result; }
+    // Les DEUX classeurs sont testes : un relevé qui ne ramene que des non conformes doit continuer.
+    if(Object.keys(byMonth).length === 0 && Object.keys(byMonthNC).length === 0){ if(monRelevé === backofficeSyncGeneration) backofficeLastResult = result; return result; }
 
     const touchedDates = new Set();
 
@@ -27604,6 +27799,50 @@ async function syncBackofficeInbox(opts){
       }
     }
 
+    // ═══ RANGEMENT DES NON CONFORMES ═══
+    // Volontairement a part, et volontairement plus court que la boucle ci-dessus :
+    //   • PAS de syncProdBoardRealizedForDates : un non conforme ne doit pas bouger d'un seul compteur
+    //     du jour, ni d'un objectif, ni d'un record. C'est pour ca que ses dates ne sont jamais
+    //     ajoutees a `touchedDates`.
+    //   • PAS de controle « mois deja fige » : ce mecanisme existe pour alerter qu'un contrat arrive
+    //     trop tard pour etre PAYE. Un non conforme n'etant jamais paye a l'agent, la question ne se
+    //     pose pas — l'alerter serait un faux signal de plus dans le panneau.
+    // Le dedoublonnage, lui, est le meme : deux fois le meme message Telegram ne font pas deux
+    // contrats, et son echec par mois est isole exactement comme au-dessus.
+    const failedMonthsNC = {};
+    for(const monthVal of Object.keys(byMonthNC)){
+      try{
+        const store = await getBillingNonConf(monthVal);
+        store.rows = store.rows || [];
+        const seen = new Set();
+        store.rows.forEach(r => billingDedupKeys(r).forEach(k => seen.add(k)));
+        let importedCount = 0;
+        let duplicateCount = 0;
+        byMonthNC[monthVal].forEach(row=>{
+          const keys = billingDedupKeys(row);
+          if(keys.length && keys.some(k => seen.has(k))){ duplicateCount++; return; }
+          keys.forEach(k => seen.add(k));
+          store.rows.push(row);
+          importedCount++;
+        });
+        store.importedAt = new Date().toISOString();
+        store.month = monthVal;
+        await billingSave(billingNonConfKey(monthVal), store);
+        // Comme pour les conformes : on ne compte qu'APRES une sauvegarde reussie.
+        result.importedNC += importedCount;
+        result.duplicatesNC += duplicateCount;
+        if(importedCount) result.byMonthCountNC[monthVal] = (result.byMonthCountNC[monthVal] || 0) + importedCount;
+      }catch(e){
+        console.error('syncBackofficeInbox non conforme mois', monthVal, e);
+        failedMonthsNC[monthVal] = e && e.message ? e.message : String(e);
+      }
+    }
+    if(Object.keys(failedMonthsNC).length){
+      result.failedMonthsNC = failedMonthsNC;
+      const msgNC = Object.entries(failedMonthsNC).map(([m, e]) => `non conformes ${m}: ${e}`).join(' | ');
+      result.error = result.error ? `${result.error} | ${msgNC}` : msgNC;
+    }
+
     if(Object.keys(failedMonths).length){
       result.failedMonths = failedMonths;
       const msg = Object.entries(failedMonths).map(([m, e]) => `${m}: ${e}`).join(' | ');
@@ -27637,6 +27876,12 @@ async function syncBackofficeInbox(opts){
       if(failedMonths[monthVal]) continue;
       try{ await rtdb.ref(`${BACKOFFICE_RTDB_PATH}/${key}`).remove(); }catch(e){ console.warn('backoffice rtdb delete', e); }
     }
+    // Meme regle pour la boite NON CONFORME : une cle n'est retiree que si SON mois a ete range avec
+    // succes. Un mois NC en echec garde ses messages dans la boite et sera retente au prochain relevé.
+    for(const { key, monthVal } of processedKeysNC){
+      if(failedMonthsNC[monthVal]) continue;
+      try{ await rtdb.ref(`${BACKOFFICE_RTDB_PATH_NC}/${key}`).remove(); }catch(e){ console.warn('backoffice rtdb delete (non conforme)', e); }
+    }
 
     // La boîte vient de changer : le cache de lecture des contrats en attente est périmé. Sans ça,
     // pendant 15 s, un contrat tout juste rangé serait compté à la fois dans le classeur ET dans la
@@ -27644,9 +27889,13 @@ async function syncBackofficeInbox(opts){
     oublierContratsEnAttente();
     _signatureBoiteTraitee = null;
 
-    if(result.imported > 0){
+    if(result.importedNC > 0){
       billingContractIndexCache = null;
-      logAudit('Backoffice', 'Contrats reçus automatiquement', `${result.imported} contrat(s) rangé(s)${result.duplicates ? ` — ${result.duplicates} doublon(s) ignoré(s)` : ''}`);
+      logAudit('Backoffice', 'Contrats NON CONFORMES reçus', `${result.importedNC} contrat(s) non conforme(s) rangé(s) à part${result.duplicatesNC ? ` — ${result.duplicatesNC} doublon(s) ignoré(s)` : ''} — non payés à l'agent, hors objectif`);
+    }
+    if(result.imported > 0 || result.importedNC > 0){
+      billingContractIndexCache = null;
+      if(result.imported > 0) logAudit('Backoffice', 'Contrats reçus automatiquement', `${result.imported} contrat(s) rangé(s)${result.duplicates ? ` — ${result.duplicates} doublon(s) ignoré(s)` : ''}`);
       if(!silent || document.getElementById('admin-billing')?.classList.contains('active')){
         renderBackofficeInboxPanel();
         renderBillingImportSummary();
@@ -27956,6 +28205,413 @@ async function discardBackofficeInboxItem(key, source, label){
   }
   await syncBackofficeInbox({ manual: true });
   renderBackofficeInboxPanel();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 🚫 PANNEAU DES NON CONFORMES — CONSULTER ET RETIRER
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Le backoffice peut se tromper : poster dans le groupe « non conforme » un contrat qui était en fait
+// conforme, ou poster deux fois. Sans cet écran, un contrat mal classé resterait là pour toujours,
+// invisible dans la paie et faussant le chiffre d'affaires du patron, sans aucun moyen de le corriger
+// autrement qu'en éditant la base à la main.
+//
+// ⚠️ CE QUE CE BOUTON FAIT, ET CE QU'IL NE FAIT PAS. Il RETIRE la ligne du classeur des non conformes.
+// Il ne la déplace PAS vers le classeur de la paie : l'agent ne sera donc pas payé dessus. C'est
+// volontaire — reclasser un contrat en « conforme » change une PAIE, et ça ne doit pas pouvoir se
+// faire par le même clic, au même endroit, que « cette ligne n'aurait pas dû arriver ». La confirmation
+// le dit mot pour mot, pour qu'il n'y ait jamais de malentendu sur ce qui vient de se passer.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// 📥 IMPORT DU FICHIER DES NON CONFORMES — ET RAPPROCHEMENT AVEC LE CRM
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Deux besoins dans un seul écran :
+//   1. AJOUTER ce qui manque — rattraper un mois, ou reprendre un historique.
+//   2. SIGNALER ce que le CRM a EN TROP par rapport au fichier de référence du backoffice.
+//
+// ⚠️ POURQUOI AUCUNE SUPPRESSION AUTOMATIQUE. Il serait tentant de considerer que le fichier fait foi
+// et d'effacer tout ce qui n'y figure pas. REFUSE : un fichier tronqué, un export partiel, une
+// mauvaise colonne de date, un mois mal choisi — et des contrats réellement encaissés disparaîtraient
+// du chiffre d'affaires sans que personne ne s'en rende compte. Le CRM SIGNALE l'écart, l'admin coche
+// ce qu'il veut retirer. Les cases sont décochées au départ : ne rien faire ne supprime rien.
+function handleNonConfFile(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => importNonConf(e.target.result, document.getElementById('ncImportMonth').value);
+  reader.readAsText(file, 'UTF-8');
+}
+function importNonConfFromPaste(){
+  const txt = document.getElementById('ncImportPaste').value;
+  if(!txt.trim()){ alert('Colle d\'abord le contenu du tableau.'); return; }
+  importNonConf(txt, document.getElementById('ncImportMonth').value);
+}
+
+async function importNonConf(text, monthVal){
+  const reportEl = document.getElementById('ncImportReport');
+  if(!monthVal){
+    const n = nowMA();
+    monthVal = billingMonthVal(n.getFullYear(), n.getMonth() + 1);
+    const mEl = document.getElementById('ncImportMonth');
+    if(mEl) mEl.value = monthVal;
+  }
+  const parsed = billingParseCSV(text);
+  if(!parsed.rows.length){
+    if(reportEl) reportEl.innerHTML = '<div class="empty">Aucune ligne lisible dans ce fichier.</div>';
+    return;
+  }
+  // ↩️ Même filet que l'import de production : la valeur d'avant est gardée, annulable.
+  undoDemarrer(`Import des non conformes — fichier de ${parsed.rows.length} ligne${parsed.rows.length>1?'s':''}`);
+
+  // Ordre des dates decide sur la colonne ENTIERE, jamais ligne par ligne (voir detectDateOrder).
+  const dateOrder = detectDateOrder(parsed.rows.map(r => {
+    const k = Object.keys(r).find(x => billingNormKey(x).includes('date'));
+    return k ? r[k] : '';
+  })) || 'dmy';
+
+  const parMois = {};              // lignes du fichier, rangees par mois de leur propre date
+  const clesDuFichier = new Set(); // pour le rapprochement : ce que le fichier contient
+  const sansAgent = {};
+  let sansDate = 0, vides = 0, sansCle = 0;
+
+  parsed.rows.forEach(raw=>{
+    const r = billingMapRow(raw);
+    if(!r.agent && !r.nom && !r.numContrat){ vides++; return; }
+    let resolved = billingResolveAgent(r.agent);
+    if(!resolved){
+      const fallback = billingFindAgentInRow(raw);
+      if(fallback) resolved = fallback;
+    }
+    if(!resolved && r.agent) sansAgent[r.agent] = (sansAgent[r.agent] || 0) + 1;
+    r.agentRaw = r.agent;
+    r.agent = resolved || '';
+    let iso = parseContractDate(r.datePropre || r.date, dateOrder);
+    if(iso && !dateContratPlausible(iso)) iso = null;
+    if(!iso) sansDate++;
+    const cible = iso ? iso.slice(0, 7) : monthVal;
+    if(iso){ r.date = iso; r.datePropre = iso; }
+    r.retracted = false;
+    r.source = 'import-nonconforme';
+    r.conforme = 'non';
+    r.receivedAt = new Date().toISOString();
+    const cles = billingDedupKeys(r);
+    if(!cles.length) sansCle++; else cles.forEach(k => clesDuFichier.add(k));
+    if(!parMois[cible]) parMois[cible] = [];
+    parMois[cible].push(r);
+  });
+
+  // ── Ajout, mois par mois, avec dedoublonnage sur la reference ou le numero de contrat ──
+  let ajoutes = 0, doublons = 0;
+  const detailMois = {};
+  for(const mv of Object.keys(parMois)){
+    try{
+      const store = await getBillingNonConf(mv);
+      store.rows = store.rows || [];
+      const vus = new Set();
+      store.rows.forEach(r => billingDedupKeys(r).forEach(k => vus.add(k)));
+      let n = 0, d = 0;
+      parMois[mv].forEach(row=>{
+        const cles = billingDedupKeys(row);
+        if(cles.length && cles.some(k => vus.has(k))){ d++; return; }
+        cles.forEach(k => vus.add(k));
+        store.rows.push(row);
+        n++;
+      });
+      store.importedAt = new Date().toISOString();
+      store.month = mv;
+      await billingSave(billingNonConfKey(mv), store);
+      ajoutes += n; doublons += d;
+      detailMois[mv] = { ajoutes: n, doublons: d };
+    }catch(e){
+      console.error('importNonConf mois', mv, e);
+      detailMois[mv] = { erreur: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  // ── Rapprochement : ce que le CRM a et que le fichier n'a pas, sur LE MOIS CHOISI ──
+  // Volontairement limite a ce mois : comparer des mois que le fichier ne couvre pas ferait
+  // apparaitre comme « en trop » toute la production des autres mois.
+  const enTrop = [];
+  try{
+    const store = await getBillingNonConf(monthVal);
+    (store.rows || []).forEach((r, i)=>{
+      const cles = billingDedupKeys(r);
+      // Une ligne sans reference NI numero ne peut pas etre rapprochee de facon sure : on ne la
+      // propose jamais a la suppression, on la signale a part.
+      if(!cles.length) return;
+      if(cles.some(k => clesDuFichier.has(k))) return;
+      enTrop.push({ r, ident: cles[0], i });
+    });
+  }catch(e){ console.warn('rapprochement non conformes', e); }
+
+  const lignesEnTrop = enTrop.map(({ r, ident })=>{
+    const d = (r.datePropre || r.date || '').split('-').reverse().join('/');
+    return `<tr>
+      <td style="text-align:center;"><input type="checkbox" class="nc-suppr" value="${escapeHtml(ident)}"></td>
+      <td>${escapeHtml(d || '—')}</td>
+      <td><b>${escapeHtml(r.agent || '—')}</b></td>
+      <td>${escapeHtml(r.nom || '—')}</td>
+      <td style="font-family:monospace; font-size:11.5px;">${escapeHtml(r.numContrat || r.reference || '—')}</td>
+    </tr>`;
+  }).join('');
+
+  const detailTxt = Object.keys(detailMois).sort().map(mv=>{
+    const d = detailMois[mv];
+    if(d.erreur) return `<div class="miss"><span>${escapeHtml(billingMonthLabel(mv))}</span><b>échec : ${escapeHtml(d.erreur)}</b></div>`;
+    return `<div><span>${escapeHtml(billingMonthLabel(mv))}</span><b>${d.ajoutes} ajouté${d.ajoutes>1?'s':''}${d.doublons ? ` · ${d.doublons} doublon${d.doublons>1?'s':''}` : ''}</b></div>`;
+  }).join('');
+
+  if(reportEl){
+    reportEl.innerHTML = `
+      <div style="padding:14px 16px; border-radius:11px; background:var(--panel2); border:1px solid rgba(229,168,61,0.35);">
+        <div style="font-weight:800; color:var(--amber); margin-bottom:8px;">📥 Import des non conformes — ${parsed.rows.length} ligne${parsed.rows.length>1?'s':''} lue${parsed.rows.length>1?'s':''}</div>
+        <div class="cash-breakdown">
+          <div class="hit"><span>Contrats ajoutés</span><b>${ajoutes}</b></div>
+          ${doublons ? `<div><span>Déjà présents (ignorés)</span><b>${doublons}</b></div>` : ''}
+          ${vides ? `<div><span>Lignes vides ignorées</span><b>${vides}</b></div>` : ''}
+          ${sansDate ? `<div class="miss" title="Date illisible ou année impossible : rangés dans le mois choisi ci-dessus."><span>Sans date lisible</span><b>${sansDate}</b></div>` : ''}
+          ${sansCle ? `<div class="miss" title="Ni référence ni numéro de contrat : ces lignes ne peuvent pas être rapprochées du fichier, elles ne sont jamais proposées à la suppression."><span>Sans référence ni numéro</span><b>${sansCle}</b></div>` : ''}
+          ${detailTxt}
+        </div>
+        ${Object.keys(sansAgent).length ? `<div style="margin-top:10px; font-size:12.5px; color:var(--amber);">⚠️ Agent non reconnu : ${Object.keys(sansAgent).map(a=> `${escapeHtml(a)} (${sansAgent[a]})`).join(' · ')} — corrige le nom dans Réglages puis réimporte.</div>` : ''}
+      </div>
+      ${enTrop.length ? `
+      <div style="margin-top:14px; padding:14px 16px; border-radius:11px; background:rgba(229,72,77,0.07); border:1px solid rgba(229,72,77,0.35);">
+        <div style="font-weight:800; color:var(--red); margin-bottom:6px;">⚠️ ${enTrop.length} contrat${enTrop.length>1?'s':''} dans le CRM, absent${enTrop.length>1?'s':''} de ton fichier — ${escapeHtml(billingMonthLabel(monthVal))}</div>
+        <div style="font-size:12.5px; color:var(--muted); line-height:1.7; margin-bottom:10px;">
+          <b style="color:var(--text);">Rien n'a été supprimé.</b> Coche uniquement ce que tu veux retirer, puis valide en bas.<br>
+          <span style="opacity:0.85;">Un contrat peut légitimement manquer à ton fichier : export partiel, période différente, ligne ajoutée après coup. Vérifie avant de cocher.</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="salary-table">
+            <thead><tr><th style="width:36px;"></th><th>Date</th><th>Agent</th><th>Client</th><th>N° / Référence</th></tr></thead>
+            <tbody>${lignesEnTrop}</tbody>
+          </table>
+        </div>
+        <div class="admin-toolbar" style="margin-top:12px;">
+          <button onclick="document.querySelectorAll('.nc-suppr').forEach(c=>c.checked=true)" class="link-btn">Tout cocher</button>
+          <button onclick="document.querySelectorAll('.nc-suppr').forEach(c=>c.checked=false)" class="link-btn">Tout décocher</button>
+          <button onclick="supprimerNonConfCoches('${escapeHtml(monthVal)}', this)" style="padding:10px 18px;border-radius:8px;border:none;background:var(--red);color:white;font-weight:800;cursor:pointer;">🗑️ Supprimer les contrats cochés</button>
+        </div>
+      </div>` : `<div style="margin-top:12px; font-size:12.5px; color:var(--green);">✅ Aucun écart : tous les non conformes du CRM sur ${escapeHtml(billingMonthLabel(monthVal))} sont présents dans ton fichier.</div>`}`;
+  }
+
+  await renderNonConfPanel();
+  try{ if(typeof renderBossRevenue === 'function') await renderBossRevenue(true); }catch(e){}
+  if(ajoutes > 0) logAudit('Backoffice', 'Import non conformes', `${ajoutes} contrat(s) non conforme(s) importé(s)${doublons ? ` — ${doublons} doublon(s) ignoré(s)` : ''}`);
+}
+
+async function supprimerNonConfCoches(monthVal, btn){
+  const coches = [...document.querySelectorAll('.nc-suppr')].filter(c => c.checked).map(c => c.value);
+  if(!coches.length){ alert('Aucun contrat coché.'); return; }
+  if(!confirm(`Supprimer ${coches.length} contrat${coches.length>1?'s':''} non conforme${coches.length>1?'s':''} de ${billingMonthLabel(monthVal)} ?\n\nIls disparaîtront de la liste et de ton chiffre d'affaires. Cette suppression n'a aucun effet sur la paie des agents.`)) return;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Suppression…'; }
+  const store = await getBillingNonConf(monthVal);
+  const avant = (store.rows || []).length;
+  const aRetirer = new Set(coches);
+  store.rows = (store.rows || []).filter(r=>{
+    const k = billingDedupKeys(r)[0] || '';
+    return !(k && aRetirer.has(k));
+  });
+  const retires = avant - store.rows.length;
+  try{
+    await billingSave(billingNonConfKey(monthVal), store);
+  }catch(e){
+    alert('Enregistrement impossible : ' + (e && e.message ? e.message : e));
+    if(btn){ btn.disabled = false; btn.textContent = '🗑️ Supprimer les contrats cochés'; }
+    return;
+  }
+  logAudit('Backoffice', 'Non conformes supprimés', `${retires} contrat(s) non conforme(s) supprimé(s) sur ${billingMonthLabel(monthVal)} après rapprochement avec le fichier`);
+  alert(`${retires} contrat${retires>1?'s':''} retiré${retires>1?'s':''}.`);
+  const rep = document.getElementById('ncImportReport');
+  if(rep) rep.innerHTML = `<div style="font-size:12.5px; color:var(--green);">✅ ${retires} contrat${retires>1?'s':''} supprimé${retires>1?'s':''}. Relance un import pour refaire le rapprochement.</div>`;
+  await renderNonConfPanel();
+  try{ if(typeof renderBossRevenue === 'function') await renderBossRevenue(true); }catch(e){}
+}
+
+async function renderNonConfPanel(){
+  const el = document.getElementById('nonConfPanel');
+  if(!el) return;
+  const mEl = document.getElementById('ncPanelMonth');
+  if(mEl && !mEl.value){
+    const n = nowMA();
+    mEl.value = billingMonthVal(n.getFullYear(), n.getMonth() + 1);
+  }
+  const monthVal = mEl ? mEl.value : null;
+  if(!monthVal){ el.innerHTML = '<div class="empty">Choisis un mois.</div>'; return; }
+  let store;
+  try{ store = await getBillingNonConf(monthVal); }
+  catch(e){ el.innerHTML = `<div class="empty">Lecture impossible : ${escapeHtml(e && e.message ? e.message : String(e))}</div>`; return; }
+  const rows = (store && store.rows) || [];
+  if(!rows.length){
+    el.innerHTML = `<div class="empty">Aucun contrat non conforme sur ${escapeHtml(billingMonthLabel(monthVal))}.</div>`;
+    return;
+  }
+  // Tri du plus recent au plus ancien : on corrige presque toujours une erreur du jour meme.
+  const tri = rows.map((r, i)=> ({ r, i })).sort((a, b)=>
+    String(b.r.datePropre || b.r.date || '').localeCompare(String(a.r.datePropre || a.r.date || ''))
+    || String(a.r.agent || '').localeCompare(String(b.r.agent || '')));
+  const parAgent = {};
+  rows.forEach(r=>{ if(r.retracted) return; const a = r.agent || '?'; parAgent[a] = (parAgent[a] || 0) + 1; });
+  const actifs = rows.filter(r => !r.retracted).length;
+  const lignes = tri.map(({ r, i })=>{
+    // Identifiant du retrait : la reference (ou le numero de contrat) quand elle existe — elle survit
+    // a un reordonnancement de la liste. Sinon, et seulement sinon, la position dans le classeur.
+    const cles = billingDedupKeys(r);
+    const ident = cles.length ? cles[0] : `idx:${i}`;
+    const d = (r.datePropre || r.date || '').split('-').reverse().join('/');
+    return `<tr${r.retracted ? ' style="opacity:0.5;"' : ''}>
+      <td>${escapeHtml(d || '—')}</td>
+      <td><b>${escapeHtml(r.agent || '—')}</b></td>
+      <td>${escapeHtml(r.nom || '—')}</td>
+      <td style="font-family:monospace; font-size:11.5px;">${escapeHtml(r.numContrat || r.reference || '—')}</td>
+      <td>${r.retracted ? '<span class="tag warn">rétracté</span>' : ''}</td>
+      <td><button onclick="retirerNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Retire cette ligne du classeur des non conformes. N'ajoute rien à la paie de l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">🗑️ Retirer</button></td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.7;">
+      <b style="color:var(--amber);">${actifs} contrat${actifs>1?'s':''} non conforme${actifs>1?'s':''}</b> sur ${escapeHtml(billingMonthLabel(monthVal))}${Object.keys(parAgent).length ? ' — ' + Object.keys(parAgent).sort((a,b)=> parAgent[b]-parAgent[a] || a.localeCompare(b)).map(a=> `${escapeHtml(a)} : ${parAgent[a]}`).join(' · ') : ''}.<br>
+      Aucun n'est payé à l'agent et aucun ne compte dans son objectif.
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="salary-table">
+        <thead><tr><th>Date</th><th>Agent</th><th>Client</th><th>N° / Référence</th><th></th><th></th></tr></thead>
+        <tbody>${lignes}</tbody>
+      </table>
+    </div>`;
+}
+
+async function retirerNonConforme(monthVal, ident, btn){
+  if(!monthVal || !ident) return;
+  const store = await getBillingNonConf(monthVal);
+  const rows = (store && store.rows) || [];
+  let idx = -1;
+  if(ident.startsWith('idx:')){
+    idx = Number(ident.slice(4));
+  }else{
+    idx = rows.findIndex(r => (billingDedupKeys(r)[0] || '') === ident);
+  }
+  if(idx < 0 || idx >= rows.length){
+    alert("Cette ligne n'est plus dans la liste — elle a dû être retirée entre-temps. La liste va se rafraîchir.");
+    await renderNonConfPanel();
+    return;
+  }
+  const r = rows[idx];
+  const quoi = `${r.agent || '?'} — ${r.nom || r.numContrat || r.reference || 'contrat'} du ${(r.datePropre || r.date || '?').split('-').reverse().join('/')}`;
+  if(!confirm(`Retirer ce contrat non conforme ?\n\n${quoi}\n\nIl disparaîtra de la liste des non conformes et de ton chiffre d'affaires.\n\n⚠️ Il ne sera PAS ajouté à la paie de l'agent : si ce contrat était en réalité conforme, il faudra le faire remonter par le groupe Telegram habituel pour qu'il soit payé.`)) return;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+  rows.splice(idx, 1);
+  store.rows = rows;
+  try{
+    await billingSave(billingNonConfKey(monthVal), store);
+  }catch(e){
+    alert('Enregistrement impossible : ' + (e && e.message ? e.message : e));
+    if(btn){ btn.disabled = false; btn.textContent = '🗑️ Retirer'; }
+    return;
+  }
+  logAudit('Backoffice', 'Non conforme retiré', `${quoi} — retiré du classeur des non conformes (aucun effet sur la paie)`);
+  await renderNonConfPanel();
+  // Le chiffre d'affaires du patron compte ces contrats : il doit etre recalcule tout de suite,
+  // sinon la carte continue d'afficher un contrat qui vient d'etre retire.
+  try{ if(typeof renderBossRevenue === 'function') await renderBossRevenue(true); }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ↩️ RETOURS PORTANT SUR UN CONTRAT NON CONFORME
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Ta regle : l'agent n'est pas paye sur un contrat non conforme. Si ce contrat part en impaye, il
+// n'a donc rien a rembourser — le retour ne doit pas lui etre retenu. Mais il existe, et toi tu es
+// concerne : il est enregistre, visible, et repercutable a la main si tu juges que c'est merite
+// (par exemple un contrat non conforme ET bidonne).
+// Le non-report n'est pas « un affichage » : la ligne porte `dismissed`, le drapeau que la retenue
+// de paie, le solde de depart et le pack patron respectent tous les trois deja.
+async function renderNonConfReturnsPanel(){
+  const el = document.getElementById('ncReturnsPanel');
+  if(!el) return;
+  const mEl = document.getElementById('ncRetMonth');
+  if(mEl && !mEl.value){
+    const n = nowMA();
+    mEl.value = billingMonthVal(n.getFullYear(), n.getMonth() + 1);
+  }
+  const monthVal = mEl ? mEl.value : null;
+  if(!monthVal){ el.innerHTML = '<div class="empty">Choisis un mois.</div>'; return; }
+  let data;
+  try{ data = await getBillingReturns(monthVal); }
+  catch(e){ el.innerHTML = `<div class="empty">Lecture impossible : ${escapeHtml(e && e.message ? e.message : String(e))}</div>`; return; }
+  const rows = (data && data.rows) || [];
+  const ncRows = rows.map((r, i)=> ({ r, i })).filter(x => x.r.nonConforme);
+  if(!ncRows.length){
+    el.innerHTML = `<div class="empty">Aucun retour sur contrat non conforme pour ${escapeHtml(billingMonthLabel(monthVal))}.</div>`;
+    return;
+  }
+  const repercutes = ncRows.filter(x => !x.r.dismissed).length;
+  const lignes = ncRows.map(({ r })=>{
+    const cle = (billingRowKeys(r)[0] || '');
+    const repercute = !r.dismissed;
+    const bouton = repercute
+      ? `<button onclick="basculerRepercussionRetourNC('${escapeHtml(monthVal)}','${escapeHtml(cle)}',false,this)" title="Revenir au comportement normal : ce retour ne sera plus retenu à l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:700;font-size:11.5px;cursor:pointer;">↩️ Ne plus répercuter</button>`
+      : `<button onclick="basculerRepercussionRetourNC('${escapeHtml(monthVal)}','${escapeHtml(cle)}',true,this)" title="Retenir malgré tout ce retour à l'agent sur ce mois de paie." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">⚠️ Répercuter quand même</button>`;
+    return `<tr>
+      <td><b>${escapeHtml(r.agent || '—')}</b></td>
+      <td>${escapeHtml(r.nom || '—')}</td>
+      <td style="font-family:monospace; font-size:11.5px;">${escapeHtml(r.numContrat || r.reference || '—')}</td>
+      <td>${repercute
+        ? '<span class="tag warn">retenu à l\'agent</span>'
+        : '<span class="tag" style="background:rgba(52,183,116,0.15); color:var(--green);">non retenu</span>'}</td>
+      <td>${bouton}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.7;">
+      <b style="color:var(--amber);">${ncRows.length} retour${ncRows.length>1?'s':''}</b> sur contrat non conforme en ${escapeHtml(billingMonthLabel(monthVal))}${repercutes ? ` — dont <b style="color:var(--red);">${repercutes} que tu as choisi de répercuter</b>` : ' — aucun retenu à un agent'}.
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="salary-table">
+        <thead><tr><th>Agent</th><th>Client</th><th>N° / Référence</th><th>État</th><th></th></tr></thead>
+        <tbody>${lignes}</tbody>
+      </table>
+    </div>`;
+}
+
+// `repercuter = true` → la ligne redevient un retour ordinaire, retenu a l'agent sur ce mois de paie.
+// `repercuter = false` → retour a la regle par defaut : enregistre, jamais retenu.
+async function basculerRepercussionRetourNC(monthVal, cle, repercuter, btn){
+  if(!monthVal || !cle) return;
+  const data = await getBillingReturns(monthVal);
+  const idx = findReturnIndexByKey(data.rows, cle);
+  if(idx < 0){
+    alert('Ce retour n\'est plus dans la liste du mois — elle va se rafraîchir.');
+    await renderNonConfReturnsPanel();
+    return;
+  }
+  const row = data.rows[idx];
+  const quoi = `${row.agent || '?'} — ${row.nom || row.numContrat || row.reference || 'contrat'}`;
+  if(repercuter){
+    if(!confirm(`Répercuter ce retour à ${row.agent || "l'agent"} ?\n\n${quoi}\n\n⚠️ Il sera retenu sur sa paie de ${billingMonthLabel(monthVal)} comme un retour normal, alors qu'il n'a jamais été payé sur ce contrat non conforme.`)) return;
+    row.dismissed = false;
+    row.dismissReason = 'non_conforme_repercute_par_admin';
+  }else{
+    if(!confirm(`Ne plus répercuter ce retour ?\n\n${quoi}\n\nIl redevient enregistré sans être retenu à l'agent.`)) return;
+    row.dismissed = true;
+    row.dismissReason = 'contrat_non_conforme';
+  }
+  if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+  try{
+    await billingSave(billingRetKey(monthVal), data);
+  }catch(e){
+    alert('Enregistrement impossible : ' + (e && e.message ? e.message : e));
+    if(btn) btn.disabled = false;
+    await renderNonConfReturnsPanel();
+    return;
+  }
+  logAudit('Admin', repercuter ? 'Retour non conforme répercuté' : 'Retour non conforme non répercuté',
+    `${billingMonthLabel(monthVal)} — ${quoi}${repercuter ? ' — retenu à l\'agent sur décision admin' : ' — retiré de la retenue'}`);
+  // La paie change : les caches de calcul doivent repartir de zero, sinon la fiche de paie continue
+  // d'afficher l'ancien montant.
+  billingInvalidate();
+  clearRenderCaches();
+  await renderNonConfReturnsPanel();
+  try{ if(typeof renderBillingAgentSheet === 'function') renderBillingAgentSheet(); }catch(e){}
+  try{ if(typeof renderUnmatchedReturnsPanel === 'function') renderUnmatchedReturnsPanel(); }catch(e){}
 }
 
 async function renderBackofficeInboxPanel(lastResult){
