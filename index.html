@@ -1404,7 +1404,8 @@ async function tryDeviceGateAdmin(){
             <select id="ct_civilite"><option value="Mme">Mme</option><option value="M.">M.</option></select></div>
           <div class="ct-field"><label>Nom et prénom du client</label><input type="text" id="ct_nom" autocomplete="off" placeholder="DA CUNHA ISAURA"><div class="ct-hint">Accents, tirets et apostrophes acceptés. Pas de chiffres.</div></div>
           <div class="ct-field"><label>Date de naissance</label><input type="date" id="ct_naissance"></div>
-          <div class="ct-field"><label>Téléphone</label><input type="tel" id="ct_telephone" placeholder="0612345678"></div>
+          <div class="ct-field"><label>Téléphone 1</label><input type="tel" id="ct_telephone" placeholder="0612345678"></div>
+          <div class="ct-field"><label>Téléphone 2</label><input type="tel" id="ct_telephone2" placeholder="0612345678"><div class="ct-hint">Facultatif. Il faut au moins un numéro de portable (06 ou 07) pour le code SMS.</div></div>
           <div class="ct-field ct-wide"><label>Adresse complète (avec code postal et ville)</label><input type="text" id="ct_adresse" autocomplete="off" placeholder="118 ter route nationale 45140 Ingré"></div>
           <div class="ct-field ct-wide"><label>Email</label><input type="email" id="ct_email" autocomplete="off" placeholder="prenom.nom@gmail.com"></div>
         </div>
@@ -3113,7 +3114,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-15-r255';
+const APP_VERSION = '2026-10-15-r256';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -34216,8 +34217,9 @@ async function renderAssistanceHistory(){
     }
     var proches = motsProchesEmail(c.nom, c.email);
     if(proches.length) d.push({t:'✉️ L\'email ressemble au nom du client mais avec une différence d\'orthographe (« ' + proches.join(', ').toUpperCase() + ' » ↔ « ' + loc + ' ») : faute de frappe ?', agent:true});
-    var t = c.telephone;
-    if(/^(\d)\1{9}$/.test(t) || /^0\d0{8}$/.test(t) || t === '0123456789' || t === '0987654321') d.push({t:'📞 Numéro de téléphone peu crédible (' + t + ')', agent:true});
+    c.telephone.split(' / ').forEach(function(t){
+      if(/^(\d)\1{9}$/.test(t) || /^0\d0{8}$/.test(t) || t === '0123456789' || t === '0987654321') d.push({t:'📞 Numéro de téléphone peu crédible (' + t + ')', agent:true});
+    });
     var rd = refDate(c.reference);
     if(rd && isoValide(c.date)){
       var dr = joursEntre(rd, c.date);
@@ -34273,12 +34275,20 @@ async function renderAssistanceHistory(){
     // email : jamais bloqué pour « louche » — seulement le format ; le reste part en doute vers le backoffice
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(c.email)) err('email', 'L\'adresse email est invalide.');
     // téléphone
-    var tel = String(brut.telephone||'').replace(/[\s.\-()]/g,'');
-    // +33 / 0033 remplace le 0 initial (tous les numéros français : mobiles ET fixes 01 à 09) ; « +33 (0)6… » toléré
-    if(/^\+33/.test(tel)) tel = '0' + tel.slice(3).replace(/^0/, '');
-    else if(/^0033/.test(tel)) tel = '0' + tel.slice(4).replace(/^0/, '');
-    if(!/^0[1-9]\d{8}$/.test(tel)) err('telephone', 'Le téléphone doit contenir 10 chiffres (ex. 0612345678).');
-    c.telephone = tel;
+    function normTel(x){
+      var t = String(x||'').replace(/[\s.\-()]/g,'');
+      if(/^\+33/.test(t)) t = '0' + t.slice(3).replace(/^0/, '');
+      else if(/^0033/.test(t)) t = '0' + t.slice(4).replace(/^0/, '');
+      return t;
+    }
+    var tel1 = normTel(brut.telephone), tel2 = normTel(brut.telephone2);
+    var ok1 = /^0[1-9]\d{8}$/.test(tel1), ok2 = /^0[1-9]\d{8}$/.test(tel2);
+    var mob = function(t){ return /^0[67]\d{8}$/.test(t); };
+    if(!ok1) err('telephone', 'Le téléphone 1 doit contenir 10 chiffres (ex. 0612345678).');
+    if(tel2 && !ok2) err('telephone2', 'Le téléphone 2 doit contenir 10 chiffres (ex. 0612345678).');
+    if(ok1 && (!tel2 || ok2) && !mob(tel1) && !(tel2 && mob(tel2))) err('telephone', 'Il faut au moins un numéro de portable (06 ou 07) pour envoyer le code SMS au client. Ajoute-le dans « Téléphone 2 ».');
+    if(ok1 && ok2 && tel1 === tel2) err('telephone2', 'Les deux numéros sont identiques : laisse le téléphone 2 vide.');
+    c.telephone = (tel2 && ok2 && tel1 !== tel2) ? tel1 + ' / ' + tel2 : tel1;
 
     var doutes = doutesDe(c, auj);
     return { c:c, erreurs:erreurs, bad:bad,
@@ -34344,16 +34354,16 @@ async function renderAssistanceHistory(){
     function v(id){ var e = document.getElementById(id); return e ? e.value : ''; }
     return { date:v('ct_date'), produit:'Contrat Prime', numero:v('ct_numero'), reference:v('ct_reference'),
              civilite:v('ct_civilite'), nom:v('ct_nom'), naissance:v('ct_naissance'), adresse:v('ct_adresse'),
-             email:v('ct_email'), telephone:v('ct_telephone') };
+             email:v('ct_email'), telephone:v('ct_telephone'), telephone2:v('ct_telephone2') };
   }
   function ctMarquerErreurs(bad){
-    ['date','produit','numero','reference','civilite','nom','naissance','adresse','email','telephone'].forEach(function(k){
+    ['date','produit','numero','reference','civilite','nom','naissance','adresse','email','telephone','telephone2'].forEach(function(k){
       var e = document.getElementById('ct_'+k); if(e) e.classList.toggle('ct-bad', !!bad[k]);
     });
   }
 
   function ctViderFormulaire(){
-    ['ct_numero','ct_reference','ct_nom','ct_naissance','ct_adresse','ct_email','ct_telephone'].forEach(function(i){
+    ['ct_numero','ct_reference','ct_nom','ct_naissance','ct_adresse','ct_email','ct_telephone','ct_telephone2'].forEach(function(i){
       var e = document.getElementById(i); if(e) e.value = '';
     });
     ctMarquerErreurs({});
@@ -34713,7 +34723,8 @@ async function renderAssistanceHistory(){
     }
     function memes(champ){
       var v = String(c[champ] || '').toLowerCase(); if(!v) return [];
-      return boTous.filter(function(y){ return y._key !== x._key && circuit(y) && y.champs && String(y.champs[champ] || '').toLowerCase() === v; });
+      var liste = function(z){ return String(z || '').toLowerCase().split(' / '); };
+      return boTous.filter(function(y){ return y._key !== x._key && circuit(y) && y.champs && (champ === 'telephone' ? liste(y.champs[champ]).some(function(n){ return n && liste(v).indexOf(n) >= 0; }) : String(y.champs[champ] || '').toLowerCase() === v); });
     }
     [['numero','le même numéro de contrat'],['reference','la même référence'],['email','le même email'],['telephone','le même téléphone']].forEach(function(p){
       var l = memes(p[0]);
