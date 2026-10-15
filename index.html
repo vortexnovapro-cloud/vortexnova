@@ -3114,7 +3114,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-15-r256';
+const APP_VERSION = '2026-10-15-r257';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -4303,11 +4303,14 @@ function stopAutoRefresh(){
   autoRefreshKind = null;
 }
 
+// Les contrats vivent dans leur propre collection (lisible en liste par les comptes agents/backoffice,
+// sans ouvrir « config »). Tout le reste reste dans « vortexnova ».
+function collectionDeCle(key){ return String(key).indexOf('contratSoumis:') === 0 ? 'vortexnova_contrats' : 'vortexnova'; }
 async function storageSet(key, value){
   if(!firebaseReady) return null;
   pendingWriteCount++; updateSyncIndicator();
   try{
-    await db.collection('vortexnova').doc(key).set({ value });
+    await db.collection(collectionDeCle(key)).doc(key).set({ value });
     storageForget(key); // la mémo de lecture ne doit jamais servir une valeur qu'on vient de remplacer
     try{ resumeMoisInvalider(key); }catch(e){}
     try{ figeSurveiller(key); }catch(e){}
@@ -4327,7 +4330,7 @@ async function storageDelete(key){
   if(!firebaseReady) return null;
   pendingWriteCount++; updateSyncIndicator();
   try{
-    await db.collection('vortexnova').doc(key).delete();
+    await db.collection(collectionDeCle(key)).doc(key).delete();
     storageForget(key);
     try{ resumeMoisInvalider(key); }catch(e){}
     try{ figeSurveiller(key); }catch(e){}
@@ -15784,7 +15787,7 @@ async function renderDailyBriefingSection(containerId){
 // ⚠️ COÛT : une sauvegarde lit chaque document une fois. C'est l'opération la plus lourde de
 // l'application — à faire une fois par jour, pas toutes les heures. Le compteur de documents est
 // affiché à la fin pour que ce coût reste visible plutôt que caché.
-const BACKUP_COLLECTIONS = ['vortexnova', 'vortexnova_backoffice'];
+const BACKUP_COLLECTIONS = ['vortexnova', 'vortexnova_backoffice', 'vortexnova_contrats'];
 const BACKUP_RAPPEL_JOURS = 7;   // au-delà, un bandeau réclame une sauvegarde
 
 function backupSetStatus(txt, couleur){
@@ -34048,7 +34051,7 @@ async function renderAssistanceHistory(){
   function rangePrefix(prefix){
     var fp = firebase.firestore.FieldPath.documentId();
     var fin = prefix.slice(0,-1) + String.fromCharCode(prefix.charCodeAt(prefix.length-1)+1);
-    return db.collection('vortexnova').where(fp,'>=',prefix).where(fp,'<',fin);
+    return db.collection(collectionDeCle(prefix)).where(fp,'>=',prefix).where(fp,'<',fin);
   }
   function isoVersFr(iso){
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
@@ -34446,7 +34449,7 @@ async function renderAssistanceHistory(){
   window.ctAnnuler = async function(key){
     if(!(await uiConfirm({ titre:'Annuler l\'envoi de ce contrat ?', icone:'↩️', ton:'warn', texte:'Le contrat sera retiré de la file du backoffice.', oui:'Annuler le contrat', non:'Le garder' }))) return;
     try{
-      var ref = db.collection('vortexnova').doc(key);
+      var ref = db.collection(collectionDeCle(key)).doc(key);
       await db.runTransaction(async function(tx){
         var s = await tx.get(ref);
         if(!s.exists) return;
@@ -34947,7 +34950,7 @@ async function renderAssistanceHistory(){
   // Mise à jour atomique : on relit le document au moment d'écrire, pour ne jamais écraser
   // la décision d'un collègue ou l'annulation faite entre-temps par l'agent.
   async function boModifier(key, fn){
-    var ref = db.collection('vortexnova').doc(key);
+    var ref = db.collection(collectionDeCle(key)).doc(key);
     return db.runTransaction(async function(tx){
       var s = await tx.get(ref);
       if(!s.exists) throw new Error('Ce contrat n\'existe plus (l\'agent l\'a peut-être annulé).');
@@ -35090,6 +35093,7 @@ async function renderAssistanceHistory(){
       '<button type="button" class="ct-btn nc" id="adBtnNettoyage" onclick="adNettoyage()">Voir ce qui sera supprimé…</button></div>' +
       '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Supprime tout ce qui a été créé par les agents « test » : contrats du CRM, lignes du Google Sheet et de la boîte CRM, messages Telegram récents du bot. <b>Rien n\'est supprimé avant ta confirmation.</b></div></div>';
     h += adCopiesCarte();
+    h += adMigrationCarte();
     h += adAideCarte();
     return h;
   }
@@ -35245,6 +35249,40 @@ async function renderAssistanceHistory(){
     if(c.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(c.msg) + '</div>';
     return h + '</div>';
   }
+  // ───────────────── recopie des contrats vers leur nouvelle collection (une seule fois) ─────────────────
+  var adMig = { msg:'', occupe:false };
+  function adMigrationCarte(){
+    var m = adMig;
+    return '<div class="ct-item" style="margin-top:10px;"><div class="ct-item-head"><b>📦 Recopier les contrats</b></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Les contrats ont changé de collection pour que les agents et le backoffice puissent les voir. Ce bouton recopie ceux d\'avant le changement. Il ne supprime rien et ne remplace rien : tu peux le relancer sans risque.</div>' +
+      '<div style="margin-top:10px;"><button type="button" class="ct-btn ok" ' + (m.occupe ? 'disabled ' : '') + 'onclick="adMigrerContrats()">📦 Recopier les contrats maintenant</button></div>' +
+      (m.msg ? '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(m.msg) + '</div>' : '') + '</div>';
+  }
+  window.adMigrerContrats = async function(){
+    var m = adMig; if(m.occupe) return;
+    function maj(t){ m.msg = t; try{ adRendre(); }catch(e){} }
+    try{
+      m.occupe = true; maj('Lecture des anciens contrats…');
+      var fp = firebase.firestore.FieldPath.documentId();
+      var anc = await db.collection('vortexnova').where(fp,'>=','contratSoumis:').where(fp,'<','contratSoumis;').get();
+      var lus = anc.size, copies = 0, deja = 0, ko = 0;
+      for(var i = 0; i < anc.docs.length; i++){
+        var d = anc.docs[i];
+        try{
+          var ref = db.collection('vortexnova_contrats').doc(d.id);
+          var ex = await ref.get();
+          if(ex.exists){ deja++; continue; }
+          var v = JSON.parse(d.data().value); v.migre = true;
+          await ref.set({ value: JSON.stringify(v) });
+          copies++;
+        }catch(e){ ko++; console.warn('migration', d.id, e); }
+        if(i % 10 === 0) maj('Recopie… ' + (i + 1) + ' / ' + lus);
+      }
+      var nouv = await db.collection('vortexnova_contrats').get();
+      maj((ko ? '⚠️ ' : '✅ ') + lus + ' contrat(s) lu(s) dans l\'ancienne collection : ' + copies + ' recopié(s), ' + deja + ' déjà présent(s)' + (ko ? ', ' + ko + ' en échec (réessaie)' : '') + '.\nLa nouvelle collection contient maintenant ' + nouv.size + ' contrat(s).');
+    }catch(e){ maj('❌ ' + (e && e.message ? e.message : e)); }
+    finally{ m.occupe = false; try{ adRendre(); }catch(e){} }
+  };
   function adTelecharger(nom, texte, type){
     var b = new Blob([texte], { type: type }), a = document.createElement('a');
     a.href = URL.createObjectURL(b); a.download = nom; document.body.appendChild(a); a.click();
