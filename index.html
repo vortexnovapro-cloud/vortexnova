@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r281';
+const APP_VERSION = '2026-10-19-r283';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -25420,6 +25420,77 @@ function billingFindAgentInRow(raw){
 // contrats différents, même si l'agent a tapé le même numéro de contrat pour les deux (cas réel : le
 // second était écarté comme « doublon » et l'agent perdait un contrat). Le numéro ne sert que quand
 // la ligne n'a pas de référence.
+// 🔁 r283 — Détection des doublons en CROISANT toutes les informations (numéro, référence, nom, naissance, téléphone).
+// Trois issues : « certain » (même contrat : ignoré, mais NOTÉ dans la liste des doublons détectés), « probable »
+// (mis de côté dans « À vérifier » : ni compté, ni payé, ni supprimé, en attendant la décision de l'admin) ou rien (contrat différent).
+function dbNorm(v){ return String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function dbTel(v){ const d = String(v == null ? '' : v).replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : d; }
+function billingClasserDoublon(row, existants){
+  const n = dbNorm(row.numContrat), ref = dbNorm(row.reference), nom = dbNorm(row.nom), nai = dbNorm(row.dateNaissance), tel = dbTel(row.telephone);
+  let meilleur = null;
+  for(let i = 0; i < existants.length; i++){
+    const e = existants[i]; if(!e) continue;
+    const en = dbNorm(e.numContrat), er = dbNorm(e.reference), eno = dbNorm(e.nom), ena = dbNorm(e.dateNaissance), et = dbTel(e.telephone);
+    const sNum = !!(n && en && n === en), sRef = !!(ref && er && ref === er), sNom = !!(nom && eno && nom === eno), sNai = !!(nai && ena && nai === ena), sTel = !!(tel && et && tel === et);
+    const nomDiff = !!(nom && eno && nom !== eno);
+    let niveau = null; const raisons = [];
+    if(sNum){
+      if(nomDiff){ niveau = 'probable'; raisons.push('même numéro de contrat mais nom du client différent'); }
+      else { niveau = 'certain'; raisons.push('même numéro de contrat' + (sNom ? ' et même client' : '')); }
+    } else if(sRef || (sNom && (sNai || sTel)) || (sTel && sNai)){
+      niveau = 'probable';
+      if(sRef) raisons.push('même référence'); if(sNom) raisons.push('même nom'); if(sNai) raisons.push('même date de naissance'); if(sTel) raisons.push('même téléphone');
+      raisons.push('mais numéro de contrat différent');
+    }
+    if(niveau){
+      const score = (niveau === 'certain' ? 100 : 50) + (sNum ? 10 : 0) + (sRef ? 5 : 0) + (sNom ? 3 : 0) + (sNai ? 2 : 0) + (sTel ? 2 : 0);
+      if(!meilleur || score > meilleur.score) meilleur = { niveau, avec: e, raisons, score };
+    }
+  }
+  return meilleur;
+}
+function billingResumeLigne(r){ return { numContrat: String(r.numContrat || ''), nom: r.nom || '', agent: r.agent || '', date: r.date || '', reference: r.reference || '' }; }
+function billingEntreeDoublon(row, cmp, nc, issue){
+  return { id: 'D' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), nc: !!nc, issue: issue || 'ignore',
+    ligne: billingResumeLigne(row), avec: billingResumeLigne(cmp.avec), raisons: cmp.raisons };
+}
+function billingEntreeSuspect(row, cmp, nc){
+  const e = billingEntreeDoublon(row, cmp, nc, 'a_verifier'); e.id = 'S' + e.id.slice(1); e.row = row; return e;
+}
+async function billingNoterDoublons(ignores, suspects){
+  if(suspects && suspects.length){ const d = await billingLoad('billingSuspects', { items: [] }); d.items = (d.items || []).concat(suspects); await billingSave('billingSuspects', d); }
+  if(ignores && ignores.length){ const d = await billingLoad('billingDoublons', { items: [] }); d.items = (d.items || []).concat(ignores).slice(-300); await billingSave('billingDoublons', d); }
+}
+// 🛟 r281 — Doublon d'un contrat reçu dans la boîte. AVANT : la « référence » passait avant le numéro de
+// contrat, donc deux contrats DIFFÉRENTS portant la même référence étaient pris pour un doublon : le
+// deuxième était écarté, puis retiré de la boîte sans jamais être rangé (contrat perdu en silence).
+// MAINTENANT : si le contrat a un numéro, seul ce numéro décide (même numéro = vrai doublon). La
+// référence ne décide plus que pour une ligne déjà rangée SANS numéro, ou pour un contrat reçu sans numéro.
+function billingIndexDoublons(rows){
+  const idx = { seen: new Set(), nums: new Set(), refsSansNum: new Set() };
+  (rows || []).forEach(r=>{
+    billingDedupKeys(r).forEach(k => idx.seen.add(k));
+    const n = String(r && r.numContrat != null ? r.numContrat : '').trim().toLowerCase();
+    if(n) idx.nums.add(n);
+    else { const ref = String(r && r.reference != null ? r.reference : '').trim().toLowerCase(); if(ref) idx.refsSansNum.add(ref); }
+  });
+  return idx;
+}
+function billingEstDoublonInbox(row, idx){
+  const n = String(row && row.numContrat != null ? row.numContrat : '').trim().toLowerCase();
+  if(n){
+    if(idx.nums.has(n)) return true;
+    const ref = String(row.reference != null ? row.reference : '').trim().toLowerCase();
+    return !!(ref && idx.refsSansNum.has(ref));
+  }
+  const keys = billingDedupKeys(row);
+  return !!(keys.length && keys.some(k => idx.seen.has(k)));
+}
+function billingMarquerVu(row, idx){
+  billingDedupKeys(row).forEach(k => idx.seen.add(k));
+  const n = String(row && row.numContrat != null ? row.numContrat : '').trim().toLowerCase();
+  if(n) idx.nums.add(n);
+}
 function billingDedupKeys(row){
   const ref = String(row && row.reference != null ? row.reference : '').trim().toLowerCase();
   if(ref) return ['ref:' + ref];
@@ -29052,17 +29123,17 @@ async function syncBackofficeInbox(opts){
         const store = await getBillingProd(monthVal);
         store.rows = store.rows || [];
         const seen = new Set();
-        store.rows.forEach(r => billingDedupKeys(r).forEach(k => seen.add(k)));
+        const autres = [];
+        for(const mv2 of moisVoisins(monthVal)){ if(mv2 === monthVal) continue; try{ const o = await getBillingProd(mv2); (o.rows || []).forEach(x => autres.push(x)); }catch(e2){} }
         let importedCount = 0;
         let duplicateCount = 0;
+        const ignores = [], suspects = [];
         const monthTouchedDates = new Set();
         byMonth[monthVal].forEach(row=>{
-          const keys = billingDedupKeys(row);
-          // Sans identifiant exploitable, on ne peut pas dédoublonner de façon sûre : on ajoute quand
-          // même (mieux vaut un doublon visible dans le tableau qu'un contrat perdu), le tableau de
-          // l'agent le rendra évident.
-          if(keys.length && keys.some(k => seen.has(k))){ duplicateCount++; return; }
-          keys.forEach(k => seen.add(k));
+          // Croisement de toutes les infos : certain = ignoré mais noté ; probable = mis de côté « À vérifier » (jamais perdu).
+          const cmp = billingClasserDoublon(row, store.rows.concat(autres));
+          if(cmp && cmp.niveau === 'certain'){ duplicateCount++; ignores.push(billingEntreeDoublon(row, cmp, false)); return; }
+          if(cmp && cmp.niveau === 'probable'){ suspects.push(billingEntreeSuspect(row, cmp, false)); return; }
           store.rows.push(row);
           if(row.date) monthTouchedDates.add(row.date);
           importedCount++;
@@ -29070,6 +29141,8 @@ async function syncBackofficeInbox(opts){
         store.importedAt = new Date().toISOString();
         store.month = monthVal;
         await billingSave(billingProdKey(monthVal), store);
+        await billingNoterDoublons(ignores, suspects);
+        result.suspects = (result.suspects || 0) + suspects.length;
         // Le mois est bien enregistré : on ne comptabilise (imported/duplicates/byMonthCount) et on ne
         // retient ses dates touchées qu'À PARTIR D'ICI — jamais avant que billingSave ait réussi.
         result.imported += importedCount;
@@ -29104,19 +29177,23 @@ async function syncBackofficeInbox(opts){
         const store = await getBillingNonConf(monthVal);
         store.rows = store.rows || [];
         const seen = new Set();
-        store.rows.forEach(r => billingDedupKeys(r).forEach(k => seen.add(k)));
+        const autres = [];
+        for(const mv2 of moisVoisins(monthVal)){ if(mv2 === monthVal) continue; try{ const o = await getBillingNonConf(mv2); (o.rows || []).forEach(x => autres.push(x)); }catch(e2){} }
         let importedCount = 0;
         let duplicateCount = 0;
+        const ignores = [], suspects = [];
         byMonthNC[monthVal].forEach(row=>{
-          const keys = billingDedupKeys(row);
-          if(keys.length && keys.some(k => seen.has(k))){ duplicateCount++; return; }
-          keys.forEach(k => seen.add(k));
+          const cmp = billingClasserDoublon(row, store.rows.concat(autres));
+          if(cmp && cmp.niveau === 'certain'){ duplicateCount++; ignores.push(billingEntreeDoublon(row, cmp, true)); return; }
+          if(cmp && cmp.niveau === 'probable'){ suspects.push(billingEntreeSuspect(row, cmp, true)); return; }
           store.rows.push(row);
           importedCount++;
         });
         store.importedAt = new Date().toISOString();
         store.month = monthVal;
         await billingSave(billingNonConfKey(monthVal), store);
+        await billingNoterDoublons(ignores, suspects);
+        result.suspects = (result.suspects || 0) + suspects.length;
         // Comme pour les conformes : on ne compte qu'APRES une sauvegarde reussie.
         result.importedNC += importedCount;
         result.duplicatesNC += duplicateCount;
@@ -37013,28 +37090,39 @@ async function renderAssistanceHistory(){
   }
 
   // ───────────────── 🔎 diagnostic « écart » : contrats validés aujourd'hui ↔ facturation (Prime) ─────────────────
-  var adEcart = { ts:0, sig:'', calc:false, occupe:false, lignes:[], extras:[], nbDecides:0, nbFact:0, jour:'', msg:'' };
+  var adEcart = { ts:0, sig:'', calc:false, occupe:false, lignes:[], extras:[], suspects:[], log:[], nbDecides:0, nbNC:0, nbFact:0, jour:'', msg:'' };
+  var adNumDe = function(v){ return String(v == null ? '' : v).trim().toLowerCase(); };
   async function adEcartCalcul(sig){
     var e = adEcart; if(e.calc) return; e.calc = true; e.ts = Date.now(); e.sig = sig;
     try{
       var auj = adJourEnvoi(new Date().toISOString());
       var decides = adTous.filter(function(x){ return x.creeLe && adJourEnvoi(x.creeLe) === auj && !adEstTest(x) && produitDe(x) === 'prime' && (x.statut === 'conforme' || x.statut === 'non_conforme'); });
-      var rows = [], mois = moisVoisins(auj.slice(0, 7));
-      for(var i = 0; i < mois.length; i++){ try{ var d = await getBillingProd(mois[i]); rows = rows.concat((d && d.rows) || []); }catch(err){ console.warn('écart : classeur illisible', mois[i], err); } }
-      var idx = Object.create(null);
-      rows.forEach(function(r){ if(!r) return; billingRowKeys(r).forEach(function(k){ (idx[k] = idx[k] || []).push(r); }); });
+      var rows = [], rowsNC = [], mois = moisVoisins(auj.slice(0, 7));
+      for(var i = 0; i < mois.length; i++){
+        try{ var d = await getBillingProd(mois[i]); rows = rows.concat((d && d.rows) || []); }catch(err){ console.warn('écart : classeur illisible', mois[i], err); }
+        try{ var d2 = await getBillingNonConf(mois[i]); rowsNC = rowsNC.concat((d2 && d2.rows) || []); }catch(err){ console.warn('écart : classeur NC illisible', mois[i], err); }
+      }
+      try{ e.suspects = ((await billingLoad('billingSuspects', { items: [] })).items) || []; }catch(err){ e.suspects = []; }
+      try{ e.log = ((await billingLoad('billingDoublons', { items: [] })).items) || []; }catch(err){ e.log = []; }
+      var numsSuspects = Object.create(null); e.suspects.forEach(function(z){ var n = adNumDe(z.ligne && z.ligne.numContrat); if(n) numsSuspects[n] = true; });
+      // Comparaison sur le numéro de contrat pour retrouver chaque contrat ; les doublons croisés sont traités à part.
+      var idx = Object.create(null), idxNC = Object.create(null);
+      rows.forEach(function(r){ var n = r ? adNumDe(r.numContrat) : ''; if(n) (idx[n] = idx[n] || []).push(r); });
+      rowsNC.forEach(function(r){ var n = r ? adNumDe(r.numContrat) : ''; if(n) idxNC[n] = true; });
       var fact = rows.filter(function(r){ return r && r.date === auj; });
-      var nums = Object.create(null), lignes = [];
+      var nums = Object.create(null), lignes = [], nbConf = 0, nbNC = 0;
       decides.forEach(function(x){
-        var num = String((x.champs || {}).numero || '').trim().toLowerCase();
-        if(num) nums[num] = true;
-        var trouves = num ? (idx[num] || []) : [];
-        if(!trouves.length){ lignes.push({ type:'absent', x:x }); return; }
+        var n = adNumDe((x.champs || {}).numero), nc = x.statut === 'non_conforme';
+        if(nc) nbNC++; else nbConf++;
+        if(nc){ if(n && numsSuspects[n]) return; if(!n || !idxNC[n]) lignes.push({ type:'absent', nc:true, x:x }); return; }
+        if(n) nums[n] = true;
+        var trouves = n ? (idx[n] || []) : [];
+        if(!trouves.length){ if(n && numsSuspects[n]) return; lignes.push({ type:'absent', nc:false, x:x }); return; }
         if(trouves.some(function(r){ return r.date === auj; })) return;
-        lignes.push({ type:'date', x:x, row:trouves[0] });
+        lignes.push({ type:'date', nc:false, x:x, row:trouves[0] });
       });
-      e.extras = fact.filter(function(r){ return !billingRowKeys(r).some(function(k){ return nums[k]; }); });
-      e.lignes = lignes; e.nbDecides = decides.length; e.nbFact = fact.length; e.jour = auj;
+      e.extras = fact.filter(function(r){ return !nums[adNumDe(r.numContrat)]; });
+      e.lignes = lignes; e.nbDecides = nbConf; e.nbNC = nbNC; e.nbFact = fact.length; e.jour = auj;
     }catch(err){ console.warn('écart :', err); }
     e.calc = false;
     try{ adRendre(); }catch(err){}
@@ -37044,18 +37132,22 @@ async function renderAssistanceHistory(){
     var auj = adJourEnvoi(new Date().toISOString());
     var sig = adTous.length + ':' + adTous.filter(function(x){ return x.statut === 'conforme' || x.statut === 'non_conforme'; }).length;
     if(!e.calc && (e.sig !== sig || Date.now() - e.ts > 120000)) adEcartCalcul(sig);
-    var ok = !e.lignes.length && !e.extras.length;
+    var ok = !e.lignes.length && !e.extras.length && !e.suspects.length;
+    var absents = e.lignes.filter(function(l){ return l.type === 'absent'; });
     var h = '<div class="ct-item" style="margin-top:10px;' + (ok ? 'border-color:var(--green);' : '') + '"><div class="ct-item-head"><b>🔎 Écart avec la facturation — <span class="prod-pill prime">PRIME</span> ' +
       (e.calc && !e.ts ? '' : (ok ? '<span style="color:var(--green);">✔ tout correspond</span>' : '<span style="color:var(--amber);">⚠ à vérifier</span>')) + '</b>' +
       '<button type="button" class="ct-btn ok" ' + (e.calc ? 'disabled ' : '') + 'onclick="adEcartRefaire()">🔄 Revérifier</button></div>';
-    h += '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Contrats validés aujourd\'hui : <b>' + e.nbDecides + '</b> · Contrats dans la facturation à la date d\'aujourd\'hui : <b>' + e.nbFact + '</b>. Ce bloc ne modifie rien tout seul : chaque correction se fait avec son bouton.</div>';
-    if(e.calc) h += '<div style="font-size:12.5px;margin-top:6px;">Vérification en cours…</div>';
-    if(e.lignes.some(function(l){ return l.type === 'absent'; })) h += '<div style="margin-top:8px;"><button type="button" class="ct-btn ok" onclick="manualSyncBackoffice()">📥 Relever maintenant les contrats validés</button> <span style="font-size:12px;color:var(--muted);">pour ceux qui ne sont « pas encore arrivés »</span></div>';
+    h += '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Contrats conformes validés aujourd\'hui : <b>' + e.nbDecides + '</b> · Contrats dans la facturation à la date d\'aujourd\'hui : <b>' + e.nbFact + '</b>' + (e.nbNC ? ' · Non conformes : <b>' + e.nbNC + '</b> (classeur à part)' : '') + '. Rien ne se modifie sans ton clic de confirmation.</div>';
+    if(e.calc) h += '<div style="font-size:12.5px;margin-top:6px;">⏳ Vérification en cours…</div>';
+    if(absents.length) h += '<div style="margin-top:10px;padding:10px;border:1px solid var(--amber);border-radius:10px;">' +
+      '<div style="font-size:13px;"><b>' + absents.length + ' contrat(s) validé(s) absent(s) de la facturation.</b> Ils existent bien côté serveur : le bouton ci-dessous les range à leur date, sans jamais compter deux fois un même numéro.</div>' +
+      '<div style="margin-top:8px;"><button type="button" class="ct-btn ok" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adEcartRattraper()">🛟 Ranger ces ' + absents.length + ' contrat(s) depuis le serveur</button> ' +
+      '<button type="button" class="ct-btn nc" onclick="adEcartReleve()">📥 Relever la boîte</button></div></div>';
     if(e.lignes.length) h += '<div style="margin-top:8px;">' + e.lignes.slice(0, 30).map(function(l){
       var c = l.x.champs || {}, k = esc(l.x._key);
       return '<div style="padding:8px 0;border-top:1px solid var(--border);font-size:13px;"><b>' + pillProduit(l.x) + '#' + esc(c.numero) + ' · ' + esc(nomChamps(c)) + '</b> — ' + esc(l.x.agent) +
         (l.type === 'absent'
-          ? '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Validé aujourd\'hui, mais <b style="color:var(--amber);">pas encore arrivé dans la facturation</b>.</div>'
+          ? '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Validé aujourd\'hui' + (l.nc ? ' (non conforme)' : '') + ', mais <b style="color:var(--amber);">absent de la facturation</b>.</div>'
           : '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Dans la facturation, mais daté du <b style="color:var(--amber);">' + esc(adFrJour(l.row.date)) + '</b> au lieu d\'aujourd\'hui.</div>' +
             '<div style="margin-top:6px;"><button type="button" class="ct-btn ok" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adEcartRamener(\'' + k + '\')">Ramener au ' + esc(adFrJour(adEcart.jour || auj)) + '</button></div>') + '</div>';
     }).join('') + '</div>';
@@ -37063,9 +37155,149 @@ async function renderAssistanceHistory(){
       e.extras.slice(0, 20).map(function(r){ return '<li>#' + esc(r.numContrat || r.reference || '?') + ' · ' + esc(r.nom || r.client || '') + ' (' + esc(r.agent || '?') + ')</li>'; }).join('') + '</ul>' +
       '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Ce sont des contrats validés un autre jour (ou importés à la main) qui portent la date d\'aujourd\'hui. Rien à faire si c\'est voulu.</div></div>';
     if(e.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(e.msg) + '</div>';
+    return h + '</div>' + adDoublonsCarte();
+  }
+  function adResume(l){ l = l || {}; return '#' + esc(l.numContrat || '?') + ' ' + esc(l.nom || '') + ' (' + esc(l.agent || '?') + (l.date ? ', ' + esc(adFrJour(l.date)) : '') + (l.reference ? ', réf. ' + esc(l.reference) : '') + ')'; }
+  function adDoublonsCarte(){
+    var e = adEcart, h = '';
+    if(e.suspects.length){
+      h += '<div class="ct-item" style="margin-top:10px;border-color:var(--amber);"><div class="ct-item-head"><b>🟠 À vérifier — doublons probables (' + e.suspects.length + ')</b></div>' +
+        '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Ces contrats ressemblent à un contrat déjà rangé. <b>Ils ne sont ni comptés ni payés</b> tant que tu n\'as pas décidé. Rien n\'est supprimé.</div>';
+      h += e.suspects.map(function(z){
+        return '<div style="padding:9px 0;border-top:1px solid var(--border);font-size:13px;">' +
+          '<div><b>Reçu :</b> ' + adResume(z.ligne) + (z.nc ? ' <i>(non conforme)</i>' : '') + '</div>' +
+          '<div><b>Ressemble à :</b> ' + adResume(z.avec) + '</div>' +
+          '<div style="color:var(--amber);font-size:12px;margin-top:2px;">' + esc((z.raisons || []).join(' · ')) + '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">' +
+          '<button type="button" class="ct-btn nc" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adSuspectResoudre(\'' + esc(z.id) + '\',\'doublon\')">C\'est un doublon</button>' +
+          '<button type="button" class="ct-btn ok" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adSuspectResoudre(\'' + esc(z.id) + '\',\'autre\')">C\'est un autre contrat</button></div></div>';
+      }).join('') + '</div>';
+    }
+    var recents = (e.log || []).slice(-15).reverse();
+    h += '<div class="ct-item" style="margin-top:10px;"><div class="ct-item-head"><b>🔁 Doublons détectés (récents)</b></div>';
+    if(!recents.length) h += '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Aucun doublon détecté pour le moment.</div>';
+    else h += '<div style="margin-top:6px;">' + recents.map(function(z){
+      var q = z.at ? new Date(z.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+      var issue = z.issue === 'ecarte' ? 'écarté par toi' : (z.issue === 'garde' ? 'gardé par toi (autre contrat)' : 'ignoré automatiquement');
+      return '<div style="padding:7px 0;border-top:1px solid var(--border);font-size:12.5px;"><b>' + adResume(z.ligne) + '</b> — ' + issue + ' <span style="color:var(--muted);">(' + esc(q) + ')</span>' +
+        '<div style="color:var(--muted);">Ressemblait à ' + adResume(z.avec) + ' · ' + esc((z.raisons || []).join(' · ')) + '</div></div>';
+    }).join('') + '</div>';
     return h + '</div>';
   }
-  window.adEcartRefaire = function(){ adEcart.ts = 0; adEcart.sig = ''; adEcart.msg = ''; adRendre(); };
+  window.adSuspectResoudre = async function(id, mode){
+    var e = adEcart; if(e.occupe) return;
+    var it = e.suspects.filter(function(z){ return z.id === id; })[0]; if(!it) return;
+    function maj(t){ e.msg = t; try{ adRendre(); }catch(err){} }
+    try{
+      e.occupe = true;
+      var autre = mode === 'autre';
+      if(!(await uiConfirm({ titre: autre ? 'Garder ce contrat (c\'est un autre contrat) ?' : 'Écarter ce contrat (c\'est un doublon) ?', icone: autre ? '✅' : '🔁', ton:'warn',
+          texte: autre ? 'Il sera rangé dans la facturation et compté / payé normalement.' : 'Il ne sera ni compté ni payé. Il reste noté dans la liste des doublons détectés. Rien n\'est supprimé.',
+          details:[['Contrat reçu', '#' + ((it.ligne || {}).numContrat || '?') + ' ' + ((it.ligne || {}).nom || '')], ['Ressemble à', '#' + ((it.avec || {}).numContrat || '?') + ' ' + ((it.avec || {}).nom || '')]],
+          oui: autre ? 'Oui, un autre contrat' : 'Oui, un doublon', non:'Annuler' }))) return;
+      maj('Un instant…');
+      if(autre){
+        var row = it.row, m = String(row.date || '').slice(0, 7);
+        var store = it.nc ? await getBillingNonConf(m) : await getBillingProd(m);
+        store.rows = store.rows || []; store.month = m;
+        var deja = store.rows.some(function(r){ return adNumDe(r.numContrat) === adNumDe(row.numContrat) && dbNorm(r.nom) === dbNorm(row.nom); });
+        if(!deja){
+          row.verifieDoublon = 'autre contrat confirmé'; store.rows.push(row); store.importedAt = new Date().toISOString();
+          await billingSave(it.nc ? billingNonConfKey(m) : billingProdKey(m), store);
+          if(!it.nc){ try{ await syncProdBoardRealizedForDates([row.date]); }catch(err){ console.warn(err); } }
+        }
+      }
+      var su = await billingLoad('billingSuspects', { items: [] });
+      su.items = (su.items || []).filter(function(z){ return z.id !== id; });
+      await billingSave('billingSuspects', su);
+      var ent = Object.assign({}, it); delete ent.row; ent.issue = autre ? 'garde' : 'ecarte'; ent.at = new Date().toISOString();
+      await billingNoterDoublons([ent], []);
+      billingContractIndexCache = null; billingInvalidate(); try{ clearRenderCaches(); }catch(err){}
+      logAudit('Admin', autre ? 'Doublon probable : gardé (autre contrat)' : 'Doublon probable : écarté', '#' + ((it.ligne || {}).numContrat || '?') + ' ' + ((it.ligne || {}).nom || '') + ' ↔ #' + ((it.avec || {}).numContrat || '?'));
+      maj(autre ? '✅ Contrat #' + ((it.ligne || {}).numContrat || '?') + ' rangé dans la facturation.' : '✅ Contrat #' + ((it.ligne || {}).numContrat || '?') + ' écarté (doublon). Il reste noté dans la liste.');
+    }catch(err){ maj('❌ ' + (err && err.message ? err.message : err)); }
+    finally{ e.occupe = false; e.ts = 0; e.sig = ''; try{ adRendre(); }catch(err){} }
+  };
+
+  window.adEcartReleve = async function(){
+    var e = adEcart; e.msg = '⏳ Relevé de la boîte en cours…'; try{ adRendre(); }catch(err){}
+    try{
+      var r = await syncBackofficeInbox({ manual:true });
+      e.msg = !r ? 'Relevé impossible pour le moment.' : (r.error ? '❌ ' + r.error : '✅ Relevé fait : ' + (r.imported || 0) + ' contrat(s) rangé(s), ' + (r.duplicates || 0) + ' doublon(s) ignoré(s), ' + (r.suspects || 0) + ' à vérifier, ' + ((r.badDate || []).length + (r.unresolvedAgent || []).length) + ' bloqué(s) dans la boîte.');
+    }catch(err){ e.msg = '❌ ' + (err && err.message ? err.message : err); }
+    e.ts = 0; e.sig = ''; try{ adRendre(); }catch(err){}
+  };
+  window.adEcartRefaire = function(){ adEcart.ts = 0; adEcart.sig = ''; adEcart.msg = '⏳ Revérification en cours…'; adRendre(); setTimeout(function(){ if(adEcart.msg.indexOf('Revérification') === 0){ adEcart.msg = '✔ Vérifié à ' + new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) + '.'; try{ adRendre(); }catch(err){} } }, 1500); };
+
+  // Construit la ligne de facturation d'un contrat du serveur — mêmes champs que le relevé de la boîte.
+  function adLigneFacturation(x, nc){
+    var c = x.champs || {};
+    var brut = { date: c.date_fr || adFrJour(c.date), produit: c.produit || 'Contrat Prime', numContrat: String(c.numero || ''), reference: c.reference || '',
+      nom: [c.civilite, c.nom].filter(Boolean).join(' '), dateNaissance: c.naissance_fr || '', adresse: c.adresse || '', email: c.email || '', telephone: c.telephone || '', agent: x.agent || c.vendeur || '' };
+    var r = backofficeReadFields(brut);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(c.date || '')) r.dateISO = c.date;       // la date du contrat côté serveur fait foi
+    if(!r.dateISO || !dateContratPlausible(r.dateISO)) return { erreur:'date illisible (' + (c.date || c.date_fr || 'vide') + ')' };
+    var agent = billingResolveAgent(r.agent) || billingResolveAgent(x.agent);
+    if(!agent) return { erreur:'agent inconnu (' + (x.agent || '?') + ')' };
+    return { row: {
+      date: r.dateISO, datePropre: r.dateISO, produit: r.produit, reference: r.reference, nom: r.nom, dateNaissance: r.dateNaissance, adresse: r.adresse, email: r.email,
+      telephone: r.telephone, agent: agent, agentRaw: r.agent, numContrat: r.numContrat, retracted: false,
+      source: nc ? 'backoffice-nonconforme' : 'backoffice', conforme: nc ? 'non' : 'oui', rattrape: 'serveur', receivedAt: new Date().toISOString()
+    } };
+  }
+  window.adEcartRattraper = async function(){
+    var e = adEcart; if(e.occupe) return;
+    var cibles = e.lignes.filter(function(l){ return l.type === 'absent'; });
+    if(!cibles.length) return;
+    function maj(t){ e.msg = t; try{ adRendre(); }catch(err){} }
+    try{
+      e.occupe = true;
+      if(!(await uiConfirm({ titre:'Ranger ' + cibles.length + ' contrat(s) dans la facturation ?', icone:'🛟', ton:'warn',
+          texte:'Ces contrats sont validés et gardés côté serveur, mais absents de la facturation. Ils seront rangés à leur date. Un numéro déjà présent n\'est jamais ajouté une deuxième fois. Rien n\'est supprimé.',
+          details: cibles.slice(0, 8).map(function(l){ return ['#' + (l.x.champs || {}).numero, (l.x.agent || '?') + ' · ' + nomChamps(l.x.champs)]; }), oui:'Ranger maintenant', non:'Annuler' }))) return;
+      maj('Un instant…');
+      var bilan = { ranges:0, deja:0, figes:[], erreurs:[] }, dates = new Set(), parMois = {};
+      cibles.forEach(function(l){
+        var r = adLigneFacturation(l.x, l.nc);
+        if(r.erreur){ bilan.erreurs.push('#' + (l.x.champs || {}).numero + ' : ' + r.erreur); return; }
+        var m = r.row.date.slice(0, 7), cle = (l.nc ? 'nc:' : 'ok:') + m;
+        (parMois[cle] = parMois[cle] || { m:m, nc:l.nc, rows:[] }).rows.push(r.row);
+      });
+      var cles = Object.keys(parMois);
+      for(var i = 0; i < cles.length; i++){
+        var g = parMois[cles[i]];
+        try{
+          if(!g.nc){
+            var fige = await getBillingPayslips(g.m);
+            if(fige && fige.entries && fige.entries.length){ g.rows.forEach(function(r){ bilan.figes.push('#' + r.numContrat + ' (' + g.m + ')'); }); continue; }
+          }
+          var existants = [], voisins = moisVoisins(g.m);
+          for(var v = 0; v < voisins.length; v++){
+            var st0 = g.nc ? await getBillingNonConf(voisins[v]) : await getBillingProd(voisins[v]);
+            ((st0 && st0.rows) || []).forEach(function(r){ existants.push(r); });
+          }
+          var store = g.nc ? await getBillingNonConf(g.m) : await getBillingProd(g.m);
+          store.rows = store.rows || []; store.month = g.m;
+          var ajoutes = 0, ignores = [], suspects = [];
+          g.rows.forEach(function(r){
+            var cmp = billingClasserDoublon(r, existants);
+            if(cmp && cmp.niveau === 'certain'){ bilan.deja++; ignores.push(billingEntreeDoublon(r, cmp, g.nc)); return; }
+            if(cmp && cmp.niveau === 'probable'){ bilan.suspects = (bilan.suspects || 0) + 1; suspects.push(billingEntreeSuspect(r, cmp, g.nc)); return; }
+            existants.push(r); store.rows.push(r); ajoutes++; if(!g.nc) dates.add(r.date);
+          });
+          if(ajoutes){ store.importedAt = new Date().toISOString(); await billingSave(g.nc ? billingNonConfKey(g.m) : billingProdKey(g.m), store); bilan.ranges += ajoutes; }
+          await billingNoterDoublons(ignores, suspects);
+        }catch(err){ bilan.erreurs.push('mois ' + g.m + ' : ' + (err && err.message ? err.message : err)); }
+      }
+      if(dates.size){ try{ await syncProdBoardRealizedForDates(Array.from(dates)); }catch(err){ bilan.erreurs.push('compteurs du jour : ' + (err && err.message ? err.message : err)); } }
+      billingContractIndexCache = null; billingInvalidate(); try{ clearRenderCaches(); }catch(err){}
+      logAudit('Admin', 'Contrats rangés depuis le serveur', bilan.ranges + ' rangé(s), ' + bilan.deja + ' déjà présent(s)' + (bilan.figes.length ? ', ' + bilan.figes.length + ' dans un mois figé (non rangés)' : '') + (bilan.erreurs.length ? ', ' + bilan.erreurs.length + ' erreur(s)' : ''));
+      maj((bilan.erreurs.length || bilan.figes.length ? '⚠️ ' : '✅ ') + bilan.ranges + ' contrat(s) rangé(s) dans la facturation, ' + bilan.deja + ' déjà présent(s) (doublons notés).' + (bilan.suspects ? '\n' + bilan.suspects + ' contrat(s) mis dans « À vérifier » (doublon probable).' : '') +
+        (bilan.figes.length ? '\nMois déjà figé (payé), non rangés : ' + bilan.figes.join(', ') + ' — à décider avec toi.' : '') +
+        (bilan.erreurs.length ? '\nNon rangés : ' + bilan.erreurs.join(' · ') : '') + '\nPense à vérifier qu\'ils sont aussi dans le Google Sheet.');
+    }catch(err){ maj('❌ ' + (err && err.message ? err.message : err)); }
+    finally{ e.occupe = false; e.ts = 0; e.sig = ''; try{ adRendre(); }catch(err){} }
+  };
   window.adEcartRamener = async function(key){
     var e = adEcart; if(e.occupe) return;
     var l = e.lignes.filter(function(z){ return z.type === 'date' && z.x._key === key; })[0]; if(!l) return;
