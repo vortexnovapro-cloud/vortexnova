@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r277';
+const APP_VERSION = '2026-10-19-r279';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -23563,7 +23563,7 @@ async function rmRemplirMontants(year, month){
       const mr = recents[0], vr = mr ? g(mr, 'v') : 0, xr = mr ? g(mr, 'x') : 0;
       h.innerHTML = '📉 Moyenne des retours : <b>' + pc(r1, v1) + '</b> sur ' + nomP(m1) + ' (retenus en ' + nomP(rsAjoute(m1, 2)) + ') · <b>' + Math.round(taux*100) + ' %</b> sur ' + lib3
         + '<br>↪️ Moyenne des rétractations : <b>' + (mr ? pc(xr, xr + vr) : '—') + '</b> sur ' + (mr ? nomP(mr) : '—') + ' · <b>' + pc(rxX, rxX + rxV) + '</b> sur les ' + recents.length + ' derniers mois (' + recents.slice().reverse().map(nomP).join(', ') + ')'
-        + '<div class="rm-hint">Retours : mois complets seulement (les 2 derniers mois ne le sont pas encore). Rétractations : comptées dès le 1er mois. À ce rythme : ~' + attendus + ' retour' + (attendus > 1 ? 's' : '') + ' attendu' + (attendus > 1 ? 's' : '') + ' ce mois' + (reste>0 && cout>0 ? ' → paie estimée après retours : <b>'+Math.round(d.total - reste*cout).toLocaleString('fr-FR')+' DH</b>' : '') + '. Prévision seulement. Détail : onglet « 📊 Stats retours &amp; rétractations ».</div>';
+        + '<div class="rm-hint">Retours attendus ce mois : ~' + attendus + ' (prévision selon les statistiques de l\'agent)' + (reste>0 && cout>0 ? ' → paie estimée après retours : <b>'+Math.round(d.total - reste*cout).toLocaleString('fr-FR')+' DH</b>' : '') + '.</div>';
     });
   }catch(e){
     console.warn('rm estimation', e);
@@ -23581,7 +23581,7 @@ function rmBarre(d, p){
 
 function rmChargerAutres(){ try{ renderIndepSupervisorCommissionTable(); }catch(e){} try{ renderManualPrimesList(); }catch(e){} }
 // ───────── 📊 Statistiques de retours / rétractations : agent par agent, mois par mois ─────────
-var RS = { produit: 'prime', complets: true, complet: {}, duree: 3, mode: 'cumul', mois: null, donnees: null, coh: {}, charge: false };
+var RS = { produit: 'prime', anciens: false, complets: true, complet: {}, duree: 3, mode: 'cumul', mois: null, donnees: null, coh: {}, charge: false };
 var RS_CACHE = {};
 var RS_P = null;
 function rsAjoute(m, n){ let [y, k] = m.split('-').map(Number); k += n; while(k > 12){ k -= 12; y++; } while(k < 1){ k += 12; y--; } return y + '-' + String(k).padStart(2, '0'); }
@@ -23654,6 +23654,8 @@ window.rmRetoursRendre = function(sansCharger){
   let agents = new Set(); mois.forEach(m=>{ const d = RS.donnees[m]; if(!prime) Object.keys(d).forEach(a=>agents.add(a)); else [d.v, d.x, d.r].forEach(o=>Object.keys(o).forEach(a=>agents.add(a))); });
   try{ agentsReels().forEach(a=>{ if(prime || (window.__ilekAgents||[]).indexOf(a) >= 0) agents.add(a); }); }catch(e){}
   agents = Array.from(agents).filter(a=>{ try{ return !isTestAgentName(a); }catch(e){ return true; } });
+  // Par défaut : seulement les agents en poste (les anciens, archivés ou partis, sont masqués)
+  if(!RS.anciens){ try{ const actifs = new Set(agentsReels()); agents = agents.filter(a=>actifs.has(a)); }catch(e){} }
   const pct = (b, r)=> b > 0 ? Math.round(1000 * r / b) / 10 : null;
   const fmtP = (x)=> x == null ? '—' : String(x).replace('.', ',') + ' %';
   const nomMois = (m)=>{ const [y, k] = m.split('-'); return ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'][Number(k)-1] + ' ' + y.slice(2); };
@@ -23696,7 +23698,7 @@ window.rmRetoursRendre = function(sansCharger){
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + sel(RS.produit, [['prime', '🔵 Prime'], ['ilek', '🟢 Ilek']], 'rsChoix_produit') +
         sel(RS.duree, [[1, '1 mois'], [2, '2 mois'], [3, '3 mois'], [4, '4 mois'], [6, '6 mois'], [12, '12 mois'], [0, 'Tout']], 'rsChoix_duree') +
         sel(RS.mode, [['cumul', 'Cumulée'], ['mensuel', 'Moyenne des mois']], 'rsChoix_mode') +
-        (prime ? sel(RS.complets ? '1' : '0', [['1', 'Mois complets seulement'], ['0', 'Avec les 2 derniers mois (incomplets)']], 'rsChoix_complets') : '') + '</div></div>';
+        sel(RS.anciens ? '1' : '0', [['0', 'Agents en poste'], ['1', 'Avec les anciens agents']], 'rsChoix_anciens') + (prime ? sel(RS.complets ? '1' : '0', [['1', 'Mois complets seulement'], ['0', 'Avec les 2 derniers mois (incomplets)']], 'rsChoix_complets') : '') + '</div></div>';
   if(!mois.length){ hote.innerHTML = h + '<div class="empty" style="margin-top:14px;">Aucune donnée d\'historique pour l\'instant (il faut avoir importé la production et les retours des mois passés).</div></div>'; return; }
   // ── Grandes tuiles équipe
   h += '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px;">' +
@@ -23721,6 +23723,7 @@ window.rmRetoursRendre = function(sansCharger){
   hote.innerHTML = h;
 };
 window.rsChoix_produit = function(v){ RS.produit = v; RS.donnees = null; rmRetoursRendre(); };
+window.rsChoix_anciens = function(v){ RS.anciens = (v === '1'); rmRetoursRendre(true); };
 window.rsChoix_complets = function(v){ RS.complets = (v === '1'); rmRetoursRendre(true); };
 window.rsChoix_duree = function(v){ RS.duree = Number(v); rmRetoursRendre(true); };
 window.rsChoix_mode = function(v){ RS.mode = v; rmRetoursRendre(true); };
