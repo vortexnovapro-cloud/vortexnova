@@ -1354,6 +1354,8 @@ async function tryDeviceGateAdmin(){
           </div>
         </div>
 
+        <div id="arenaEnerBox" style="display:none; margin-bottom:22px;"></div>
+
         <div class="section-title" style="margin-top:32px;">Podium du jour</div>
         <div class="podium" id="arenaPodium"></div>
 
@@ -3302,7 +3304,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r261';
+const APP_VERSION = '2026-10-19-r265';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -8869,6 +8871,37 @@ const SUPERVISOR_RECRUE_MSGS = {
 function enerJour(agent, jour){
   try{ return (agent && typeof window.energieDuJour === 'function') ? (window.energieDuJour(agent, jour || todayStr()) || 0) : 0; }catch(e){ return 0; }
 }
+// ⚡ Niveau d'une journée d'énergie (0 en assistance) : 1 = minimum syndical, 2 = moyen, 3 = correct, 4 = pas mal, 5 et plus = très bien.
+// UNE seule source pour tous les commentaires et badges, pour que la carte, l'alerte et le message de l'agent disent la même chose.
+function enerNiveau(n){
+  n = Number(n) || 0;
+  if(n <= 0) return null;
+  if(n === 1) return { cle:'min',  ton:'neutre', court:'minimum' };
+  if(n === 2) return { cle:'moy',  ton:'neutre', court:'moyen' };
+  if(n === 3) return { cle:'cor',  ton:'ok',     court:'correct' };
+  if(n === 4) return { cle:'bien', ton:'ok',     court:'pas mal' };
+  return { cle:'top', ton:'top', court:'très bien' };
+}
+function enerPhrase(n, pour){
+  const lv = enerNiveau(n); if(!lv) return '';
+  const e = `${n} énergie${n>1?'s':''}`;
+  if(pour === 'agent'){
+    return ({
+      min:  `0 en assistance, ${e} aujourd'hui : c'est le minimum syndical, tu peux faire mieux.`,
+      moy:  `0 en assistance, ${e} : une journée moyenne, il y a de la marge.`,
+      cor:  `0 en assistance, ${e} : c'est correct, continue sur cette lancée.`,
+      bien: `0 en assistance, ${e} : pas mal du tout, beau travail.`,
+      top:  `0 en assistance, mais ${e} : très belle journée, bravo !`
+    })[lv.cle];
+  }
+  return ({
+    min:  `0 en assistance, ${e} aujourd'hui : le minimum syndical.`,
+    moy:  `0 en assistance, ${e} aujourd'hui : une journée moyenne.`,
+    cor:  `0 en assistance, ${e} aujourd'hui : une journée correcte.`,
+    bien: `0 en assistance, ${e} aujourd'hui : pas mal du tout.`,
+    top:  `0 en assistance, ${e} aujourd'hui : une très bonne journée.`
+  })[lv.cle];
+}
 async function enerCharger(){
   try{ if(typeof window.energieCharger === 'function') await window.energieCharger(); }catch(e){}
 }
@@ -8887,7 +8920,7 @@ function supervisorActionComment(count, agentName, justifiedAbsence, jour){
   // ⚡ À 0 en assistance mais de l'énergie faite : pas d'alerte, on le dit.
   if(count <= 0 && enerJour(agentName, jour) > 0){
     const ne = enerJour(agentName, jour);
-    return `⚡ 0 en assistance mais ${ne} énergie${ne>1?'s':''} aujourd'hui — il travaille, rien à signaler.`;
+    return `⚡ ${enerPhrase(ne, 'chef')}${enerNiveau(ne).ton === 'neutre' ? ' À suivre.' : ' Rien à signaler.'}`;
   }
   // 🌱 Une recrue à 0 contrat n'est pas une alerte rouge : c'est un apprentissage en cours. Envoyer
   // « 🚨 Agent à ZÉRO — va le voir maintenant » à un superviseur au sujet de quelqu'un arrivé la veille
@@ -8931,7 +8964,7 @@ function dailyProgressBadge(count, agentName, justifiedAbsence, jour){
   // ⚡ À 0 en assistance mais de l'énergie faite : un badge vert « énergie », jamais le rouge « 0 contrat ».
   if(count <= 0 && enerJour(agentName, jour) > 0){
     const ne = enerJour(agentName, jour);
-    return { txt: `⚡ ${ne} énergie${ne>1?'s':''}`, cls: 'ok', pulse: false, title: `0 en assistance, mais ${ne} énergie${ne>1?'s':''} faite${ne>1?'s':''} ce jour — il travaille` };
+    return { txt: `⚡ ${ne} énergie${ne>1?'s':''}`, cls: (enerNiveau(ne).ton === 'neutre' ? 'warn' : 'ok'), pulse: false, title: enerPhrase(ne, 'chef') };
   }
   // 🌱 Une recrue à 0 n'est pas une alerte : pas de rouge, pas de clignotement. Le superviseur doit
   // voir « en apprentissage », pas une urgence à traiter.
@@ -10981,6 +11014,45 @@ function bilanIlekSens(a){
   const n = Math.round((a.mois && a.mois.nets) != null ? a.mois.nets : 0);
   return n;
 }
+// 🔗 Carte énergie : ce que le même agent a fait en ASSISTANCE (jour, mois, 5 derniers jours ouvrés), pour que les deux produits soient lisibles ensemble.
+async function liaisonPrime(agent, jour){
+  const [y, m] = jour.split('-').map(Number), iso = (d)=> d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  let today = 0, mois = 0, mini = 0;
+  try{ today = (getAgentProd(await getProdBoard(jour), agent).realized) || 0; }catch(e){}
+  try{ mois = await monthlyRealizedContracts(agent, y, m); }catch(e){}
+  try{ const pay = getAgentPay(agent, y, m); mini = (pay.isIndep || pay.noObjectif) ? 0 : (pay.objectifMensuel || 0); }catch(e){}
+  const dates = []; const d = new Date(jour+'T00:00:00');
+  for(let g = 0; dates.length < 5 && g < 25; g++){ const ds = iso(d); if(isWorkingDay(ds)) dates.unshift(ds); d.setDate(d.getDate()-1); }
+  const jours = await Promise.all(dates.map(async ds=>{
+    let a = 0; try{ a = (getAgentProd(await getProdBoard(ds), agent).realized) || 0; }catch(e){}
+    return { d: ds, e: enerJour(agent, ds), a };
+  }));
+  return { today, mois, mini, jours };
+}
+// Petit historique : les ÉNERGIES en grand (barres), l'assistance en petit dessous (miroir de la carte Prime).
+function stripEnergieHtml(jours){
+  if(!jours || !jours.length) return '';
+  const max = Math.max(4, ...jours.map(j=>j.e));
+  const cols = jours.map(j=>{
+    const h = j.e === 0 ? 3 : Math.max(6, Math.round((j.e/max)*22));
+    const col = j.e === 0 ? '#5a6b7b' : '#34b774';
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;" title="${j.d} : ${j.e} énergie${j.e>1?'s':''}${j.a ? ', '+j.a+' assistance' : ''}">
+      <div style="width:100%;max-width:16px;height:22px;display:flex;align-items:flex-end;"><div style="width:100%;height:${h}px;background:${col};border-radius:3px;"></div></div>
+      <div style="font-size:9.5px;color:${j.e?'#34b774':'var(--muted)'};font-weight:${j.e?'800':'500'};">${j.e}</div>
+      <div style="font-size:9.5px;color:var(--muted);">${j.a ? '🛡️'+j.a : '&nbsp;'}</div></div>`;
+  }).join('');
+  return `<div style="margin-top:10px;"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;letter-spacing:0.3px;">5 derniers jours · énergies <span style="opacity:.7;">(🛡️ assistance dessous)</span></div><div style="display:flex;gap:4px;align-items:flex-end;">${cols}</div></div>`;
+}
+// Conseil de la carte énergie : s'adapte au nombre d'énergies du jour, puis à ce qu'il reste pour l'objectif du mois.
+function conseilEnergie(n, ob, nets, hit, jour){
+  const mot = n<=0 ? '' : ({ min:`${n} énergie aujourd'hui : le minimum syndical.`, moy:`${n} énergies aujourd'hui : une journée moyenne.`, cor:`${n} énergies aujourd'hui : correct.`, bien:`${n} énergies aujourd'hui : pas mal du tout.`, top:`${n} énergies aujourd'hui : très bonne journée !` })[enerNiveau(n).cle];
+  let suite = '';
+  if(ob > 0 && !hit){
+    const reste = Math.max(0, ob - nets), jr = (function(){ try{ return workingDaysRemainingFrom(jour); }catch(e){ return 0; } })();
+    suite = jr > 0 ? ` Plus que ${ilekNbG(reste)} pour l'objectif du mois, soit environ ${Math.ceil(reste/jr)} par jour sur les ${jr} jours ouvrés restants.` : ` Plus que ${ilekNbG(reste)} pour l'objectif du mois.`;
+  }
+  return mot + suite;
+}
 async function renderBilanIlek(force){
   const el = document.getElementById('bilanIlekJour'); if(!el) return;
   const inp = document.getElementById('bilanIlekDate');
@@ -10996,6 +11068,8 @@ async function renderBilanIlek(force){
     clearInterval(tic);
     BILAN_ILEK_DERNIER = b;
     const lignes = b.agents;
+    const LIA = {};
+    await Promise.all(lignes.filter(a=>a.energies>0||a.nc>0).map(async a=>{ try{ LIA[a.agent] = await liaisonPrime(a.agent, jour); }catch(e){} }));
     const tot = lignes.reduce((t,a)=>({ c:t.c+a.contrats, e:t.e+a.energies, el:t.el+a.elec, g:t.g+a.gaz, d:t.d+a.dual, h:t.h+a.hier, nc:t.nc+a.nc }), {c:0,e:0,el:0,g:0,d:0,h:0,nc:0});
     const eq = (n)=> n + ' énergie' + (n>1?'s':'');
     const delta = (a,h)=>{ const x=a-h; return x===0 ? '= hier' : (x>0 ? '▲ +'+x+' vs hier' : '▼ '+x+' vs hier'); };
@@ -11040,13 +11114,15 @@ async function renderBilanIlek(force){
         }
         h += `<div class="ilk-card objsnap-card" style="font-family:'Inter',sans-serif;padding:19px;border-radius:18px;background:var(--panel2);border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};border-top:4px solid #22c55e;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div style="font-weight:800;font-size:17px;">${i<3&&a.energies>0?medals[i]+' ':''}${esc3(a.agent)}</div><div style="font-size:12px;font-weight:700;color:${dc(a.energies,a.hier)};">${delta(a.energies,a.hier)}</div></div>
-          <div style="font-size:36px;font-weight:900;line-height:1.15;margin-top:8px;">${a.energies} <span style="font-size:14px;color:var(--muted);font-weight:700;">${a.energies>1?'énergies':'énergie'} aujourd'hui</span></div>
+          <div style="font-size:36px;font-weight:900;line-height:1.15;margin-top:8px;">${a.energies} <span style="font-size:14px;color:var(--muted);font-weight:700;">${a.energies>1?'énergies':'énergie'} aujourd'hui</span>${LIA[a.agent] ? `<span title="Assistance (Prime) du même jour" style="display:inline-block;margin-left:9px;padding:3px 9px;border-radius:9px;font-size:12.5px;font-weight:700;letter-spacing:0;vertical-align:middle;color:var(--muted);background:rgba(255,255,255,.06);border:1px solid var(--border);">🛡️ ${LIA[a.agent].today} assistance</span>` : ''}</div>
           <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${a.contrats} contrat${a.contrats>1?'s':''} · ${det}</div>${a.nc?`<div style="font-size:12px;color:#e55a5a;margin-top:4px;">${a.nc} non conforme${a.nc>1?'s':''} (non compté${a.nc>1?'s':''})</div>`:''}
           ${ob>0 ? `<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:12px 0 4px;"><div style="width:${pc}%;height:100%;background:${barCol};"></div></div><div style="text-align:right;font-size:12px;font-weight:800;color:${barCol};">${pc}%</div>` : ''}
           ${m ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:13px;">
             ${ob>0 ? `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>Objectif du mois</span><b style="color:${hit?'#4f9d78':'var(--text)'};font-size:14px;">${ilekNbG(nets)}<span style="opacity:.55;"> / ${ob}</span></b></div>` : `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>Cumul du mois</span><b style="color:var(--text);font-size:14px;">${ilekNbG(nets)}</b></div>`}
             ${m.retoursEnergies ? `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>Retours du mois</span><b style="color:#e55a5a;font-size:14px;">-${ilekNbG(m.retires)}</b></div>` : ''}
-            <div style="margin-top:6px;color:var(--text);font-weight:600;line-height:1.45;">${comm}</div></div>` : ''}
+            ${LIA[a.agent] ? `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;" title="Contrats Prime signés depuis le 1er du mois"><span>🛡️ Assistance ce mois</span><b style="color:${(LIA[a.agent].mini>0 && LIA[a.agent].mois>=LIA[a.agent].mini)?'#4f9d78':'var(--text)'};font-size:14px;">${LIA[a.agent].mois}${LIA[a.agent].mini>0?`<span style="opacity:.55;"> / ${LIA[a.agent].mini}</span>`:''}</b></div>` : ''}
+            ${LIA[a.agent] ? stripEnergieHtml(LIA[a.agent].jours) : ''}
+            <div style="margin-top:8px;color:var(--text);font-weight:600;line-height:1.45;">${a.energies>0 ? esc3(conseilEnergie(a.energies, ob, nets, hit, jour)) : ''}${a.energies>0 && comm && !(ob>0 && !hit) ? ' ' : ''}${(ob>0 && !hit) ? '' : esc3(comm)}</div></div>` : ''}
         </div>`;
       });
       h += `</div>`;
@@ -11250,7 +11326,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     // Statut spécial du jour (absence justifiée/injustifiée, congé, mise à pied...) — pour que le
     // commentaire "aujourd'hui vs hier" (dayOverDayComment) ne traite jamais une absence comme un
     // relâchement, ni une absence VRAIMENT injustifiée comme un simple mauvais jour anodin.
-    monthlyByAgent[r.agent] = { monthlyRealized, mini, vise: desired || 0, justifiedAbsence: dayLog ? (dayLog.justifiedAbsence || null) : null };
+    let ilekMois = null; try{ if(typeof window.ilekDuMois === 'function') ilekMois = await window.ilekDuMois(r.agent, dateStr.slice(0,7)); }catch(e){}
+    monthlyByAgent[r.agent] = { monthlyRealized, mini, vise: desired || 0, ilek: ilekMois, justifiedAbsence: dayLog ? (dayLog.justifiedAbsence || null) : null };
   }));
 
   // Historique des derniers jours ouvrés AVANT dateStr — pour les séries 🔥 (sans finir à 0) et 🎯
@@ -11318,7 +11395,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           if(meta && meta.deduction === 'full'){ absentJour = true; absenceLabel = absenceLabelPourAgent(ja); }
         }catch(e){}
       }
-      return { realized: v, objective: o, horsPeriode, absentJour, absenceLabel };
+      return { realized: v, objective: o, horsPeriode, absentJour, absenceLabel, energie: enerJour(r.agent, d) };
     }));
   }));
   function buildMonthlyRanking(list){
@@ -11524,10 +11601,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       // même ligne (« 16 / 20 » puis « 16 / 20 ») — de quoi faire douter n'importe qui de la fiabilité
       // des chiffres. Une seule ligne, une seule lecture possible.
       const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
-      const monthlyBlock = (mo.mini>0 || viseAffichable || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
+      const monthlyBlock = (mo.mini>0 || viseAffichable || mo.ilek || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
           ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
           ${viseAffichable ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+          ${mo.ilek ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-top:5px;" title="Énergies Ilek nettes (retours déduits) depuis le 1er du mois"><span>⚡ Énergie ce mois</span><b style="color:${(mo.ilek.objectif>0 && mo.ilek.atteint)?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${ilekNbG(mo.ilek.nets)}${mo.ilek.objectif>0?`<span style="opacity:0.55;"> / ${mo.ilek.objectif}</span>`:''}</b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
           ${dayRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.2); border:1px solid rgba(184,147,90,0.55); font-size:12.5px; font-weight:800; color:#d8b26e;\">${escapeHtml(dayRecordByAgent[r.agent])}</div>` : ''}
           ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
@@ -11562,8 +11640,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           : `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">Contrats ${dayIsOver ? 'de la journée' : "d'aujourd'hui"}</div>
              <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
-               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};" title="Contrats signés ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / objectif du jour — le cumul du mois est juste en dessous.">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
-               <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%</span>
+               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? 'var(--muted)' : barColor};" title="Contrats signés ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / objectif du jour — le cumul du mois est juste en dessous.">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? ' assistance' : ''}</span>${enerJour(r.agent, dateStr)>0 ? `<span title="${enerPhrase(enerJour(r.agent, dateStr), 'chef') || ''}" style="display:inline-block; margin-left:9px; padding:3px 9px; border-radius:9px; font-size:13px; font-weight:800; letter-spacing:0; vertical-align:middle; color:#34b774; background:rgba(52,183,116,.14); border:1px solid rgba(52,183,116,.45);">⚡ ${enerJour(r.agent, dateStr)} énergie${enerJour(r.agent, dateStr)>1?'s':''}</span>` : ''}</span>
+               ${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? '' : `<span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%</span>`}
              </div>`}
         ${historyStripHtml(stripByAgent[r.agent])}
         ${monthlyBlock}
@@ -15051,11 +15129,7 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
       } else if(rankValue === 0 && enerJour(agentName, refDayForSeed) > 0){
         // ⚡ 0 en assistance mais de l'énergie faite : pas de « journée blanche », on le reconnaît.
         const neJ = enerJour(agentName, refDayForSeed);
-        lines.push(mk('⚡', seedPick([
-          `0 en assistance, mais ${neJ} énergie${neJ>1?'s':''} aujourd'hui : ta journée est bien remplie.`,
-          `Pas d'assistance aujourd'hui, mais ${neJ} énergie${neJ>1?'s':''} de signée${neJ>1?'s':''} — beau travail.`,
-          `Journée tournée vers l'énergie : ${neJ} signée${neJ>1?'s':''}. Rien à te reprocher.`
-        ], seed+'|jourEnergie'), GOLD, GOLD_BG));
+        lines.push(mk('⚡', enerPhrase(neJ, 'agent'), enerNiveau(neJ).ton === 'neutre' ? SLATE : (enerNiveau(neJ).ton === 'top' ? GOLD : SAGE), enerNiveau(neJ).ton === 'neutre' ? SLATE_BG : (enerNiveau(neJ).ton === 'top' ? GOLD_BG : SAGE_BG)));
       } else if(rankValue === 0){
         // Branche la plus sensible de toute l'appli : c'est ce que lit quelqu'un qui a fait une journée
         // blanche. Elle n'avait qu'une seule phrase — désormais six, toutes tournées vers demain.
@@ -15576,7 +15650,8 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
     await enerCharger();
     const neD = enerJour(agentName, dateForCount);
     if(neD > 0){
-      return { text: `⚡ 0 en assistance aujourd'hui, mais ${neD} énergie${neD>1?'s':''} : la journée est bien remplie.`, color: SAGE, bg: SAGE_BG, critical: false };
+      const lvD = enerNiveau(neD);
+      return { text: `⚡ ${enerPhrase(neD, 'chef')}`, color: lvD.ton === 'neutre' ? SLATE : (lvD.ton === 'top' ? GOLD_DOD : SAGE), bg: lvD.ton === 'neutre' ? SLATE_BG : (lvD.ton === 'top' ? GOLD_DOD_BG : SAGE_BG), critical: false };
     }
 
     // ⚠️ ABSENCE DU JOUR — un 0 contrat parce que l'agent était en arrêt maladie, en congé payé ou
@@ -15806,13 +15881,16 @@ function historyStripHtml(historyFull){
     else if(obj > 0 && v < obj){ barColor = '#e5a83d'; missed = true; }
     else if(obj > 0 && v >= obj){ barColor = '#34b774'; missed = false; }
     else { barColor = '#5680ab'; missed = false; }
-    const glow = v === 0 ? 'box-shadow:0 0 7px rgba(229,72,77,0.6);' : '';
-    const numColor = v===0 ? '#e5484d' : (missed ? '#e5a83d' : 'var(--muted)');
+    const enJ = (day && day.energie) || 0;      // ⚡ 0 en assistance mais de l'énergie : ce n'est pas un jour rouge
+    if(v === 0 && enJ > 0){ barColor = '#34b774'; missed = false; }
+    const glow = (v === 0 && !enJ) ? 'box-shadow:0 0 7px rgba(229,72,77,0.6);' : '';
+    const numColor = (v===0 && !enJ) ? '#e5484d' : (missed ? '#e5a83d' : 'var(--muted)');
     return `<div style="display:flex; flex-direction:column; align-items:center; gap:3px; flex:1;">
       <div style="width:100%; max-width:16px; height:22px; display:flex; align-items:flex-end;">
         <div style="width:100%; height:${h}px; background:${barColor}; border-radius:3px; ${glow}"></div>
       </div>
       <div style="font-size:9.5px; color:${numColor}; font-weight:${(v===0||missed)?'700':'500'};">${v}</div>
+      ${enJ > 0 ? `<div title="${enJ} énergie${enJ>1?'s':''} ce jour-là" style="font-size:9.5px; color:#34b774; font-weight:800;">⚡${enJ}</div>` : ''}
     </div>`;
   }).join('');
   return `<div style="margin-top:10px;" title="Vert = objectif atteint · orange = objectif manqué · rouge = 0 contrat${aDesJoursNeutres ? ' · gris = jour non travaillé' : ''}"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours</div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
@@ -36320,7 +36398,7 @@ async function renderAssistanceHistory(){
     var p = (v.produits && v.produits.ilek) || {};
     var dv = Number(p.diviseur); if(dv !== 2 && dv !== 3) dv = 1;
     var cm = Number(p.commission); if(!(cm >= 0) || p.commission === '' || p.commission == null) cm = 200;
-    ilekMem.reg = { agents: Array.isArray(p.agents) ? p.agents : [], commission: cm, diviseur: dv, objectifs: (p.objectifs && typeof p.objectifs === 'object') ? p.objectifs : {}, fixes: (p.fixes && typeof p.fixes === 'object') ? p.fixes : {}, caPatron: (Number(p.caPatron) > 0 ? Number(p.caPatron) : 0), chute: (Number(p.chute) > 0 ? Math.min(100, Number(p.chute)) : 0) };
+    ilekMem.reg = { agents: Array.isArray(p.agents) ? p.agents : [], commission: cm, diviseur: dv, objectifs: (p.objectifs && typeof p.objectifs === 'object') ? p.objectifs : {}, fixes: (p.fixes && typeof p.fixes === 'object') ? p.fixes : {}, avants: (p.avants && typeof p.avants === 'object') ? p.avants : {}, commissions: (p.commissions && typeof p.commissions === 'object') ? p.commissions : {}, caPatron: (Number(p.caPatron) > 0 ? Number(p.caPatron) : 0), chute: (Number(p.chute) > 0 ? Math.min(100, Number(p.chute)) : 0) };
     ilekMem.regT = Date.now(); return ilekMem.reg;
   }
   async function ilekRetoursLire(){
@@ -36360,9 +36438,13 @@ async function renderAssistanceHistory(){
     var ob = Number(R.objectifs[agent]) || 0, fx = Number(R.fixes[agent]) || 0;
     var atteint = ob > 0 && nets >= ob, fixeVerse = atteint ? fx : 0;
     var auTarif = ob > 0 ? Math.max(0, nets - ob) : nets;
+    // Comme Prime : un tarif « avant l'objectif » (0 par défaut) et un tarif « au-delà » (le tarif général par défaut), réglables agent par agent.
+    var cApres = (R.commissions && R.commissions[agent] !== undefined && Number(R.commissions[agent]) >= 0) ? Number(R.commissions[agent]) : R.commission;
+    var cAvant = (R.avants && Number(R.avants[agent]) > 0) ? Number(R.avants[agent]) : 0;
+    var avantQte = ob > 0 ? Math.min(nets, ob) : 0;
     return { agent: agent, mois: mois, contrats: val.length, energies: en, retours: mes, retoursEnergies: retEn, diviseur: R.diviseur, retires: retires,
-             nets: nets, estime: estime, chute: R.chute, commission: R.commission, objectif: ob, fixe: fx, fixeVerse: fixeVerse, atteint: atteint, auTarif: auTarif,
-             montant: Math.round(fixeVerse + auTarif * R.commission) };
+             nets: nets, estime: estime, chute: R.chute, commission: cApres, commissionAvant: cAvant, avantQte: avantQte, objectif: ob, fixe: fx, fixeVerse: fixeVerse, atteint: atteint, auTarif: auTarif,
+             montant: Math.round(fixeVerse + avantQte * cAvant + auTarif * cApres) };
   };
   var ilekNb = function(n){ return String(Math.round(n * 10) / 10).replace('.', ','); };
   // Énergies Ilek (conformes, Dual = 2) par jour : index construit une fois par lecture des contrats
@@ -36413,11 +36495,86 @@ async function renderAssistanceHistory(){
     return { jour: jour, veille: veille, mois: mois, agents: out, commission: R.commission };
   };
 
+  // ───────── Objectifs ÉNERGIE de l'agent : séparés de ceux de l'assistance ─────────
+  // Jour : fixé par l'agent le matin. Mois : « visé » fixé par l'agent (verrouillé ensuite, seul l'admin le change) ;
+  // le minimum du mois, lui, est réglé par l'admin (Rémunération → Énergie).
+  async function enerObjLire(t, d){
+    try{ var sn = await db.collection('vortexnova').doc('ilekObj' + t + ':' + d).get(); if(sn.exists){ var v = JSON.parse(sn.data().value) || {}; return v.agents || {}; } }catch(e){}
+    return {};
+  }
+  async function enerObjEcrire(t, d, agent, n){
+    var ref = db.collection('vortexnova').doc('ilekObj' + t + ':' + d);
+    await db.runTransaction(async function(tx){
+      var sn = await tx.get(ref), v = {};
+      try{ if(sn.exists) v = JSON.parse(sn.data().value) || {}; }catch(e){}
+      v.agents = v.agents || {};
+      if(n > 0) v.agents[agent] = n; else delete v.agents[agent];
+      tx.set(ref, { value: JSON.stringify(v) });
+    });
+  }
+  window.energieObjJourMap = function(jour){ return enerObjLire('Jour', jour); };
+  window.energieObjMoisMap = function(mois){ return enerObjLire('Mois', mois); };
+  window.energieSaveObjJour = async function(){
+    var ag = (typeof currentArenaAgent !== 'undefined') ? currentArenaAgent : null; if(!ag){ uiAlert("Sélectionne ton nom d'abord."); return; }
+    var n = parseInt((document.getElementById('arenaEnerJourInput') || {}).value, 10);
+    if(isNaN(n) || n < 0){ uiAlert('Entre un nombre valide.'); return; }
+    try{ await enerObjEcrire('Jour', todayStr(), ag, n); showToast('⚡ Objectif énergie du jour enregistré : ' + n, 'ok'); }catch(e){ toast('⚠️ Non enregistré : ' + (e && e.message ? e.message : e), 'warn'); }
+    window.renderArenaEnergie();
+  };
+  window.energieSaveObjMois = async function(){
+    var ag = (typeof currentArenaAgent !== 'undefined') ? currentArenaAgent : null; if(!ag){ uiAlert("Sélectionne ton nom d'abord."); return; }
+    var mois = todayStr().slice(0, 7), deja = (await enerObjLire('Mois', mois))[ag] || 0;
+    if(deja > 0){ uiAlert("Ton objectif énergie du mois est déjà réglé à " + deja + " et verrouillé jusqu'au mois prochain. Demande à l'admin s'il faut le changer."); window.renderArenaEnergie(); return; }
+    var n = parseInt((document.getElementById('arenaEnerMoisInput') || {}).value, 10);
+    if(isNaN(n) || n < 0){ uiAlert('Entre un nombre valide.'); return; }
+    try{ await enerObjEcrire('Mois', mois, ag, n); showToast('⚡ Objectif énergie du mois enregistré : ' + n, 'ok'); }catch(e){ toast('⚠️ Non enregistré : ' + (e && e.message ? e.message : e), 'warn'); }
+    window.renderArenaEnergie();
+  };
+  window.adIlekVise = async function(agent, valeur){
+    var n = parseInt(valeur, 10); if(isNaN(n) || n < 0) n = 0;
+    try{ await enerObjEcrire('Mois', adIlek.mois, agent, n); toast('✅ Objectif énergie visé enregistré', 'ok'); try{ logAudit('Admin', 'Objectif énergie visé (' + agent + ', ' + adIlek.mois + ') = ' + n, ''); }catch(e){} }catch(e){ toast('⚠️ ' + (e && e.message ? e.message : e), 'warn'); }
+  };
+  // Carte « énergie » de l'agent dans son écran : visible UNIQUEMENT s'il est autorisé pour Ilek (sinon on ne lui parle pas d'énergie).
+  window.renderArenaEnergie = async function(){
+    var box = document.getElementById('arenaEnerBox'); if(!box) return;
+    var ag = (typeof currentArenaAgent !== 'undefined') ? currentArenaAgent : null;
+    if(!ag || !firebaseReady || !db){ box.style.display = 'none'; box.innerHTML = ''; return; }
+    try{
+      var R = await ilekReglages();
+      if(R.agents.indexOf(ag) < 0){ box.style.display = 'none'; box.innerHTML = ''; return; }
+      var jour = todayStr(), mois = jour.slice(0, 7);
+      await window.energieCharger();
+      var n = window.energieDuJour(ag, jour), dj = (await enerObjLire('Jour', jour))[ag] || 0, vise = (await enerObjLire('Mois', mois))[ag] || 0;
+      var m = await window.ilekDuMois(ag, mois) || { nets: 0, objectif: 0 };
+      var pj = dj > 0 ? Math.min(100, Math.round(100 * n / dj)) : 0, mini = m.objectif || 0, cible = Math.max(mini, vise);
+      var pm = cible > 0 ? Math.min(100, Math.round(100 * m.nets / cible)) : 0, vert = '#34b774';
+      var jr = 0; try{ jr = workingDaysRemainingFrom(jour); }catch(e){}
+      var conseil = '';
+      if(dj > 0) conseil = n >= dj ? '🎉 Objectif du jour atteint : ' + n + ' énergie' + (n > 1 ? 's' : '') + '.' : 'Plus que ' + (dj - n) + ' énergie' + ((dj - n) > 1 ? 's' : '') + ' pour ton objectif du jour.';
+      else if(n > 0) conseil = enerPhrase(n, 'agent').replace(/^0 en assistance, /, '').replace(/^mais /, '');
+      if(cible > 0 && m.nets < cible && jr > 0) conseil += (conseil ? ' ' : '') + 'Pour ton objectif du mois (' + cible + ') : environ ' + Math.ceil((cible - m.nets) / jr) + ' par jour sur les ' + jr + ' jours ouvrés restants.';
+      var barre = function(p){ return '<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:8px 0 4px;"><div style="width:' + p + '%;height:100%;background:' + vert + ';"></div></div>'; };
+      box.style.display = 'block';
+      box.innerHTML = '<div class="settings-box" style="border-color:rgba(52,183,116,.5);background:linear-gradient(135deg, rgba(52,183,116,.07), var(--panel));">' +
+        '<div style="display:flex;align-items:center;gap:10px;"><div style="font-size:30px;line-height:1;">⚡</div><div><div style="font-size:16px;font-weight:900;">Ton suivi énergie</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">Séparé de ton assistance : ses propres objectifs et ses propres chiffres.</div></div></div>' +
+        '<div style="margin-top:14px;"><div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">Énergies aujourd\'hui</div>' +
+        '<div style="font-size:30px;font-weight:900;color:' + vert + ';">' + n + (dj > 0 ? '<span style="font-size:15px;color:var(--muted);font-weight:600;"> / ' + dj + '</span>' : '') + '</div>' + (dj > 0 ? barre(pj) : '') +
+        '<div class="arena-objectif-form" style="margin-top:8px;"><input type="number" id="arenaEnerJourInput" min="0" max="99" placeholder="Ex: 4" value="' + (dj || '') + '" style="width:100px;font-size:20px;padding:10px;border:2px solid rgba(52,183,116,.45);"> <button class="arena-btn" onclick="energieSaveObjJour()" style="background:' + vert + ';color:#04210f;">✅ ' + (dj > 0 ? 'Modifier' : 'Valider') + ' mon objectif énergie du jour</button></div></div>' +
+        '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);"><div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">Énergies ce mois (nettes des retours)</div>' +
+        '<div style="font-size:26px;font-weight:900;">' + ilekNb(m.nets) + (mini > 0 ? '<span style="font-size:15px;color:var(--muted);font-weight:600;"> / ' + mini + ' (minimum)</span>' : '') + (vise > 0 ? '<span style="font-size:13px;color:var(--muted);font-weight:600;"> · visé ' + vise + '</span>' : '') + '</div>' + (cible > 0 ? barre(pm) : '') +
+        (vise > 0 ? '<div style="font-size:12.5px;color:var(--muted);">🔒 Objectif visé réglé à ' + vise + ' pour ce mois : seul l\'admin peut le changer.</div>' :
+          '<div class="arena-objectif-form" style="margin-top:8px;"><input type="number" id="arenaEnerMoisInput" min="0" max="999" placeholder="Ex: 30" style="width:110px;font-size:20px;padding:10px;border:2px solid rgba(52,183,116,.45);"> <button class="arena-btn" onclick="energieSaveObjMois()" style="background:' + vert + ';color:#04210f;">✅ Valider mon objectif énergie du mois</button></div>') + '</div>' +
+        (conseil ? '<div style="margin-top:12px;font-size:13.5px;font-weight:600;line-height:1.45;">' + esc(conseil) + '</div>' : '') + '</div>';
+    }catch(e){ console.warn('renderArenaEnergie', e); }
+  };
+  try{ var _ra = renderArena; renderArena = async function(){ var r = await _ra.apply(this, arguments); try{ await window.renderArenaEnergie(); }catch(e){} return r; }; }catch(e){ console.warn('lien Arena / énergie', e); }
+
   // Retours Ilek d'un agent sur une liste de mois (pour le solde d'un agent parti) : énergies retournées × commission, sans diviseur
   window.ilekRetoursAgent = async function(agent, moisListe){
     var R = await ilekReglages(), T = await ilekRetoursLire(), en = 0;
     T.rows.forEach(function(r){ if(r.agent === agent && moisListe.indexOf(r.mois) >= 0) en += Number(r.energies) || 1; });
-    return { energies: en, cout: R.commission };
+    var cAg = (R.commissions && R.commissions[agent] !== undefined && Number(R.commissions[agent]) >= 0) ? Number(R.commissions[agent]) : R.commission;   // tarif « au-delà » propre à l'agent s'il en a un
+    return { energies: en, cout: cAg };
   };
   // Énergies conformes par jour et par agent (Dual = 2) : sert à ne pas reprocher « 0 contrat » à un agent qui a fait de l'énergie.
   window.__energieIdx = window.__energieIdx || {};
@@ -36459,11 +36616,32 @@ async function renderAssistanceHistory(){
       var out = [];
       for(var i = 0; i < noms.length; i++){ var d = await window.ilekDuMois(noms[i], adIlek.mois); if(d) out.push(d); }
       adIlek.data = out;
+      try{ adIlek.vises = await enerObjLire('Mois', adIlek.mois); }catch(e){ adIlek.vises = {}; }
     }catch(e){ adIlek.data = []; adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
     adIlek.charge = false; try{ adRendre(); }catch(e){}
   }
   function adIlekRafraichir(){ window.ilekInvalider(); adIlek.data = null; adIlek.charge = false; try{ adRendre(); }catch(e){} }
   window.adIlekMois = function(v){ if(!/^\d{4}-\d{2}$/.test(v || '')) return; adIlek.mois = v; adIlek.msg = ''; adIlekRafraichir(); };
+  // Salaire fixe et prime d'assiduité : les MÊMES champs que Rémunération → Prime (un seul réglage par personne, payé une seule fois).
+  function adIlekPayCells(n){
+    var pay = {}, pc = {}; try{ pay = getAgentPay(n) || {}; pc = ((getProdConfig().agentPay || {})[n]) || {}; }catch(e){}
+    var cell = function(champ, ph, step){ return '<td><input type="number" min="0" step="' + step + '" style="width:90px;" value="' + ((pc[champ] !== undefined && pc[champ] !== '') ? pc[champ] : '') + '" placeholder="' + Math.round(ph || 0) + '" onchange="adIlekPay(\'' + champ + '\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '" title="Vide = valeur appliquée aujourd\'hui (' + Math.round(ph || 0) + ' DH). Réglage commun Prime + Énergie."></td>'; };
+    return cell('baseSalary', pay.baseSalary, 100) + cell('primeAssiduite', pay.primeAssiduite, 50);
+  }
+  window.adIlekPay = async function(champ, valeur, agent){
+    try{
+      var pc = getProdConfig(); pc.agentPay = pc.agentPay || {};
+      pc.agentPay[agent] = pc.agentPay[agent] || {};
+      var v = String(valeur).trim();
+      if(v === '') delete pc.agentPay[agent][champ]; else pc.agentPay[agent][champ] = parseFloat(v) || 0;
+      if(!Object.keys(pc.agentPay[agent]).length) delete pc.agentPay[agent];
+      await saveConfigSilent();
+      toast('✅ Réglage enregistré (commun Prime + Énergie)', 'ok');
+      try{ logAudit('Admin', 'Rémunération ' + agent + ' (depuis Énergie) : ' + champ + ' = ' + valeur, ''); }catch(e){}
+      try{ renderProdAdmin(); renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
+      adIlekRafraichir();
+    }catch(e){ toast('⚠️ Réglage non enregistré : ' + (e && e.message ? e.message : e), 'warn'); }
+  };
   window.adIlekReglage = async function(champ, valeur, agent){
     var cur = {};
     try{ var sn = await db.collection('vortexnova').doc(REGL_KEY).get(); if(sn.exists) cur = JSON.parse(sn.data().value) || {}; }catch(e){}
@@ -36474,6 +36652,8 @@ async function renderAssistanceHistory(){
     else if(champ === 'caPatron'){ var cp = parseFloat(String(valeur).replace(',', '.')); if(!(cp >= 0)) cp = 0; p.ilek.caPatron = cp; }
     else if(champ === 'diviseur'){ p.ilek.diviseur = (Number(valeur) === 2 || Number(valeur) === 3) ? Number(valeur) : 1; }
     else if(champ === 'fixe'){ p.ilek.fixes = p.ilek.fixes || {}; var f = parseFloat(String(valeur).replace(',', '.')); if(f > 0) p.ilek.fixes[agent] = f; else delete p.ilek.fixes[agent]; }
+    else if(champ === 'avant'){ p.ilek.avants = p.ilek.avants || {}; var av = parseFloat(String(valeur).replace(',', '.')); if(av > 0) p.ilek.avants[agent] = av; else delete p.ilek.avants[agent]; }
+    else if(champ === 'apres'){ p.ilek.commissions = p.ilek.commissions || {}; var ap = parseFloat(String(valeur).replace(',', '.')); if(String(valeur).trim() !== '' && ap >= 0) p.ilek.commissions[agent] = ap; else delete p.ilek.commissions[agent]; }
     else if(champ === 'objectif'){ p.ilek.objectifs = p.ilek.objectifs || {}; var o = parseInt(valeur, 10); if(o > 0) p.ilek.objectifs[agent] = o; else delete p.ilek.objectifs[agent]; }
     var ok = await reglEcrire({ produits: p });
     if(!ok) return;
@@ -36483,7 +36663,7 @@ async function renderAssistanceHistory(){
   };
   function adIlekCarte(){
     var R = ilekMem.reg || { agents: (((regl.produits || {}).ilek || {}).agents) || [], commission: 200, diviseur: 1, objectifs: {} };
-    var p = ilekMem.reg ? { commission: ilekMem.reg.commission, diviseur: ilekMem.reg.diviseur, objectifs: ilekMem.reg.objectifs, fixes: ilekMem.reg.fixes, agents: ilekMem.reg.agents, caPatron: ilekMem.reg.caPatron, chute: ilekMem.reg.chute } : (((regl.produits || {}).ilek) || {});
+    var p = ilekMem.reg ? { commission: ilekMem.reg.commission, diviseur: ilekMem.reg.diviseur, objectifs: ilekMem.reg.objectifs, fixes: ilekMem.reg.fixes, avants: ilekMem.reg.avants, commissions: ilekMem.reg.commissions, agents: ilekMem.reg.agents, caPatron: ilekMem.reg.caPatron, chute: ilekMem.reg.chute } : (((regl.produits || {}).ilek) || {});
     var comm = (p.commission !== undefined && p.commission !== '' && Number(p.commission) >= 0) ? Number(p.commission) : 200;
     var div = (Number(p.diviseur) === 2 || Number(p.diviseur) === 3) ? Number(p.diviseur) : 1;
     var obj = p.objectifs || {}, fix = p.fixes || {};
@@ -36500,7 +36680,7 @@ async function renderAssistanceHistory(){
       '<div><label style="margin:0 0 4px;display:block;">Mois affiché</label><input type="month" value="' + esc(adIlek.mois) + '" onchange="adIlekMois(this.value)"></div></div>';
     if(!autor.length) h += '<div style="font-size:12.5px;margin-top:10px;">⚪ Aucun agent n\'est autorisé pour Ilek (Admin → 📨 Contrats → carte « Produits »).</div>';
     else {
-      h += '<div style="overflow-x:auto;margin-top:12px;"><table style="width:100%;font-size:13px;border-collapse:collapse;"><tr style="text-align:left;color:var(--muted);font-size:12px;"><th>Agent</th><th>Contrats validés</th><th>Énergies</th><th>Retours</th><th>Retirées</th><th>Payées</th><th>Objectif (énergies)</th><th>Fixe (DH)</th><th>Montant</th></tr>';
+      h += '<div style="overflow-x:auto;margin-top:12px;"><table style="width:100%;font-size:13px;border-collapse:collapse;"><tr style="text-align:left;color:var(--muted);font-size:12px;"><th>Agent</th><th>Contrats validés</th><th>Énergies</th><th>Retours</th><th>Retirées</th><th>Payées</th><th>Objectif du mois (énergies, minimum)</th><th title="Objectif choisi par l\'agent lui-même (verrouillé après son choix, l\'admin peut le changer)">Objectif visé par l\'agent</th><th title="Versée une fois, quand l\'objectif du mois est atteint">Prime si objectif atteint (DH)</th><th title="Par énergie, tant que l\'objectif n\'est pas atteint (vide = 0)">Par énergie avant l\'objectif (DH)</th><th title="Par énergie au-delà de l\'objectif. Sans objectif : par énergie dès la 1re. Vide = tarif général ci-dessus">Par énergie au-delà (DH)</th><th title="Commun aux deux produits (Prime et Énergie) : payé UNE SEULE FOIS, comme dans Rémunération → Prime">Salaire fixe (DH/mois)</th><th title="Commune aux deux produits : payée UNE SEULE FOIS, mêmes règles de retards que Prime">Prime d\'assiduité (DH)</th><th>Montant énergie</th></tr>';
       var lignes = adIlek.data || [];
       autor.forEach(function(n){
         var d = lignes.filter(function(x){ return x.agent === n; })[0];
@@ -36511,7 +36691,11 @@ async function renderAssistanceHistory(){
           '<td>' + (d ? d.contrats : (adIlek.charge ? '…' : '0')) + '</td><td>' + (d ? d.energies : '') + '</td><td>' + (d ? d.retoursEnergies : '') + '</td>' +
           '<td>' + (d ? ilekNb(d.retires) : '') + '</td><td><b>' + (d ? ilekNb(d.nets) : '') + '</b></td>' +
           '<td><input type="number" min="0" style="width:80px;" value="' + (ob || '') + '" placeholder="aucun" onchange="adIlekReglage(\'objectif\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '">' + atteint + '</td>' +
-          '<td><input type="number" min="0" step="50" style="width:90px;" value="' + (fx || '') + '" placeholder="aucun" onchange="adIlekReglage(\'fixe\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '"></td>' +
+          '<td><input type="number" min="0" style="width:80px;" value="' + (((adIlek.vises || {})[n]) || '') + '" placeholder="—" onchange="adIlekVise(this.getAttribute(\'data-n\'), this.value)" data-n="' + esc(n) + '"></td>' +
+          '<td><input type="number" min="0" step="50" style="width:90px;" value="' + (fx || '') + '" placeholder="aucune" onchange="adIlekReglage(\'fixe\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '"></td>' +
+          '<td><input type="number" min="0" step="10" style="width:80px;" value="' + ((R.avants && Number(R.avants[n])) || '') + '" placeholder="0" onchange="adIlekReglage(\'avant\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '"></td>' +
+          '<td><input type="number" min="0" step="10" style="width:80px;" value="' + ((R.commissions && R.commissions[n] !== undefined) ? R.commissions[n] : '') + '" placeholder="' + comm + '" onchange="adIlekReglage(\'apres\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '"></td>' +
+          adIlekPayCells(n) +
           '<td><b>' + (d ? d.montant.toLocaleString('fr-FR') + ' DH' : '') + '</b></td></tr>';
       });
       h += '</table></div>';
