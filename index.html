@@ -2251,7 +2251,7 @@ async function tryDeviceGateAdmin(){
         <div class="rm-tabs">
           <button type="button" class="rm-tab on prime" id="rmTabPrime" onclick="rmTab('prime')">🔵 PRIME</button>
           <button type="button" class="rm-tab" id="rmTabIlek" onclick="rmTab('ilek')">🟢 ILEK</button>
-          <button type="button" class="rm-tab" id="rmTabRetours" onclick="rmTab('retours')">📊 Retours</button>
+          <button type="button" class="rm-tab" id="rmTabRetours" onclick="rmTab('retours')">📊 Stats retours &amp; rétractations</button>
           <button type="button" class="rm-tab plus" id="rmTabPlus" onclick="rmTab('plus')">➕ Ajouter un fournisseur</button>
         </div>
         <div class="rm-panel on" id="rmPanelPrime">
@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r270';
+const APP_VERSION = '2026-10-19-r277';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -6675,7 +6675,7 @@ window.toggleTestAgent = async function(name){
 function isArchivedAgent(name){ return archivedAgents().includes(name); }
 // Tous les noms que le CRM sait reconnaître — actifs ET archivés. À utiliser pour lire l'historique
 // (imports, retours, recherche, statistiques), JAMAIS pour boucler sur les agents à payer.
-function allKnownAgents(){ return (config.agents || []).concat(archivedAgents()); }
+function allKnownAgents(){ return (config.agents || []).concat(archivedAgents()).filter(function(a){ return testAgentsVisibles() || !isTestAgentName(a); }); }
 
 // r244 — Un agent parti peut être ARCHIVÉ tout de suite (il disparaît des conseils, objectifs,
 // classements, alertes…) : sa paie du mois de départ et son solde de départ (2 mois après) restent
@@ -23534,30 +23534,36 @@ async function rmRemplirMontants(year, month){
   // Estimation des retours : 3 derniers mois (lecture légère des retours et des contrats importés)
   try{
     const prec = []; for(let k=1;k<=3;k++){ let y=year, m=month-k; if(m<=0){ m+=12; y-=1; } prec.push(mv(y,m)); }
-    const hist = {};
-    for(const m of prec){
-      if(!RM_CACHE[m]){
-        const [pr, rt] = await dedans(Promise.all([getBillingProd(m), getBillingReturns(m)]), 30000);
-        const v = {}, r = {};
-        (pr.rows||[]).forEach(x=>{ if(!x.retracted) v[x.agent] = (v[x.agent]||0)+1; });
-        (rt.rows||[]).forEach(x=>{ if(!x.dismissed) r[x.agent] = (r[x.agent]||0)+1; });
-        RM_CACHE[m] = { v, r };
-      }
-      hist[m] = RM_CACHE[m];
-    }
+    const P = await dedans(rsPrimeBuild(), 60000);
+    const bonnes = P.liste.filter(m=>P.complet[m] && P.data[m]).slice(0, 3);
+    const nomP = (m)=> ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'][Number(m.slice(5,7))-1];
     zones.forEach(z=>{
       const h = z.querySelector('.rm-est'); if(!h || !z._d) return;
       const agent = dec(z.dataset.amt), d = z._d;
-      let nbV = 0, nbR = 0; prec.forEach(m=>{ nbV += hist[m].v[agent]||0; nbR += hist[m].r[agent]||0; });
+      if(!bonnes.length){ h.innerHTML = '<span class="rm-mut">Pas encore de période complète pour calculer la moyenne des retours.</span>'; return; }
+      const g = (m, cle)=> (P.data[m][cle][agent]) || 0;
+      const avecRet = P.liste.filter(m=>P.data[m] && ((P.data[m].r[agent]) || 0) > 0);
+      const debut = avecRet.length ? avecRet[avecRet.length - 1] : null;
+      const bonnesA = debut ? bonnes.filter(m=>m >= debut) : [];
+      if(!bonnesA.length){ h.innerHTML = '<span class="rm-mut">Pas encore d\'historique de retours pour cet agent (le calcul commence à son premier mois avec des retours).</span>'; return; }
+      const m1 = bonnesA[0];
+      const v1 = g(m1, 'v'), r1 = g(m1, 'r'), x1 = g(m1, 'x');
+      let nbV = 0, nbR = 0, nbX = 0; bonnesA.forEach(m=>{ nbV += g(m, 'v'); nbR += g(m, 'r'); nbX += g(m, 'x'); });
       if(nbV <= 0){ h.innerHTML = '<span class="rm-mut">Pas assez d\'historique pour calculer la moyenne des retours.</span>'; return; }
-      const v1 = hist[prec[0]].v[agent]||0, r1 = hist[prec[0]].r[agent]||0;
       const taux = nbR / nbV, faits = d.validated || d.realized || 0;
       const attendus = Math.round(faits * taux);
       const reste = Math.max(0, attendus - (d.returnsCount || 0));
       const p = getAgentPay(agent, year, month);
       const cout = (p.returnCost || p.perContract || 0) / (d.returnsDivisor || 1);
-      h.innerHTML = '📉 Moyenne des retours : <b>' + (v1 > 0 ? Math.round(100*r1/v1) + ' %' : '—') + '</b> le mois dernier · <b>' + Math.round(taux*100) + ' %</b> sur 3 mois'
-        + '<div class="rm-hint">À ce rythme (3 mois) : ~' + attendus + ' retour' + (attendus > 1 ? 's' : '') + ' attendu' + (attendus > 1 ? 's' : '') + ' ce mois' + (reste>0 && cout>0 ? ' → paie estimée après retours : <b>'+Math.round(d.total - reste*cout).toLocaleString('fr-FR')+' DH</b>' : '') + '. Prévision seulement : la vraie paie change quand tu importes les retours. Détail mois par mois : onglet « 📊 Retours ».</div>';
+      const pc = (a, b)=> b > 0 ? Math.round(100 * a / b) + ' %' : '—';
+      const lib3 = bonnesA.length > 1 ? 'les ' + bonnesA.length + ' derniers mois complets (' + bonnesA.slice().reverse().map(nomP).join(', ') + ')' : 'le mois de ' + nomP(m1);
+      // Rétractations : comptées dès le 1er mois (pas besoin d'attendre), sur les 3 derniers mois écoulés
+      const recents = P.liste.filter(m=>P.data[m]).slice(0, 3);
+      let rxV = 0, rxX = 0; recents.forEach(m=>{ rxX += g(m, 'x'); rxV += g(m, 'v'); });
+      const mr = recents[0], vr = mr ? g(mr, 'v') : 0, xr = mr ? g(mr, 'x') : 0;
+      h.innerHTML = '📉 Moyenne des retours : <b>' + pc(r1, v1) + '</b> sur ' + nomP(m1) + ' (retenus en ' + nomP(rsAjoute(m1, 2)) + ') · <b>' + Math.round(taux*100) + ' %</b> sur ' + lib3
+        + '<br>↪️ Moyenne des rétractations : <b>' + (mr ? pc(xr, xr + vr) : '—') + '</b> sur ' + (mr ? nomP(mr) : '—') + ' · <b>' + pc(rxX, rxX + rxV) + '</b> sur les ' + recents.length + ' derniers mois (' + recents.slice().reverse().map(nomP).join(', ') + ')'
+        + '<div class="rm-hint">Retours : mois complets seulement (les 2 derniers mois ne le sont pas encore). Rétractations : comptées dès le 1er mois. À ce rythme : ~' + attendus + ' retour' + (attendus > 1 ? 's' : '') + ' attendu' + (attendus > 1 ? 's' : '') + ' ce mois' + (reste>0 && cout>0 ? ' → paie estimée après retours : <b>'+Math.round(d.total - reste*cout).toLocaleString('fr-FR')+' DH</b>' : '') + '. Prévision seulement. Détail : onglet « 📊 Stats retours &amp; rétractations ».</div>';
     });
   }catch(e){
     console.warn('rm estimation', e);
@@ -23575,15 +23581,36 @@ function rmBarre(d, p){
 
 function rmChargerAutres(){ try{ renderIndepSupervisorCommissionTable(); }catch(e){} try{ renderManualPrimesList(); }catch(e){} }
 // ───────── 📊 Statistiques de retours / rétractations : agent par agent, mois par mois ─────────
-var RS = { produit: 'prime', metrique: 'retours', duree: 3, mode: 'cumul', mois: null, donnees: null, charge: false };
+var RS = { produit: 'prime', complets: true, complet: {}, duree: 3, mode: 'cumul', mois: null, donnees: null, coh: {}, charge: false };
 var RS_CACHE = {};
-async function rsMoisData(m){
+var RS_P = null;
+function rsAjoute(m, n){ let [y, k] = m.split('-').map(Number); k += n; while(k > 12){ k -= 12; y++; } while(k < 1){ k += 12; y--; } return y + '-' + String(k).padStart(2, '0'); }
+async function rsFichier(m){
   if(RS_CACHE[m]) return RS_CACHE[m];
   const [pr, rt] = await Promise.all([getBillingProd(m), getBillingReturns(m)]);
-  const v = {}, x = {}, r = {};
-  (pr.rows||[]).forEach(row=>{ if(row.retracted) x[row.agent] = (x[row.agent]||0)+1; else v[row.agent] = (v[row.agent]||0)+1; });
-  (rt.rows||[]).forEach(row=>{ if(!row.dismissed) r[row.agent] = (r[row.agent]||0)+1; });
-  return RS_CACHE[m] = { v, x, r };
+  return RS_CACHE[m] = { prod: pr.rows || [], ret: rt.rows || [], importe: !!(rt.importedAt || (rt.rows && rt.rows.length)) };
+}
+// Règle du patron : le client facture du 21 au 20 → un contrat signé le 25 juin ou le 10 juillet = période « juillet » ;
+// les retours de cette période sont retenus sur la paie 2 mois plus tard (septembre).
+function rsPeriode(iso, repli){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); if(!m) return repli;
+  const mois = m[1] + '-' + m[2];
+  return Number(m[3]) >= 21 ? rsAjoute(mois, 1) : mois;
+}
+async function rsPrimeBuild(){
+  if(RS_P && Date.now() - RS_P.t < 300000) return RS_P;
+  const now = nowMA(), cur = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const fichiers = []; for(let k = 20; k >= 0; k--) fichiers.push(rsAjoute(cur, -k));
+  const F = {}; await Promise.all(fichiers.map(async m=>{ F[m] = await rsFichier(m).catch(()=>({ prod: [], ret: [], importe: false })); }));
+  const data = {}, mk = (pm)=> data[pm] = data[pm] || { v: {}, x: {}, r: {} };
+  fichiers.forEach(m=>{
+    F[m].prod.forEach(row=>{ const pm = rsPeriode(row.date, m), o = mk(pm); if(row.retracted) o.x[row.agent] = (o.x[row.agent]||0) + 1; else o.v[row.agent] = (o.v[row.agent]||0) + 1; });
+    const pm = rsAjoute(m, -2), o = mk(pm);
+    F[m].ret.forEach(row=>{ if(!row.dismissed) o.r[row.agent] = (o.r[row.agent]||0) + 1; });
+  });
+  const complet = {}; Object.keys(data).forEach(pm=>{ const f = F[rsAjoute(pm, 2)]; complet[pm] = !!(f && f.importe); });
+  const liste = []; for(let k = 1; k <= 18; k++) liste.push(rsAjoute(cur, -k));
+  return RS_P = { t: Date.now(), data: data, complet: complet, liste: liste };
 }
 async function rsCharger(){
   if(RS.charge) return; RS.charge = true;
@@ -23596,7 +23623,8 @@ async function rsCharger(){
       const st = window.ilekStatsMois ? await window.ilekStatsMois(liste) : {};
       liste.forEach(m=>{ data[m] = st[m] || {}; });
     } else {
-      await Promise.all(liste.map(async m=>{ data[m] = await rsMoisData(m).catch(()=>null); }));
+      const P = await rsPrimeBuild(); RS.complet = P.complet;
+      liste.forEach(m=>{ data[m] = P.data[m] || { v: {}, x: {}, r: {} }; });
     }
     RS.donnees = data; RS.mois = liste;
   }catch(e){ console.warn('rsCharger', e); RS.donnees = {}; RS.mois = []; }
@@ -23606,50 +23634,94 @@ async function rsCharger(){
 function rsCellule(agent, m){
   const d = (RS.donnees || {})[m]; if(!d) return null;
   if(RS.produit === 'ilek'){ const a = d[agent]; return a ? { base: a.en || 0, ret: a.ret || 0 } : { base: 0, ret: 0 }; }
-  const v = d.v[agent] || 0, x = d.x[agent] || 0, r = d.r[agent] || 0;
-  return RS.metrique === 'retractations' ? { base: v + x, ret: x } : { base: v, ret: r };
+  const v = d.v[agent] || 0, x = d.x[agent] || 0;
+  return { base: v, ret: d.r[agent] || 0, x: x, baseX: v + x };
 }
 window.rmRetoursRendre = function(sansCharger){
   const hote = document.getElementById('rmRetoursHote'); if(!hote) return;
   if(!sansCharger && (!RS.donnees || RS._p !== RS.produit)){ RS._p = RS.produit; RS.donnees = null; }
   if(!RS.donnees){ hote.innerHTML = '<div class="empty">⏳ Chargement de l\'historique…</div>'; rsCharger(); return; }
-  const mois = (RS.mois || []).filter(m=>{ const d = RS.donnees[m]; if(!d) return false; if(RS.produit === 'ilek') return Object.keys(d).length > 0; return Object.keys(d.v).length || Object.keys(d.x).length || Object.keys(d.r).length; });
-  const choisis = RS.duree === 0 ? mois : mois.slice(0, RS.duree);
-  let agents = new Set(); mois.forEach(m=>{ const d = RS.donnees[m]; if(RS.produit === 'ilek') Object.keys(d).forEach(a=>agents.add(a)); else [d.v, d.x, d.r].forEach(o=>Object.keys(o).forEach(a=>agents.add(a))); });
-  try{ agentsReels().forEach(a=>{ if(RS.produit === 'prime' || (window.__ilekAgents||[]).indexOf(a) >= 0) agents.add(a); }); }catch(e){}
-  agents = Array.from(agents).filter(a=>{ try{ return !isTestAgentName(a); }catch(e){ return true; } }).sort((a,b)=>a.localeCompare(b));
+  const prime = RS.produit === 'prime';
+  const mois = (RS.mois || []).filter(m=>{ const d = RS.donnees[m]; if(!d) return false; if(!prime) return Object.keys(d).length > 0; return Object.keys(d.v).length || Object.keys(d.x).length || Object.keys(d.r).length; });
+  const estIncomplet = (m)=> prime && !(RS.complet || {})[m];
+  // Début de l'historique d'un agent = son premier mois AVEC des retours. Avant, on ne compte pas (sinon de faux 0 % tirent sa moyenne).
+  const debutAgent = {};
+  const premierRetour = (a)=>{ if(debutAgent[a] !== undefined) return debutAgent[a]; let d = null; mois.forEach(m=>{ const c = rsCellule(a, m); if(c && c.ret > 0 && (d == null || m < d)) d = m; }); return debutAgent[a] = d; };
+  const compte = (a, m)=>{ const d = premierRetour(a); return d != null && m >= d; };
+  const base = (prime && RS.complets) ? mois.filter(m=>!estIncomplet(m)) : mois;
+  const choisis = RS.duree === 0 ? base : base.slice(0, RS.duree);
+  const choisisX = RS.duree === 0 ? mois : mois.slice(0, RS.duree);   // rétractations : comptées dès le 1er mois, aucune attente
+  let agents = new Set(); mois.forEach(m=>{ const d = RS.donnees[m]; if(!prime) Object.keys(d).forEach(a=>agents.add(a)); else [d.v, d.x, d.r].forEach(o=>Object.keys(o).forEach(a=>agents.add(a))); });
+  try{ agentsReels().forEach(a=>{ if(prime || (window.__ilekAgents||[]).indexOf(a) >= 0) agents.add(a); }); }catch(e){}
+  agents = Array.from(agents).filter(a=>{ try{ return !isTestAgentName(a); }catch(e){ return true; } });
   const pct = (b, r)=> b > 0 ? Math.round(1000 * r / b) / 10 : null;
   const fmtP = (x)=> x == null ? '—' : String(x).replace('.', ',') + ' %';
   const nomMois = (m)=>{ const [y, k] = m.split('-'); return ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'][Number(k)-1] + ' ' + y.slice(2); };
-  const mesure = RS.produit === 'ilek' ? 'retours' : (RS.metrique === 'retractations' ? 'rétractations' : 'retours');
-  const baseLib = RS.produit === 'ilek' ? 'énergies' : 'contrats';
-  const sel = (id, val, opts, fn)=> '<select onchange="' + fn + '(this.value)" style="padding:7px 10px;">' + opts.map(o=>'<option value="' + o[0] + '"' + (String(val) === String(o[0]) ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
-  let h = '<div class="settings-box"><label>📊 Retours' + (RS.produit === 'prime' ? ' et rétractations' : '') + ' — agent par agent, mois par mois</label>' +
-    '<div class="section-sub">Pourcentage = ' + mesure + ' ÷ ' + baseLib + ' du mois. Le mois en cours n\'est pas compté (ses retours ne sont pas encore tous arrivés). ' + (mois.length ? 'Données disponibles sur <b>' + mois.length + ' mois</b> (jusqu\'à 18 mois en arrière).' : '') + '</div>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:12px 18px;align-items:end;margin:10px 0;">' +
-    '<div><label style="margin:0 0 4px;display:block;">Produit</label>' + sel('p', RS.produit, [['prime', '🔵 Prime'], ['ilek', '🟢 Ilek']], 'rsChoix_produit') + '</div>' +
-    (RS.produit === 'prime' ? '<div><label style="margin:0 0 4px;display:block;">Mesure</label>' + sel('m', RS.metrique, [['retours', 'Retours (impayés)'], ['retractations', 'Rétractations']], 'rsChoix_metrique') + '</div>' : '') +
-    '<div><label style="margin:0 0 4px;display:block;">Durée de la moyenne</label>' + sel('d', RS.duree, [[1, '1 mois'], [2, '2 mois'], [3, '3 mois'], [4, '4 mois'], [6, '6 mois'], [12, '12 mois'], [0, 'Tout l\'historique']], 'rsChoix_duree') + '</div>' +
-    '<div><label style="margin:0 0 4px;display:block;">Calcul de la moyenne</label>' + sel('c', RS.mode, [['cumul', 'Cumulée (tous les ' + baseLib + ' mis ensemble)'], ['mensuel', 'Moyenne des pourcentages de chaque mois']], 'rsChoix_mode') + '</div></div>';
-  if(!mois.length){ hote.innerHTML = h + '<div class="empty">Aucune donnée d\'historique pour l\'instant (il faut avoir importé la production et les retours des mois passés).</div></div>'; return; }
-  h += '<div style="overflow-x:auto;"><table style="width:100%;font-size:13px;border-collapse:collapse;"><tr style="text-align:left;color:var(--muted);font-size:12px;"><th>Agent</th><th style="background:rgba(59,130,246,.12);">Moyenne ' + (RS.duree === 0 ? 'totale' : 'sur ' + RS.duree + ' mois') + '</th>' + mois.map(m=>'<th>' + nomMois(m) + '</th>').join('') + '</tr>';
-  const totM = {}; mois.forEach(m=>{ totM[m] = { base: 0, ret: 0 }; });
-  const totSel = { base: 0, ret: 0, pcts: [] };
-  agents.forEach(a=>{
+  const baseLib = prime ? 'contrats' : 'énergies';
+  // Couleurs : vert = bon, orange = à surveiller, rouge = mauvais (seuils : retours 10 / 20 %, rétractations 5 / 10 %)
+  const coul = (p, seuils)=> p == null ? 'var(--muted)' : (p <= seuils[0] ? '#34b774' : (p <= seuils[1] ? '#e8a33d' : '#e5484d'));
+  const SR = [10, 20], SX = [5, 10];
+  const sel = (val, opts, fn)=> '<select onchange="' + fn + '(this.value)" style="padding:8px 12px;border-radius:10px;font-weight:700;width:auto;min-width:130px;">' + opts.map(o=>'<option value="' + o[0] + '"' + (String(val) === String(o[0]) ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
+  const moyenne = (liste, cle, cleBase)=>{
     let sb = 0, sr = 0; const pcts = [];
-    choisis.forEach(m=>{ const c = rsCellule(a, m); if(c){ sb += c.base; sr += c.ret; if(c.base > 0) pcts.push(100 * c.ret / c.base); } });
-    const moy = RS.mode === 'cumul' ? pct(sb, sr) : (pcts.length ? Math.round(10 * pcts.reduce((x, y)=>x + y, 0) / pcts.length) / 10 : null);
-    totSel.base += sb; totSel.ret += sr;
-    h += '<tr style="border-top:1px solid var(--border);"><td><b>' + escapeHtml(a) + '</b></td><td style="background:rgba(59,130,246,.08);"><b>' + fmtP(moy) + '</b> <span style="color:var(--muted);font-size:11.5px;">(' + sr + '/' + sb + ')</span></td>' +
-      mois.map(m=>{ const c = rsCellule(a, m); if(!c || (!c.base && !c.ret)) return '<td style="color:var(--muted);">—</td>'; totM[m].base += c.base; totM[m].ret += c.ret; return '<td>' + fmtP(pct(c.base, c.ret)) + ' <span style="color:var(--muted);font-size:11.5px;">(' + c.ret + '/' + c.base + ')</span></td>'; }).join('') + '</tr>';
-  });
-  h += '<tr style="border-top:2px solid var(--border);font-weight:800;"><td>Équipe</td><td style="background:rgba(59,130,246,.12);">' + fmtP(pct(totSel.base, totSel.ret)) + ' <span style="color:var(--muted);font-size:11.5px;">(' + totSel.ret + '/' + totSel.base + ')</span></td>' +
-    mois.map(m=>'<td>' + fmtP(pct(totM[m].base, totM[m].ret)) + ' <span style="color:var(--muted);font-size:11.5px;font-weight:600;">(' + totM[m].ret + '/' + totM[m].base + ')</span></td>').join('') + '</tr></table></div>';
-  h += '<div class="rm-hint" style="margin-top:8px;">Cumulée : tous les ' + baseLib + ' de la durée choisie sont mis ensemble (un gros mois pèse plus lourd). Moyenne des pourcentages : chaque mois compte autant, quel que soit son volume.' + (RS.produit === 'ilek' ? ' Pour Ilek, les retours sont ceux que tu as importés.' : '') + '</div></div>';
+    liste.forEach(c=>{ if(c){ sb += c[cleBase]; sr += c[cle]; if(c[cleBase] > 0) pcts.push(100 * c[cle] / c[cleBase]); } });
+    return { sb: sb, sr: sr, val: RS.mode === 'cumul' ? pct(sb, sr) : (pcts.length ? Math.round(10 * pcts.reduce((a, b)=>a + b, 0) / pcts.length) / 10 : null) };
+  };
+  // Barres mensuelles (du plus ancien au plus récent) : hauteur = pourcentage du mois
+  const barres = (a, cle, cleBase, seuils, pale)=> {
+    const ms = mois.slice(0, 12).slice().reverse();
+    const vals = ms.map(m=>{ const c = rsCellule(a, m); if(pale && !compte(a, m)) return null; return c && c[cleBase] > 0 ? 100 * c[cle] / c[cleBase] : null; });
+    const mx = Math.max(20, ...vals.map(v=>v == null ? 0 : v));
+    return '<div style="display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:8px;">' + ms.map((m, i)=>{
+      const v = vals[i], c = rsCellule(a, m);
+      return '<div title="' + nomMois(m) + ' (retenu ' + nomMois(rsAjoute(m, 2)).split(' ')[0] + ')' + (pale && estIncomplet(m) ? ' ⏳ retours encore en cours d\'arrivée' : '') + ' : ' + (v == null ? (pale && !compte(a, m) ? 'pas encore d\'historique de retours' : 'pas de données') : fmtP(Math.round(v*10)/10) + ' (' + c[cle] + '/' + c[cleBase] + ')') + '" style="flex:1;min-width:5px;height:' + (v == null ? 3 : Math.max(4, Math.round(34 * v / mx))) + 'px;background:' + (v == null ? 'rgba(255,255,255,.12)' : coul(v, seuils)) + ';border-radius:3px 3px 0 0;' + (pale && estIncomplet(m) ? 'opacity:.35;' : '') + '"></div>';
+    }).join('') + '</div>';
+  };
+  const gros = (titre, m, seuils, barresHtml)=> '<div style="flex:1;min-width:130px;"><div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">' + titre + '</div>' +
+    '<div style="font-size:30px;font-weight:900;line-height:1.1;color:' + coul(m.val, seuils) + ';">' + fmtP(m.val) + '</div>' +
+    '<div style="font-size:11.5px;color:var(--muted);">' + m.sr + ' sur ' + m.sb + '</div>' + (barresHtml || '') + '</div>';
+  // ── Lignes par agent
+  const lignes = agents.map(a=>{
+    const cs = choisis.filter(m=>compte(a, m)).map(m=>rsCellule(a, m)), csX = choisisX.map(m=>rsCellule(a, m));
+    return { a: a, cs: cs, csX: csX, r: moyenne(cs, 'ret', 'base'), x: moyenne(csX, 'x', 'baseX') };
+  }).sort((u, v)=> (v.r.val == null ? -1 : v.r.val) - (u.r.val == null ? -1 : u.r.val) || u.a.localeCompare(v.a));
+  const tot = { base: 0, ret: 0, x: 0, baseX: 0 };
+  lignes.forEach(l=>{ l.cs.forEach(c=>{ if(c){ tot.base += c.base; tot.ret += c.ret; } }); l.csX.forEach(c=>{ if(c){ tot.x += c.x || 0; tot.baseX += c.baseX || 0; } }); });
+  const eqR = { sb: tot.base, sr: tot.ret, val: pct(tot.base, tot.ret) }, eqX = { sb: tot.baseX, sr: tot.x, val: pct(tot.baseX, tot.x) };
+  const dureeLib = RS.duree === 0 ? 'tout l\'historique' : (RS.duree + ' dernier' + (RS.duree > 1 ? 's' : '') + ' mois');
+  let h = '<div class="settings-box" style="padding:20px;">' +
+    '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;justify-content:space-between;">' +
+      '<div><div style="font-size:20px;font-weight:900;">📊 Stats ' + (prime ? 'retours &amp; rétractations' : 'retours Ilek') + '</div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin-top:3px;">' + (mois.length ? mois.length + ' mois d\'historique · moyenne sur : ' + choisis.slice().reverse().map(nomMois).join(', ') : '') + '</div></div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + sel(RS.produit, [['prime', '🔵 Prime'], ['ilek', '🟢 Ilek']], 'rsChoix_produit') +
+        sel(RS.duree, [[1, '1 mois'], [2, '2 mois'], [3, '3 mois'], [4, '4 mois'], [6, '6 mois'], [12, '12 mois'], [0, 'Tout']], 'rsChoix_duree') +
+        sel(RS.mode, [['cumul', 'Cumulée'], ['mensuel', 'Moyenne des mois']], 'rsChoix_mode') +
+        (prime ? sel(RS.complets ? '1' : '0', [['1', 'Mois complets seulement'], ['0', 'Avec les 2 derniers mois (incomplets)']], 'rsChoix_complets') : '') + '</div></div>';
+  if(!mois.length){ hote.innerHTML = h + '<div class="empty" style="margin-top:14px;">Aucune donnée d\'historique pour l\'instant (il faut avoir importé la production et les retours des mois passés).</div></div>'; return; }
+  // ── Grandes tuiles équipe
+  h += '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px;">' +
+    '<div style="flex:1;min-width:230px;padding:16px 18px;border-radius:16px;background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid ' + coul(eqR.val, SR) + ';"><div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">↩️ Retours — équipe</div><div style="font-size:46px;font-weight:900;line-height:1.05;color:' + coul(eqR.val, SR) + ';">' + fmtP(eqR.val) + '</div><div style="font-size:12.5px;color:var(--muted);">' + eqR.sr + ' retour' + (eqR.sr > 1 ? 's' : '') + ' sur ' + eqR.sb + ' ' + baseLib + '</div></div>' +
+    (prime ? '<div style="flex:1;min-width:230px;padding:16px 18px;border-radius:16px;background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid ' + coul(eqX.val, SX) + ';"><div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">↪️ Rétractations — équipe</div><div style="font-size:46px;font-weight:900;line-height:1.05;color:' + coul(eqX.val, SX) + ';">' + fmtP(eqX.val) + '</div><div style="font-size:12.5px;color:var(--muted);">' + eqX.sr + ' rétractation' + (eqX.sr > 1 ? 's' : '') + ' sur ' + eqX.sb + ' contrats</div></div>' : '') +
+    '<div style="flex:1;min-width:200px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid var(--border);font-size:12.5px;line-height:1.9;"><b>Code couleur</b><br><span style="color:#34b774;">●</span> bon : retours ≤ 10 % · rétractations ≤ 5 %<br><span style="color:#e8a33d;">●</span> à surveiller : ≤ 20 % · ≤ 10 %<br><span style="color:#e5484d;">●</span> mauvais : au-dessus</div></div>';
+  // ── Une carte par agent, les plus mauvais en premier
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:16px;">' + lignes.map(l=>{
+    const pire = coul(l.r.val, SR);
+    return '<div style="padding:16px;border-radius:16px;background:var(--panel2);border:1px solid var(--border);border-left:5px solid ' + pire + ';">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><b style="font-size:16px;">' + escapeHtml(l.a) + '</b><span style="font-size:11.5px;color:var(--muted);">' + l.r.sb + ' ' + baseLib + '</span></div>' +
+      '<div style="display:flex;gap:16px;">' + gros('Retours', l.r, SR, barres(l.a, 'ret', 'base', SR, true)) + (prime ? gros('Rétractations', l.x, SX, barres(l.a, 'x', 'baseX', SX, false)) : '') + '</div></div>';
+  }).join('') + '</div>';
+  h += '<div style="font-size:11.5px;color:var(--muted);margin-top:8px;">' + (prime ? '<b>Comment lire :</b> chaque mois = les contrats de ce mois-là. Leurs retours sont retenus 2 mois plus tard : les retours retenus en septembre comptent pour <b>juillet</b>. Pour chaque agent, on commence à compter à partir de <b>son premier mois avec des retours</b> (avant, pas de faux 0 %). Un mois n\'est <b>complet</b> que quand les retours de ses 2 mois suivants sont importés : les barres pâles (les 2 derniers mois) ne le sont pas encore, donc trop basses. <b>Les rétractations</b>, elles, sont comptées dès le 1er mois : aucune attente. ' : 'Pour Ilek, les retours sont ceux que tu as importés. ') + 'Les petites barres montrent chaque période (de la plus ancienne à la plus récente, 12 maximum) : passe la souris dessus. Cumulée = tous les ' + baseLib + ' mis ensemble ; Moyenne des mois = chaque mois compte autant.</div>';
+  // ── Tableau détaillé (replié)
+  const cel = (c)=> (!c || (!c.base && !c.ret && !c.baseX)) ? '<span style="color:var(--muted);">—</span>' :
+    '<span style="color:' + coul(pct(c.base, c.ret), SR) + ';font-weight:800;">' + fmtP(pct(c.base, c.ret)) + '</span> <span style="color:var(--muted);font-size:11px;">' + c.ret + '/' + c.base + '</span>' +
+    (prime ? '<br><span style="color:' + coul(pct(c.baseX, c.x), SX) + ';font-weight:800;">' + fmtP(pct(c.baseX, c.x)) + '</span> <span style="color:var(--muted);font-size:11px;">' + c.x + '/' + c.baseX + '</span>' : '');
+  h += '<details style="margin-top:12px;"><summary style="cursor:pointer;font-weight:800;">🔎 Voir le détail mois par mois' + (prime ? ' <span style="font-weight:600;color:var(--muted);">(ligne 1 : retours · ligne 2 : rétractations)</span>' : '') + '</summary><div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;font-size:12.5px;border-collapse:collapse;"><tr style="text-align:left;color:var(--muted);font-size:11.5px;"><th>Agent</th>' + mois.map(m=>'<th>' + nomMois(m) + (prime ? '<br><span style="font-weight:500;font-size:10px;">retenu ' + nomMois(rsAjoute(m, 2)).split(' ')[0] + '</span>' : '') + '</th>').join('') + '</tr>' +
+    lignes.slice().sort((u, v)=>u.a.localeCompare(v.a)).map(l=>'<tr style="border-top:1px solid var(--border);"><td><b>' + escapeHtml(l.a) + '</b></td>' + mois.map(m=>'<td>' + cel(rsCellule(l.a, m)) + '</td>').join('') + '</tr>').join('') +
+    '</table></div></details></div>';
   hote.innerHTML = h;
 };
 window.rsChoix_produit = function(v){ RS.produit = v; RS.donnees = null; rmRetoursRendre(); };
-window.rsChoix_metrique = function(v){ RS.metrique = v; rmRetoursRendre(true); };
+window.rsChoix_complets = function(v){ RS.complets = (v === '1'); rmRetoursRendre(true); };
 window.rsChoix_duree = function(v){ RS.duree = Number(v); rmRetoursRendre(true); };
 window.rsChoix_mode = function(v){ RS.mode = v; rmRetoursRendre(true); };
 
@@ -36539,10 +36611,12 @@ async function renderAssistanceHistory(){
     var val = cs.filter(function(v){ return v.statut === 'conforme' && String((v.champs || {}).date || '').slice(0,7) === mois; });
     var en = 0; val.forEach(function(v){ en += ilekEnergies(v); });
     var retEn = 0; mes.forEach(function(r){ retEn += Number(r.energies) || 1; });
+    // L'AGENT n'est jamais touché par une estimation : seuls les retours réellement importés sont retirés (diviseur choisi, 1 pour 1 par défaut).
     var retires = retEn / R.diviseur, estime = false;
-    // Retours du mois pas encore importés (aucun retour importé, tous agents) : on estime avec la « chute estimée » réglée par l'admin
-    if(R.chute > 0 && en > 0 && !T.rows.some(function(r){ return r.mois === mois; })){ retires = en * R.chute / 100; estime = true; }
     var nets = Math.max(0, en - retires);
+    // Estimation (« chute estimée ») : réservée à TON chiffre d'affaires (ce que tu touches), tant que les retours du mois ne sont pas importés.
+    var netsEstimes = nets;
+    if(R.chute > 0 && en > 0 && !T.rows.some(function(r){ return r.mois === mois; })){ netsEstimes = Math.max(0, en - en * R.chute / 100); estime = true; }
     // Deux façons de payer, au choix agent par agent :
     //  • objectif réglé (> 0) : un FIXE si l'objectif est atteint, + la commission pour chaque énergie AU-DELÀ de l'objectif (0 avant) ;
     //  • pas d'objectif : la commission dès la 1re énergie, sans fixe.
@@ -36554,7 +36628,7 @@ async function renderAssistanceHistory(){
     var cAvant = (R.avants && Number(R.avants[agent]) > 0) ? Number(R.avants[agent]) : 0;
     var avantQte = ob > 0 ? Math.min(nets, ob) : 0;
     return { agent: agent, mois: mois, contrats: val.length, energies: en, retours: mes, retoursEnergies: retEn, diviseur: R.diviseur, retires: retires,
-             nets: nets, estime: estime, chute: R.chute, commission: cApres, commissionAvant: cAvant, avantQte: avantQte, objectif: ob, fixe: fx, fixeVerse: fixeVerse, atteint: atteint, auTarif: auTarif,
+             nets: nets, netsEstimes: netsEstimes, estimeBoss: estime, estime: false, chute: R.chute, commission: cApres, commissionAvant: cAvant, avantQte: avantQte, objectif: ob, fixe: fx, fixeVerse: fixeVerse, atteint: atteint, auTarif: auTarif,
              montant: Math.round(fixeVerse + avantQte * cAvant + auTarif * cApres) };
   };
   var ilekNb = function(n){ return String(Math.round(n * 10) / 10).replace('.', ','); };
@@ -36725,10 +36799,10 @@ async function renderAssistanceHistory(){
     var out = [], tot = 0, en = 0, nets = 0;
     for(var i = 0; i < noms.length; i++){
       var d = await window.ilekDuMois(noms[i], mois);
-      if(d){ out.push(d); tot += d.montant; en += d.energies; nets += d.nets; }
+      if(d){ out.push(d); tot += d.montant; en += d.energies; nets += d.netsEstimes; }
     }
     out.sort(function(a, b){ return b.montant - a.montant; });
-    return { mois: mois, agents: out, total: tot, energies: en, nets: nets, estime: out.some(function(d){ return d.estime; }), chute: R.chute || 0, caPatron: R.caPatron || 0, ca: nets * (R.caPatron || 0) };
+    return { mois: mois, agents: out, total: tot, energies: en, nets: nets, estime: out.some(function(d){ return d.estimeBoss; }), chute: R.chute || 0, caPatron: R.caPatron || 0, ca: nets * (R.caPatron || 0) };
   };
   // ── Admin : réglages, tableau du mois, import des retours ──
   var adIlek = { mois: new Date().toISOString().slice(0,7), msg: '', occupe: false, data: null, charge: false };
@@ -36809,7 +36883,7 @@ async function renderAssistanceHistory(){
       '<div style="display:flex;flex-wrap:wrap;gap:14px 24px;margin-top:10px;align-items:end;">' +
       '<div><label style="margin:0 0 4px;display:block;">Commission par énergie (DH)</label><input type="number" min="0" step="10" value="' + comm + '" style="width:120px;" onchange="adIlekReglage(\'commission\', this.value)"></div>' +
       '<div title="Ce que TOI tu touches de ton client pour chaque énergie Ilek. Réglage propre à Ilek : il n\'a aucun lien avec Prime ni avec un autre fournisseur."><label style="margin:0 0 4px;display:block;">💰 Ce que tu touches par énergie (DH)</label><input type="number" min="0" step="10" value="' + (Number(p.caPatron) > 0 ? Number(p.caPatron) : '') + '" placeholder="ex : 300" style="width:150px;" onchange="adIlekReglage(\'caPatron\', this.value)"><div style="font-size:11px;color:var(--muted);margin-top:3px;">Ton chiffre d\'affaires Ilek (propre à Ilek)</div></div>' +
-      '<div title="Tant que les retours du mois ne sont pas importés, on retire ce pourcentage des énergies pour estimer ce qui restera. Dès que tu importes les retours du mois, les vrais retours remplacent l\'estimation."><label style="margin:0 0 4px;display:block;">⏳ Chute estimée des retours (%)</label><input type="number" min="0" max="100" step="1" value="' + (Number(p.chute) > 0 ? Number(p.chute) : '') + '" placeholder="ex : 10" style="width:150px;" onchange="adIlekReglage(\'chute\', this.value)"><div style="font-size:11px;color:var(--muted);margin-top:3px;max-width:210px;">Estimation seulement, avant l\'import des retours.</div></div>' +
+      '<div title="Tant que les retours du mois ne sont pas importés, on retire ce pourcentage des énergies pour estimer ce qui restera. Dès que tu importes les retours du mois, les vrais retours remplacent l\'estimation."><label style="margin:0 0 4px;display:block;">⏳ Chute estimée des retours (%)</label><input type="number" min="0" max="100" step="1" value="' + (Number(p.chute) > 0 ? Number(p.chute) : '') + '" placeholder="ex : 10" style="width:150px;" onchange="adIlekReglage(\'chute\', this.value)"><div style="font-size:11px;color:var(--muted);margin-top:3px;max-width:230px;">Sert uniquement à estimer ce que TU touches. Les agents ne sont jamais touchés avant l\'import des vrais retours (1 pour 1).</div></div>' +
       '<div><label style="margin:0 0 4px;display:block;">Diviseur des retours</label><select onchange="adIlekReglage(\'diviseur\', this.value)" style="width:230px;">' +
         [[1,'÷1 — pas de division (retour en entier)'],[2,'÷2 — la moitié'],[3,'÷3 — le tiers']].map(function(o){ return '<option value="' + o[0] + '"' + (div === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>' +
       '<div><label style="margin:0 0 4px;display:block;">Mois affiché</label><input type="month" value="' + esc(adIlek.mois) + '" onchange="adIlekMois(this.value)"></div></div>';
