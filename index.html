@@ -3309,7 +3309,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r288';
+const APP_VERSION = '2026-10-19-r289';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -36850,10 +36850,11 @@ async function renderAssistanceHistory(){
   window.renderArenaEnergie = async function(){
     var box = document.getElementById('arenaEnerBox'); if(!box) return;
     var ag = (typeof currentArenaAgent !== 'undefined') ? currentArenaAgent : null;
-    if(!ag || !firebaseReady || !db){ box.style.display = 'none'; box.innerHTML = ''; return; }
+    var rk0 = document.getElementById('arenaEnerRank');
+    if(!ag || !firebaseReady || !db){ box.style.display = 'none'; box.innerHTML = ''; if(rk0) rk0.innerHTML = ''; return; }
     try{
       var R = await ilekReglages();
-      if(R.agents.indexOf(ag) < 0){ box.style.display = 'none'; box.innerHTML = ''; return; }
+      if(R.agents.indexOf(ag) < 0){ box.style.display = 'none'; box.innerHTML = ''; if(rk0) rk0.innerHTML = ''; return; }
       var jour = todayStr(), mois = jour.slice(0, 7);
       await window.energieCharger();
       var n = window.energieDuJour(ag, jour), dj = (await enerObjLire('Jour', jour))[ag] || 0, vise = (await enerObjLire('Mois', mois))[ag] || 0;
@@ -36864,6 +36865,7 @@ async function renderAssistanceHistory(){
       var conseilJ = '', conseilM = '';
       if(dj > 0) conseilJ = n >= dj ? '🎉 Objectif du jour atteint : ' + n + ' énergie' + (n > 1 ? 's' : '') + '.' : 'Plus que ' + (dj - n) + ' énergie' + ((dj - n) > 1 ? 's' : '') + ' pour ton objectif du jour.';
       else if(n > 0) conseilJ = enerPhrase(n, 'agent').replace(/^0 en assistance, /, '').replace(/^mais /, '');
+      if(!(dj > 0) && cible > 0 && m.nets < cible && jr > 0) conseilJ += (conseilJ ? ' ' : '') + 'Pour tenir ton objectif du mois (' + cible + '), vise environ ' + Math.ceil((cible - m.nets) / jr) + ' aujourd\'hui — fixe ton objectif du jour ci-dessus.';
       if(cible > 0 && m.nets < cible && jr > 0) conseilM = 'Pour ton objectif du mois (' + cible + ') : environ ' + Math.ceil((cible - m.nets) / jr) + ' par jour sur les ' + jr + ' jours ouvrés restants.';
       var barre = function(p){ return '<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:8px 0 4px;"><div style="width:' + p + '%;height:100%;background:' + vert + ';"></div></div>'; };
       // Comme Prime : la vue « jour » ne montre que l'énergie du jour, la vue « mois » que celle du mois.
@@ -36884,6 +36886,35 @@ async function renderAssistanceHistory(){
         '<div style="display:flex;align-items:center;gap:10px;"><div style="font-size:30px;line-height:1;">⚡</div><div><div style="font-size:16px;font-weight:900;">' + titre + '</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">Séparé de ton assistance : ses propres objectifs et ses propres chiffres.</div></div></div>' +
         (moisVue ? blocMois : blocJour) +
         (conseil ? '<div style="margin-top:12px;font-size:13.5px;font-weight:600;line-height:1.45;">' + esc(conseil) + '</div>' : '') + '</div>';
+      // Classement énergie : même présentation que celui de Prime (mini / visé / fait), séparé, jour ou mois selon la vue.
+      try{
+        var rk = document.getElementById('arenaEnerRank');
+        if(!rk){ var lb0 = document.getElementById('arenaLeaderboard'); if(lb0 && lb0.parentNode){ rk = document.createElement('div'); rk.id = 'arenaEnerRank'; lb0.parentNode.insertBefore(rk, lb0.nextSibling); } }
+        if(rk){
+          var reels = (typeof agentsReels === 'function') ? agentsReels() : null;
+          var noms = R.agents.filter(function(a){ return !reels || reels.indexOf(a) >= 0; });
+          var jMap = await enerObjLire('Jour', jour), mMap = await enerObjLire('Mois', mois);
+          var rows = await Promise.all(noms.map(async function(a){
+            var mm = moisVue ? (await window.ilekDuMois(a, mois) || { nets: 0, objectif: 0 }) : null;
+            return { agent: a, fait: moisVue ? mm.nets : window.energieDuJour(a, jour), mini: moisVue ? (mm.objectif || 0) : 0, vise: moisVue ? (mMap[a] || 0) : (jMap[a] || 0) };
+          }));
+          rows.sort(function(x, y){ return y.fait - x.fait || x.agent.localeCompare(y.agent); });
+          rows.forEach(function(r, i){ r.rank = i + 1; });
+          var pcol = function(p){ return (typeof pctBadgeColor === 'function') ? pctBadgeColor(p, vert) : vert; };
+          rk.innerHTML = '<div class="section-title" style="margin-top:28px;">⚡ Classement énergie — ' + (moisVue ? 'du mois' : 'du jour') + '</div>' +
+            '<div class="leaderboard">' + rows.map(function(r){
+              var moi = r.agent === ag, cible2 = r.vise > 0 ? r.vise : r.mini, p = cible2 > 0 ? Math.round(100 * r.fait / cible2) : null;
+              return '<div class="lb-row' + (moi ? ' me' : (r.rank === 1 && r.fait > 0 ? ' rank-1' : '')) + '">' +
+                '<div class="lb-rank">' + ((typeof rankEmoji === 'function') ? rankEmoji(r.rank, rows.length) : r.rank) + '</div>' +
+                '<div class="lb-name">' + esc(r.agent) + (moi ? ' (toi)' : '') + '</div>' +
+                '<div class="lb-stat"><b>' + (moisVue && r.mini > 0 ? r.mini : '—') + '</b>' + (moisVue ? 'mini' : '') + '</div>' +
+                '<div class="lb-stat lb-stat-desired"><b>' + (r.vise > 0 ? r.vise : '—') + '</b>visé</div>' +
+                '<div class="lb-stat"><b>' + ilekNb(r.fait) + '</b>énergies</div>' +
+                '<div style="text-align:right;"><div style="font-size:13px;font-weight:800;color:' + (p != null ? pcol(p) : 'var(--muted)') + ';line-height:1.1;">' + (p != null ? p + '%' : '—') + '</div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;">' + (r.vise > 0 ? 'visé' : 'mini') + '</div></div>' +
+                '</div>';
+            }).join('') + '</div>';
+        }
+      }catch(e2){ console.warn('classement énergie', e2); }
     }catch(e){ console.warn('renderArenaEnergie', e); }
   };
   try{ var _ra = renderArena; renderArena = async function(){ var r = await _ra.apply(this, arguments); try{ await window.renderArenaEnergie(); }catch(e){} return r; }; }catch(e){ console.warn('lien Arena / énergie', e); }
