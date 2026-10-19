@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r285';
+const APP_VERSION = '2026-10-19-r286';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -5536,13 +5536,13 @@ function renderAgentChips(){
       '<div style="flex-basis:100%;font-size:12px;color:var(--muted);">' + (vis ? 'Tu vois les agents de test sur cet ordinateur (pour tes tests). Les autres ordinateurs ne les voient pas. Pense à les recacher après.' : 'Normal : ils n\'apparaissent ni dans les classements, ni dans les cartes, ni dans la paie. Clique sur « Les afficher » seulement pour faire un test (la page se recharge).') + '</div></div>';
   }
   list.innerHTML = '';
-  if(config.agents.length === 0){
+  if(agentsReels().length === 0){
     list.innerHTML = '<span style="color:var(--muted);font-size:13px;">Aucun agent pour le moment.</span>';
     renderArchivedAgentChips();
     return;
   }
   renderArchivedAgentChips();
-  config.agents.forEach(name=>{
+  agentsReels().forEach(name=>{
     const chip = document.createElement('div');
     chip.className = 'agent-chip';
     const hasPw = config.agentPasswords && config.agentPasswords[name];
@@ -6849,7 +6849,7 @@ async function unarchiveAgent(name){
 function renderArchivedAgentChips(){
   const list = document.getElementById('archivedAgentList');
   if(!list) return;
-  const arr = archivedAgents();
+  const arr = archivedAgents().filter(function(a){ return testAgentsVisibles() || !isTestAgentName(a); });
   if(!arr.length){
     list.innerHTML = '<span style="color:var(--muted);font-size:13px;">Aucun agent archivé. Utilise le bouton 📦 sur un agent qui quitte l\'équipe, plutôt que ×.</span>';
     return;
