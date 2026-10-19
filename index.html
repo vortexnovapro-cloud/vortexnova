@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r279';
+const APP_VERSION = '2026-10-19-r280';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -36336,33 +36336,39 @@ async function renderAssistanceHistory(){
       '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">' + (auto
         ? 'Chaque contrat décidé part tout seul. Roue de secours : repasse en manuel, et le backoffice reprend le copier / coller.'
         : 'Rien ne part tout seul. Active l\'envoi automatique quand le serveur est installé et testé.') + '</div>';
-    // contrôle du jour : les chiffres qui doivent se recouper
-    var auj = new Date().toDateString(), tests = 0;
-    var jour = adTous.filter(function(x){ if(!x.creeLe || new Date(x.creeLe).toDateString() !== auj) return false; if(adEstTest(x)){ tests++; return false; } return produitDe(x) === 'prime'; });
-    function n(f){ return jour.filter(f).length; }
-    var conf = n(function(x){ return x.statut === 'conforme'; }), nc = n(function(x){ return x.statut === 'non_conforme'; }),
-        pv = n(function(x){ return x.statut === 'refuse'; }), att = n(function(x){ return x.statut === 'attente' || x.statut === 'derogation'; }),
-        dec = jour.filter(function(x){ return x.statut === 'conforme' || x.statut === 'non_conforme'; });
-    var tgOk = dec.filter(function(x){ return x.envoiAuto && (x.envoiAuto.telegram === 'ok' || x.envoiAuto.telegram === 'ignore'); }).length,
-        shOk = dec.filter(function(x){ return x.envoiAuto && (x.envoiAuto.sheet === 'ok' || x.envoiAuto.sheet === 'ignore'); }).length,
-        crOk = dec.filter(function(x){ return x.envoiAuto && x.envoiAuto.crm === 'ok'; }).length,
-        env = dec.filter(function(x){ return x.envoye; }).length;
-    var pb = dec.filter(function(x){ return !x.envoye; });
-    var ok = !pb.length && (!auto || (tgOk === dec.length && shOk === dec.length && crOk === dec.length));
-    h += '<div class="ct-sep" style="margin-top:14px;">🧮 Contrôle du jour ' + (ok ? '<span style="color:var(--green);">✔ tout concorde</span>' : '<span style="color:var(--amber);">⚠ à vérifier</span>') + '</div>' +
-      '<div class="bo-stats">' +
-      '<div class="bo-stat" title="Tous les contrats saisis aujourd\'hui par les agents (agents test exclus)"><b>' + jour.length + '</b><span>📝 Saisis</span></div>' +
-      '<div class="bo-stat" title="Conformes + non conformes : les contrats qui doivent partir"><b>' + dec.length + '</b><span>✅ Décidés (' + conf + ' conf. · ' + nc + ' non conf.)</span></div>' +
-      '<div class="bo-stat"><b>' + pv + '</b><span>❌ Pas valides</span></div>' +
-      '<div class="bo-stat' + (att ? ' hot' : '') + '"><b>' + att + '</b><span>⏳ En attente</span></div>' +
-      (auto ? '<div class="bo-stat' + (tgOk === dec.length ? '' : ' red') + '"><b>' + tgOk + '/' + dec.length + '</b><span>Telegram</span></div>' +
-              '<div class="bo-stat' + (shOk === dec.length ? '' : ' red') + '"><b>' + shOk + '/' + dec.length + '</b><span>Google Sheet</span></div>' +
-              '<div class="bo-stat' + (crOk === dec.length ? '' : ' red') + '"><b>' + crOk + '/' + dec.length + '</b><span>CRM</span></div>'
-            : '<div class="bo-stat' + (env === dec.length ? '' : ' hot') + '"><b>' + env + '/' + dec.length + '</b><span>Marqués envoyés</span></div>') +
-      '</div>' + (tests ? '<div style="font-size:12px;color:var(--muted);">🧪 ' + tests + ' contrat(s) de test non comptés</div>' : '');
-    if(pb.length) h += '<div class="ct-errors" style="margin-top:8px;"><b>' + pb.length + ' contrat(s) décidé(s) pas (complètement) envoyé(s) :</b><ul>' +
-      pb.slice(0,12).map(function(x){ return '<li>#' + esc((x.champs||{}).numero) + ' · ' + esc((x.champs||{}).nom) + ' (' + esc(x.agent) + ') — ' + (x.statut === 'conforme' ? 'conforme' : 'non conforme') +
-        (auto ? ' <button type="button" class="ct-btn nc" style="padding:3px 9px;font-size:12px;" onclick="boRenvoyer(\'' + esc(x._key) + '\')">🔁 Renvoyer</button>' : '') + '</li>'; }).join('') + '</ul></div>';
+    // contrôle du jour : les chiffres qui doivent se recouper — un bloc pour Prime, un bloc pour Ilek
+    var auj = new Date().toDateString(), tests = 0, testsFaits = false;
+    function ctlBloc(prod, titre, estIl){
+      var jour = adTous.filter(function(x){ if(!x.creeLe || new Date(x.creeLe).toDateString() !== auj) return false; if(adEstTest(x)){ if(!testsFaits) tests++; return false; } return produitDe(x) === prod; });
+      function n(f){ return jour.filter(f).length; }
+      var conf = n(function(x){ return x.statut === 'conforme'; }), nc = n(function(x){ return x.statut === 'non_conforme'; }),
+          pv = n(function(x){ return x.statut === 'refuse'; }), att = n(function(x){ return x.statut === 'attente' || x.statut === 'derogation'; }),
+          dec = jour.filter(function(x){ return x.statut === 'conforme' || x.statut === 'non_conforme'; });
+      var tgOk = dec.filter(function(x){ return x.envoiAuto && (x.envoiAuto.telegram === 'ok' || x.envoiAuto.telegram === 'ignore'); }).length,
+          shOk = dec.filter(function(x){ return x.envoiAuto && (x.envoiAuto.sheet === 'ok' || x.envoiAuto.sheet === 'ignore'); }).length,
+          crOk = dec.filter(function(x){ return x.envoiAuto && x.envoiAuto.crm === 'ok'; }).length,
+          env = dec.filter(function(x){ return x.envoye; }).length;
+      var pb = dec.filter(function(x){ return !x.envoye; });
+      var ok = !pb.length && (!auto || (tgOk === dec.length && shOk === dec.length && (estIl || crOk === dec.length)));
+      var r = '<div class="ct-sep" style="margin-top:14px;">🧮 Contrôle du jour — ' + titre + ' ' + (ok ? '<span style="color:var(--green);">✔ tout concorde</span>' : '<span style="color:var(--amber);">⚠ à vérifier</span>') + '</div>' +
+        '<div class="bo-stats">' +
+        '<div class="bo-stat" title="Tous les contrats saisis aujourd\'hui par les agents (agents test exclus)"><b>' + jour.length + '</b><span>📝 Saisis</span></div>' +
+        '<div class="bo-stat" title="' + (estIl ? 'Validés + non validés' : 'Conformes + non conformes : les contrats qui doivent partir') + '"><b>' + dec.length + '</b><span>✅ Décidés (' + conf + (estIl ? ' validés · ' + nc + ' non validés)' : ' conf. · ' + nc + ' non conf.)') + '</span></div>' +
+        '<div class="bo-stat"><b>' + pv + '</b><span>❌ Pas valides</span></div>' +
+        '<div class="bo-stat' + (att ? ' hot' : '') + '"><b>' + att + '</b><span>⏳ En attente</span></div>' +
+        (auto ? '<div class="bo-stat' + (tgOk === dec.length ? '' : ' red') + '"><b>' + tgOk + '/' + dec.length + '</b><span>Telegram</span></div>' +
+                '<div class="bo-stat' + (shOk === dec.length ? '' : ' red') + '"><b>' + shOk + '/' + dec.length + '</b><span>Google Sheet</span></div>' +
+                (estIl ? '' : '<div class="bo-stat' + (crOk === dec.length ? '' : ' red') + '"><b>' + crOk + '/' + dec.length + '</b><span>CRM</span></div>')
+              : '<div class="bo-stat' + (env === dec.length ? '' : ' hot') + '"><b>' + env + '/' + dec.length + '</b><span>Marqués envoyés</span></div>') +
+        '</div>';
+      testsFaits = true;
+      if(pb.length) r += '<div class="ct-errors" style="margin-top:8px;"><b>' + pb.length + ' contrat(s) décidé(s) pas (complètement) envoyé(s) :</b><ul>' +
+        pb.slice(0,12).map(function(x){ return '<li>#' + esc((x.champs||{}).numero) + ' · ' + esc((x.champs||{}).nom) + ' (' + esc(x.agent) + ') — ' + (x.statut === 'conforme' ? (estIl ? 'validé' : 'conforme') : (estIl ? 'non validé' : 'non conforme')) +
+          (auto ? ' <button type="button" class="ct-btn nc" style="padding:3px 9px;font-size:12px;" onclick="boRenvoyer(\'' + esc(x._key) + '\')">🔁 Renvoyer</button>' : '') + '</li>'; }).join('') + '</ul></div>';
+      return r;
+    }
+    h += ctlBloc('prime', '🔵 Prime', false) + ctlBloc('ilek', '🟢 Ilek', true) +
+      (tests ? '<div style="font-size:12px;color:var(--muted);">🧪 ' + tests + ' contrat(s) de test non comptés</div>' : '');
     h += '</div>';
     // nettoyage des données de test (aperçu d'abord, suppression seulement après confirmation)
     h += '<div class="ct-item" style="margin-top:10px;"><div class="ct-item-head"><b>🧹 Nettoyage des tests</b>' +
