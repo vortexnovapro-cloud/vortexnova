@@ -1894,7 +1894,11 @@ async function tryDeviceGateAdmin(){
           <div class="mega-section-title">🚨 Alertes</div>
           <div class="mega-section-sub">Ce qui mérite ton attention en premier.</div>
 
-          <div class="section-title" style="margin-top:0;">😴 Agents à 0 contrat</div>
+          <div class="section-title" style="margin-top:0;">🤖 Ce que le CRM a fait tout seul <span id="autoJournalBadge"></span></div>
+          <div class="section-sub">Chaque modification automatique (contrat remplacé, ligne corrigée dans le Sheet…) est notée ici avec l'explication. Rien ne part sur Telegram.</div>
+          <div id="autoJournalPanel"></div>
+
+          <div class="section-title">😴 Agents à 0 contrat</div>
           <div class="section-sub">Alerte orange dès aujourd'hui (0 contrat), rouge à partir de 2 jours ouvrés consécutifs.</div>
           <div id="inactiveAgentsPanel"></div>
 
@@ -3298,7 +3302,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r260';
+const APP_VERSION = '2026-10-19-r261';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -4537,6 +4541,37 @@ async function storageDelete(key){
 // faire échouer l'action réelle qu'il essaie de documenter — d'où le try/catch qui avale l'erreur.
 // LIMITE CONNUE : le mot de passe Admin est partagé entre toutes les personnes qui le connaissent — donc
 // "Admin" comme acteur veut dire "quelqu'un qui avait le mot de passe admin", pas une personne précise.
+// Journal « Ce que le CRM a fait tout seul » : chaque action automatique y laisse une ligne claire (écrite aussi par le serveur).
+async function autoLog(action, details){
+  if(!firebaseReady || !db) return;
+  try{ await db.collection('vortexnova_audit').add({ ts: Date.now(), dateStr: todayStr(), actor: 'CRM (automatique)', action: action || '', details: details || '', auto: true }); }
+  catch(e){ console.warn('autoLog', e); }
+}
+function autoJournalVu(){ try{ return Number(localStorage.getItem('autoJournalVu') || 0); }catch(e){ return 0; } }
+window.autoJournalLu = function(){ try{ localStorage.setItem('autoJournalVu', String(Date.now())); }catch(e){} renderAutoJournal(); };
+async function renderAutoJournal(){
+  var el = document.getElementById('autoJournalPanel'); if(!el) return;
+  try{ if(window.ilekRattraper) await window.ilekRattraper(); }catch(e){}
+  if(!firebaseReady || !db){ el.innerHTML = '<div class="empty">Journal indisponible hors ligne.</div>'; return; }
+  try{
+    var snap = await db.collection('vortexnova_audit').orderBy('ts', 'desc').limit(300).get();
+    var vu = autoJournalVu(), liste = [];
+    snap.forEach(function(d){ var x = d.data(); if(x && x.auto) liste.push(x); });
+    var nouveaux = liste.filter(function(x){ return x.ts > vu; }).length;
+    var bd = document.getElementById('autoJournalBadge');
+    if(bd) bd.innerHTML = nouveaux ? '<span style="background:#e5484d;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;">' + nouveaux + ' nouveau' + (nouveaux > 1 ? 'x' : '') + '</span>' : '';
+    if(!liste.length){ el.innerHTML = '<div class="empty">Rien pour le moment : le CRM n\'a encore rien modifié tout seul.</div>'; return; }
+    el.innerHTML = (nouveaux ? '<div style="margin-bottom:8px;"><button type="button" class="ct-btn" onclick="autoJournalLu()">✔ Tout marquer comme lu</button></div>' : '') +
+      liste.slice(0, 30).map(function(x){
+        var d = new Date(x.ts), neuf = x.ts > vu;
+        return '<div style="border:1px solid ' + (neuf ? 'rgba(229,72,77,.55)' : 'var(--border)') + ';border-radius:10px;padding:9px 12px;margin-bottom:7px;' + (neuf ? 'background:rgba(229,72,77,.07);' : '') + '">' +
+          '<div style="font-weight:800;">🤖 ' + esc(x.action) + (neuf ? ' <span style="font-size:11px;color:#e5484d;">NOUVEAU</span>' : '') + '</div>' +
+          '<div style="font-size:12px;color:var(--muted);margin:2px 0 4px;">' + d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) + '</div>' +
+          '<div style="font-size:13px;line-height:1.4;">' + esc(x.details) + '</div></div>';
+      }).join('');
+  }catch(e){ el.innerHTML = '<div class="empty">Journal illisible (règles Firestore de <code>vortexnova_audit</code>).</div>'; }
+}
+window.renderAutoJournal = renderAutoJournal;
 async function logAudit(actor, action, details){
   if(!firebaseReady || !db) return;
   try{
@@ -14137,6 +14172,7 @@ async function renderAllMonthly(){
     renderTrendChart(),
     renderMonthComparison(),
     renderInactiveAgentsPanel(),
+    renderAutoJournal(),
     renderProjectionPanel(),
     renderAdfStuckPanel(),
     renderRepeatOffendersPanel(),
@@ -35883,6 +35919,59 @@ async function renderAssistanceHistory(){
     });
   }
 
+  // Un dual corrigé (numéro d'électricité + numéro de gaz) REMPLACE l'ancien contrat du même agent qui avait le même numéro :
+  // l'ancien passe « Pas valide » (jamais compté ni payé deux fois) et l'admin en est informé dans « Ce que le CRM a fait tout seul ».
+  async function boRemplacerAnciens(key){
+    var nz = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+    var n = boTous.filter(function(x){ return x._key === key; })[0];
+    if(!n || produitDe(n) !== 'ilek' || !n.champs || n.champs.type !== 'dual') return;
+    var mes = [n.champs.numero, n.champs.numeroGaz].filter(Boolean).map(nz);
+    var anciens = boTous.filter(function(y){
+      return y._key !== key && produitDe(y) === 'ilek' && y.agent === n.agent && !y.remplacePar && (y.statut === 'conforme' || y.statut === 'attente') && y.champs &&
+        [y.champs.numero, y.champs.numeroGaz].filter(Boolean).map(nz).some(function(z){ return mes.indexOf(z) >= 0; });
+    });
+    for(var i = 0; i < anciens.length; i++) await remplacerUn(n, key, anciens[i]);
+  }
+  async function remplacerUn(n, key, o){
+    var oc = o.champs || {}, etait = o.statut, fait = false;
+    try{
+      await boModifier(o._key, function(v){
+        if(v.statut !== 'conforme' && v.statut !== 'attente') return;
+        v.statut = 'refuse'; v.remplacePar = key; v.envoye = true;
+        v.commentaire = 'Remplacé automatiquement par ton contrat corrigé (électricité #' + n.champs.numero + ' + gaz #' + n.champs.numeroGaz + '). Tu n\'es payé qu\'une seule fois.';
+        v.commentaireVisible = true; v.decidePar = 'CRM (automatique)'; v.decideLe = new Date().toISOString();
+        fait = true;
+      });
+    }catch(e){ console.warn('remplacement', e); }
+    if(!fait) return;
+    var mAnc = String(oc.date || '').slice(0, 7), mNou = String(n.champs.date || '').slice(0, 7);
+    autoLog('Ancien contrat Ilek remplacé par le dual corrigé',
+      'Agent ' + n.agent + ' · client ' + nomChamps(n.champs) + '. L\'ancien contrat #' + (oc.numero || '?') + (oc.type === 'dual' ? '' : ' (électricité seule)') + ' (' + (STATUTS[etait] || {}).label + ') est passé « Pas valide » : il n\'est plus compté ni payé. ' +
+      'Le nouveau dual #' + n.champs.numero + ' / gaz #' + n.champs.numeroGaz + ' compte pour 2 énergies, une seule fois.' +
+      (mAnc && mNou && mAnc !== mNou ? ' ⚠️ L\'ancien contrat était daté de ' + mAnc + ' et le nouveau de ' + mNou + ' : le mois ' + mAnc + ' perd 1 énergie, le mois ' + mNou + ' gagne 2.' : '') +
+      ' Dans le tableau Sheet : si le serveur n\'a pas pu fusionner les lignes, supprime à la main la ligne de l\'ancien contrat #' + (oc.numero || '?') + '.');
+    toast('🤖 Ancien contrat #' + (oc.numero || '?') + ' remplacé automatiquement (voir le journal en Vue d\'ensemble)', 'ok');
+  }
+  // Rattrapage : un dual déjà validé « Conforme » AVANT cette mise à jour a laissé son ancien contrat compté en double. On le règle tout seul (admin, au plus toutes les 5 min).
+  var ilekRattrapeT = 0;
+  window.ilekRattraper = async function(){
+    if(Date.now() - ilekRattrapeT < 300000 || !firebaseReady || !db) return;
+    ilekRattrapeT = Date.now();
+    try{
+      var snap = await rangePrefix(CT_PREFIX).get(), tous = [];
+      snap.forEach(function(doc){ var v = lire(doc); if(v && produitDe(v) === 'ilek'){ v._key = doc.id; tous.push(v); } });
+      var nz = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+      var duals = tous.filter(function(x){ return x.statut === 'conforme' && x.champs && x.champs.type === 'dual' && x.champs.numeroGaz && !x.remplacePar; });
+      for(var a = 0; a < duals.length; a++){
+        var n = duals[a], mes = [n.champs.numero, n.champs.numeroGaz].map(nz);
+        var anciens = tous.filter(function(y){
+          return y._key !== n._key && y.agent === n.agent && !y.remplacePar && y.statut === 'conforme' && String(y.creeLe || '') < String(n.creeLe || '') && y.champs &&
+            [y.champs.numero, y.champs.numeroGaz].filter(Boolean).map(nz).some(function(z){ return mes.indexOf(z) >= 0; });
+        });
+        for(var b = 0; b < anciens.length; b++) await remplacerUn(n, n._key, anciens[b]);
+      }
+    }catch(e){ console.warn('rattrapage ilek', e); }
+  };
   window.boDecider = async function(key, statut){
     if(!boAgent) return;
     var t = document.getElementById('bo_c_' + key), vis = document.getElementById('bo_v_' + key);
@@ -35903,6 +35992,7 @@ async function renderAssistanceHistory(){
         v.decidePar = boAgent; v.decideLe = new Date().toISOString(); v.envoye = false;
       });
       delete boBrouillons[key];
+      if(statut === 'conforme' && cible && produitDe(cible) === 'ilek'){ try{ await boRemplacerAnciens(key); }catch(e){ console.warn('remplacement auto', e); } }
       boSnack('Contrat <b>#' + esc(cible ? cible.champs.numero : '') + '</b> : ' + (STATUTS[statut]||{}).label, key, statut);
       try{ logAudit(boAgent, 'Contrat ' + (STATUTS[statut]||{}).label + ' : ' + key.split(':').pop(), ''); }catch(e){}
     }catch(e){ toast('⚠️ ' + (e && e.message ? e.message : e), 'warn'); }
