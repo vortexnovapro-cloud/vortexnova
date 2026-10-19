@@ -3309,7 +3309,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r289';
+const APP_VERSION = '2026-10-19-r290';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -20786,6 +20786,41 @@ async function saveArenaDesiredObjectif(){
 // juste une correction que l'agent (ou le superviseur, sur son propre tableau de bord) fait lui-même.
 let arenaScope = 'day';
 
+
+// 💡 Conseil d'objectifs (Prime ET énergie, même règle) : une SUGGESTION, jamais une obligation.
+//  1) minimum du mois pas encore atteint → combien viser aujourd'hui pour l'atteindre ;
+//  2) minimum atteint → combien viser aujourd'hui pour atteindre l'objectif que l'agent s'est fixé ;
+//  3) pas de minimum → directement l'objectif qu'il s'est fixé.
+// mois = déjà fait ce mois (aujourd'hui compris), jour = déjà fait aujourd'hui. Jours restants = aujourd'hui (si ouvré) + les suivants.
+function joursOuvresRestantsAvecAujourdhui(dateStr){
+  let n = 0;
+  try{
+    n = workingDaysRemainingFrom(dateStr);
+    const [y, m, d] = dateStr.split('-').map(Number), dt = new Date(y, m-1, d), dow = dt.getDay();
+    if(dow !== 0 && dow !== 6 && !frenchHolidaysSet(y).has(todayStr(dt))) n++;
+  }catch(e){}
+  return n;
+}
+function conseilObjectifs(o){
+  const mini = Number(o.mini) || 0, vise = Number(o.vise) || 0, mois = Number(o.mois) || 0, jour = Number(o.jour) || 0, jours = Number(o.jours) || 0;
+  const sing = o.sing || 'contrat', plur = o.plur || (sing + 's');
+  const nb = (n) => n + ' ' + (n > 1 ? plur : sing);
+  const avant = Math.max(0, mois - jour);                       // fait avant aujourd'hui
+  const aViser = (cible) => { const reste = cible - avant; if(reste <= 0) return 0; return jours > 0 ? Math.ceil(reste / jours) : reste; };
+  const fin = ' (simple suggestion, aucune obligation)';
+  const suite = (n) => jour >= n ? ' — c\'est déjà fait aujourd\'hui ✅' : ' (encore ' + (n - jour) + ' à faire)';
+  if(mini > 0 && mois < mini){
+    const n = aViser(mini);
+    return '💡 Aujourd\'hui, pour atteindre ton objectif minimum (' + mini + '), je te conseille de faire ' + nb(n) + suite(n) + '.' + fin;
+  }
+  if(vise > 0 && mois < vise){
+    const n = aViser(vise);
+    return '💡 ' + (mini > 0 ? '✅ Objectif minimum atteint ! ' : '') + 'Aujourd\'hui, pour atteindre l\'objectif que tu t\'es fixé (' + vise + '), je te conseille de faire ' + nb(n) + suite(n) + '.' + fin;
+  }
+  if(mini > 0 || vise > 0) return '🎉 ' + (vise > 0 ? 'Tes objectifs du mois sont atteints' : 'Ton objectif minimum est atteint') + ' — tout ce que tu fais en plus est du bonus.';
+  return '';
+}
+
 function setArenaScope(scope){
   arenaScope = scope;
   document.getElementById('arenaScopeDayBtn').classList.toggle('active', scope==='day');
@@ -20960,6 +20995,14 @@ async function renderArena(){
       </div>`;
     }
 
+    // 💡 Conseil d'objectifs (suggestion) : minimum d'abord, puis l'objectif perso ; sans minimum, directement l'objectif perso.
+    let conseilObjHtml = '';
+    try{
+      const stC = await monthlyObjectifStatus(myRow.agent, now.getFullYear(), now.getMonth()+1);
+      const viseC = isMonthScope ? (Number(myRow.desiredObjective) || 0) : (Number(await getMonthlyDesiredObjective(myRow.agent, now.getFullYear(), now.getMonth()+1)) || 0);
+      const txtC = conseilObjectifs({ mini: isFreeAgent ? 0 : (stC.objectif || 0), vise: viseC, mois: stC.realized || 0, jour: (getAgentProd(board, myRow.agent).realized || 0), jours: joursOuvresRestantsAvecAujourdhui(dateStr), sing: 'contrat' });
+      if(txtC) conseilObjHtml = '<div style="margin:10px auto 0; max-width:560px; padding:10px 14px; border-radius:11px; background:rgba(255,215,0,0.07); border:1px solid rgba(255,215,0,0.35); font-size:13.5px; font-weight:600; line-height:1.45; text-align:center;">' + escapeHtml(txtC) + '</div>';
+    }catch(e){ console.warn('conseil objectifs', e); }
     const displayObj = hasObj ? myRow.objective : (isFreeAgent ? '∞' : '?');
     const scopeTitle = isMonthScope ? '🎯 OBJECTIF DU MOIS' : '🎯 OBJECTIF DU JOUR';
     const pctColor = !hasObj ? 'var(--muted)' : (myRow.pct>=100 ? 'var(--green)' : (myRow.pct>=50 ? 'var(--amber)' : 'var(--red)'));
@@ -20969,6 +21012,7 @@ async function renderArena(){
       <div class="arena-big-num">${myRow.realized}<span> / ${displayObj}</span></div>
       <div style="color:var(--muted); font-size:13px;">${unitLabel}</div>
       <div class="arena-msg ${msg.cls}">${msg.text}</div>
+      ${conseilObjHtml}
       <div class="arena-proj-row">${projRowHtml}</div>
       <div class="arena-prog-wrap">
         <div class="arena-prog-bar"><div class="arena-prog-fill ${fillCls}" style="width:${Math.min(100,pctFill)}%"></div></div>
@@ -36865,8 +36909,9 @@ async function renderAssistanceHistory(){
       var conseilJ = '', conseilM = '';
       if(dj > 0) conseilJ = n >= dj ? '🎉 Objectif du jour atteint : ' + n + ' énergie' + (n > 1 ? 's' : '') + '.' : 'Plus que ' + (dj - n) + ' énergie' + ((dj - n) > 1 ? 's' : '') + ' pour ton objectif du jour.';
       else if(n > 0) conseilJ = enerPhrase(n, 'agent').replace(/^0 en assistance, /, '').replace(/^mais /, '');
-      if(!(dj > 0) && cible > 0 && m.nets < cible && jr > 0) conseilJ += (conseilJ ? ' ' : '') + 'Pour tenir ton objectif du mois (' + cible + '), vise environ ' + Math.ceil((cible - m.nets) / jr) + ' aujourd\'hui — fixe ton objectif du jour ci-dessus.';
-      if(cible > 0 && m.nets < cible && jr > 0) conseilM = 'Pour ton objectif du mois (' + cible + ') : environ ' + Math.ceil((cible - m.nets) / jr) + ' par jour sur les ' + jr + ' jours ouvrés restants.';
+      // même règle que Prime : minimum d'abord, puis l'objectif perso ; sans minimum, directement l'objectif perso
+      var sugg = conseilObjectifs({ mini: mini, vise: vise, mois: m.nets, jour: n, jours: joursOuvresRestantsAvecAujourdhui(jour), sing: 'énergie' });
+      conseilM = sugg; conseilJ = (conseilJ ? conseilJ + ' ' : '') + sugg;
       var barre = function(p){ return '<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:8px 0 4px;"><div style="width:' + p + '%;height:100%;background:' + vert + ';"></div></div>'; };
       // Comme Prime : la vue « jour » ne montre que l'énergie du jour, la vue « mois » que celle du mois.
       var moisVue = (typeof arenaScope !== 'undefined' && arenaScope === 'month');
