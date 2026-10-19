@@ -3197,9 +3197,12 @@ async function tryDeviceGateAdmin(){
             <div>
               <label style="margin-bottom:4px;">Décalage appliqué</label>
               <select id="cfgTzForced" style="min-width:230px;">
-                <option value="">Automatique (Africa/Casablanca)</option>
-                <option value="0">Forcer UTC+0 (heure d'hiver)</option>
-                <option value="1">Forcer UTC+1 (heure d'été)</option>
+                <option value="">Automatique (base du navigateur — déconseillé)</option>
+                <option value="-1">Forcer UTC-1</option>
+                <option value="0">Forcer UTC+0 (heure légale du Maroc depuis le 20 septembre 2026)</option>
+                <option value="1">Forcer UTC+1</option>
+                <option value="2">Forcer UTC+2</option>
+                <option value="3">Forcer UTC+3</option>
               </select>
             </div>
             <button type="button" onclick="saveTzForcedOffset()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer</button>
@@ -3306,7 +3309,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r286';
+const APP_VERSION = '2026-10-19-r287';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -9231,6 +9234,8 @@ function renderTzPanel(){
   const sel = document.getElementById('cfgTzForced');
   if(sel) sel.value = (config.tzForcedOffset == null) ? '' : String(config.tzForcedOffset);
   const d = tzDiagnostic();
+  let frOff = 0; try{ const n = new Date(), p = {}; new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Paris',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(n).forEach(o=>{p[o.type]=o.value;}); frOff = Math.round((Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second) - Math.floor(n.getTime()/1000)*1000)/3600000); }catch(e){}
+  const ecartFr = frOff - d.appliOffset;
   const sign = v => (v == null) ? '\u2014' : (v >= 0 ? 'UTC+' + v : 'UTC' + v);
   const desaccord = (d.autoOffset != null && d.force != null && d.autoOffset !== d.force);
   const ligne = (label, valeur, detail, couleur) => `
@@ -9244,6 +9249,7 @@ function renderTzPanel(){
       ${ligne('Heure de ce poste', d.poste, '')}
       ${ligne('Ce que dit Africa/Casablanca sur ce poste', d.auto, sign(d.autoOffset))}
       ${ligne("Heure utilis\u00e9e par l'appli pour les pointages", d.appli, sign(d.appliOffset), 'var(--green)')}
+      ${ligne('\u00c9cart France \u2212 Maroc en ce moment', ecartFr + ' h', '(France ' + sign(frOff) + ' \u00b7 Maroc ' + sign(d.appliOffset) + ') \u2014 c\'est le chiffre \u00e9crit dans les messages de rendez-vous', 'var(--accent)')}
       <div style="font-size:12px; color:var(--muted); margin-top:10px;">${d.force == null
         ? 'Mode <b style="color:var(--text);">automatique</b> : l\'appli suit la base de fuseaux de chaque poste.'
         : `Mode <b style="color:var(--text);">forc\u00e9 \u00e0 ${sign(d.force)}</b> : la m\u00eame valeur s\'applique \u00e0 tous les postes, depuis la base.`}</div>
