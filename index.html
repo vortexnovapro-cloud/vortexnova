@@ -3304,7 +3304,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r265';
+const APP_VERSION = '2026-10-19-r268';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -4567,11 +4567,11 @@ async function renderAutoJournal(){
       liste.slice(0, 30).map(function(x){
         var d = new Date(x.ts), neuf = x.ts > vu;
         return '<div style="border:1px solid ' + (neuf ? 'rgba(229,72,77,.55)' : 'var(--border)') + ';border-radius:10px;padding:9px 12px;margin-bottom:7px;' + (neuf ? 'background:rgba(229,72,77,.07);' : '') + '">' +
-          '<div style="font-weight:800;">🤖 ' + esc(x.action) + (neuf ? ' <span style="font-size:11px;color:#e5484d;">NOUVEAU</span>' : '') + '</div>' +
+          '<div style="font-weight:800;">🤖 ' + escapeHtml(x.action) + (neuf ? ' <span style="font-size:11px;color:#e5484d;">NOUVEAU</span>' : '') + '</div>' +
           '<div style="font-size:12px;color:var(--muted);margin:2px 0 4px;">' + d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) + '</div>' +
-          '<div style="font-size:13px;line-height:1.4;">' + esc(x.details) + '</div></div>';
+          '<div style="font-size:13px;line-height:1.4;">' + escapeHtml(x.details) + '</div></div>';
       }).join('');
-  }catch(e){ el.innerHTML = '<div class="empty">Journal illisible (règles Firestore de <code>vortexnova_audit</code>).</div>'; }
+  }catch(e){ console.warn('journal auto', e); el.innerHTML = (e && e.code === 'permission-denied') ? '<div class="empty">Journal illisible (règles Firestore de <code>vortexnova_audit</code>).</div>' : '<div class="empty">Journal : erreur d\'affichage (' + escapeHtml(e && e.message ? e.message : e) + ').</div>'; }
 }
 window.renderAutoJournal = renderAutoJournal;
 async function logAudit(actor, action, details){
@@ -11398,6 +11398,17 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       return { realized: v, objective: o, horsPeriode, absentJour, absenceLabel, energie: enerJour(r.agent, d) };
     }));
   }));
+  // 🚫 Agent absent sans pointage (journée terminée, rien signé, aucun objectif, aucune absence déclarée) : le dire sur sa carte.
+  const absentSansPointage = {};
+  await Promise.all(allDayRows.map(async r=>{
+    try{
+      if(!dayIsOver || r.realized > 0 || r.objective > 0 || enerJour(r.agent, dateStr) > 0) return;
+      if(!estSousContrat(r.agent, dateStr, false) || !isWorkingDay(dateStr)) return;
+      const lg = await getDayLog(r.agent, dateStr);
+      if(lg && lg.justifiedAbsence) return;
+      if(!lg || !lg.events || lg.events.length === 0) absentSansPointage[r.agent] = true;
+    }catch(e){}
+  }));
   function buildMonthlyRanking(list){
     const metric = r => dayIsOver ? r.realized : monthlyByAgent[r.agent].monthlyRealized;
     const sorted = [...list].sort((a,b)=>{
@@ -11632,7 +11643,9 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
         </div>
         ${noObj
-          ? (absentJourComplet
+          ? (absentSansPointage[r.agent]
+              ? `<div style="font-size:13.5px; color:#e5484d; font-weight:700;">🚫 Absent — aucun pointage ce jour-là</div><div style="margin-top:4px; font-size:13px;">Réalisé : <b style="color:var(--text); font-weight:700;">0</b> contrat</div>`
+              : absentJourComplet
               ? `<div style="font-size:13.5px; color:#b98a42; font-weight:600;">🗓️ ${absenceLabelPourAgent(mo.justifiedAbsence)} — journée non travaillée, aucun objectif attendu</div>${r.realized>0 ? `<div style="margin-top:4px; font-size:13px;">Et malgré tout : <b style="color:#4f9d78; font-weight:700;">${r.realized}</b> contrat${r.realized>1?'s':''}</div>` : ''}`
               : (isInDecouverte(r.agent) && (!decouverteEndDateOf(r.agent) || dateStr <= decouverteEndDateOf(r.agent))
                 ? `<div style="font-size:13.5px; color:#b8935a; font-weight:600;">🔍 En découverte — aucun objectif imposé</div><div style="margin-top:4px; font-size:13px;">Réalisé : <b style="color:${r.realized>0?'#4f9d78':'var(--text)'}; font-weight:700;">${r.realized}</b> contrat${r.realized>1?'s':''}</div>`
@@ -13560,7 +13573,6 @@ async function renderProduitsRecap(force){
     el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
       ${col('var(--accent)', '🔵 Prime', 'Assistance habitation', caP, coutP, rP, caP == null ? 'Règle ta commission dans Réglages → Ton chiffre d\'affaires.' : 'Payé = masse salariale prévue du mois (fixes, primes, commissions).')}
       ${col('#22c55e', '⚡ Énergie — Ilek', 'Commission par énergie', caI, coutI, rI, caI == null ? 'Règle « ce que tu touches par énergie » (Rémunération → Ilek).' : 'Énergies nettes après retours.')}
-      <div style="padding:16px;border-radius:13px;background:var(--panel2);border:1px dashed var(--border);display:flex;flex-direction:column;justify-content:center;color:var(--muted);font-size:13px;line-height:1.6;"><b style="color:var(--text);">🟣 Ohm</b>Pas encore branché. Quand le fournisseur sera ajouté, il aura sa propre colonne ici, avec son propre montant par énergie.</div>
     </div>
     <div style="margin-top:14px;padding:16px 18px;border-radius:13px;background:var(--panel2);border:1px solid rgba(255,215,0,.35);display:flex;flex-wrap:wrap;gap:6px 26px;align-items:baseline;">
       <span style="font-size:12px;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.6px;">Tous produits</span>
@@ -36680,25 +36692,43 @@ async function renderAssistanceHistory(){
       '<div><label style="margin:0 0 4px;display:block;">Mois affiché</label><input type="month" value="' + esc(adIlek.mois) + '" onchange="adIlekMois(this.value)"></div></div>';
     if(!autor.length) h += '<div style="font-size:12.5px;margin-top:10px;">⚪ Aucun agent n\'est autorisé pour Ilek (Admin → 📨 Contrats → carte « Produits »).</div>';
     else {
-      h += '<div style="overflow-x:auto;margin-top:12px;"><table style="width:100%;font-size:13px;border-collapse:collapse;"><tr style="text-align:left;color:var(--muted);font-size:12px;"><th>Agent</th><th>Contrats validés</th><th>Énergies</th><th>Retours</th><th>Retirées</th><th>Payées</th><th>Objectif du mois (énergies, minimum)</th><th title="Objectif choisi par l\'agent lui-même (verrouillé après son choix, l\'admin peut le changer)">Objectif visé par l\'agent</th><th title="Versée une fois, quand l\'objectif du mois est atteint">Prime si objectif atteint (DH)</th><th title="Par énergie, tant que l\'objectif n\'est pas atteint (vide = 0)">Par énergie avant l\'objectif (DH)</th><th title="Par énergie au-delà de l\'objectif. Sans objectif : par énergie dès la 1re. Vide = tarif général ci-dessus">Par énergie au-delà (DH)</th><th title="Commun aux deux produits (Prime et Énergie) : payé UNE SEULE FOIS, comme dans Rémunération → Prime">Salaire fixe (DH/mois)</th><th title="Commune aux deux produits : payée UNE SEULE FOIS, mêmes règles de retards que Prime">Prime d\'assiduité (DH)</th><th>Montant énergie</th></tr>';
       var lignes = adIlek.data || [];
+      var nombre = function(champ, n, val, ph, w, step, unite, extra){ return '<span class="rm-num"><input type="number" min="0" step="' + step + '" value="' + val + '" placeholder="' + ph + '" ' + (extra || '') + ' data-n="' + esc(n) + '" onchange="' + champ + '"><span>' + unite + '</span></span>'; };
+      var lig = function(titre, champHtml){ return '<div class="rm-lig"><span class="t">' + titre + '</span>' + champHtml + '</div>'; };
+      h += '<div class="rm-grid">';
       autor.forEach(function(n){
         var d = lignes.filter(function(x){ return x.agent === n; })[0];
-        var ob = Number(obj[n]) || 0;
-        var fx = Number(fix[n]) || 0;
-        var atteint = d && ob > 0 ? (d.atteint ? ' <span style="color:var(--green);">✔ atteint</span>' : ' <span style="color:var(--muted);">(' + ilekNb(d.nets) + '/' + ob + ')</span>') : '';
-        h += '<tr style="border-top:1px solid var(--border);"><td><b>' + esc(n) + '</b></td>' +
-          '<td>' + (d ? d.contrats : (adIlek.charge ? '…' : '0')) + '</td><td>' + (d ? d.energies : '') + '</td><td>' + (d ? d.retoursEnergies : '') + '</td>' +
-          '<td>' + (d ? ilekNb(d.retires) : '') + '</td><td><b>' + (d ? ilekNb(d.nets) : '') + '</b></td>' +
-          '<td><input type="number" min="0" style="width:80px;" value="' + (ob || '') + '" placeholder="aucun" onchange="adIlekReglage(\'objectif\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '">' + atteint + '</td>' +
-          '<td><input type="number" min="0" style="width:80px;" value="' + (((adIlek.vises || {})[n]) || '') + '" placeholder="—" onchange="adIlekVise(this.getAttribute(\'data-n\'), this.value)" data-n="' + esc(n) + '"></td>' +
-          '<td><input type="number" min="0" step="50" style="width:90px;" value="' + (fx || '') + '" placeholder="aucune" onchange="adIlekReglage(\'fixe\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '"></td>' +
-          '<td><input type="number" min="0" step="10" style="width:80px;" value="' + ((R.avants && Number(R.avants[n])) || '') + '" placeholder="0" onchange="adIlekReglage(\'avant\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '"></td>' +
-          '<td><input type="number" min="0" step="10" style="width:80px;" value="' + ((R.commissions && R.commissions[n] !== undefined) ? R.commissions[n] : '') + '" placeholder="' + comm + '" onchange="adIlekReglage(\'apres\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '"></td>' +
-          adIlekPayCells(n) +
-          '<td><b>' + (d ? d.montant.toLocaleString('fr-FR') + ' DH' : '') + '</b></td></tr>';
+        var ob = Number(obj[n]) || 0, fx = Number(fix[n]) || 0;
+        var avant = (R.avants && Number(R.avants[n])) || 0;
+        var apres = (R.commissions && R.commissions[n] !== undefined && R.commissions[n] !== '') ? Number(R.commissions[n]) : comm;
+        var pay = {}, pc = {}; try{ pay = getAgentPay(n) || {}; pc = ((getProdConfig().agentPay || {})[n]) || {}; }catch(e){}
+        var fixeEff = Math.round(pay.baseSalary || 0), assidEff = Math.round(pay.primeAssiduite || 0);
+        var vise = ((adIlek.vises || {})[n]) || 0;
+        var situation = (ob > 0 ? '🎯 Objectif : <b>' + ob + ' énergies</b> — prime ' + fx + ' DH une fois atteint, puis <b>' + apres + ' DH</b> par énergie au-delà' + (avant > 0 ? ' (avant : ' + avant + ' DH)' : ' (rien avant)') : '💵 Sans objectif : <b>' + apres + ' DH par énergie</b>, dès la 1re') +
+          '<br>🏦 ' + (fixeEff > 0 ? 'Salaire fixe : <b>' + fixeEff.toLocaleString('fr-FR') + ' DH / mois</b>' : 'Pas de salaire fixe') + (assidEff > 0 ? ' · assiduité : <b>' + assidEff + ' DH</b>' : '');
+        var atteint = d && ob > 0 ? (d.atteint ? '<span style="color:var(--green);">✔ objectif atteint</span>' : '<span style="color:var(--muted);">' + ilekNb(d.nets) + ' / ' + ob + '</span>') : '';
+        h += '<div class="rm-card" style="border-top-color:#16a34a;">' +
+          '<div class="rm-nom"><span>' + esc(n) + '</span><span class="rm-chip">' + (ob > 0 ? '🎯 Avec objectif' : '💵 ' + apres + ' DH / énergie') + '</span></div>' +
+          '<div class="rm-amt"><div class="rm-big">' + (d ? d.montant.toLocaleString('fr-FR') : (adIlek.charge ? '…' : '0')) + ' DH <small>net Énergie ce mois</small></div>' +
+          '<div class="rm-mut" style="margin-top:4px;">' + (d ? d.contrats + ' contrat' + (d.contrats > 1 ? 's' : '') + ' · ' + d.energies + ' énergie' + (d.energies > 1 ? 's' : '') + ' · ' + d.retoursEnergies + ' retour' + (d.retoursEnergies > 1 ? 's' : '') + ' (−' + ilekNb(d.retires) + ') · <b>' + ilekNb(d.nets) + ' payées</b> ' + atteint : '') + '</div></div>' +
+          '<div style="margin-top:10px;font-size:13px;line-height:1.55;background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.35);border-radius:10px;padding:8px 10px;"><b>Actuellement</b><br>' + situation + '</div>' +
+          '<details><summary>⚙️ Montants de ' + esc(n) + '</summary>' +
+          '<div class="rm-bloc"><h4>💵 Commission</h4>' +
+            lig(ob > 0 ? 'Par énergie au-delà de l\'objectif' : 'Par énergie (dès la 1re)', nombre('adIlekReglage(\'apres\', this.value, this.getAttribute(\'data-n\'))', n, (R.commissions && R.commissions[n] !== undefined) ? R.commissions[n] : '', comm, 80, 10, 'DH')) +
+            (ob > 0 ? lig('Par énergie avant l\'objectif', nombre('adIlekReglage(\'avant\', this.value, this.getAttribute(\'data-n\'))', n, avant || '', 0, 80, 10, 'DH')) : '') +
+            '<div class="rm-hint">Vide = tarif général (' + comm + ' DH).</div></div>' +
+          '<div class="rm-bloc"><h4>🎯 Objectif</h4>' +
+            lig('Objectif minimum du mois', nombre('adIlekReglage(\'objectif\', this.value, this.getAttribute(\'data-n\'))', n, ob || '', 'aucun', 80, 1, 'énergies')) +
+            lig('Objectif visé (choisi par l\'agent)', nombre('adIlekVise(this.getAttribute(\'data-n\'), this.value)', n, vise || '', '—', 80, 1, 'énergies')) +
+            lig('Prime si l\'objectif est atteint', nombre('adIlekReglage(\'fixe\', this.value, this.getAttribute(\'data-n\'))', n, fx || '', 'aucune', 90, 50, 'DH')) +
+            '<div class="rm-hint">' + (ob > 0 ? 'Prime versée une fois, puis la commission pour chaque énergie au-delà.' : 'Pas d\'objectif : l\'agent touche la commission dès sa 1re énergie. Mets un nombre ici pour activer un objectif.') + '</div></div>' +
+          '<div class="rm-bloc"><h4>🏦 Fixe et assiduité <span style="font-weight:600;color:var(--muted);font-size:11.5px;">(communs avec Prime, payés une seule fois)</span></h4>' +
+            lig('Salaire fixe par mois', nombre('adIlekPay(\'baseSalary\', this.value, this.getAttribute(\'data-n\'))', n, (pc.baseSalary !== undefined && pc.baseSalary !== '') ? pc.baseSalary : '', fixeEff, 90, 50, 'DH')) +
+            lig('Prime d\'assiduité', nombre('adIlekPay(\'primeAssiduite\', this.value, this.getAttribute(\'data-n\'))', n, (pc.primeAssiduite !== undefined && pc.primeAssiduite !== '') ? pc.primeAssiduite : '', assidEff, 80, 10, 'DH')) +
+            '<div class="rm-hint">' + ((pc.baseSalary !== undefined && pc.baseSalary !== '') ? 'Fixe réglé pour cet agent.' : (fixeEff > 0 ? '⚠️ Case vide : l\'agent reçoit la valeur par défaut de Prime (' + fixeEff.toLocaleString('fr-FR') + ' DH). <b>Écris 0</b> s\'il ne doit pas avoir de fixe.' : 'Pas de fixe.')) + '</div></div>' +
+          '</details></div>';
       });
-      h += '</table></div>';
+      h += '</div>';
     }
     // retours : import à part
     var T = ilekMem.ret || { rows: [] };
