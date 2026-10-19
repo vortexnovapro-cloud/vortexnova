@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r283';
+const APP_VERSION = '2026-10-19-r284';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -25461,6 +25461,19 @@ async function billingNoterDoublons(ignores, suspects){
   if(suspects && suspects.length){ const d = await billingLoad('billingSuspects', { items: [] }); d.items = (d.items || []).concat(suspects); await billingSave('billingSuspects', d); }
   if(ignores && ignores.length){ const d = await billingLoad('billingDoublons', { items: [] }); d.items = (d.items || []).concat(ignores).slice(-300); await billingSave('billingDoublons', d); }
 }
+// 📒 r284 — Journal des relevés de la boîte : à chaque relevé qui a quelque chose à dire, on note l'heure et le détail,
+// pour pouvoir retrouver à quel moment un contrat a disparu (ou a été mis à vérifier).
+async function billingNoterReleve(result){
+  try{
+    if(!result) return;
+    const bloques = (result.badDate || []).length + (result.unresolvedAgent || []).length;
+    if(!(result.imported || result.importedNC || result.duplicates || result.duplicatesNC || result.suspects || bloques || result.error || result.rtdbError)) return;
+    const d = await billingLoad('billingReleves', { items: [] });
+    d.items = (d.items || []).concat([{ at: new Date().toISOString(), imported: result.imported || 0, importedNC: result.importedNC || 0,
+      duplicates: (result.duplicates || 0) + (result.duplicatesNC || 0), suspects: result.suspects || 0, bloques, erreur: result.error || result.rtdbError || '' }]).slice(-100);
+    await billingSave('billingReleves', d);
+  }catch(e){ console.warn('journal des relevés', e); }
+}
 // 🛟 r281 — Doublon d'un contrat reçu dans la boîte. AVANT : la « référence » passait avant le numéro de
 // contrat, donc deux contrats DIFFÉRENTS portant la même référence étaient pris pour un doublon : le
 // deuxième était écarté, puis retiré de la boîte sans jamais être rangé (contrat perdu en silence).
@@ -29277,6 +29290,7 @@ async function syncBackofficeInbox(opts){
   if(monRelevé === backofficeSyncGeneration){
     backofficeLastResult = result;
     backofficeDernierReleveAt = Date.now();
+    await billingNoterReleve(result);
   }
   return result;
 }
@@ -37090,13 +37104,16 @@ async function renderAssistanceHistory(){
   }
 
   // ───────────────── 🔎 diagnostic « écart » : contrats validés aujourd'hui ↔ facturation (Prime) ─────────────────
-  var adEcart = { ts:0, sig:'', calc:false, occupe:false, lignes:[], extras:[], suspects:[], log:[], nbDecides:0, nbNC:0, nbFact:0, jour:'', msg:'' };
+  var adEcart = { ts:0, sig:'', calc:false, occupe:false, lignes:[], extras:[], suspects:[], log:[], releves:[], nbDecides:0, nbNC:0, nbFact:0, jour:'', msg:'' };
   var adNumDe = function(v){ return String(v == null ? '' : v).trim().toLowerCase(); };
   async function adEcartCalcul(sig){
     var e = adEcart; if(e.calc) return; e.calc = true; e.ts = Date.now(); e.sig = sig;
     try{
       var auj = adJourEnvoi(new Date().toISOString());
-      var decides = adTous.filter(function(x){ return x.creeLe && adJourEnvoi(x.creeLe) === auj && !adEstTest(x) && produitDe(x) === 'prime' && (x.statut === 'conforme' || x.statut === 'non_conforme'); });
+      var limite7 = Date.now() - 7 * 86400000;
+      var semaine = adTous.filter(function(x){ var t = x.creeLe ? new Date(x.creeLe).getTime() : NaN; return !isNaN(t) && t >= limite7 && !adEstTest(x) && produitDe(x) === 'prime' && (x.statut === 'conforme' || x.statut === 'non_conforme'); });
+      var decides = semaine.filter(function(x){ return adJourEnvoi(x.creeLe) === auj; });
+      try{ e.releves = ((await billingLoad('billingReleves', { items: [] })).items) || []; }catch(err){ e.releves = []; }
       var rows = [], rowsNC = [], mois = moisVoisins(auj.slice(0, 7));
       for(var i = 0; i < mois.length; i++){
         try{ var d = await getBillingProd(mois[i]); rows = rows.concat((d && d.rows) || []); }catch(err){ console.warn('écart : classeur illisible', mois[i], err); }
@@ -37111,14 +37128,14 @@ async function renderAssistanceHistory(){
       rowsNC.forEach(function(r){ var n = r ? adNumDe(r.numContrat) : ''; if(n) idxNC[n] = true; });
       var fact = rows.filter(function(r){ return r && r.date === auj; });
       var nums = Object.create(null), lignes = [], nbConf = 0, nbNC = 0;
-      decides.forEach(function(x){
-        var n = adNumDe((x.champs || {}).numero), nc = x.statut === 'non_conforme';
-        if(nc) nbNC++; else nbConf++;
+      semaine.forEach(function(x){
+        var n = adNumDe((x.champs || {}).numero), nc = x.statut === 'non_conforme', estAuj = adJourEnvoi(x.creeLe) === auj;
+        if(estAuj){ if(nc) nbNC++; else nbConf++; }
         if(nc){ if(n && numsSuspects[n]) return; if(!n || !idxNC[n]) lignes.push({ type:'absent', nc:true, x:x }); return; }
-        if(n) nums[n] = true;
+        if(n && estAuj) nums[n] = true;
         var trouves = n ? (idx[n] || []) : [];
         if(!trouves.length){ if(n && numsSuspects[n]) return; lignes.push({ type:'absent', nc:false, x:x }); return; }
-        if(trouves.some(function(r){ return r.date === auj; })) return;
+        if(!estAuj || trouves.some(function(r){ return r.date === auj; })) return;
         lignes.push({ type:'date', nc:false, x:x, row:trouves[0] });
       });
       e.extras = fact.filter(function(r){ return !nums[adNumDe(r.numContrat)]; });
@@ -37126,6 +37143,22 @@ async function renderAssistanceHistory(){
     }catch(err){ console.warn('écart :', err); }
     e.calc = false;
     try{ adRendre(); }catch(err){}
+  }
+  function adNoteServeur(x){
+    var ea = x.envoiAuto || {}, q = function(iso){ try{ return new Date(iso).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); }catch(err){ return ''; } };
+    if(ea.crm === 'ok') return 'Serveur : déposé dans la boîte du CRM' + (ea.crmLe ? ' le ' + esc(q(ea.crmLe)) : '') + ' ✔ — le CRM l\'a reçu mais ne l\'a pas rangé : regarde le journal des relevés.';
+    if(ea.crm === 'erreur') return 'Serveur : dépôt vers le CRM <b>en échec</b>' + (ea.crmLe ? ' le ' + esc(q(ea.crmLe)) : '') + (ea.crmErreur ? ' (' + esc(ea.crmErreur) + ')' : '') + '. Le bouton « Ranger » le remet.';
+    if(ea.crm === 'ignore') return 'Serveur : pas de dépôt prévu pour ce contrat.';
+    return 'Serveur : dépôt vers le CRM pas encore fait (ou envoi manuel).';
+  }
+  function adRelevesCarte(){
+    var l = (adEcart.releves || []).slice(-8).reverse();
+    var h = '<div style="margin-top:10px;font-size:12.5px;"><b>📒 Derniers relevés de la boîte</b>';
+    if(!l.length) return h + '<div style="color:var(--muted);">Aucun relevé avec activité enregistré pour le moment.</div></div>';
+    return h + '<ul style="margin:4px 0 0 18px;">' + l.map(function(r){
+      var q = new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      return '<li>' + esc(q) + ' — ' + (r.imported || 0) + ' rangé(s)' + (r.importedNC ? ', ' + r.importedNC + ' non conforme(s)' : '') + (r.duplicates ? ', ' + r.duplicates + ' doublon(s) ignoré(s)' : '') + (r.suspects ? ', ' + r.suspects + ' à vérifier' : '') + (r.bloques ? ', ' + r.bloques + ' bloqué(s)' : '') + (r.erreur ? ' — <span style="color:var(--red);">erreur : ' + esc(r.erreur) + '</span>' : '') + '</li>';
+    }).join('') + '</ul></div>';
   }
   function adEcartCarte(){
     var e = adEcart;
@@ -37147,13 +37180,15 @@ async function renderAssistanceHistory(){
       var c = l.x.champs || {}, k = esc(l.x._key);
       return '<div style="padding:8px 0;border-top:1px solid var(--border);font-size:13px;"><b>' + pillProduit(l.x) + '#' + esc(c.numero) + ' · ' + esc(nomChamps(c)) + '</b> — ' + esc(l.x.agent) +
         (l.type === 'absent'
-          ? '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Validé aujourd\'hui' + (l.nc ? ' (non conforme)' : '') + ', mais <b style="color:var(--amber);">absent de la facturation</b>.</div>'
+          ? '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Validé ' + (adJourEnvoi(l.x.creeLe) === auj ? 'aujourd\'hui' : 'le ' + esc(adFrJour(adJourEnvoi(l.x.creeLe)))) + (l.nc ? ' (non conforme)' : '') + ', mais <b style="color:var(--amber);">absent de la facturation</b>.</div>' +
+            '<div style="color:var(--muted);font-size:12px;margin-top:2px;">🖥️ ' + adNoteServeur(l.x) + '</div>'
           : '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Dans la facturation, mais daté du <b style="color:var(--amber);">' + esc(adFrJour(l.row.date)) + '</b> au lieu d\'aujourd\'hui.</div>' +
             '<div style="margin-top:6px;"><button type="button" class="ct-btn ok" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adEcartRamener(\'' + k + '\')">Ramener au ' + esc(adFrJour(adEcart.jour || auj)) + '</button></div>') + '</div>';
     }).join('') + '</div>';
     if(e.extras.length) h += '<div style="margin-top:10px;font-size:12.5px;"><b>Dans la facturation à la date d\'aujourd\'hui, mais pas validés aujourd\'hui :</b><ul style="margin:4px 0 0 18px;">' +
       e.extras.slice(0, 20).map(function(r){ return '<li>#' + esc(r.numContrat || r.reference || '?') + ' · ' + esc(r.nom || r.client || '') + ' (' + esc(r.agent || '?') + ')</li>'; }).join('') + '</ul>' +
       '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Ce sont des contrats validés un autre jour (ou importés à la main) qui portent la date d\'aujourd\'hui. Rien à faire si c\'est voulu.</div></div>';
+    h += adRelevesCarte();
     if(e.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(e.msg) + '</div>';
     return h + '</div>' + adDoublonsCarte();
   }
