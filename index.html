@@ -2251,6 +2251,7 @@ async function tryDeviceGateAdmin(){
         <div class="rm-tabs">
           <button type="button" class="rm-tab on prime" id="rmTabPrime" onclick="rmTab('prime')">🔵 PRIME</button>
           <button type="button" class="rm-tab" id="rmTabIlek" onclick="rmTab('ilek')">🟢 ILEK</button>
+          <button type="button" class="rm-tab" id="rmTabRetours" onclick="rmTab('retours')">📊 Retours</button>
           <button type="button" class="rm-tab plus" id="rmTabPlus" onclick="rmTab('plus')">➕ Ajouter un fournisseur</button>
         </div>
         <div class="rm-panel on" id="rmPanelPrime">
@@ -2421,6 +2422,7 @@ async function tryDeviceGateAdmin(){
           </details>
         </div>
         <div class="rm-panel" id="rmPanelIlek"><div id="remuIlekHost"><div class="empty">Chargement…</div></div></div>
+        <div class="rm-panel" id="rmPanelRetours"><div id="rmRetoursHote"><div class="empty">Chargement…</div></div></div>
         <div class="rm-panel" id="rmPanelPlus"><div class="settings-box"><label>➕ Ajouter un autre fournisseur d'énergie (ex. Ohm)</label>
           <div class="section-sub">Pour ajouter un fournisseur, il faut lui donner un nom, une couleur et la liste des champs du formulaire. Dis-moi simplement le nom (ex. Ohm) et ce qu'on demande aux agents : je l'ajoute, et il apparaîtra ici comme un onglet avec les mêmes réglages qu'Ilek.</div></div></div>
       </div>
@@ -3304,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r268';
+const APP_VERSION = '2026-10-19-r270';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12507,10 +12509,11 @@ async function renderBossRevenue(force){
         <div title="${isMonthToDateRange ? 'Contrats du mois, rétractations déjà déduites — exactement la même source que le 🧾 Bilan net du mois plus bas.' : 'Contrats comptés jour par jour sur la période choisie. Les rétractations sont un compteur MENSUEL, non daté : elles ne peuvent pas être rattachées à une journée, elles ne sont donc pas déduites ici. Choisis « ↺ Depuis le 1er du mois » pour un chiffre net de rétractations.'}"><span>Contrats ${isMonthToDateRange ? 'nets' : 'bruts'}</span><b>${calc.totalContracts}</b></div>
         ${!isMonthToDateRange ? `<div class="miss"><span>⚠️ Rétractations du mois</span><b>non déduites</b></div>` : ''}
         ${(detailArchives && detailArchives.exAgents > 0) ? `<div title="Contrats signés par des agents depuis archivés (${detailArchives.parArchive.map(x=> x.agent + ' : ' + x.n).join(' · ')}).&#10;Ils comptent dans ton chiffre d'affaires : le contrat est vendu, le client paie.&#10;Ils n'entrent pas dans la masse salariale — archiver veut dire que leur solde est payé."><span>dont ex-agents archivés</span><b style="color:var(--gold);">${detailArchives.exAgents}</b></div>` : ''}
-        <div><span>Effectifs (-${config.bossReturnRatePct||0}% retour estimé)</span><b>${Math.round(calc.effectiveContracts*10)/10}</b></div>
+        <div><span>Nettes après retours <span style="color:var(--amber);">⏳ estimation −${config.bossReturnRatePct||0} %</span></span><b>${Math.round(calc.effectiveContracts*10)/10}</b></div>
         <div><span>Commission de base</span><b>${Math.round(calc.base).toLocaleString('fr-FR')} DH</b></div>
         ${config.bossBonusPct>0 ? `<div class="hit"><span>Bonus (+${config.bossBonusPct}%)</span><b>+${Math.round(calc.bonus).toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${calc.totalContracts>0 ? `<div title="Ton gain total ÷ le nombre de contrats bruts signés — le rendement moyen réel par contrat, une fois le taux de retour et le bonus pris en compte."><span>Taux effectif / contrat brut</span><b>${effectiveRate.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${(label.indexOf('🛡️')===0 && ncRows.length>0) ? `<div class="hit" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;" title="Contrats non conformes : ton client te paie dessus, l'agent non."><span>+ ${ncRows.length} non conformes</span><b>+${Math.round(ncCalc.total).toLocaleString('fr-FR')} DH</b></div><div class="hit"><span><b>Total avec non conformes</b></span><b style="color:var(--gold);">${Math.round(calc.total + ncCalc.total).toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
     </div>`;
   };
@@ -23425,6 +23428,8 @@ async function renderAgentPayTable(){
   const cartes = {sal:[], bo:[], ind:[], old:[]};
   // Les agents archivés restent en fin de liste, grisés : leurs conditions de l'époque servent aux mois passés.
   const payRowAgents = agentsReels().concat(archivedAgents());
+  const faitMois = {};
+  await Promise.all(payRowAgents.map(async a=>{ if(isArchivedAgent(a)) return; try{ faitMois[a] = await monthlyRealizedContracts(a, year, month); }catch(e){} }));
   payRowAgents.forEach((agent,i)=>{
     const p = getAgentPay(agent);
     const c = getProdConfig().agentPay[agent] || {};
@@ -23450,9 +23455,9 @@ async function renderAgentPayTable(){
     const fixedToDate = totalWorkingDays>0 ? Math.round(fixedFullMonth * (elapsedWorkingDays/totalWorkingDays)) : 0;
     const brutNote = (!isIndep && fixedFullMonth>0)
       ? `<div class="rm-hint">Brut fixe mois complet : <b style="color:var(--text);">${fixedFullMonth.toLocaleString('fr-FR')} DH</b> — à ce jour (${elapsedWorkingDays}/${totalWorkingDays}j) : <b style="color:var(--green);">${fixedToDate.toLocaleString('fr-FR')} DH</b></div>` : '';
-    const blocFixe = `<div class="rm-bloc"><h4>🏦 Salaire fixe</h4>${champ('baseSalary', p.baseSalary, 'DH / mois', 'Fixe par mois')}${champ('primeFixeMensuelle', p.primeFixeMensuelle, 'DH / mois', 'Prime fixe par mois')}${brutNote}</div>`;
+    const blocFixe = `<div class="rm-bloc"><h4>🏦 Salaire fixe <span style="font-weight:600;color:var(--muted);font-size:11.5px;">(pour assistance et énergie, payé une seule fois)</span></h4>${champ('baseSalary', p.baseSalary, 'DH / mois', 'Fixe par mois')}${champ('primeFixeMensuelle', p.primeFixeMensuelle, 'DH / mois', 'Prime fixe par mois')}${brutNote}</div>`;
     const blocAssid = `<div class="rm-bloc"><h4>✅ Assiduité</h4>${champ('primeAssiduite', p.primeAssiduite, 'DH', 'Prime si aucun retard ni absence')}</div>`;
-    const blocComm = `<div class="rm-bloc"><h4>💵 Commission</h4>${champ('perContract', p.perContract, 'DH', lockObjectif ? 'Par contrat fait (dès le 1er)' : 'Par contrat (après l\'objectif)')}${lockObjectifRow ? '' : champ('perContractBeforeObjectif', p.perContractBeforeObjectif, 'DH', 'Par contrat (avant l\'objectif)')}${lockObjectif ? '<div class="rm-hint">Sans objectif : payé dès le 1er contrat.</div>' : ''}</div>`;
+    const blocComm = `<div class="rm-bloc"><h4>💵 Commission / bonus assistance (Prime)</h4>${champ('perContract', p.perContract, 'DH', lockObjectif ? 'Par contrat fait (dès le 1er)' : 'Par contrat (après l\'objectif)')}${lockObjectifRow ? '' : champ('perContractBeforeObjectif', p.perContractBeforeObjectif, 'DH', 'Par contrat (avant l\'objectif)')}${lockObjectif ? '<div class="rm-hint">Sans objectif : payé dès le 1er contrat.</div>' : ''}</div>`;
     const blocSup = (isSup || p.supervisorPrimePerContract) ? `<div class="rm-bloc"><h4>📊 Supervision</h4>${champ('supervisorPrimePerContract', p.supervisorPrimePerContract, 'DH', 'Prime superviseur par contrat d\'équipe')}</div>` : '';
     const objVise = `<div class="rm-lig"><span class="t">Objectif visé ce mois (choisi par l'agent)</span><span class="rm-num"><input type="number" min="0" step="1" value="${desiredObj || ''}" placeholder="—" title="Objectif visé par l'agent lui-même — tu peux aussi le régler ici à sa place" onchange="adminSetDesiredObjective('${agentKeySafe}', ${year}, ${month}, this.value)"><span>contrats</span></span></div>`;
     const blocObj = lockObjectifRow
@@ -23463,9 +23468,21 @@ async function renderAgentPayTable(){
     if(isIndep) reglages = blocComm + blocRet + blocObj + `<details class="rm-more"><summary style="font-weight:600;color:var(--muted);">Autres montants (rarement utilisés)</summary>${blocFixe}${blocAssid}${blocSup}</details>`;
     else reglages = blocFixe + blocComm + blocObj + blocAssid + blocSup + blocRet;
     const type = archived ? 'old' : (isIndep ? 'ind' : (noObj || decActive ? 'bo' : 'sal'));
+    const fait = faitMois[agent];
+    const fixeEff = Math.round((p.baseSalary || 0) + (p.primeFixeMensuelle || 0)), assidEff = Math.round(p.primeAssiduite || 0);
+    const mini = Number(p.objectifMensuel) || 0, avantT = Number(p.perContractBeforeObjectif) || 0, apresT = Number(p.perContract) || 0, extraT = Number(p.primeExtraContrat) || 0, primeObj = Number(p.primeObjectifJour) || 0;
+    let actuel;
+    if(lockObjectifRow || mini <= 0){
+      actuel = `💵 <b>Sans objectif</b> : <b>${apresT} DH par contrat</b> (bonus assistance Prime), dès le 1er contrat`;
+    } else {
+      const etatObj = (fait == null) ? '' : (fait >= mini ? ' — <span style="color:var(--green);">✔ objectif atteint</span>' : ` — <span style="color:var(--muted);">objectif non atteint (${fait}/${mini})</span>`);
+      actuel = `🎯 Objectif : <b>${mini} contrats</b>${etatObj}<br>🏆 Prime d'objectif : <b>${primeObj} DH</b>${primeObj > 0 ? ' (versée une fois, si atteint)' : ''}<br>💵 Par contrat : <b>${avantT} DH</b> avant l'objectif · <b>${apresT} DH</b> au-delà${extraT > 0 ? ` · bonus <b>${extraT} DH</b> par contrat au-delà` : ''}`;
+    }
+    actuel += `<br>🏦 ${fixeEff > 0 ? `Salaire fixe : <b>${fixeEff.toLocaleString('fr-FR')} DH / mois</b>` : 'Pas de salaire fixe'}${assidEff > 0 ? ` · assiduité : <b>${assidEff} DH</b>` : ''} <span style="color:var(--muted);">(commun assistance + énergie)</span>`;
+    const encadre = archived ? '' : `<div style="margin-top:10px;font-size:13px;line-height:1.55;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.35);border-radius:10px;padding:8px 10px;"><b>Actuellement</b> <span style="color:var(--muted);font-size:11.5px;">— assistance (Prime)</span><br>${actuel}</div>`;
     const carte = `<div class="rm-card ${type==='old'?'old':''} ${type==='ind'?'ind':''} ${type==='bo'?'bo':''}">
       <div class="rm-nom"><span>${nom}</span><span class="rm-chip">${esc2(profil)}</span></div>
-      <div class="rm-amt" data-amt="${nom}" data-arch="${archived?1:0}">${archived ? '' : '<div class="rm-mut rm-wait" style="margin-top:8px;">⏳ calcul du mois…</div>'}</div>
+      <div class="rm-amt" data-amt="${nom}" data-arch="${archived?1:0}">${archived ? '' : '<div class="rm-mut rm-wait" style="margin-top:8px;">⏳ calcul du mois…</div>'}</div>${encadre}
       <details><summary>⚙️ Montants de ${nom}</summary>${reglages}</details></div>`;
     cartes[type].push(carte);
   });
@@ -23532,13 +23549,15 @@ async function rmRemplirMontants(year, month){
       const h = z.querySelector('.rm-est'); if(!h || !z._d) return;
       const agent = dec(z.dataset.amt), d = z._d;
       let nbV = 0, nbR = 0; prec.forEach(m=>{ nbV += hist[m].v[agent]||0; nbR += hist[m].r[agent]||0; });
-      if(nbV <= 0){ h.innerHTML = '<span class="rm-mut">Pas assez d\'historique pour estimer les retours.</span>'; return; }
+      if(nbV <= 0){ h.innerHTML = '<span class="rm-mut">Pas assez d\'historique pour calculer la moyenne des retours.</span>'; return; }
+      const v1 = hist[prec[0]].v[agent]||0, r1 = hist[prec[0]].r[agent]||0;
       const taux = nbR / nbV, faits = d.validated || d.realized || 0;
       const attendus = Math.round(faits * taux);
       const reste = Math.max(0, attendus - (d.returnsCount || 0));
       const p = getAgentPay(agent, year, month);
       const cout = (p.returnCost || p.perContract || 0) / (d.returnsDivisor || 1);
-      h.innerHTML = '📉 Retours estimés : <b>~'+attendus+'</b> ('+Math.round(taux*100)+' % sur les 3 derniers mois)'+(reste>0 && cout>0 ? ' → paie estimée après retours : <b>'+Math.round(d.total - reste*cout).toLocaleString('fr-FR')+' DH</b>' : '')+'<div class="rm-hint">Prévision seulement : la vraie paie change quand tu importes le fichier des retours.</div>';
+      h.innerHTML = '📉 Moyenne des retours : <b>' + (v1 > 0 ? Math.round(100*r1/v1) + ' %' : '—') + '</b> le mois dernier · <b>' + Math.round(taux*100) + ' %</b> sur 3 mois'
+        + '<div class="rm-hint">À ce rythme (3 mois) : ~' + attendus + ' retour' + (attendus > 1 ? 's' : '') + ' attendu' + (attendus > 1 ? 's' : '') + ' ce mois' + (reste>0 && cout>0 ? ' → paie estimée après retours : <b>'+Math.round(d.total - reste*cout).toLocaleString('fr-FR')+' DH</b>' : '') + '. Prévision seulement : la vraie paie change quand tu importes les retours. Détail mois par mois : onglet « 📊 Retours ».</div>';
     });
   }catch(e){
     console.warn('rm estimation', e);
@@ -23555,14 +23574,94 @@ function rmBarre(d, p){
 }
 
 function rmChargerAutres(){ try{ renderIndepSupervisorCommissionTable(); }catch(e){} try{ renderManualPrimesList(); }catch(e){} }
+// ───────── 📊 Statistiques de retours / rétractations : agent par agent, mois par mois ─────────
+var RS = { produit: 'prime', metrique: 'retours', duree: 3, mode: 'cumul', mois: null, donnees: null, charge: false };
+var RS_CACHE = {};
+async function rsMoisData(m){
+  if(RS_CACHE[m]) return RS_CACHE[m];
+  const [pr, rt] = await Promise.all([getBillingProd(m), getBillingReturns(m)]);
+  const v = {}, x = {}, r = {};
+  (pr.rows||[]).forEach(row=>{ if(row.retracted) x[row.agent] = (x[row.agent]||0)+1; else v[row.agent] = (v[row.agent]||0)+1; });
+  (rt.rows||[]).forEach(row=>{ if(!row.dismissed) r[row.agent] = (r[row.agent]||0)+1; });
+  return RS_CACHE[m] = { v, x, r };
+}
+async function rsCharger(){
+  if(RS.charge) return; RS.charge = true;
+  try{
+    const now = nowMA(); let y = now.getFullYear(), mo = now.getMonth() + 1;
+    const liste = [];
+    for(let k = 0; k < 18; k++){ mo -= 1; if(mo <= 0){ mo += 12; y -= 1; } liste.push(y + '-' + String(mo).padStart(2, '0')); }
+    const data = {};
+    if(RS.produit === 'ilek'){
+      const st = window.ilekStatsMois ? await window.ilekStatsMois(liste) : {};
+      liste.forEach(m=>{ data[m] = st[m] || {}; });
+    } else {
+      await Promise.all(liste.map(async m=>{ data[m] = await rsMoisData(m).catch(()=>null); }));
+    }
+    RS.donnees = data; RS.mois = liste;
+  }catch(e){ console.warn('rsCharger', e); RS.donnees = {}; RS.mois = []; }
+  RS.charge = false; rmRetoursRendre(true);
+}
+// Pour un agent et un mois : { base, ret } selon le produit et la mesure choisie
+function rsCellule(agent, m){
+  const d = (RS.donnees || {})[m]; if(!d) return null;
+  if(RS.produit === 'ilek'){ const a = d[agent]; return a ? { base: a.en || 0, ret: a.ret || 0 } : { base: 0, ret: 0 }; }
+  const v = d.v[agent] || 0, x = d.x[agent] || 0, r = d.r[agent] || 0;
+  return RS.metrique === 'retractations' ? { base: v + x, ret: x } : { base: v, ret: r };
+}
+window.rmRetoursRendre = function(sansCharger){
+  const hote = document.getElementById('rmRetoursHote'); if(!hote) return;
+  if(!sansCharger && (!RS.donnees || RS._p !== RS.produit)){ RS._p = RS.produit; RS.donnees = null; }
+  if(!RS.donnees){ hote.innerHTML = '<div class="empty">⏳ Chargement de l\'historique…</div>'; rsCharger(); return; }
+  const mois = (RS.mois || []).filter(m=>{ const d = RS.donnees[m]; if(!d) return false; if(RS.produit === 'ilek') return Object.keys(d).length > 0; return Object.keys(d.v).length || Object.keys(d.x).length || Object.keys(d.r).length; });
+  const choisis = RS.duree === 0 ? mois : mois.slice(0, RS.duree);
+  let agents = new Set(); mois.forEach(m=>{ const d = RS.donnees[m]; if(RS.produit === 'ilek') Object.keys(d).forEach(a=>agents.add(a)); else [d.v, d.x, d.r].forEach(o=>Object.keys(o).forEach(a=>agents.add(a))); });
+  try{ agentsReels().forEach(a=>{ if(RS.produit === 'prime' || (window.__ilekAgents||[]).indexOf(a) >= 0) agents.add(a); }); }catch(e){}
+  agents = Array.from(agents).filter(a=>{ try{ return !isTestAgentName(a); }catch(e){ return true; } }).sort((a,b)=>a.localeCompare(b));
+  const pct = (b, r)=> b > 0 ? Math.round(1000 * r / b) / 10 : null;
+  const fmtP = (x)=> x == null ? '—' : String(x).replace('.', ',') + ' %';
+  const nomMois = (m)=>{ const [y, k] = m.split('-'); return ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'][Number(k)-1] + ' ' + y.slice(2); };
+  const mesure = RS.produit === 'ilek' ? 'retours' : (RS.metrique === 'retractations' ? 'rétractations' : 'retours');
+  const baseLib = RS.produit === 'ilek' ? 'énergies' : 'contrats';
+  const sel = (id, val, opts, fn)=> '<select onchange="' + fn + '(this.value)" style="padding:7px 10px;">' + opts.map(o=>'<option value="' + o[0] + '"' + (String(val) === String(o[0]) ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
+  let h = '<div class="settings-box"><label>📊 Retours' + (RS.produit === 'prime' ? ' et rétractations' : '') + ' — agent par agent, mois par mois</label>' +
+    '<div class="section-sub">Pourcentage = ' + mesure + ' ÷ ' + baseLib + ' du mois. Le mois en cours n\'est pas compté (ses retours ne sont pas encore tous arrivés). ' + (mois.length ? 'Données disponibles sur <b>' + mois.length + ' mois</b> (jusqu\'à 18 mois en arrière).' : '') + '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:12px 18px;align-items:end;margin:10px 0;">' +
+    '<div><label style="margin:0 0 4px;display:block;">Produit</label>' + sel('p', RS.produit, [['prime', '🔵 Prime'], ['ilek', '🟢 Ilek']], 'rsChoix_produit') + '</div>' +
+    (RS.produit === 'prime' ? '<div><label style="margin:0 0 4px;display:block;">Mesure</label>' + sel('m', RS.metrique, [['retours', 'Retours (impayés)'], ['retractations', 'Rétractations']], 'rsChoix_metrique') + '</div>' : '') +
+    '<div><label style="margin:0 0 4px;display:block;">Durée de la moyenne</label>' + sel('d', RS.duree, [[1, '1 mois'], [2, '2 mois'], [3, '3 mois'], [4, '4 mois'], [6, '6 mois'], [12, '12 mois'], [0, 'Tout l\'historique']], 'rsChoix_duree') + '</div>' +
+    '<div><label style="margin:0 0 4px;display:block;">Calcul de la moyenne</label>' + sel('c', RS.mode, [['cumul', 'Cumulée (tous les ' + baseLib + ' mis ensemble)'], ['mensuel', 'Moyenne des pourcentages de chaque mois']], 'rsChoix_mode') + '</div></div>';
+  if(!mois.length){ hote.innerHTML = h + '<div class="empty">Aucune donnée d\'historique pour l\'instant (il faut avoir importé la production et les retours des mois passés).</div></div>'; return; }
+  h += '<div style="overflow-x:auto;"><table style="width:100%;font-size:13px;border-collapse:collapse;"><tr style="text-align:left;color:var(--muted);font-size:12px;"><th>Agent</th><th style="background:rgba(59,130,246,.12);">Moyenne ' + (RS.duree === 0 ? 'totale' : 'sur ' + RS.duree + ' mois') + '</th>' + mois.map(m=>'<th>' + nomMois(m) + '</th>').join('') + '</tr>';
+  const totM = {}; mois.forEach(m=>{ totM[m] = { base: 0, ret: 0 }; });
+  const totSel = { base: 0, ret: 0, pcts: [] };
+  agents.forEach(a=>{
+    let sb = 0, sr = 0; const pcts = [];
+    choisis.forEach(m=>{ const c = rsCellule(a, m); if(c){ sb += c.base; sr += c.ret; if(c.base > 0) pcts.push(100 * c.ret / c.base); } });
+    const moy = RS.mode === 'cumul' ? pct(sb, sr) : (pcts.length ? Math.round(10 * pcts.reduce((x, y)=>x + y, 0) / pcts.length) / 10 : null);
+    totSel.base += sb; totSel.ret += sr;
+    h += '<tr style="border-top:1px solid var(--border);"><td><b>' + escapeHtml(a) + '</b></td><td style="background:rgba(59,130,246,.08);"><b>' + fmtP(moy) + '</b> <span style="color:var(--muted);font-size:11.5px;">(' + sr + '/' + sb + ')</span></td>' +
+      mois.map(m=>{ const c = rsCellule(a, m); if(!c || (!c.base && !c.ret)) return '<td style="color:var(--muted);">—</td>'; totM[m].base += c.base; totM[m].ret += c.ret; return '<td>' + fmtP(pct(c.base, c.ret)) + ' <span style="color:var(--muted);font-size:11.5px;">(' + c.ret + '/' + c.base + ')</span></td>'; }).join('') + '</tr>';
+  });
+  h += '<tr style="border-top:2px solid var(--border);font-weight:800;"><td>Équipe</td><td style="background:rgba(59,130,246,.12);">' + fmtP(pct(totSel.base, totSel.ret)) + ' <span style="color:var(--muted);font-size:11.5px;">(' + totSel.ret + '/' + totSel.base + ')</span></td>' +
+    mois.map(m=>'<td>' + fmtP(pct(totM[m].base, totM[m].ret)) + ' <span style="color:var(--muted);font-size:11.5px;font-weight:600;">(' + totM[m].ret + '/' + totM[m].base + ')</span></td>').join('') + '</tr></table></div>';
+  h += '<div class="rm-hint" style="margin-top:8px;">Cumulée : tous les ' + baseLib + ' de la durée choisie sont mis ensemble (un gros mois pèse plus lourd). Moyenne des pourcentages : chaque mois compte autant, quel que soit son volume.' + (RS.produit === 'ilek' ? ' Pour Ilek, les retours sont ceux que tu as importés.' : '') + '</div></div>';
+  hote.innerHTML = h;
+};
+window.rsChoix_produit = function(v){ RS.produit = v; RS.donnees = null; rmRetoursRendre(); };
+window.rsChoix_metrique = function(v){ RS.metrique = v; rmRetoursRendre(true); };
+window.rsChoix_duree = function(v){ RS.duree = Number(v); rmRetoursRendre(true); };
+window.rsChoix_mode = function(v){ RS.mode = v; rmRetoursRendre(true); };
+
 function rmTab(p){
-  ['prime','ilek','plus'].forEach(k=>{
+  ['prime','ilek','retours','plus'].forEach(k=>{
     const t = document.getElementById('rmTab'+k.charAt(0).toUpperCase()+k.slice(1));
     const pan = document.getElementById('rmPanel'+k.charAt(0).toUpperCase()+k.slice(1));
-    if(t){ t.classList.toggle('on', k===p); t.classList.toggle('prime', k==='prime'); t.classList.toggle('ilek', k==='ilek'); t.classList.toggle('plus', k==='plus'); }
+    if(t){ t.classList.toggle('on', k===p); t.classList.toggle('prime', k==='prime' || k==='retours'); t.classList.toggle('ilek', k==='ilek'); t.classList.toggle('plus', k==='plus'); }
     if(pan) pan.classList.toggle('on', k===p);
   });
   if(p==='ilek'){ try{ if(window.remuIlekRendre) window.remuIlekRendre(); }catch(e){} }
+  if(p==='retours'){ try{ rmRetoursRendre(); }catch(e){ console.warn('stats retours', e); } }
 }
 
 function collectAgentPayFromUI(){
@@ -36581,6 +36680,20 @@ async function renderAssistanceHistory(){
   };
   try{ var _ra = renderArena; renderArena = async function(){ var r = await _ra.apply(this, arguments); try{ await window.renderArenaEnergie(); }catch(e){} return r; }; }catch(e){ console.warn('lien Arena / énergie', e); }
 
+  // Énergies conformes et retours par agent et par mois (statistiques « Retours »)
+  window.ilekStatsMois = async function(listeMois){
+    var R = await ilekReglages(), T = await ilekRetoursLire(), tous = await ilekContratsTous();
+    window.__ilekAgents = R.agents.slice();
+    var out = {};
+    listeMois.forEach(function(m){ out[m] = {}; });
+    tous.forEach(function(v){
+      if(v.statut !== 'conforme') return;
+      var m = String((v.champs || {}).date || '').slice(0, 7); if(!out[m]) return;
+      var a = out[m][v.agent] = out[m][v.agent] || { en: 0, ret: 0 }; a.en += ilekEnergies(v);
+    });
+    T.rows.forEach(function(r){ if(!out[r.mois]) return; var a = out[r.mois][r.agent] = out[r.mois][r.agent] || { en: 0, ret: 0 }; a.ret += Number(r.energies) || 1; });
+    return out;
+  };
   // Retours Ilek d'un agent sur une liste de mois (pour le solde d'un agent parti) : énergies retournées × commission, sans diviseur
   window.ilekRetoursAgent = async function(agent, moisListe){
     var R = await ilekReglages(), T = await ilekRetoursLire(), en = 0;
@@ -36629,6 +36742,16 @@ async function renderAssistanceHistory(){
       for(var i = 0; i < noms.length; i++){ var d = await window.ilekDuMois(noms[i], adIlek.mois); if(d) out.push(d); }
       adIlek.data = out;
       try{ adIlek.vises = await enerObjLire('Mois', adIlek.mois); }catch(e){ adIlek.vises = {}; }
+      try{
+        var y0 = Number(adIlek.mois.slice(0, 4)), m0 = Number(adIlek.mois.slice(5, 7)), l3 = [];
+        for(var k = 1; k <= 3; k++){ var mm = m0 - k, yy = y0; if(mm <= 0){ mm += 12; yy -= 1; } l3.push(yy + '-' + String(mm).padStart(2, '0')); }
+        var st = await window.ilekStatsMois(l3); adIlek.taux = {};
+        noms.forEach(function(n){
+          var e1 = (st[l3[0]][n] || {}).en || 0, r1 = (st[l3[0]][n] || {}).ret || 0, e3 = 0, r3 = 0;
+          l3.forEach(function(m){ var c = st[m][n] || {}; e3 += c.en || 0; r3 += c.ret || 0; });
+          adIlek.taux[n] = { p1: e1 > 0 ? Math.round(100 * r1 / e1) : null, p3: e3 > 0 ? Math.round(100 * r3 / e3) : null };
+        });
+      }catch(e){ adIlek.taux = {}; }
     }catch(e){ adIlek.data = []; adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
     adIlek.charge = false; try{ adRendre(); }catch(e){}
   }
@@ -36704,13 +36827,16 @@ async function renderAssistanceHistory(){
         var pay = {}, pc = {}; try{ pay = getAgentPay(n) || {}; pc = ((getProdConfig().agentPay || {})[n]) || {}; }catch(e){}
         var fixeEff = Math.round(pay.baseSalary || 0), assidEff = Math.round(pay.primeAssiduite || 0);
         var vise = ((adIlek.vises || {})[n]) || 0;
-        var situation = (ob > 0 ? '🎯 Objectif : <b>' + ob + ' énergies</b> — prime ' + fx + ' DH une fois atteint, puis <b>' + apres + ' DH</b> par énergie au-delà' + (avant > 0 ? ' (avant : ' + avant + ' DH)' : ' (rien avant)') : '💵 Sans objectif : <b>' + apres + ' DH par énergie</b>, dès la 1re') +
-          '<br>🏦 ' + (fixeEff > 0 ? 'Salaire fixe : <b>' + fixeEff.toLocaleString('fr-FR') + ' DH / mois</b>' : 'Pas de salaire fixe') + (assidEff > 0 ? ' · assiduité : <b>' + assidEff + ' DH</b>' : '');
+        var etat = d && ob > 0 ? (d.atteint ? ' — <span style="color:var(--green);">✔ objectif atteint</span>' : ' — <span style="color:var(--muted);">objectif non atteint (' + ilekNb(d.nets) + '/' + ob + ')</span>') : '';
+        var situation = (ob > 0 ? '🎯 Objectif : <b>' + ob + ' énergies</b>' + etat + '<br>🏆 Prime d\'objectif : <b>' + fx + ' DH</b>' + (fx > 0 ? ' (versée une fois, si atteint)' : '') + '<br>💵 Par énergie : <b>' + avant + ' DH</b> avant l\'objectif · <b>' + apres + ' DH</b> au-delà' : '💵 Sans objectif : <b>' + apres + ' DH par énergie</b>, dès la 1re') +
+          '<br>🏦 ' + (fixeEff > 0 ? 'Salaire fixe : <b>' + fixeEff.toLocaleString('fr-FR') + ' DH / mois</b>' : 'Pas de salaire fixe') + (assidEff > 0 ? ' · assiduité : <b>' + assidEff + ' DH</b>' : '') + ' <span style="color:var(--muted);">(commun assistance + énergie, payé une seule fois)</span>' +
+          ((Number(pay.perContract) > 0) ? '<br>🔵 Bonus assistance (Prime) : <b>' + Math.round(pay.perContract) + ' DH par contrat</b>' + (pay.noObjectif ? ', dès le 1er' : ' au-delà de l\'objectif Prime') : '');
         var atteint = d && ob > 0 ? (d.atteint ? '<span style="color:var(--green);">✔ objectif atteint</span>' : '<span style="color:var(--muted);">' + ilekNb(d.nets) + ' / ' + ob + '</span>') : '';
         h += '<div class="rm-card" style="border-top-color:#16a34a;">' +
           '<div class="rm-nom"><span>' + esc(n) + '</span><span class="rm-chip">' + (ob > 0 ? '🎯 Avec objectif' : '💵 ' + apres + ' DH / énergie') + '</span></div>' +
           '<div class="rm-amt"><div class="rm-big">' + (d ? d.montant.toLocaleString('fr-FR') : (adIlek.charge ? '…' : '0')) + ' DH <small>net Énergie ce mois</small></div>' +
-          '<div class="rm-mut" style="margin-top:4px;">' + (d ? d.contrats + ' contrat' + (d.contrats > 1 ? 's' : '') + ' · ' + d.energies + ' énergie' + (d.energies > 1 ? 's' : '') + ' · ' + d.retoursEnergies + ' retour' + (d.retoursEnergies > 1 ? 's' : '') + ' (−' + ilekNb(d.retires) + ') · <b>' + ilekNb(d.nets) + ' payées</b> ' + atteint : '') + '</div></div>' +
+          '<div class="rm-mut" style="margin-top:4px;">' + (d ? d.contrats + ' contrat' + (d.contrats > 1 ? 's' : '') + ' · ' + d.energies + ' énergie' + (d.energies > 1 ? 's' : '') + ' · ' + d.retoursEnergies + ' retour' + (d.retoursEnergies > 1 ? 's' : '') + ' (−' + ilekNb(d.retires) + ') · <b>' + ilekNb(d.nets) + ' payées</b> ' + atteint : '') + '</div>' +
+          '<div class="rm-mut" style="margin-top:4px;">📉 Moyenne des retours : <b>' + ((adIlek.taux && adIlek.taux[n] && adIlek.taux[n].p1 != null) ? adIlek.taux[n].p1 + ' %' : '—') + '</b> le mois dernier · <b>' + ((adIlek.taux && adIlek.taux[n] && adIlek.taux[n].p3 != null) ? adIlek.taux[n].p3 + ' %' : '—') + '</b> sur 3 mois <span style="font-size:11.5px;">(détail : onglet « 📊 Retours »)</span></div></div>' +
           '<div style="margin-top:10px;font-size:13px;line-height:1.55;background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.35);border-radius:10px;padding:8px 10px;"><b>Actuellement</b><br>' + situation + '</div>' +
           '<details><summary>⚙️ Montants de ' + esc(n) + '</summary>' +
           '<div class="rm-bloc"><h4>💵 Commission</h4>' +
