@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r284';
+const APP_VERSION = '2026-10-19-r285';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -4075,7 +4075,7 @@ let configPriveeChargee = false;
 const CLE_CONFIG_PUBLIQUE = 'configPublic';
 // Les champs retirés de la copie publique. Tout le reste (agents, horaires, objectifs, barèmes de
 // paie affichés dans « Mon argent ») y figure : l'appli des agents en a besoin pour fonctionner.
-const CONFIG_CHAMPS_PRIVES = ['adminPassword', 'charges', 'customCharges', 'bossBonusPct', 'bossCommissionPerContract', 'bossReturnRatePct'];
+const CONFIG_CHAMPS_PRIVES = ['adminPassword', 'charges', 'customCharges', 'bossBonusPct', 'bossCommissionPerContract', 'bossReturnRatePct', 'ilekCaPatron'];
 const PROD_CONFIG_CHAMPS_PRIVES = ['webhookSecret', 'webhookUrl'];
 // Résolue tout de suite si Firebase n'est pas configuré ; sinon résolue seulement une fois la connexion
 // anonyme établie (ou tentée) — le reste de l'appli (loadConfig, etc.) attend cette promesse avant de
@@ -36681,8 +36681,29 @@ async function renderAssistanceHistory(){
     var p = (v.produits && v.produits.ilek) || {};
     var dv = Number(p.diviseur); if(dv !== 2 && dv !== 3) dv = 1;
     var cm = Number(p.commission); if(!(cm >= 0) || p.commission === '' || p.commission == null) cm = 200;
-    ilekMem.reg = { agents: Array.isArray(p.agents) ? p.agents : [], commission: cm, diviseur: dv, objectifs: (p.objectifs && typeof p.objectifs === 'object') ? p.objectifs : {}, fixes: (p.fixes && typeof p.fixes === 'object') ? p.fixes : {}, avants: (p.avants && typeof p.avants === 'object') ? p.avants : {}, commissions: (p.commissions && typeof p.commissions === 'object') ? p.commissions : {}, caPatron: (Number(p.caPatron) > 0 ? Number(p.caPatron) : 0), chute: (Number(p.chute) > 0 ? Math.min(100, Number(p.chute)) : 0) };
-    ilekMem.regT = Date.now(); return ilekMem.reg;
+    ilekMem.reg = { agents: Array.isArray(p.agents) ? p.agents : [], commission: cm, diviseur: dv, objectifs: (p.objectifs && typeof p.objectifs === 'object') ? p.objectifs : {}, fixes: (p.fixes && typeof p.fixes === 'object') ? p.fixes : {}, avants: (p.avants && typeof p.avants === 'object') ? p.avants : {}, commissions: (p.commissions && typeof p.commissions === 'object') ? p.commissions : {}, caPatron: (configPriveeChargee && Number(config.ilekCaPatron) > 0 ? Number(config.ilekCaPatron) : 0), chute: (Number(p.chute) > 0 ? Math.min(100, Number(p.chute)) : 0) };
+    ilekMem.regT = Date.now();
+    // 🔐 r285 — « Ce que tu touches par énergie » est une donnée PERSONNELLE du patron : elle ne doit plus vivre dans ce
+    // document que tous les postes lisent. Elle est copiée dans les réglages réservés à l'admin, vérifiée, puis retirée d'ici.
+    if(configPriveeChargee && Number(p.caPatron) > 0 && !ilekMem.migration){
+      ilekMem.migration = true;
+      (async function(){
+        try{
+          if(!(Number(config.ilekCaPatron) > 0)){ config.ilekCaPatron = Number(p.caPatron); await saveConfigSilent(); }
+          var re = await storageGet('config', { fresh: true }), ok = false;
+          try{ ok = !!(re && re.value && Number(JSON.parse(re.value).ilekCaPatron) > 0); }catch(e2){}
+          if(!ok) return;                                        // pas confirmé : on ne retire rien, on réessaiera
+          var sn2 = await db.collection('vortexnova').doc(REGL_KEY).get(), cur2 = sn2.exists ? (JSON.parse(sn2.data().value) || {}) : {};
+          if(cur2.produits && cur2.produits.ilek && cur2.produits.ilek.caPatron != null){
+            delete cur2.produits.ilek.caPatron;
+            await storageSet(REGL_KEY, JSON.stringify(cur2));
+            try{ logAudit('Admin', 'Sécurité : montant Ilek du patron déplacé vers les réglages privés', ''); }catch(e3){}
+          }
+          ilekMem.regT = 0;
+        }catch(e){ console.warn('migration caPatron', e); ilekMem.migration = false; }
+      })();
+    }
+    return ilekMem.reg;
   }
   async function ilekRetoursLire(){
     if(ilekMem.ret && Date.now() - ilekMem.retT < 20000) return ilekMem.ret;
@@ -36958,7 +36979,13 @@ async function renderAssistanceHistory(){
     p.ilek = p.ilek || {};
     if(champ === 'commission'){ var n = parseFloat(String(valeur).replace(',', '.')); if(!(n >= 0)){ toast('⚠️ Montant invalide', 'warn'); return; } p.ilek.commission = n; }
     else if(champ === 'chute'){ var ch = parseFloat(String(valeur).replace(',', '.')); if(!(ch > 0)) ch = 0; p.ilek.chute = Math.min(100, ch); }
-    else if(champ === 'caPatron'){ var cp = parseFloat(String(valeur).replace(',', '.')); if(!(cp >= 0)) cp = 0; p.ilek.caPatron = cp; }
+    else if(champ === 'caPatron'){
+      var cp = parseFloat(String(valeur).replace(',', '.')); if(!(cp >= 0)) cp = 0;
+      config.ilekCaPatron = cp; await saveConfigSilent();           // réglage PRIVÉ : jamais dans le document lu par les agents
+      ilekInvalider(); toast('✅ Réglage enregistré (privé)', 'ok');
+      try{ renderProdAdmin(); renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
+      adIlekRafraichir(); return;
+    }
     else if(champ === 'diviseur'){ p.ilek.diviseur = (Number(valeur) === 2 || Number(valeur) === 3) ? Number(valeur) : 1; }
     else if(champ === 'fixe'){ p.ilek.fixes = p.ilek.fixes || {}; var f = parseFloat(String(valeur).replace(',', '.')); if(f > 0) p.ilek.fixes[agent] = f; else delete p.ilek.fixes[agent]; }
     else if(champ === 'avant'){ p.ilek.avants = p.ilek.avants || {}; var av = parseFloat(String(valeur).replace(',', '.')); if(av > 0) p.ilek.avants[agent] = av; else delete p.ilek.avants[agent]; }
