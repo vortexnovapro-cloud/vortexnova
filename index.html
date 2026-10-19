@@ -3306,7 +3306,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r280';
+const APP_VERSION = '2026-10-19-r281';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -36367,7 +36367,7 @@ async function renderAssistanceHistory(){
           (auto ? ' <button type="button" class="ct-btn nc" style="padding:3px 9px;font-size:12px;" onclick="boRenvoyer(\'' + esc(x._key) + '\')">🔁 Renvoyer</button>' : '') + '</li>'; }).join('') + '</ul></div>';
       return r;
     }
-    h += ctlBloc('prime', '🔵 Prime', false) + ctlBloc('ilek', '🟢 Ilek', true) +
+    h += ctlBloc('prime', '🔵 Prime', false) + adEcartCarte() + ctlBloc('ilek', '🟢 Ilek', true) +
       (tests ? '<div style="font-size:12px;color:var(--muted);">🧪 ' + tests + ' contrat(s) de test non comptés</div>' : '');
     h += '</div>';
     // nettoyage des données de test (aperçu d'abord, suppression seulement après confirmation)
@@ -37011,6 +37011,84 @@ async function renderAssistanceHistory(){
     if(m.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(m.msg) + '</div>';
     return h + '</div>';
   }
+
+  // ───────────────── 🔎 diagnostic « écart » : contrats validés aujourd'hui ↔ facturation (Prime) ─────────────────
+  var adEcart = { ts:0, sig:'', calc:false, occupe:false, lignes:[], extras:[], nbDecides:0, nbFact:0, jour:'', msg:'' };
+  async function adEcartCalcul(sig){
+    var e = adEcart; if(e.calc) return; e.calc = true; e.ts = Date.now(); e.sig = sig;
+    try{
+      var auj = adJourEnvoi(new Date().toISOString());
+      var decides = adTous.filter(function(x){ return x.creeLe && adJourEnvoi(x.creeLe) === auj && !adEstTest(x) && produitDe(x) === 'prime' && (x.statut === 'conforme' || x.statut === 'non_conforme'); });
+      var rows = [], mois = moisVoisins(auj.slice(0, 7));
+      for(var i = 0; i < mois.length; i++){ try{ var d = await getBillingProd(mois[i]); rows = rows.concat((d && d.rows) || []); }catch(err){ console.warn('écart : classeur illisible', mois[i], err); } }
+      var idx = Object.create(null);
+      rows.forEach(function(r){ if(!r) return; billingRowKeys(r).forEach(function(k){ (idx[k] = idx[k] || []).push(r); }); });
+      var fact = rows.filter(function(r){ return r && r.date === auj; });
+      var nums = Object.create(null), lignes = [];
+      decides.forEach(function(x){
+        var num = String((x.champs || {}).numero || '').trim().toLowerCase();
+        if(num) nums[num] = true;
+        var trouves = num ? (idx[num] || []) : [];
+        if(!trouves.length){ lignes.push({ type:'absent', x:x }); return; }
+        if(trouves.some(function(r){ return r.date === auj; })) return;
+        lignes.push({ type:'date', x:x, row:trouves[0] });
+      });
+      e.extras = fact.filter(function(r){ return !billingRowKeys(r).some(function(k){ return nums[k]; }); });
+      e.lignes = lignes; e.nbDecides = decides.length; e.nbFact = fact.length; e.jour = auj;
+    }catch(err){ console.warn('écart :', err); }
+    e.calc = false;
+    try{ adRendre(); }catch(err){}
+  }
+  function adEcartCarte(){
+    var e = adEcart;
+    var auj = adJourEnvoi(new Date().toISOString());
+    var sig = adTous.length + ':' + adTous.filter(function(x){ return x.statut === 'conforme' || x.statut === 'non_conforme'; }).length;
+    if(!e.calc && (e.sig !== sig || Date.now() - e.ts > 120000)) adEcartCalcul(sig);
+    var ok = !e.lignes.length && !e.extras.length;
+    var h = '<div class="ct-item" style="margin-top:10px;' + (ok ? 'border-color:var(--green);' : '') + '"><div class="ct-item-head"><b>🔎 Écart avec la facturation — <span class="prod-pill prime">PRIME</span> ' +
+      (e.calc && !e.ts ? '' : (ok ? '<span style="color:var(--green);">✔ tout correspond</span>' : '<span style="color:var(--amber);">⚠ à vérifier</span>')) + '</b>' +
+      '<button type="button" class="ct-btn ok" ' + (e.calc ? 'disabled ' : '') + 'onclick="adEcartRefaire()">🔄 Revérifier</button></div>';
+    h += '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Contrats validés aujourd\'hui : <b>' + e.nbDecides + '</b> · Contrats dans la facturation à la date d\'aujourd\'hui : <b>' + e.nbFact + '</b>. Ce bloc ne modifie rien tout seul : chaque correction se fait avec son bouton.</div>';
+    if(e.calc) h += '<div style="font-size:12.5px;margin-top:6px;">Vérification en cours…</div>';
+    if(e.lignes.some(function(l){ return l.type === 'absent'; })) h += '<div style="margin-top:8px;"><button type="button" class="ct-btn ok" onclick="manualSyncBackoffice()">📥 Relever maintenant les contrats validés</button> <span style="font-size:12px;color:var(--muted);">pour ceux qui ne sont « pas encore arrivés »</span></div>';
+    if(e.lignes.length) h += '<div style="margin-top:8px;">' + e.lignes.slice(0, 30).map(function(l){
+      var c = l.x.champs || {}, k = esc(l.x._key);
+      return '<div style="padding:8px 0;border-top:1px solid var(--border);font-size:13px;"><b>' + pillProduit(l.x) + '#' + esc(c.numero) + ' · ' + esc(nomChamps(c)) + '</b> — ' + esc(l.x.agent) +
+        (l.type === 'absent'
+          ? '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Validé aujourd\'hui, mais <b style="color:var(--amber);">pas encore arrivé dans la facturation</b>.</div>'
+          : '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Dans la facturation, mais daté du <b style="color:var(--amber);">' + esc(adFrJour(l.row.date)) + '</b> au lieu d\'aujourd\'hui.</div>' +
+            '<div style="margin-top:6px;"><button type="button" class="ct-btn ok" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adEcartRamener(\'' + k + '\')">Ramener au ' + esc(adFrJour(adEcart.jour || auj)) + '</button></div>') + '</div>';
+    }).join('') + '</div>';
+    if(e.extras.length) h += '<div style="margin-top:10px;font-size:12.5px;"><b>Dans la facturation à la date d\'aujourd\'hui, mais pas validés aujourd\'hui :</b><ul style="margin:4px 0 0 18px;">' +
+      e.extras.slice(0, 20).map(function(r){ return '<li>#' + esc(r.numContrat || r.reference || '?') + ' · ' + esc(r.nom || r.client || '') + ' (' + esc(r.agent || '?') + ')</li>'; }).join('') + '</ul>' +
+      '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Ce sont des contrats validés un autre jour (ou importés à la main) qui portent la date d\'aujourd\'hui. Rien à faire si c\'est voulu.</div></div>';
+    if(e.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(e.msg) + '</div>';
+    return h + '</div>';
+  }
+  window.adEcartRefaire = function(){ adEcart.ts = 0; adEcart.sig = ''; adEcart.msg = ''; adRendre(); };
+  window.adEcartRamener = async function(key){
+    var e = adEcart; if(e.occupe) return;
+    var l = e.lignes.filter(function(z){ return z.type === 'date' && z.x._key === key; })[0]; if(!l) return;
+    var c = l.x.champs || {}, ancienne = l.row.date, nouvelle = e.jour;
+    function maj(t){ e.msg = t; try{ adRendre(); }catch(err){} }
+    try{
+      e.occupe = true;
+      if(!(await uiConfirm({ titre:'Ramener ce contrat au ' + adFrJour(nouvelle) + ' ?', icone:'📅', ton:'warn',
+          texte:'Dans la facturation il est daté du ' + adFrJour(ancienne) + ' ; il a été validé le ' + adFrJour(nouvelle) + '. Il sera compté sur le ' + adFrJour(nouvelle) + '. Rien n\'est supprimé.',
+          details:[['Contrat', '#' + c.numero + ' ' + (c.nom || '')], ['Agent', l.x.agent]], oui:'Ramener au ' + adFrJour(nouvelle), non:'Annuler' }))) return;
+      maj('Un instant…');
+      var r = await corrigerDateContratVers(l.row.numContrat, ancienne, nouvelle);
+      if(!r.ok){ maj('⚠️ Contrat #' + c.numero + ' introuvable dans la facturation au ' + adFrJour(ancienne) + '. Rien n\'a été changé.'); return; }
+      await boModifier(key, function(v){
+        v.champs = v.champs || {}; v.champs.date = nouvelle;
+        if(typeof v.message === 'string') v.message = v.message.replace(/^Fait le [^\n]*/, 'Fait le ' + adFrJour(nouvelle));
+        v.dateCorrigee = { de: ancienne, vers: nouvelle, le: new Date().toISOString() };
+      });
+      maj('✅ Contrat #' + c.numero + ' ramené au ' + adFrJour(nouvelle) + '.\nPense à corriger aussi la date dans le Google Sheet (première colonne), à la main.');
+    }catch(err){ maj('❌ ' + (err && err.message ? err.message : err)); }
+    finally{ e.occupe = false; e.ts = 0; e.sig = ''; try{ adRendre(); }catch(err){} }
+  };
+
   window.adDateAction = async function(key, mode){
     var m = adDates; if(m.occupe) return;
     var x = adTous.filter(function(y){ return y._key === key; })[0]; if(!x) return;
