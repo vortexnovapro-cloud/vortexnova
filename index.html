@@ -1327,6 +1327,7 @@ async function tryDeviceGateAdmin(){
             <input type="number" id="arenaObjectifInput" min="0" max="99" placeholder="0" style="width:100px; font-size:26px; padding:14px; border:2px solid rgba(255,215,0,0.4);">
             <button class="arena-btn" onclick="saveArenaObjectif()" style="background:var(--gold); color:#1a1408; font-size:16px; padding:16px 30px;">✅ Valider mon objectif</button>
           </div>
+          <div id="arenaObjectifConseil" style="display:none;"></div>
         </div>
 
         <div class="arena-actions" id="arenaRetractBox" style="display:none; margin-top:10px; flex-wrap:wrap; justify-content:center; align-items:center;">
@@ -3309,7 +3310,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r290';
+const APP_VERSION = '2026-10-19-r291';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -20801,25 +20802,59 @@ function joursOuvresRestantsAvecAujourdhui(dateStr){
   }catch(e){}
   return n;
 }
-function conseilObjectifs(o){
+// Étape en cours : minimum d'abord, puis objectif perso ; null = tout est atteint (ou rien de fixé).
+function conseilInfo(o){
   const mini = Number(o.mini) || 0, vise = Number(o.vise) || 0, mois = Number(o.mois) || 0, jour = Number(o.jour) || 0, jours = Number(o.jours) || 0;
-  const sing = o.sing || 'contrat', plur = o.plur || (sing + 's');
-  const nb = (n) => n + ' ' + (n > 1 ? plur : sing);
   const avant = Math.max(0, mois - jour);                       // fait avant aujourd'hui
-  const aViser = (cible) => { const reste = cible - avant; if(reste <= 0) return 0; return jours > 0 ? Math.ceil(reste / jours) : reste; };
-  const fin = ' (simple suggestion, aucune obligation)';
-  const suite = (n) => jour >= n ? ' — c\'est déjà fait aujourd\'hui ✅' : ' (encore ' + (n - jour) + ' à faire)';
-  if(mini > 0 && mois < mini){
-    const n = aViser(mini);
-    return '💡 Aujourd\'hui, pour atteindre ton objectif minimum (' + mini + '), je te conseille de faire ' + nb(n) + suite(n) + '.' + fin;
-  }
-  if(vise > 0 && mois < vise){
-    const n = aViser(vise);
-    return '💡 ' + (mini > 0 ? '✅ Objectif minimum atteint ! ' : '') + 'Aujourd\'hui, pour atteindre l\'objectif que tu t\'es fixé (' + vise + '), je te conseille de faire ' + nb(n) + suite(n) + '.' + fin;
-  }
-  if(mini > 0 || vise > 0) return '🎉 ' + (vise > 0 ? 'Tes objectifs du mois sont atteints' : 'Ton objectif minimum est atteint') + ' — tout ce que tu fais en plus est du bonus.';
-  return '';
+  const aViser = (cible) => { const reste = cible - avant; if(reste <= 0) return 1; return jours > 0 ? Math.ceil(reste / jours) : reste; };
+  const sing = o.sing || 'contrat', plur = o.plur || (sing + 's');
+  if(mini > 0 && mois < mini) return { n: aViser(mini), cible: mini, nom: 'objectif minimum', stade: 'mini', jour, sing, plur, mini, vise };
+  if(vise > 0 && mois < vise) return { n: aViser(vise), cible: vise, nom: 'objectif perso', stade: 'vise', jour, sing, plur, mini, vise };
+  return null;
 }
+// Bloc bien visible : le chiffre conseillé pour aujourd'hui, en grand.
+function conseilHtml(o){
+  const i = conseilInfo(o);
+  const cadre = 'margin:12px auto 0; max-width:420px; padding:12px 16px; border-radius:12px; background:rgba(255,215,0,0.08); border:1px solid rgba(255,215,0,0.4); text-align:center;';
+  if(!i){
+    if(!(Number(o.mini) > 0 || Number(o.vise) > 0)) return '';
+    return '<div style="' + cadre + ' font-size:14px; font-weight:700;">🎉 ' + (Number(o.vise) > 0 ? 'Tes objectifs du mois sont atteints' : 'Ton objectif minimum est atteint') + ' — tout ce que tu fais en plus est du bonus.</div>';
+  }
+  const fait = i.jour >= i.n ? ' <span style="color:var(--green);font-weight:800;">· déjà fait ✅</span>' : (i.jour > 0 ? ' <span style="color:var(--muted);">· encore ' + (i.n - i.jour) + '</span>' : '');
+  return '<div style="' + cadre + '">' +
+    '<div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">💡 Conseil du jour — pour ton ' + i.nom + ' (' + i.cible + ')</div>' +
+    '<div style="font-size:34px;font-weight:900;line-height:1.15;color:var(--gold);">' + i.n + ' <span style="font-size:15px;font-weight:700;color:var(--text);">' + (i.n > 1 ? i.plur : i.sing) + ' aujourd\'hui</span>' + fait + '</div>' +
+    '<div style="font-size:11.5px;color:var(--muted);margin-top:2px;">Simple suggestion, aucune obligation.</div></div>';
+}
+// Message sous la case « mon objectif du jour » : réagit à ce que l'agent tape.
+window.__conseilSaisie = {};
+window.majConseilSaisie = function(kind){
+  const c = window.__conseilSaisie[kind]; if(!c) return;
+  const out = document.getElementById(c.out), inp = document.getElementById(c.inp); if(!out) return;
+  const o = c.o, i = conseilInfo(o);
+  const v = parseInt(inp ? inp.value : '', 10);
+  const st = 'margin-top:8px; padding:9px 12px; border-radius:9px; font-size:13.5px; font-weight:600; line-height:1.45; background:rgba(255,215,0,0.08); border:1px solid rgba(255,215,0,0.35);';
+  const unite = (n) => n + ' ' + (n > 1 ? (o.plur || ((o.sing || 'contrat') + 's')) : (o.sing || 'contrat'));
+  let h = '';
+  if(!i){
+    if(Number(o.mini) > 0 || Number(o.vise) > 0) h = '🎉 ' + (Number(o.vise) > 0 ? 'Tes objectifs du mois sont atteints' : 'Ton objectif minimum est atteint') + ' — tout ce que tu fais en plus est du bonus.';
+  } else {
+    const cible = 'ton ' + i.nom + ' (' + i.cible + ')';
+    if(isNaN(v)) h = '💡 Conseil : <b>' + unite(i.n) + '</b> aujourd\'hui pour ' + cible + '.';
+    else if(v < i.n) h = '💡 Tu as mis <b>' + v + '</b>. Pour atteindre ' + cible + ', <b>' + i.n + '</b> serait mieux.';
+    else if(v === i.n) h = '✅ Parfait : <b>' + i.n + '</b>, c\'est ce qu\'il faut pour ' + cible + '.';
+    else h = '👏 Bien joué, <b>' + v + '</b> est ambitieux. Pour ' + cible + ', <b>' + i.n + '</b> suffirait.';
+    h += ' <span style="font-weight:500;color:var(--muted);">(simple suggestion)</span>';
+  }
+  out.style.display = h ? 'block' : 'none';
+  out.innerHTML = h ? '<div style="' + st + '">' + h + '</div>' : '';
+};
+window.brancherConseilSaisie = function(kind, o, inpId, outId){
+  window.__conseilSaisie[kind] = { o: o, inp: inpId, out: outId };
+  const inp = document.getElementById(inpId);
+  if(inp && !inp.__conseilBranche){ inp.__conseilBranche = true; inp.addEventListener('input', function(){ window.majConseilSaisie(kind); }); }
+  window.majConseilSaisie(kind);
+};
 
 function setArenaScope(scope){
   arenaScope = scope;
@@ -21000,8 +21035,9 @@ async function renderArena(){
     try{
       const stC = await monthlyObjectifStatus(myRow.agent, now.getFullYear(), now.getMonth()+1);
       const viseC = isMonthScope ? (Number(myRow.desiredObjective) || 0) : (Number(await getMonthlyDesiredObjective(myRow.agent, now.getFullYear(), now.getMonth()+1)) || 0);
-      const txtC = conseilObjectifs({ mini: isFreeAgent ? 0 : (stC.objectif || 0), vise: viseC, mois: stC.realized || 0, jour: (getAgentProd(board, myRow.agent).realized || 0), jours: joursOuvresRestantsAvecAujourdhui(dateStr), sing: 'contrat' });
-      if(txtC) conseilObjHtml = '<div style="margin:10px auto 0; max-width:560px; padding:10px 14px; border-radius:11px; background:rgba(255,215,0,0.07); border:1px solid rgba(255,215,0,0.35); font-size:13.5px; font-weight:600; line-height:1.45; text-align:center;">' + escapeHtml(txtC) + '</div>';
+      const oC = { mini: isFreeAgent ? 0 : (stC.objectif || 0), vise: viseC, mois: stC.realized || 0, jour: (getAgentProd(board, myRow.agent).realized || 0), jours: joursOuvresRestantsAvecAujourdhui(dateStr), sing: 'contrat' };
+      conseilObjHtml = conseilHtml(oC);
+      window.brancherConseilSaisie('prime', oC, 'arenaObjectifInput', 'arenaObjectifConseil');
     }catch(e){ console.warn('conseil objectifs', e); }
     const displayObj = hasObj ? myRow.objective : (isFreeAgent ? '∞' : '?');
     const scopeTitle = isMonthScope ? '🎯 OBJECTIF DU MOIS' : '🎯 OBJECTIF DU JOUR';
@@ -36910,8 +36946,8 @@ async function renderAssistanceHistory(){
       if(dj > 0) conseilJ = n >= dj ? '🎉 Objectif du jour atteint : ' + n + ' énergie' + (n > 1 ? 's' : '') + '.' : 'Plus que ' + (dj - n) + ' énergie' + ((dj - n) > 1 ? 's' : '') + ' pour ton objectif du jour.';
       else if(n > 0) conseilJ = enerPhrase(n, 'agent').replace(/^0 en assistance, /, '').replace(/^mais /, '');
       // même règle que Prime : minimum d'abord, puis l'objectif perso ; sans minimum, directement l'objectif perso
-      var sugg = conseilObjectifs({ mini: mini, vise: vise, mois: m.nets, jour: n, jours: joursOuvresRestantsAvecAujourdhui(jour), sing: 'énergie' });
-      conseilM = sugg; conseilJ = (conseilJ ? conseilJ + ' ' : '') + sugg;
+      var oE = { mini: mini, vise: vise, mois: m.nets, jour: n, jours: joursOuvresRestantsAvecAujourdhui(jour), sing: 'énergie' };
+      var conseilBloc = conseilHtml(oE);
       var barre = function(p){ return '<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:8px 0 4px;"><div style="width:' + p + '%;height:100%;background:' + vert + ';"></div></div>'; };
       // Comme Prime : la vue « jour » ne montre que l'énergie du jour, la vue « mois » que celle du mois.
       var moisVue = (typeof arenaScope !== 'undefined' && arenaScope === 'month');
@@ -36919,7 +36955,7 @@ async function renderAssistanceHistory(){
       var blocJour =
         '<div style="margin-top:14px;"><div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">Énergies aujourd\'hui</div>' +
         '<div style="font-size:30px;font-weight:900;color:' + vert + ';">' + n + (dj > 0 ? '<span style="font-size:15px;color:var(--muted);font-weight:600;"> / ' + dj + '</span>' : '') + '</div>' + (dj > 0 ? barre(pj) : '') +
-        '<div class="arena-objectif-form" style="margin-top:8px;"><input type="number" id="arenaEnerJourInput" min="0" max="99" placeholder="Ex: 4" value="' + (dj || '') + '" style="width:100px;font-size:20px;padding:10px;border:2px solid rgba(52,183,116,.45);"> <button class="arena-btn" onclick="energieSaveObjJour()" style="background:' + vert + ';color:#04210f;">✅ ' + (dj > 0 ? 'Modifier' : 'Valider') + ' mon objectif énergie du jour</button></div></div>';
+        '<div class="arena-objectif-form" style="margin-top:8px;"><input type="number" id="arenaEnerJourInput" min="0" max="99" placeholder="Ex: 4" value="' + (dj || '') + '" style="width:100px;font-size:20px;padding:10px;border:2px solid rgba(52,183,116,.45);"> <button class="arena-btn" onclick="energieSaveObjJour()" style="background:' + vert + ';color:#04210f;">✅ ' + (dj > 0 ? 'Modifier' : 'Valider') + ' mon objectif énergie du jour</button></div><div id="arenaEnerConseil" style="display:none;"></div></div>';
       var blocMois =
         '<div style="margin-top:14px;"><div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">Énergies ce mois (nettes des retours)</div>' +
         '<div style="font-size:26px;font-weight:900;">' + ilekNb(m.nets) + (mini > 0 ? '<span style="font-size:15px;color:var(--muted);font-weight:600;"> / ' + mini + ' (minimum)</span>' : '') + (vise > 0 ? '<span style="font-size:13px;color:var(--muted);font-weight:600;"> · visé ' + vise + '</span>' : '') + '</div>' + (cible > 0 ? barre(pm) : '') +
@@ -36929,8 +36965,9 @@ async function renderAssistanceHistory(){
       box.style.display = 'block';
       box.innerHTML = '<div class="settings-box" style="border-color:rgba(52,183,116,.5);background:linear-gradient(135deg, rgba(52,183,116,.07), var(--panel));">' +
         '<div style="display:flex;align-items:center;gap:10px;"><div style="font-size:30px;line-height:1;">⚡</div><div><div style="font-size:16px;font-weight:900;">' + titre + '</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">Séparé de ton assistance : ses propres objectifs et ses propres chiffres.</div></div></div>' +
-        (moisVue ? blocMois : blocJour) +
+        (moisVue ? blocMois : blocJour) + conseilBloc +
         (conseil ? '<div style="margin-top:12px;font-size:13.5px;font-weight:600;line-height:1.45;">' + esc(conseil) + '</div>' : '') + '</div>';
+      if(!moisVue) window.brancherConseilSaisie('energie', oE, 'arenaEnerJourInput', 'arenaEnerConseil');
       // Classement énergie : même présentation que celui de Prime (mini / visé / fait), séparé, jour ou mois selon la vue.
       try{
         var rk = document.getElementById('arenaEnerRank');
