@@ -3425,7 +3425,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-20-r296';
+const APP_VERSION = '2026-10-20-r297';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -37092,7 +37092,25 @@ async function renderAssistanceHistory(){
     var x = (adAg.trouves || [])[i]; if(!x || adAg.occupe) return;
     var sel = document.getElementById('adAgNouveau' + i), nouveau = sel ? sel.value : '';
     var c = x.champs || {};
-    if(!nouveau || nouveau === x.agent){ uiAlert('Choisis un agent différent de l\'agent actuel.'); return; }
+    if(!nouveau){ uiAlert('Choisis un agent.'); return; }
+    if(nouveau === x.agent){
+      // Même agent : rien à changer sur le contrat, mais on aligne les retours Ilek déjà importés (cas d'un contrat corrigé avant cette règle).
+      try{
+        adAg.occupe = true; adAg.msg = 'Un instant…'; adRendre();
+        var nums0 = {}; [c.numero, c.numeroGaz].forEach(function(z){ z = String(z || '').toUpperCase(); if(z) nums0[z] = true; });
+        ilekMem.ret = null; ilekMem.retT = 0;
+        var T0 = await ilekRetoursLire(), l0 = T0.rows.slice(), n0 = 0;
+        l0.forEach(function(rr){ if(nums0[String(rr.numero || '').toUpperCase()] && rr.agent !== nouveau){ rr.agent = nouveau; n0++; } });
+        if(n0){
+          var ok0 = await storageSet('ilekRetours', JSON.stringify({ rows: l0 }));
+          if(!ok0) throw new Error('Enregistrement impossible.');
+          ilekMem.ret = null; ilekMem.retT = 0;
+          try{ logAudit('Admin', 'Retours Ilek alignés sur le contrat ' + (c.numero || '?'), nouveau + ' (' + n0 + ' retour(s))'); }catch(e){}
+        }
+        adAg.msg = n0 ? ('↩️ ' + n0 + ' retour(s) Ilek déjà importé(s) sur le contrat n° ' + (c.numero || '?') + ' suivent maintenant ' + nouveau + '.') : ('Le contrat est déjà chez ' + nouveau + ' et aucun retour Ilek importé n\'est à déplacer.');
+      }catch(e){ adAg.msg = '⚠️ Rien n\'a été changé : ' + (e && e.message ? e.message : e); }
+      adAg.occupe = false; adRendre(); return;
+    }
     var nom = [c.nom, c.prenom].filter(Boolean).join(' ');
     if(!await uiAsk('Changer l\'agent du contrat n° ' + (c.numero || '?') + ' (' + nom + ') ?\n\n' + (x.agent || '?') + '  →  ' + nouveau + '\n\nLe contrat sera payé à ' + nouveau + ', plus à ' + (x.agent || '?') + '. La case « vendeur » du Google Sheet sera corrigée.')) return;
     var cleNouvelle = CT_PREFIX + slugDe(nouveau) + ':' + String(x._key).slice(CT_PREFIX.length).split(':').slice(1).join(':');
@@ -37105,8 +37123,21 @@ async function renderAssistanceHistory(){
       if(!r.ok) throw new Error(j.erreur || ('Erreur ' + r.status));
       ilekMem.tous = null; ilekMem.par = {};
       try{ clearRenderCaches(); }catch(e){}
+      // Retours Ilek DÉJÀ importés sur ce contrat : ils portent le nom de l'ancien agent, on les suit chez le nouveau.
+      var retSuivis = 0, retErreur = false;
+      try{
+        var nums = {}; [c.numero, c.numeroGaz].forEach(function(z){ z = String(z || '').toUpperCase(); if(z) nums[z] = true; });
+        ilekMem.ret = null; ilekMem.retT = 0; var TR = await ilekRetoursLire(), lignesR = TR.rows.slice();
+        lignesR.forEach(function(rr){ if(nums[String(rr.numero || '').toUpperCase()] && rr.agent !== nouveau){ rr.agent = nouveau; retSuivis++; } });
+        if(retSuivis){
+          var okR = await storageSet('ilekRetours', JSON.stringify({ rows: lignesR }));
+          if(!okR){ retSuivis = 0; retErreur = true; }
+          else { ilekMem.ret = null; ilekMem.retT = 0; try{ logAudit('Admin', 'Retours Ilek suivis avec le contrat ' + (c.numero || '?'), (x.agent || '?') + ' → ' + nouveau + ' (' + retSuivis + ' retour(s))'); }catch(e){} }
+        }
+      }catch(e){ retErreur = true; }
       adAg.trouves = null;
       adAg.msg = '✅ Contrat n° ' + j.numero + ' (' + j.client + ') : ' + j.ancien + ' → ' + j.nouveau + '.\n' +
+        (retErreur ? '⚠️ Les retours Ilek déjà importés sur ce contrat n\'ont pas pu être déplacés : préviens-moi.\n' : (retSuivis ? '↩️ ' + retSuivis + ' retour(s) Ilek déjà importé(s) sur ce contrat suivent maintenant ' + j.nouveau + '.\n' : 'Aucun retour Ilek déjà importé sur ce contrat.\n')) +
         (j.sheet === 'corrigee' ? 'Google Sheet : case « vendeur » corrigée (ligne ' + j.ligne + ').' : (j.sheet === 'deja' ? 'Google Sheet : déjà à jour.' : 'Google Sheet : ce contrat n\'y est pas (encore), rien à corriger.'));
     }catch(e){ adAg.msg = '⚠️ Rien n\'a été changé : ' + (e && e.message ? e.message : e); }
     adAg.occupe = false; adRendre();
