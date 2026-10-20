@@ -3310,7 +3310,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-19-r292';
+const APP_VERSION = '2026-10-20-r293';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -17859,6 +17859,12 @@ function mondayOfWeek(dateStr){
 }
 // Dates (lundi → dimanche) de la semaine dont le lundi est mondayDateStr, sans jamais dépasser
 // aujourd'hui — une semaine passée est donc complète (7 jours), la semaine en cours s'arrête à aujourd'hui.
+// Les 7 jours de la semaine, y compris ceux à venir (pour compter les jours ouvrés d'une semaine entière).
+function weekDateStrsFromTout(mondayDateStr){
+  const monday = new Date(mondayDateStr + 'T00:00:00'), out = [];
+  for(let i=0;i<7;i++){ const d = new Date(monday); d.setDate(d.getDate()+i); out.push(todayStr(d)); }
+  return out;
+}
 function weekDateStrsFrom(mondayDateStr){
   const monday = new Date(mondayDateStr + 'T00:00:00');
   const todayD = todayStr();
@@ -18104,11 +18110,22 @@ function newAgentWeekNumber(daysSinceStart){
 // Évalue la semaine d'un nouvel arrivant face au palier attendu — jamais de comparaison à l'équipe,
 // uniquement à son propre stade d'ancienneté. alarm=true seulement à partir de la 3e semaine sous le
 // minimum : les 2 premières semaines restent toujours indulgentes, quel que soit le chiffre.
-function newAgentWeekProgress(weekRealized, weekNumber){
+function newAgentWeekProgress(weekRealized, weekNumber, ctx){
   const tier = NEW_AGENT_WEEK_THRESHOLDS.find(t => t.week === weekNumber);
   if(!tier) return null; // 5e semaine et au-delà : sort du régime "nouvel arrivant"
   const c = (v)=> `${v} contrat${v>1?'s':''}`;
   const g = `s${tier.week}|${weekRealized}`;
+  // ⏳ Semaine EN COURS : on juge au rythme des jours déjà écoulés, jamais contre le minimum d'une semaine entière
+  // (4 contrats le lundi, ce n'est pas « sous le minimum de 10 »). ctx = { fait: jours ouvrés terminés, total: jours ouvrés de la semaine, complete: semaine terminée }.
+  if(ctx && !ctx.complete && ctx.total > 0){
+    const fait = ctx.fait || 0, total = ctx.total, jr = `${fait} jour${fait>1?'s':''} sur ${total}`;
+    const minP = Math.ceil(tier.min * fait / total), tgtP = Math.ceil(tier.target * fait / total);
+    if(fait === 0) return { text: `🌱 Semaine qui démarre : ${c(weekRealized)} pour l'instant. Repère de la semaine : ${tier.min} minimum.`, alarm: false, ok: true };
+    if(weekRealized >= tgtP) return { text: `✅ ${c(weekRealized)} après ${jr} : au-dessus du rythme pour atteindre ${tier.target} cette semaine.`, alarm: false, ok: true };
+    if(weekRealized >= minP) return { text: `🙂 ${c(weekRealized)} après ${jr} : dans le rythme du minimum de la semaine (${tier.min}).`, alarm: false, ok: true };
+    if(tier.week >= 3 && fait >= 3) return { text: `🚨 ${c(weekRealized)} après ${jr} : sous le rythme du minimum de la semaine (${tier.min}, soit environ ${minP} à ce stade). Un point s'impose.`, alarm: true, ok: false };
+    return { text: `🌱 ${c(weekRealized)} après ${jr} : un peu sous le rythme du minimum de la semaine (${tier.min}). Trop tôt pour s'inquiéter, accompagne-le sans pression.`, alarm: false, ok: false };
+  }
   if(weekRealized >= tier.target){
     return { text: seedPick([
       `✅ ${weekRealized}/${tier.target} — objectif de la ${tier.week}ᵉ semaine atteint, très bon rythme pour un début.`,
@@ -18528,7 +18545,9 @@ async function buildWeeklyBriefingHtml(mondayOverride){
       const daysSinceStart = start ? Math.max(0, Math.round((new Date(refDate+'T00:00:00') - new Date(start+'T00:00:00')) / 86400000)) : null;
       const tip = seedPick(NEW_AGENT_WEEKLY_TIPS, `${r.agent}|${weekDates[0]}`);
       const weekNum = newAgentWeekNumber(daysSinceStart);
-      const progress = weekNum != null ? newAgentWeekProgress(r.weekRealized, weekNum) : null;
+      const totalJoursSemaine = weekDateStrsFromTout(monday).filter(isWorkingDay).length;
+      const aujourdhuiOuvre = isCurrentWeek && isWorkingDay(todayStr());
+      const progress = weekNum != null ? newAgentWeekProgress(r.weekRealized, weekNum, { fait: Math.max(0, workingDates.length - (aujourdhuiOuvre ? 1 : 0)), total: totalJoursSemaine, complete: !isCurrentWeek }) : null;
       const cardBg = progress && progress.alarm ? 'rgba(168,58,63,0.12)' : 'rgba(79,157,120,0.08)';
       const cardBorder = progress && progress.alarm ? 'rgba(168,58,63,0.45)' : 'rgba(79,157,120,0.28)';
       return `<div style="flex:1; min-width:240px; padding:16px; border-radius:14px; background:${cardBg}; border:1px solid ${cardBorder}; font-family:'Inter',sans-serif;">
@@ -23668,7 +23687,7 @@ function rmBarre(d, p){
 
 function rmChargerAutres(){ try{ renderIndepSupervisorCommissionTable(); }catch(e){} try{ renderManualPrimesList(); }catch(e){} }
 // ───────── 📊 Statistiques de retours / rétractations : agent par agent, mois par mois ─────────
-var RS = { produit: 'prime', anciens: false, complets: true, complet: {}, duree: 3, mode: 'cumul', mois: null, donnees: null, coh: {}, charge: false };
+var RS = { produit: 'prime', anciens: false, complets: true, complet: {}, duree: 3, mode: 'mensuel', mois: null, donnees: null, coh: {}, charge: false };
 var RS_CACHE = {};
 var RS_P = null;
 function rsAjoute(m, n){ let [y, k] = m.split('-').map(Number); k += n; while(k > 12){ k -= 12; y++; } while(k < 1){ k += 12; y--; } return y + '-' + String(k).padStart(2, '0'); }
@@ -23747,9 +23766,9 @@ window.rmRetoursRendre = function(sansCharger){
   const fmtP = (x)=> x == null ? '—' : String(x).replace('.', ',') + ' %';
   const nomMois = (m)=>{ const [y, k] = m.split('-'); return ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'][Number(k)-1] + ' ' + y.slice(2); };
   const baseLib = prime ? 'contrats' : 'énergies';
-  // Couleurs : vert = bon, orange = à surveiller, rouge = mauvais (seuils : retours 10 / 20 %, rétractations 5 / 10 %)
+  // Couleurs : vert = bon, orange = à surveiller, rouge = mauvais (seuils : retours Prime 30 / 50 %, retours Ilek 10 / 20 %, rétractations 5 / 10 %)
   const coul = (p, seuils)=> p == null ? 'var(--muted)' : (p <= seuils[0] ? '#34b774' : (p <= seuils[1] ? '#e8a33d' : '#e5484d'));
-  const SR = [10, 20], SX = [5, 10];
+  const SR = prime ? [30, 50] : [10, 20], SX = [5, 10];   // Prime : vert ≤ 30 %, orange ≤ 50 %, rouge au-dessus · Ilek inchangé
   const sel = (val, opts, fn)=> '<select onchange="' + fn + '(this.value)" style="padding:8px 12px;border-radius:10px;font-weight:700;width:auto;min-width:130px;">' + opts.map(o=>'<option value="' + o[0] + '"' + (String(val) === String(o[0]) ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
   const moyenne = (liste, cle, cleBase)=>{
     let sb = 0, sr = 0; const pcts = [];
@@ -23784,14 +23803,13 @@ window.rmRetoursRendre = function(sansCharger){
       '<div style="font-size:12.5px;color:var(--muted);margin-top:3px;">' + (mois.length ? mois.length + ' mois d\'historique · moyenne sur : ' + choisis.slice().reverse().map(nomMois).join(', ') : '') + '</div></div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + sel(RS.produit, [['prime', '🔵 Prime'], ['ilek', '🟢 Ilek']], 'rsChoix_produit') +
         sel(RS.duree, [[1, '1 mois'], [2, '2 mois'], [3, '3 mois'], [4, '4 mois'], [6, '6 mois'], [12, '12 mois'], [0, 'Tout']], 'rsChoix_duree') +
-        sel(RS.mode, [['cumul', 'Cumulée'], ['mensuel', 'Moyenne des mois']], 'rsChoix_mode') +
         sel(RS.anciens ? '1' : '0', [['0', 'Agents en poste'], ['1', 'Avec les anciens agents']], 'rsChoix_anciens') + (prime ? sel(RS.complets ? '1' : '0', [['1', 'Mois complets seulement'], ['0', 'Avec les 2 derniers mois (incomplets)']], 'rsChoix_complets') : '') + '</div></div>';
   if(!mois.length){ hote.innerHTML = h + '<div class="empty" style="margin-top:14px;">Aucune donnée d\'historique pour l\'instant (il faut avoir importé la production et les retours des mois passés).</div></div>'; return; }
   // ── Grandes tuiles équipe
   h += '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px;">' +
     '<div style="flex:1;min-width:230px;padding:16px 18px;border-radius:16px;background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid ' + coul(eqR.val, SR) + ';"><div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">↩️ Retours — équipe</div><div style="font-size:46px;font-weight:900;line-height:1.05;color:' + coul(eqR.val, SR) + ';">' + fmtP(eqR.val) + '</div><div style="font-size:12.5px;color:var(--muted);">' + eqR.sr + ' retour' + (eqR.sr > 1 ? 's' : '') + ' sur ' + eqR.sb + ' ' + baseLib + '</div></div>' +
     (prime ? '<div style="flex:1;min-width:230px;padding:16px 18px;border-radius:16px;background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid ' + coul(eqX.val, SX) + ';"><div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">↪️ Rétractations — équipe</div><div style="font-size:46px;font-weight:900;line-height:1.05;color:' + coul(eqX.val, SX) + ';">' + fmtP(eqX.val) + '</div><div style="font-size:12.5px;color:var(--muted);">' + eqX.sr + ' rétractation' + (eqX.sr > 1 ? 's' : '') + ' sur ' + eqX.sb + ' contrats</div></div>' : '') +
-    '<div style="flex:1;min-width:200px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid var(--border);font-size:12.5px;line-height:1.9;"><b>Code couleur</b><br><span style="color:#34b774;">●</span> bon : retours ≤ 10 % · rétractations ≤ 5 %<br><span style="color:#e8a33d;">●</span> à surveiller : ≤ 20 % · ≤ 10 %<br><span style="color:#e5484d;">●</span> mauvais : au-dessus</div></div>';
+    '<div style="flex:1;min-width:200px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid var(--border);font-size:12.5px;line-height:1.9;"><b>Code couleur</b><br><span style="color:#34b774;">●</span> bon : retours ≤ ' + SR[0] + ' % · rétractations ≤ 5 %<br><span style="color:#e8a33d;">●</span> à surveiller : ≤ ' + SR[1] + ' % · ≤ 10 %<br><span style="color:#e5484d;">●</span> mauvais : au-dessus</div></div>';
   // ── Une carte par agent, les plus mauvais en premier
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:16px;">' + lignes.map(l=>{
     const pire = coul(l.r.val, SR);
@@ -23813,7 +23831,7 @@ window.rsChoix_produit = function(v){ RS.produit = v; RS.donnees = null; rmRetou
 window.rsChoix_anciens = function(v){ RS.anciens = (v === '1'); rmRetoursRendre(true); };
 window.rsChoix_complets = function(v){ RS.complets = (v === '1'); rmRetoursRendre(true); };
 window.rsChoix_duree = function(v){ RS.duree = Number(v); rmRetoursRendre(true); };
-window.rsChoix_mode = function(v){ RS.mode = v; rmRetoursRendre(true); };
+window.rsChoix_mode = function(v){ RS.mode = 'mensuel'; rmRetoursRendre(true); };
 
 function rmTab(p){
   ['prime','ilek','retours','plus'].forEach(k=>{
