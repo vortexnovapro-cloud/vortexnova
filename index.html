@@ -944,6 +944,125 @@
 #view-supervision.sup-masked .sup-perso-val{ display:none; }
 #view-supervision.sup-masked .sup-perso-dots{ display:inline; }
 
+
+/* ============================================================
+   🧭 SUPERVISION (r294) — haut de page + sections qui se déplient
+   ============================================================ */
+#supervisionDashboard.supervision-dashboard{ display:block; margin-bottom:18px; }
+.sv-hero{ display:grid; grid-template-columns:1.7fr 1fr; gap:14px; }
+@media(max-width:860px){ .sv-hero{ grid-template-columns:1fr; } }
+.sv-box{ background:var(--panel); border:1px solid var(--border); border-radius:22px; padding:22px; min-width:0; }
+.sv-box.pay{ border-color:rgba(255,215,0,.45); background:linear-gradient(160deg,var(--panel),rgba(255,215,0,.06)); }
+.sv-lab{ font-size:11px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; color:var(--muted); }
+.sv-ln{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+.sv-herobox{ display:flex; gap:26px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+.sv-dring{ --a:0; --b:0; width:208px; height:208px; border-radius:50%; background:conic-gradient(var(--amber) calc(var(--a)*1%),var(--panel2) 0); display:grid; place-items:center; flex:none; }
+.sv-dring.ok{ background:conic-gradient(var(--gold) calc(var(--a)*1%),var(--panel2) 0); }
+.sv-d2{ width:166px; height:166px; border-radius:50%; background:conic-gradient(#5aa7ff calc(var(--b)*1%),var(--panel2) 0); display:grid; place-items:center; box-shadow:0 0 0 7px var(--panel); }
+.sv-d3{ width:134px; height:134px; border-radius:50%; background:var(--panel); display:grid; place-items:center; text-align:center; align-content:center; cursor:help; }
+.sv-d3 b{ font-size:40px; font-weight:800; letter-spacing:-1.5px; line-height:1; }
+.sv-d3 span{ font-size:11px; color:var(--muted); font-weight:600; }
+.sv-hs{ flex:1; min-width:230px; display:flex; flex-direction:column; gap:18px; }
+.sv-row2{ display:flex; gap:14px; align-items:center; }
+.sv-pt{ width:6px; align-self:stretch; border-radius:9px; }
+.sv-pct{ font-size:44px; font-weight:800; letter-spacing:-2px; line-height:1; }
+.sv-sm{ font-size:12.5px; color:var(--muted); }
+.sv-alerts{ margin-top:14px; display:flex; flex-direction:column; gap:6px; font-size:12.5px; }
+.sv-alerts .sub{ background:var(--panel2); border-radius:12px; padding:8px 12px; font-size:12.5px !important; color:var(--muted); margin-top:0 !important; }
+.sv-xs{ font-size:11.5px; color:var(--muted); margin-top:12px; }
+.sv-three{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:center; margin-top:12px; }
+.sv-three>div+div{ border-left:1px solid var(--border); }
+.sv-num{ font-variant-numeric:tabular-nums; font-weight:800; letter-spacing:-.8px; line-height:1.05; font-size:22px; }
+.sv-three .sv-num{ color:var(--gold); }
+.sv-btn{ font-family:inherit; font-size:13px; font-weight:600; color:var(--text); background:var(--panel2); border:1px solid var(--border); border-radius:12px; padding:9px 14px; cursor:pointer; }
+.sv-btn:hover{ border-color:var(--gold); }
+.sv-banner{ display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; border-radius:18px; padding:14px 18px; border:1px solid rgba(229,72,77,.45); background:var(--red-bg); margin-bottom:14px; font-size:13px; }
+.sv-banner b{ display:block; font-size:15px; }
+.sv-pres-note{ display:none; background:rgba(255,215,0,.12); border:1px solid var(--gold); border-radius:22px; padding:18px 20px; font-size:13px; }
+#view-supervision.sup-masked .sv-pres-note{ display:block; }
+#view-supervision.sup-masked .sv-perso,
+#view-supervision.sup-masked .sv-pay,
+#view-supervision.sup-masked .sv-stat-sup{ display:none !important; }
+
+/* Sections qui se déplient : la tuile EST l'en-tête de sa section */
+#supervisionDetail{ display:flex; flex-direction:column; gap:12px; }
+.sv-pane{ display:flex; flex-direction:column; gap:12px; }
+.sv-head{ display:grid; grid-template-columns:auto minmax(0,1.2fr) minmax(0,1fr) auto; align-items:center; justify-items:start; gap:18px; width:100%; text-align:left; font-family:inherit; color:var(--text); background:var(--panel); border:1px solid var(--border); border-radius:24px; padding:16px 20px; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+.sv-head:hover{ border-color:var(--gold); }
+.sv-pane.open>.sv-head{ border-color:var(--gold); box-shadow:0 0 0 1px var(--gold),0 10px 30px rgba(255,215,0,.10); background:linear-gradient(160deg,var(--panel),rgba(255,215,0,.08)); }
+.sv-pane.gd>.sv-head{ border-color:rgba(255,215,0,.45); }
+.sv-pane:not(.open)>.sv-body{ display:none; }
+.sv-tic{ width:46px; height:46px; border-radius:15px; display:grid; place-items:center; font-size:23px; flex:none; }
+.sv-thm{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+.sv-tn{ font-size:15px; font-weight:700; }
+.sv-ts{ font-size:12.5px; color:var(--muted); }
+.sv-thv{ display:flex; flex-direction:column; gap:7px; min-width:0; justify-self:stretch; align-items:flex-start; width:100%; }
+.sv-tv{ font-size:30px; font-weight:800; letter-spacing:-1px; line-height:1; }
+.sv-tv .u{ font-size:13px; font-weight:600; color:var(--muted); letter-spacing:0; }
+.sv-bar{ height:7px; border-radius:99px; background:var(--panel2); overflow:hidden; width:100%; }
+.sv-bar i{ display:block; height:100%; border-radius:99px; background:var(--green); }
+.sv-bar i.warn{ background:var(--amber); } .sv-bar i.bad{ background:var(--red); } .sv-bar i.info{ background:#5aa7ff; } .sv-bar i.gold{ background:var(--gold); }
+.sv-avs{ display:flex; gap:5px; flex-wrap:wrap; }
+.sv-avs .sv-av{ width:26px; height:26px; font-size:11px; }
+.sv-thr{ display:flex; align-items:center; gap:12px; justify-self:end; }
+.sv-chev{ font-size:13px; color:var(--muted); transition:transform .2s; }
+.sv-pane.open>.sv-head .sv-chev{ transform:rotate(180deg); color:var(--gold); }
+@media(max-width:760px){ .sv-head{ grid-template-columns:auto minmax(0,1fr) auto; } .sv-thv{ grid-column:1/-1; } }
+@media(prefers-reduced-motion:reduce){ .sv-head,.sv-chev{ transition:none; } }
+.sv-body{ display:flex; flex-direction:column; gap:14px; }
+
+/* r296 — Admin : tuiles qui se déplient (même principe que Supervision). Les blocs sont DÉPLACÉS, jamais supprimés. */
+.ad-pane{ margin-bottom:12px; }
+.ad-pane>.sv-head{ grid-template-columns:auto minmax(0,1fr) auto; }
+.ad-pane .sv-tn{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ad-tag{ font-size:11px; font-weight:800; letter-spacing:.3px; padding:3px 10px; border-radius:20px; border:1px solid rgba(255,215,0,.35); background:rgba(255,215,0,.12); color:var(--gold); }
+.ad-pane>.sv-body{ background:var(--panel); border:1px solid var(--border); border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:14px; }
+.ad-pane>.sv-body>.mega-section,.ad-pane>.sv-body>.settings-box{ border:0!important; background:none!important; box-shadow:none!important; padding:0!important; margin:0!important; }
+.ad-pane>.sv-body>.mega-section.replie>*{ display:revert!important; }
+.ad-pane .repli-chevron{ display:none!important; }
+.ad-pane>.sv-body>.mega-section>.mega-section-title{ pointer-events:none; cursor:default; }
+.ad-pane>.sv-body>.mega-section>.mega-section-title .aide-ico{ pointer-events:auto; cursor:pointer; }
+.ad-tit-ref{ font-size:13px!important; color:var(--muted)!important; font-weight:600!important; margin:0 0 8px!important; }
+.ad-tit-cache{ display:none!important; }
+.ad-pane>.sv-body>.section-title:first-child{ margin-top:0; }
+.sv-card{ background:var(--panel); border:1px solid var(--border); border-radius:22px; padding:22px; min-width:0; }
+.sv-chd{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start; margin-bottom:14px; }
+.sv-chd h3{ margin:0; font-size:17px; font-weight:700; letter-spacing:-.2px; }
+.sv-chd p{ margin:3px 0 0; color:var(--muted); font-size:12.5px; max-width:75ch; line-height:1.5; }
+.sv-card .section-title{ font-size:17px; margin:0 0 4px; }
+.sv-card .section-sub{ margin:4px 0 12px; }
+.sv-guide{ border-radius:14px; background:rgba(255,215,0,.08); border-left:4px solid var(--gold); padding:12px 14px; font-size:13px; line-height:1.65; margin-bottom:14px; }
+/* Équipe : une carte par agent */
+.sv-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:14px; }
+@media(max-width:480px){ .sv-grid{ grid-template-columns:1fr; } }
+.sv-ec{ background:var(--panel2); border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:14px; border:1px solid var(--border); min-width:0; }
+.sv-ec.me{ background:rgba(255,215,0,.08); border-color:rgba(255,215,0,.4); }
+.sv-ec.alert{ background:var(--red-bg); border-color:rgba(229,72,77,.35); }
+.sv-ehd{ display:flex; gap:12px; align-items:center; }
+.sv-av{ width:40px; height:40px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:15px; background:var(--panel); color:var(--gold); border:1px solid var(--border); flex:none; }
+.sv-av.g{ border-color:var(--green); color:var(--green); } .sv-av.w{ border-color:var(--amber); color:var(--amber); } .sv-av.b{ border-color:var(--red); color:var(--red); }
+.sv-et{ flex:1; min-width:0; } .sv-et>b{ font-size:16.5px; }
+.sv-etags{ display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+.sv-tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+@media(max-width:420px){ .sv-tiles{ grid-template-columns:repeat(2,1fr); } }
+.sv-tiles>div{ background:var(--panel); border-radius:14px; padding:10px 10px 9px; min-width:0; }
+.sv-tiles .sv-num{ font-size:19px; margin-top:2px; white-space:nowrap; }
+.sv-tiles .sv-num small{ font-size:13px; color:var(--muted); font-weight:600; letter-spacing:0; }
+.sv-tiles .sv-lab{ font-size:10px; letter-spacing:.4px; }
+.sv-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.sv-chip{ display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap; background:var(--panel); border-radius:14px; padding:6px 12px; font-size:12.5px; color:var(--muted); }
+.sv-chip b{ color:var(--text); }
+.sv-conseil{ font-size:12.5px; color:var(--muted); border-top:1px solid var(--border); padding-top:10px; }
+.sv-conseil.zero{ color:var(--red); font-weight:700; }
+.sv-total{ background:var(--panel2); border:1px solid var(--border); border-radius:20px; padding:16px 18px; }
+.sv-total .sv-tiles>div{ background:var(--panel); }
+/* Statistiques retours : pastilles par mois */
+.sv-trend{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.sv-tp{ display:inline-flex; gap:6px; align-items:baseline; background:var(--panel); border-radius:12px; padding:6px 10px; font-size:12px; color:var(--muted); }
+.sv-tp b{ font-size:16px; font-weight:800; }
+.sv-ar{ color:var(--muted); font-size:14px; }
+@media(max-width:560px){ .sv-ar{ display:none; } .sv-trend{ gap:6px; } }
+
 /* ============================================================
    📱 OPTIMISATION SMARTPHONE
    ============================================================
@@ -1460,7 +1579,7 @@ async function tryDeviceGateAdmin(){
           <button type="button" class="privacy-btn" onclick="forceFullRefresh(this)"
                   title="Vide entièrement le cache et relit tout depuis la base. Utile si une correction faite depuis un autre poste sur une journée déjà passée ne s'affiche pas encore ici.">🔄 Tout recharger</button>
           <button type="button" id="supPrivacyBtn" class="privacy-btn" onclick="toggleSupPrivacy()"
-                  title="Masque uniquement TES montants : ton salaire et ta prime de supervision. Les objectifs, les conseils, le bilan et les chiffres de l'équipe restent affichés — pratique quand tu montres ton écran à l'équipe. Le réglage reste actif sur cet appareil.">🙈 Masquer mon salaire &amp; ma prime</button>
+                  title="Mode présentation : cache ton salaire, ta prime, les salaires des agents et les statistiques des superviseurs. Les objectifs, le bilan, les statistiques des agents et les chiffres de l'équipe restent affichés — pratique pour montrer ton écran à l'équipe. Le réglage reste actif sur cet appareil.">🎬 Mode présentation</button>
         </div>
 
         <div id="weeklyBriefingBannerSupervision" style="display:none; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; background:linear-gradient(135deg, rgba(184,147,90,0.26), rgba(184,147,90,0.12)); border:2px solid #c9a870; border-radius:16px; padding:22px 26px; margin-bottom:18px; animation: pulseWarn 2.4s infinite;">
@@ -1482,11 +1601,7 @@ async function tryDeviceGateAdmin(){
 
         <div id="supervisionDetail"></div>
 
-        <div class="sup-perso-block">
-          <div class="section-title" style="margin-top:32px;">💰 Salaire — toi & ta prime de supervision</div>
-          <div class="cash-period-grid" id="supervisionSalary"></div>
-        </div>
-        <div class="sup-perso-hidden-note" style="margin-top:32px;">🙈 Ton salaire et ta prime de supervision sont masqués — clique « Afficher mon salaire &amp; ma prime » en haut de la page pour les revoir.</div>
+        <div id="supervisionSalary" style="display:none;"></div>
 
         <div style="margin-top:24px; border-top:1px solid var(--border); padding-top:20px;">
           <div class="section-sub" style="margin-bottom:12px;">🔁 Mis à jour automatiquement à chaque contrat ajouté par un membre de l'équipe.</div>
@@ -3310,7 +3425,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-20-r293';
+const APP_VERSION = '2026-10-20-r296';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -3416,6 +3531,105 @@ function aideTraiter(racine){
     }).observe(admin, { childList: true, subtree: true });
     window.addEventListener('scroll', aideCacher, { passive: true });
   };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+})();
+
+// ===== ADMIN EN TUILES (r296) =====
+// Chaque titre de l'Admin devient une tuile qui s'ouvre / se ferme (comme Supervision). Les blocs d'origine
+// sont DÉPLACÉS dans la tuile (même éléments, mêmes identifiants) : rien n'est supprimé ni copié.
+(function adTuilesDemarrer(){
+  var CLE = 'vn_adOpen';
+  var OUVERTS; try{ OUVERTS = JSON.parse(localStorage.getItem(CLE) || 'null'); }catch(e){ OUVERTS = null; }
+  if(!Array.isArray(OUVERTS)) OUVERTS = ["overview:Aujourd'hui"];
+  var COULEURS = { 'theme-blue':'rgba(61,139,253,.18)', 'theme-gold':'rgba(255,215,0,.16)', 'theme-red':'rgba(255,90,90,.18)', 'theme-orange':'rgba(255,160,50,.18)', 'theme-green':'rgba(60,200,120,.18)', 'theme-purple':'rgba(170,110,255,.18)', 'theme-gray':'rgba(150,150,160,.20)' };
+  var DEPART = '.mega-section, .settings-box, .section-title';
+  var ORPHELINS = { day: { titre:'Export & rapport du jour', ico:'📄' } };
+  function sauve(){ try{ localStorage.setItem(CLE, JSON.stringify(OUVERTS)); }catch(e){} }
+  function norm(t){ return (t||'').replace(/\s+/g,' ').trim(); }
+  function titreEl(bloc){
+    if(bloc.matches('.section-title')) return bloc;
+    if(bloc.matches('.mega-section')) return bloc.querySelector(':scope > .mega-section-title');
+    return bloc.querySelector(':scope > label');
+  }
+  function lire(bloc){
+    var t = titreEl(bloc), texte = '', badges = [];
+    if(t){
+      t.childNodes.forEach(function(n){
+        if(n.nodeType === 3) texte += n.textContent;
+        else if(n.nodeType === 1 && !n.matches('.aide-ico, .repli-chevron, .aide-chip') && !n.id){
+          var b = norm(n.textContent); if(b && /border-radius|badge|tag/.test((n.getAttribute('style')||'') + ' ' + n.className)) badges.push(b); else texte += ' ' + (n.textContent||'');
+        }
+      });
+    }
+    texte = norm(texte);
+    var m = /^(\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*)\s*/u.exec(texte), ico = '🗂️';
+    if(m){ ico = m[1]; texte = texte.slice(m[0].length); }
+    texte = texte.replace(/\s*[—–-]\s*$/, '');
+    var sub = bloc.matches('.mega-section') ? bloc.querySelector(':scope > .mega-section-sub') : null;
+    if(!sub) sub = bloc.matches('.section-title') ? (bloc.nextElementSibling && bloc.nextElementSibling.matches('.section-sub') ? bloc.nextElementSibling : null) : bloc.querySelector(':scope > .section-sub');
+    var desc = sub && !sub.querySelector('button, input, select') ? norm(sub.textContent) : '';
+    if(desc){ var p = desc.search(/[.!?](\s|$)/); if(p > 20) desc = desc.slice(0, p + 1); if(desc.length > 120) desc = desc.slice(0, 117).replace(/\s+\S*$/, '') + '…'; }
+    return { t: t, titre: texte || 'Section', ico: ico, desc: desc, badges: badges, theme: (bloc.className.match(/theme-\w+/)||[''])[0] };
+  }
+  function creer(tab, info, blocs){
+    var cle = tab + ':' + info.titre.slice(0, 50);
+    var ouvert = OUVERTS.indexOf(cle) >= 0;
+    var pane = document.createElement('section');
+    pane.className = 'sv-pane ad-pane' + (ouvert ? ' open' : '');
+    pane.setAttribute('data-ad-cle', cle);
+    var bg = COULEURS[info.theme] || 'rgba(255,215,0,.14)';
+    var head = document.createElement('button');
+    head.type = 'button'; head.className = 'sv-head'; head.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
+    head.innerHTML = '<span class="sv-tic" style="background:' + bg + '">' + info.ico + '</span>' +
+      '<span class="sv-thm"><span class="sv-tn"><span class="ad-nom"></span></span><span class="sv-ts"></span></span>' +
+      '<span class="sv-thr"><span class="sv-chev">▾</span></span>';
+    head.querySelector('.ad-nom').textContent = info.titre;
+    info.badges.forEach(function(b){ var s = document.createElement('span'); s.className = 'ad-tag'; s.textContent = b; head.querySelector('.sv-tn').appendChild(s); });
+    head.querySelector('.sv-ts').textContent = info.desc;
+    var corps = document.createElement('div'); corps.className = 'sv-body';
+    blocs[0].parentNode.insertBefore(pane, blocs[0]);
+    pane.appendChild(head); pane.appendChild(corps);
+    blocs.forEach(function(b){ corps.appendChild(b); });
+    if(info.t){
+      var sansEnfant = !Array.prototype.some.call(info.t.children, function(c){ return !c.matches('.repli-chevron'); });
+      var suivi = info.t.nextElementSibling;
+      var aSub = suivi && suivi.matches('.section-sub, .mega-section-sub, .aide-admin, .aide-cachee');
+      info.t.classList.add(sansEnfant && !aSub ? 'ad-tit-cache' : 'ad-tit-ref');
+    }
+    head.addEventListener('click', function(){ bascule(pane); });
+  }
+  function bascule(pane, force){
+    var cle = pane.getAttribute('data-ad-cle'), i = OUVERTS.indexOf(cle);
+    var veut = (typeof force === 'boolean') ? force : (i < 0);
+    if(veut && i < 0) OUVERTS.push(cle); if(!veut && i >= 0) OUVERTS.splice(i, 1);
+    sauve();
+    pane.classList.toggle('open', veut);
+    pane.querySelector(':scope > .sv-head').setAttribute('aria-expanded', veut ? 'true' : 'false');
+    if(veut){ try{ window.dispatchEvent(new Event('resize')); }catch(e){} }
+  }
+  // Si un bouton du CRM fait défiler jusqu'à un élément rangé dans une tuile fermée, on ouvre la tuile d'abord.
+  var sv0 = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function(){
+    try{ var p = this.closest && this.closest('.ad-pane:not(.open)'); while(p){ bascule(p, true); p = p.parentElement && p.parentElement.closest('.ad-pane:not(.open)'); } }catch(e){}
+    return sv0.apply(this, arguments);
+  };
+  function traiter(tab){
+    var vue = document.getElementById('admin-' + tab); if(!vue || vue.dataset.adTuiles) return;
+    vue.dataset.adTuiles = '1';
+    var enfants = Array.prototype.slice.call(vue.children), groupes = [], cur = null, orph = null;
+    enfants.forEach(function(el){
+      if(el.matches(DEPART)){ cur = { bloc: el, liste: [el], auto: !el.matches('.section-title') }; groupes.push(cur); orph = null; }
+      else if(cur && !cur.auto){ cur.liste.push(el); }
+      else if(cur && ORPHELINS[tab]){ if(!orph){ orph = { orph: true, liste: [] }; groupes.push(orph); } orph.liste.push(el); }
+    });
+    groupes.forEach(function(g){
+      if(g.orph){ var o = ORPHELINS[tab]; creer(tab, { titre:o.titre, ico:o.ico, desc:'', badges:[], theme:'', t:null }, g.liste); return; }
+      var info = lire(g.bloc);
+      if(g.bloc.classList.contains('replie')) g.bloc.classList.remove('replie');
+      creer(tab, info, g.liste);
+    });
+  }
+  function go(){ ['overview','day','prod','billing','settings'].forEach(traiter); }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
 })();
 
@@ -4638,7 +4852,10 @@ async function checkAppVersionStatus(){
   try{
     const current = await storageGet('latestAppVersion');
     const currentVal = current && current.value;
-    if(!currentVal || compareAppVersions(APP_VERSION, currentVal) > 0){
+    // En local (fichier ouvert pour vérifier avant publication), on NE publie PAS la version : sinon les agents
+    // verraient le bandeau rouge « mise à jour » avant que la nouvelle version soit réellement en ligne.
+    const horsProd = document.documentElement.classList.contains('vn-hors-prod');
+    if(!horsProd && (!currentVal || compareAppVersions(APP_VERSION, currentVal) > 0)){
       await storageSet('latestAppVersion', APP_VERSION);
     }
   }catch(e){}
@@ -18216,6 +18433,13 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   const teamAgents = agentsReels().filter(a=>!isIndependant(a));
   const indepAgents = agentsReels().filter(a=>isIndependant(a));
 
+  // 📈 Évolution : on ne compare QUE les jours terminés (jamais la journée en cours, qui n'est pas finie et
+  // donnerait toujours l'impression d'un recul le matin). Le lundi se compare au lundi de la semaine d'avant,
+  // le mardi au mardi, etc. La journée en cours est montrée à part, sans être comparée.
+  const joursComparables = isCurrentWeek ? workingDates.filter(d => d < todayStr() || isDayOverForMessage(d)) : workingDates;
+  const pasEncoreComparable = isCurrentWeek && joursComparables.length === 0;
+  const jourEnCours = isCurrentWeek ? (workingDates.find(d => !joursComparables.includes(d)) || null) : null;
+  const nomJourFr = d => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long' });
   const [boardsByDate, previousWeek, monthTotalsList] = await Promise.all([
     (async ()=>{
       const b = {};
@@ -18228,7 +18452,7 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     // Semaine précédente limitée au MÊME nombre de jours ouvrés que celui déjà écoulé cette semaine :
     // mercredi se compare à mercredi. `workingDates` contient les jours ouvrés retenus pour la
     // semaine affichée, sa longueur est donc exactement la borne à appliquer.
-    weekRealizedTotalsForMonday(prevMonday, workingDates.length),
+    joursComparables.length > 0 ? weekRealizedTotalsForMonday(prevMonday, joursComparables.length) : Promise.resolve(null),
     Promise.all(teamAgents.map(async agent=>({ agent, total: await monthlyRealizedContracts(agent, monthYear, monthNum) })))
   ]);
   const monthTotalsByAgent = Object.fromEntries(monthTotalsList.map(x=>[x.agent, x.total]));
@@ -18349,12 +18573,16 @@ async function buildWeeklyBriefingHtml(mondayOverride){
 
   // ---- Évolution vs semaine précédente — previousWeek est null tant qu'il n'y a pas d'historique aussi
   // loin (cf. weekRealizedTotalsForMonday plus haut) : tout ce bloc est alors simplement vide, sans erreur.
+  const cmpDe = a => datesContratsDe(a, joursComparables).reduce((s, d)=> s + (getAgentProd(boardsByDate[d], a).realized || 0), 0);
+  const totalTeamCmp = teamStats.reduce((s, r)=> s + cmpDe(r.agent), 0);
+  const jourEnCoursEquipe = jourEnCours ? teamStats.reduce((s, r)=> s + datesContratsDe(r.agent, [jourEnCours]).reduce((t, d)=> t + (getAgentProd(boardsByDate[d], r.agent).realized || 0), 0), 0) : 0;
   const weekComparisons = previousWeek ? teamStats.map(r=>{
     const prevTotal = previousWeek.totals[r.agent];
-    return { agent: r.agent, thisWeek: r.weekRealized, prevWeek: prevTotal ?? null, delta: prevTotal != null ? r.weekRealized - prevTotal : null, isNew: r.isNew };
+    const cetteSemaineCmp = cmpDe(r.agent);
+    return { agent: r.agent, thisWeek: cetteSemaineCmp, prevWeek: prevTotal ?? null, delta: prevTotal != null ? cetteSemaineCmp - prevTotal : null, isNew: r.isNew };
   }) : null;
   const prevTotalTeamRealized = previousWeek ? teamAgents.reduce((s,a)=> s + (previousWeek.totals[a] || 0), 0) : null;
-  const teamDelta = previousWeek ? totalTeamRealized - prevTotalTeamRealized : null;
+  const teamDelta = previousWeek ? totalTeamCmp - prevTotalTeamRealized : null;
   const validDeltas = weekComparisons ? weekComparisons.filter(c=>c.delta != null) : [];
   const biggestImprover = validDeltas.length ? validDeltas.reduce((best,c)=> (c.delta > best.delta ? c : best)) : null;
   const biggestDrop = validDeltas.length ? validDeltas.reduce((worst,c)=> (c.delta < worst.delta ? c : worst)) : null;
@@ -18575,7 +18803,9 @@ async function buildWeeklyBriefingHtml(mondayOverride){
     const sortedComparisons = [...weekComparisons].sort((a,b)=> (b.delta ?? -999) - (a.delta ?? -999));
     html += `<div style="padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); margin-bottom:20px;">
       <div style="font-weight:700; font-size:13.5px; margin-bottom:4px;">📈 Évolution vs semaine précédente</div>
-      <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Total équipe : <b style="color:var(--text);">${totalTeamRealized}</b> contrats (${prevTotalTeamRealized} la semaine d'avant) — ${teamDelta > 0 ? `<b style="color:#4f9d78;">+${teamDelta}</b>` : (teamDelta < 0 ? `<b style="color:#b5595c;">${teamDelta}</b>` : `<b>stable</b>`)}</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Comparaison juste : ${joursComparables.length === 1 ? nomJourFr(joursComparables[0]) + ' contre ' + nomJourFr(joursComparables[0]) + ' de la semaine d\'avant' : 'du ' + nomJourFr(joursComparables[0]) + ' au ' + nomJourFr(joursComparables[joursComparables.length-1]) + ', contre les mêmes jours de la semaine d\'avant'} — seulement les jours terminés.</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Total équipe : <b style="color:var(--text);">${totalTeamCmp}</b> contrats (${prevTotalTeamRealized} la semaine d'avant) — ${teamDelta > 0 ? `<b style="color:#4f9d78;">+${teamDelta}</b>` : (teamDelta < 0 ? `<b style="color:#b5595c;">${teamDelta}</b>` : `<b>stable</b>`)}</div>
+      ${jourEnCours ? `<div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Aujourd'hui (${nomJourFr(jourEnCours)}), journée en cours : <b style="color:var(--text);">${jourEnCoursEquipe}</b> contrat${jourEnCoursEquipe>1?'s':''} — comptée à part, elle entrera dans la comparaison ce soir.</div>` : ''}
       <div style="display:flex; flex-direction:column; gap:2px;">
         ${sortedComparisons.map(c=>{
           const deltaTxt = c.delta == null ? '<span style="color:var(--muted);">Pas de donnée la semaine dernière</span>' :
@@ -18590,7 +18820,8 @@ async function buildWeeklyBriefingHtml(mondayOverride){
   } else {
     html += `<div style="padding:16px; border-radius:14px; background:var(--panel2); border:1px solid rgba(255,255,255,0.07); margin-bottom:20px;">
       <div style="font-weight:700; font-size:13.5px; margin-bottom:4px;">📈 Évolution vs semaine précédente</div>
-      <div style="font-size:12.5px; color:var(--muted);">Pas encore d'historique pour la semaine précédente. Dès la semaine prochaine, cette section comparera automatiquement chaque agent (et le total équipe) à la semaine d'avant — rien à faire de ton côté, ça se remplit tout seul avec le temps.</div>
+      ${pasEncoreComparable ? `<div style="font-size:12.5px; color:var(--muted);">Pas encore comparable : aucune journée de cette semaine n'est terminée. Dès ce soir, la journée d'aujourd'hui sera comparée à la même journée de la semaine d'avant${jourEnCours ? ` (en ce moment : <b style="color:var(--text);">${jourEnCoursEquipe}</b> contrat${jourEnCoursEquipe>1?'s':''}, journée en cours)` : ''}.</div>` : ''}
+      <div style="font-size:12.5px; color:var(--muted);${pasEncoreComparable ? ' display:none;' : ''}">Pas encore d'historique pour la semaine précédente. Dès la semaine prochaine, cette section comparera automatiquement chaque agent (et le total équipe) à la semaine d'avant — rien à faire de ton côté, ça se remplit tout seul avec le temps.</div>
     </div>`;
   }
 
@@ -22756,6 +22987,54 @@ function renderSupervision(){
   });
 }
 
+// ===== SUPERVISION (r294) — sections qui se déplient =====
+var SV_OPEN = (function(){ try{ var v = JSON.parse(localStorage.getItem('vn_svOpen') || 'null'); if(Array.isArray(v)) return v; }catch(e){} return ['aujourdhui']; })();
+function svSauveOpen(){ try{ localStorage.setItem('vn_svOpen', JSON.stringify(SV_OPEN)); }catch(e){} }
+function svTuile(id, ico, icoBg, titre, sousTitre, valeurHtml, barresHtml, tagHtml, corpsHtml, classe){
+  var ouvert = SV_OPEN.indexOf(id) >= 0;
+  return '<section class="sv-pane' + (ouvert ? ' open' : '') + (classe ? ' ' + classe : '') + '" id="svp-' + id + '">' +
+    '<button type="button" class="sv-head" aria-expanded="' + ouvert + '" onclick="svBascule(\'' + id + '\')">' +
+      '<span class="sv-tic" style="background:' + icoBg + '">' + ico + '</span>' +
+      '<span class="sv-thm"><span class="sv-tn">' + titre + '</span><span class="sv-ts">' + sousTitre + '</span></span>' +
+      '<span class="sv-thv">' + valeurHtml + (barresHtml || '') + '</span>' +
+      '<span class="sv-thr">' + (tagHtml || '') + '<span class="sv-chev">▾</span></span>' +
+    '</button><div class="sv-body">' + corpsHtml + '</div></section>';
+}
+function svBascule(id){
+  var i = SV_OPEN.indexOf(id);
+  if(i >= 0) SV_OPEN.splice(i, 1); else SV_OPEN.push(id);
+  svSauveOpen();
+  var el = document.getElementById('svp-' + id); if(!el) return;
+  var ouvert = SV_OPEN.indexOf(id) >= 0;
+  el.classList.toggle('open', ouvert);
+  var b = el.querySelector('.sv-head'); if(b) b.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
+  if(ouvert && id === 'retours'){ try{ rmRetoursRendre(true); }catch(e){} }
+}
+function svOuvre(id){
+  if(SV_OPEN.indexOf(id) < 0) svBascule(id);
+  var el = document.getElementById('svp-' + id);
+  if(el){ var r = el.getBoundingClientRect(); if(r.top < 0 || r.top > window.innerHeight - 160){ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
+}
+function svCarte(titre, sous, tag, inner){
+  return '<div class="sv-card"><div class="sv-chd"><div><h3>' + titre + '</h3>' + (sous ? '<p>' + sous + '</p>' : '') + '</div>' + (tag || '') + '</div>' + inner + '</div>';
+}
+function svMajTuileRetours(eqR, eqX, lignes, SR, SX, prime){
+  var v = document.getElementById('svRetVal'); if(!v) return;
+  var col = function(p, sc){ return p == null ? 'var(--muted)' : (p <= sc[0] ? '#34b774' : (p <= sc[1] ? '#e8a33d' : '#e5484d')); };
+  var f = function(x){ return x == null ? '—' : String(x).replace('.', ',') + ' %'; };
+  v.innerHTML = '<span style="color:' + col(eqR.val, SR) + '">' + f(eqR.val) + '</span>' + (prime ? ' <span class="u">· <span style="color:' + col(eqX.val, SX) + '">' + f(eqX.val) + '</span></span>' : '');
+  var sub = document.getElementById('svRetSub');
+  if(sub) sub.innerHTML = prime ? 'Retours · rétractations (moyenne) — des statistiques, pas des montants' : 'Retours Ilek — des statistiques, pas des montants';
+  var tg = document.getElementById('svRetTag');
+  if(tg){ var n = lignes.filter(function(l){ return l.r.val != null && l.r.val > SR[0]; }).length; tg.innerHTML = n ? '<span class="tag warn">' + n + ' à surveiller</span>' : '<span class="tag ok">Rien à signaler</span>'; }
+}
+function svApresRendu(){
+  try{
+    if(!RS.donnees && !RS.charge){ rsCharger(); }
+    else if(RS.donnees){ rmRetoursRendre(true); }
+  }catch(e){ console.warn('stats supervision', e); }
+}
+
 let supervisionRenderToken = 0;
 async function renderSupervisionReel(){
   const dashboard = document.getElementById('supervisionDashboard');
@@ -23037,19 +23316,17 @@ async function renderSupervisionReel(){
         </div>
       </div>` : '';
 
-  // ---- Vue d'équipe + prime de supervision ----
-  dashboard.innerHTML = `
-    <div class="supervision-card">
-      <div class="label">👥 Équipe — objectif du mois</div>
-      <div class="big ${teamPct>=100?'gold':(teamPct>=50?'green':'red')}" title="À gauche : les contrats réellement signés par l'équipe ce mois-ci (rétractations déjà retirées).&#10;À droite : la somme des objectifs MINIMUM que tu imposes à chaque agent.&#10;C'est le seuil obligatoire, pas une ambition — l'objectif visé par l'équipe est juste en dessous." style="cursor:help;">${totalMonthReal}<span style="font-size:20px;color:var(--muted);"> / ${totalMonthObj||'—'}</span></div>
-      <div class="sub">${totalMonthObj>0 ? `<span title="Contrats réalisés ÷ somme des minimums obligatoires. Au-dessus de 100 %, l'équipe a dépassé le seuil que tu imposes." style="cursor:help;">${teamPct}% de l'objectif d'équipe</span>` : `<span title="Aucun agent n'a d'objectif mensuel réglé dans Réglages → Rémunération par agent. Sans objectif, il n'y a ni seuil ni commission au palier." style="cursor:help;">Objectifs individuels non réglés ⓘ</span>`}${alerteHtml ? ' · ' + alerteHtml : ''}</div>
-      <div class="supervision-progress"><div class="fill ${teamPct>=100?'over':(teamPct<50?'under':'')}" style="width:${Math.min(100,teamPct)}%;"></div></div>
-      ${presqueHtml}
-      ${viseHtml}
-      ${sousViseHtml}
-      <div class="sub" style="margin-top:8px;font-size:11px;" title="Les ${totalBasePool} contrats des agents de base sont les seuls qui alimentent ta prime de supervision.&#10;Les ${allSupervisorsPersonal} contrats personnels des superviseurs (les tiens compris) comptent pour l'équipe, mais JAMAIS dans la prime — personne ne se paie une prime sur ses propres ventes." style="cursor:help;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}${allIndepContracts>0 ? ` + ${allIndepContracts} indépendant${allIndepContracts>1?'s':''}` : ''}. <span style="opacity:0.7;">ⓘ</span></div>
-    </div>
-    <div class="supervision-card sup-perso-block">
+  // ---- Haut de page (r294) : double anneau (minimum obligatoire / objectif fixé) + salaire ----
+  const svMyRow = rows.find(r=>r.agent===supervisor);
+  const svNum = n => Number(n||0).toLocaleString('fr-FR');
+  // La commission sur indépendants n'a PLUS de carte ni de détail : elle est fondue dans « Total estimé (toi) ».
+  // Quand elle vaut 0, rien ne change à l'écran.
+  const svCommIndep = (myIndepComm && myIndepComm.amount) ? myIndepComm.amount : 0;
+  const svTotalToi = svMyRow ? (svMyRow.salaryMonth + supervisorBonus + svCommIndep) : (supervisorBonus + svCommIndep);
+  const svNbSousContrat = config.agents.filter(a=>!isIndependant(a) && estSousContrat(a, todayStr(), true)).length;
+  const svViseOk = nbDesiredSet > 0 && totalMonthDesired > 0;
+  const svColMin = teamPct>=100 ? 'var(--gold)' : (teamPct>=50 ? 'var(--amber)' : 'var(--red)');
+  const svPrimeHtml = `<div class="supervision-card">
       <div class="label">📊 Ta prime de supervision</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:6px 0 4px;">
         <div style="text-align:center;">
@@ -23068,17 +23345,45 @@ async function renderSupervisionReel(){
       <div class="sub" style="margin-top:4px;">Ton taux : ${(rate).toLocaleString('fr-FR')} DH/contrat des agents de base${!rate ? " — montant à régler par l'admin dans Production" : ''}${effectiveRateToday > rate ? ` <b style="color:var(--gold);">→ ${effectiveRateToday.toLocaleString('fr-FR')} DH aujourd'hui</b> (part d'un collègue superviseur en retard/absent reversée sur ton taux)` : ''}</div>
       <div class="sub" style="margin-top:4px;font-size:11px;">Hors tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''} et ceux des autres superviseurs. Semaine = lundi à aujourd'hui.</div>
       ${myIneligibilityReason ? `<div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚫 Aujourd'hui, à cause du non-respect du règlement — ${myIneligibilityReason} — tu es à <b>0 DH/contrat</b> des agents de base. Ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}
-    </div>
-    ${myIndepComm && myIndepComm.detail.length ? `
-    <div class="supervision-card sup-perso-block">
-      <div class="label">🤝 Ta commission sur agents indépendants</div>
-      <div class="big gold" style="font-size:22px;">${myIndepComm.amount.toLocaleString('fr-FR')} DH <span style="font-size:12px; color:var(--muted); font-weight:600;">ce mois-ci</span></div>
-      <div class="sub" style="margin-top:6px; font-size:11.5px;">Séparée de ta prime de supervision d'équipe ci-dessus — réglée agent par agent (Admin → Production).</div>
-      <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px;">
-        ${myIndepComm.detail.map(x => `<div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text);"><span>${escapeHtml(x.agent)} — ${x.contracts} contrat${x.contracts>1?'s':''} × ${x.rate} DH</span><b style="color:var(--gold);">${x.amount.toLocaleString('fr-FR')} DH</b></div>`).join('')}
+    </div>`;
+  dashboard.innerHTML = `
+    ${myIneligibilityReason ? `<div class="sv-banner sv-perso"><div><b>🚫 Règlement : tu es à 0 DH par contrat aujourd'hui</b>${myIneligibilityReason}. Ta part est reversée au(x) superviseur(s) présent(s).</div></div>` : ''}
+    <div class="sv-hero">
+      <div class="sv-box">
+        <div class="sv-ln"><span class="sv-lab">👥 Équipe — objectif du mois</span>${enRetardRows.length ? `<span class="tag late">⚠ Alerte : ${enRetardRows.length} agent${enRetardRows.length>1?'s':''} menacé${enRetardRows.length>1?'s':''}</span>` : ''}</div>
+        <div class="sv-herobox">
+          <div class="sv-dring ${teamPct>=100?'ok':''}" style="--a:${Math.min(100,teamPct)};--b:${svViseOk?Math.min(100,visePct):0}" role="img" aria-label="Anneau extérieur : minimum obligatoire ${teamPct} %. Anneau intérieur : objectif fixé par les agents ${svViseOk?visePct:0} %.">
+            <div class="sv-d2"><div class="sv-d3" title="Les contrats réellement signés par l'équipe ce mois-ci (rétractations déjà retirées).&#10;Anneau extérieur : part du minimum obligatoire atteint.&#10;Anneau intérieur : part de l'objectif que les agents se sont fixé eux-mêmes."><b>${totalMonthReal}</b><span>contrats signés<br>(rétractations retirées)</span></div></div>
+          </div>
+          <div class="sv-hs">
+            ${totalMonthObj>0 ? `<div class="sv-row2"><div class="sv-pt" style="background:${svColMin}"></div><div>
+              <div class="sv-lab" style="cursor:help;" title="La somme des objectifs MINIMUM que tu imposes à chaque agent.&#10;C'est le seuil obligatoire, pas une ambition.">Minimum obligatoire <span style="opacity:.7;">ⓘ</span></div>
+              <div class="sv-pct" style="color:${svColMin}">${teamPct} %</div>
+              <div class="sv-sm">${totalMonthReal} sur ${totalMonthObj} · somme des minimums imposés à chaque agent</div></div></div>`
+            : `<div class="sv-row2"><div class="sv-pt" style="background:var(--muted)"></div><div><div class="sv-lab">Minimum obligatoire</div><div class="sv-sm" style="margin-top:6px;" title="Aucun agent n'a d'objectif mensuel réglé dans Réglages → Rémunération par agent. Sans objectif, il n'y a ni seuil ni commission au palier.">Objectifs individuels non réglés ⓘ</div></div></div>`}
+            ${svViseOk ? `<div class="sv-row2"><div class="sv-pt" style="background:#5aa7ff"></div><div>
+              <div class="sv-lab" style="cursor:help;" title="Somme de ce que chaque agent s'est promis lui-même dans l'Arena.&#10;Le minimum est ce que TU imposes ; celui-ci est ce que l'ÉQUIPE s'engage à faire.&#10;Un agent qui n'a rien fixé compte pour son minimum.">Objectif fixé par les agents <span style="opacity:.7;">ⓘ</span></div>
+              <div class="sv-pct" style="color:#5aa7ff">${visePct} %</div>
+              <div class="sv-sm">${totalMonthReal} sur ${totalMonthDesired} · ${resteVise > 0 ? `<b style="color:var(--text);" title="Ce qu'il reste à signer, tous agents confondus, pour que l'équipe tienne sa propre promesse. C'est le chiffre à annoncer en briefing.">encore ${resteVise}</b> à signer (chiffre à annoncer au briefing)` : `<b style="color:var(--gold);">objectif fixé atteint 🎉</b>`} · <span title="Les agents qui n'ont pas fixé d'objectif dans l'Arena comptent pour leur minimum obligatoire dans ce total." style="cursor:help;">${nbDesiredSet} agent${nbDesiredSet>1?'s':''} sur ${svNbSousContrat} ${nbDesiredSet>1?'ont':'a'} fixé le leur ⓘ</span></div></div></div>` : ''}
+          </div>
+        </div>
+        <div class="sv-alerts">${alerteHtml ? `<div class="sub">${alerteHtml}</div>` : ''}${presqueHtml}${sousViseHtml}</div>
+        <div class="sv-xs"><div class="sub" style="margin-top:8px;font-size:11px;" title="Les ${totalBasePool} contrats des agents de base sont les seuls qui alimentent ta prime de supervision.&#10;Les ${allSupervisorsPersonal} contrats personnels des superviseurs (les tiens compris) comptent pour l'équipe, mais JAMAIS dans la prime — personne ne se paie une prime sur ses propres ventes." style="cursor:help;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}${allIndepContracts>0 ? ` + ${allIndepContracts} indépendant${allIndepContracts>1?'s':''}` : ''}. <span style="opacity:0.7;">ⓘ</span></div></div>
       </div>
-    </div>` : ''}
-    <div class="sup-perso-hidden-note">🙈 Ta prime de supervision est masquée — les chiffres d'équipe restent visibles.</div>
+      <div>
+        ${svMyRow ? `<div class="sv-box pay sv-perso">
+          <div class="sv-lab">💰 Ton salaire</div>
+          <div class="sv-three">
+            <div><div class="sv-num">${svNum(svMyRow.salaryMonth)} DH</div><div class="sv-xs" style="margin-top:2px;">Ton salaire (mois)</div></div>
+            <div><div class="sv-num">${svNum(supervisorBonus)} DH</div><div class="sv-xs" style="margin-top:2px;">Prime de supervision (mois)</div></div>
+            <div><div class="sv-num">${svNum(svTotalToi)} DH</div><div class="sv-xs" style="margin-top:2px;">Total estimé (toi)</div></div>
+          </div>
+          <div class="sv-sm" style="margin-top:16px;">Salaire personnel + prime de supervision.</div>
+          <button type="button" class="sv-btn" style="margin-top:14px;" onclick="svOuvre('salaire')">Voir le détail →</button>
+        </div>` : ''}
+        <div class="sv-pres-note"><b>🎬 Mode présentation actif.</b><div class="sv-sm" style="margin-top:4px;">Ton salaire, ta prime, les salaires des agents et les statistiques des superviseurs sont masqués. Les objectifs, le bilan, les statistiques des agents et les chiffres d'équipe restent visibles.</div></div>
+      </div>
+    </div>
   `;
 
   // ---- Pression : agents en difficulté ----
@@ -23115,12 +23420,7 @@ async function renderSupervisionReel(){
   const totalDayObjSet = objRowsWithDayObj.reduce((s,r)=>s+r.dayObjective, 0);
   const totalDayRealizedAll = objDisplayRows.reduce((s,r)=>s+r.dayRealized, 0);
   const indepDayRealized = objDisplayRows.filter(r=>r.isIndep).reduce((s,r)=>s+r.dayRealized, 0);
-  let objBlockHtml = `<div style="font-size:23px; font-weight:900; margin:0 0 4px; padding-top:34px; border-top:3px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:-0.2px; color:#e5a83d;">📊 Bilan de la journée <span style="font-size:12px; font-weight:800; border-radius:20px; padding:3px 12px; letter-spacing:0.3px; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.4); color:#e5a83d;">OBLIGATOIRE · WHATSAPP</span></div>
-    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.7; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(229,168,61,0.09); border-left:4px solid #e5a83d;"><b style="color:#e5a83d;">👉 Ce que tu dois faire :</b> en fin de journée, clique sur le bouton <b>« Envoyer sur WhatsApp »</b> juste en dessous et envoie l'image au groupe de l'équipe. C'est obligatoire, tous les jours, sans exception.</div>
-    <div style="margin:10px 0 14px;">
-      <button type="button" id="objSnapExportBtnSup" onclick="exportBriefingImage('objSnapCardsSup','objSnapExportBtnSup','Bilan de la journée','Obligatoire · WhatsApp','bilan_du_jour_supervision','#e5a83d')" style="padding:9px 16px; border-radius:8px; border:1px solid #e5a83d; background:rgba(229,168,61,0.12); color:#e5a83d; font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (bilan du jour)</button>
-            <button type="button" id="objSnapExportBtnSupHQ" onclick="exportBriefingImage('objSnapCardsSup','objSnapExportBtnSupHQ','Bilan de la journée','Obligatoire · WhatsApp','bilan_du_jour_supervision','#e5a83d',true)" title="PNG haute définition (2400 px). À envoyer dans WhatsApp via 📎 → Document : aucune compression, lisible au zoom." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max (à envoyer en Document)</button>
-    </div>`;
+  let objBlockHtml = '';
  objBlockHtml += `<div id="objSnapCardsSup"></div>`;
 
   // ---- 🚨 Pression : conformité aujourd'hui + meilleur/pire agent du mois + tendances ----
@@ -23149,7 +23449,7 @@ async function renderSupervisionReel(){
     !r.justifiedAbsence && !estEnDecouverteLe(r.agent, todayStr()) && !estRecrue(r.agent));
   const worstAgent = designables.length ? designables[designables.length-1] : null;
 
-  const pressureExtraHtml = `
+  const conformiteHtml = `
     <div class="section-title" style="margin-top:0;">🚨 Conformité aujourd'hui</div>
     <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
       <div style="padding:14px 18px; border-radius:12px; background:${violationCount>0?'var(--red-bg)':'var(--panel2)'}; border:1px solid ${violationCount>0?'rgba(229,90,90,0.45)':'rgba(52,183,116,0.4)'}; flex:1; min-width:200px;">
@@ -23158,8 +23458,9 @@ async function renderSupervisionReel(){
         ${violationCount>0 ? `<div style="font-size:12px; color:var(--red); margin-top:4px;">⚠️ ${violationCount} agent${violationCount>1?'s':''} en infraction — va vérifier le détail plus bas</div>` : `<div style="font-size:12px; color:var(--green); margin-top:4px;">✅ Tout le monde est dans les clous</div>`}
       </div>
     </div>
-
-    <div class="section-title">🏆 Meilleur agent / 😬 À encourager (ce mois)</div>
+`;
+  const meilleurHtml = `
+    <div class="section-title" style="margin-top:0;">🏆 Meilleur agent / 😬 À encourager (ce mois)</div>
     <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
       ${bestAgent ? `<div style="padding:14px 18px; border-radius:12px; background:var(--panel2); border:1px solid rgba(52,183,116,0.4); flex:1; min-width:180px;">
         <div style="font-size:12px; color:var(--muted);">🏆 Meilleur du mois</div>
@@ -23172,8 +23473,9 @@ async function renderSupervisionReel(){
         <div style="font-size:13px; color:var(--red); margin-top:2px;">${worstAgent.monthReal} contrats — va le voir</div>
       </div>` : ''}
     </div>
-
-    <div class="section-title">📈 Tendance des 14 derniers jours</div>
+`;
+  const tendanceHtml = `
+    <div class="section-title" style="margin-top:0;">📈 Tendance des 14 derniers jours</div>
     <div id="supTrendChartPanel"></div>
 
     <div class="section-title">📅 Ce mois vs le mois dernier</div>
@@ -23193,125 +23495,112 @@ async function renderSupervisionReel(){
   // On réutilise les chiffres du jour/du mois déjà calculés juste au-dessus (rows) au lieu de les relire
   // une seconde fois — seuls l'historique des derniers jours et la veille sont vraiment nouveaux ici.
   const briefingBaseRows = rows.map(r=>({ agent: r.agent, isIndep: r.isIndep, todayRealized: r.dayRealized, todayObjective: r.dayObjective, monthlyRealized: r.monthReal, mini: r.monthObj, vise: r.desiredObj }));
-  const dailyBriefingHtml = `<div style="font-size:23px; font-weight:900; margin:0 0 4px; padding-top:30px; border-top:3px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:-0.2px; color:var(--gold);">🎯 Objectif du jour — Conseil du matin <span style="font-size:12px; font-weight:800; border-radius:20px; padding:3px 12px; letter-spacing:0.3px; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.35); color:var(--gold);">ENVOI WHATSAPP FACULTATIF</span></div>
-    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.75; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(255,215,0,0.08); border-left:4px solid var(--gold);">
-      <b style="color:var(--gold);">👉 Ce que tu dois faire :</b> chaque matin, regarde la situation de chaque agent — mais ne lis jamais le texte du CRM mot à mot à voix haute, sers-t'en comme repère pour savoir qui fait quoi. À toi d'adapter, pas de réciter :
+  const dailyBriefingGuide = `<div class="sv-guide"><b style="color:var(--gold);">👉 Ce que tu dois faire :</b> chaque matin, regarde la situation de chaque agent — mais ne lis jamais le texte du CRM mot à mot à voix haute, sers-t'en comme repère pour savoir qui fait quoi. À toi d'adapter, pas de réciter :
       <div style="margin-top:9px; display:flex; flex-direction:column; gap:5px;">
         <div>🌟 <b>En avance ou en progrès :</b> félicite-le devant l'équipe, ça motive tout le monde.</div>
         <div>🙂 <b>Dans la moyenne :</b> encourage-le, pousse-le à viser un peu plus haut aujourd'hui.</div>
         <div>🚨 <b>En retard sur son objectif :</b> va lui parler en face à face, mets la pression, fais-lui sentir qu'il risque de finir la journée à 0 s'il ne s'active pas maintenant.</div>
       </div>
-      <div style="margin-top:9px;">Le but : que chaque agent reparte motivé avec le bon niveau d'exigence pour LUI — pas qu'il entende une phrase lue sur un écran. L'envoi sur WhatsApp est possible, mais pas obligatoire.</div>
-    </div>
-    <div style="margin:10px 0 14px;">
-      <button type="button" id="dailyBriefingExportBtnSup" onclick="exportBriefingImage('dailyBriefingSup','dailyBriefingExportBtnSup','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin_supervision','#e0c25e')" style="padding:9px 16px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.10); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📸 Envoyer sur WhatsApp (facultatif)</button>
-            <button type="button" id="dailyBriefingExportBtnSupHQ" onclick="exportBriefingImage('dailyBriefingSup','dailyBriefingExportBtnSupHQ','Conseil du matin','Facultatif · WhatsApp','conseil_du_matin_supervision','#e0c25e',true)" title="PNG haute définition (2400 px). À envoyer dans WhatsApp via 📎 → Document : aucune compression, lisible au zoom." style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; font-size:12.5px; cursor:pointer;">🖼️ Qualité max (à envoyer en Document)</button>
-    </div>
-    <div id="dailyBriefingSup">` + await buildDailyBriefingHtml(briefingBaseRows) + `</div>`;
+      <div style="margin-top:9px;">Le but : que chaque agent reparte motivé avec le bon niveau d'exigence pour LUI — pas qu'il entende une phrase lue sur un écran.</div></div>`;
+  const dailyBriefingHtml = `<div id="dailyBriefingSup">` + await buildDailyBriefingHtml(briefingBaseRows) + `</div>`;
 
   // Nouvelle section également ici : le Bilan de la semaine, identique à celui d'Admin → Vue d'ensemble,
   // pour que le superviseur prépare le même briefing hebdomadaire obligatoire avec son équipe. Contenu
   // dans un conteneur séparé (rempli juste après, via renderWeeklyBriefingSection) plutôt qu'inline ici
   // — sinon le sélecteur de semaine serait reconstruit et le choix perdu à chaque auto-refresh (35s).
-  const weeklyBriefingHtml = `<div style="font-size:23px; font-weight:900; margin:0 0 4px; padding-top:30px; border-top:3px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:-0.2px; color:#e5a83d;">📋 Bilan de la semaine <span style="font-size:12px; font-weight:800; border-radius:20px; padding:3px 12px; letter-spacing:0.3px; background:rgba(229,168,61,0.18); border:1px solid rgba(229,168,61,0.4); color:#e5a83d;">BRIEFING OBLIGATOIRE · 1×/SEMAINE</span></div>
-    <div style="font-family:'Inter',sans-serif; font-size:14.5px; line-height:1.7; color:var(--text); padding:14px 18px; border-radius:12px; margin:0 0 16px; background:rgba(229,168,61,0.09); border-left:4px solid #e5a83d;"><b style="color:#e5a83d;">👉 Ce que tu dois faire :</b> une fois par semaine, réunis toute l'équipe. Lis les chiffres à voix haute. Félicite ceux qui ont bien travaillé. Parle en privé à ceux qui sont en difficulté. Rappelle les règles si besoin.</div>
+  const weeklyBriefingHtml = `<div class="sv-guide"><b style="color:var(--gold);">👉 Ce que tu dois faire :</b> une fois par semaine, réunis toute l'équipe. Lis les chiffres à voix haute. Félicite ceux qui ont bien travaillé. Parle en privé à ceux qui sont en difficulté. Rappelle les règles si besoin.</div>
     <div id="weeklyBriefingSup"></div>`;
 
-  let html = pressureHtml + dailyBriefingHtml + objBlockHtml + weeklyBriefingHtml + pressureExtraHtml + `
-    <div class="section-title">👥 Détail équipe (objectif mensuel obligatoire)</div>
-    <div class="section-sub">Mis à jour en direct à chaque contrat ajouté par l'équipe. "Jour" = objectif du jour visé par l'agent / réalisé actuel. La colonne "Avancée du jour" alerte en rouge à 0 contrat, pousse en orange à 1-2, passe au vert à partir de 3 et salue une grosse journée à partir de 5 — la colonne "Conseil" utilise exactement les mêmes seuils. "Projection" = au rythme actuel, vert s'il va atteindre son mini, rouge sinon. "☕ Pause" = pause libre prise aujourd'hui / budget (⚠️ si dépassée), avec en dessous le nombre d'équivalents retard accumulés ce mois via la pause (voir Réglages → Horaires pour le seuil).</div>
-    <div style="overflow-x:auto;">
-    <table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Statut aujourd'hui</th><th>🚦 Avancée du jour</th><th>💬 Conseil</th><th>Jour (réalisé/visé)</th><th>Semaine</th><th>Mois</th><th>%</th><th>📅 Projection</th><th>☕ Pause</th><th>Assiduité</th><th>Salaire estimé (mois)</th>
-    </tr></thead><tbody>`;
-
+  // ---- Équipe en cartes (r294) : une carte par agent, tout est lisible sans défiler de gauche à droite ----
+  const svIni = n => escapeHtml(((n||'?').trim().charAt(0) || '?').toUpperCase());
+  const svCouleurPct = p => p >= 100 ? 'var(--green)' : (p >= 50 ? 'var(--amber)' : 'var(--red)');
+  let persoObjHtml = '';
+  let equipeCartesHtml = '';
   if(teamRows.length === 0){
-    html += `<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:16px;">Aucun agent salarié pour le moment.</td></tr>`;
+    equipeCartesHtml = `<div class="empty">Aucun agent salarié pour le moment.</div>`;
   } else {
-    const rowsHtml = await Promise.all(teamRows.map(async r=>{
+    const cartes = await Promise.all(teamRows.map(async r=>{
       const isMe = r.agent === supervisor;
-      const pctCls = r.pctMonth >= 100 ? 'good' : (r.pctMonth >= 50 ? 'mid' : 'bad');
       const badge = dailyProgressBadge(r.dayRealized, r.agent, r.justifiedAbsence);
-      const rowStyle = ((r.monthObj>0 && !r.atteint && r.pctMonth<70) || r.dayRealized<=0) && !r.justifiedAbsence ? 'background:var(--red-bg);' : '';
+      const alerte = ((r.monthObj>0 && !r.atteint && r.pctMonth<70) || r.dayRealized<=0) && !r.justifiedAbsence;
       const comment = supervisorActionComment(r.dayRealized, r.agent, r.justifiedAbsence);
       const proj = await computeMonthProjection(r.agent, now.getFullYear(), now.getMonth()+1);
       const projHtml = proj
         ? `<span class="tag ${proj.onTrack?'ok':'late'}" title="Rythme ${proj.pace}/jour, ${proj.remainingWorkingDays}j restants">${proj.onTrack?'✅':'⚠️'} ${proj.projected}</span>`
         : '<span style="color:var(--muted);">—</span>';
-      // 🆕 Pause du jour + info mensuelle, pour que les superviseurs surveillent ça aussi (pas seulement
-      // l'admin) — voir pauseTodayMin/pauseMonthEquiv calculés plus haut dans le builder de `rows`.
+      // Pause du jour + info mensuelle (pour que les superviseurs surveillent ça aussi, pas seulement l'admin).
       const pauseHtml = r.pauseTodayMin > 0
         ? `<span class="tag ${r.pauseTodayOver?'warn':''}">${r.pauseTodayMin}/${r.pauseTodayBudget}min${r.pauseTodayOver?` ⚠️+${r.pauseTodayMin-r.pauseTodayBudget}`:''}</span>`
         : '<span style="color:var(--muted);">—</span>';
       const pauseMonthNote = r.pauseMonthEquiv > 0
-        ? `<div style="font-size:10.5px; color:var(--amber); margin-top:2px;">+${r.pauseMonthEquiv} équiv. retard</div>`
-        : (r.pauseOverCount > 0 ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${r.pauseOverCount} dépassement${r.pauseOverCount>1?'s':''} ce mois</div>` : '');
-      return `<tr style="${rowStyle}">
-        <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}${(()=>{
-          // 🌱 Repère visuel : sans lui, un superviseur juge une recrue exactement comme un vétéran.
-          const j = agentAncienneteJours(r.agent);
-          if(j == null || j > 30) return '';
-          return ` <span class="tag" style="background:rgba(74,152,145,0.2); color:#6fd3c4;" title="Arrivé il y a ${j} jour${j>1?'s':''} — objectifs et conseils adaptés">🌱 ${j === 0 ? '1er jour' : j+' j'}</span>`;
-        })()}</td>
-        <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
-        <td><span class="tag ${badge.cls}" title="${badge.title}" style="cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></td>
-        <td style="font-size:12.5px; max-width:220px; ${r.dayRealized<=0?'color:var(--red); font-weight:700;':'color:var(--muted);'}">${isMe ? '' : comment}</td>
-        <td>${r.dayRealized} / ${r.dayObjective || '—'}</td>
-        <td>${r.weekReal}/${r.weekObjective||'—'}</td>
-        <td><b>${r.monthReal}</b>/${r.monthObj||'—'}</td>
-        <td class="lb-pct ${pctCls}">${r.monthObj>0 ? r.pctMonth+'%' : '—'}</td>
-        <td>${projHtml}</td>
-        <td>${pauseHtml}${pauseMonthNote}</td>
-        <td><span class="tag ${(r.retardsCumules>=3 || (r.tier && r.tier.level>=3))?'late':(r.retardsCumules>=1?'warn':'ok')}">${r.tier ? r.tier.label : 'Aucun retard'}</span></td>
-        <td>${isMe
-              ? `<span class="sup-perso-val"><b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></span><span class="sup-perso-dots">••••• DH</span>`
-              : `<b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b>`}</td>
-      </tr>`;
+        ? `<span style="font-size:11px; color:var(--amber);">+${r.pauseMonthEquiv} équiv. retard</span>`
+        : (r.pauseOverCount > 0 ? `<span style="font-size:11px; color:var(--muted);">${r.pauseOverCount} dépassement${r.pauseOverCount>1?'s':''} ce mois</span>` : '');
+      const recrue = (()=>{
+        const j = agentAncienneteJours(r.agent);
+        if(j == null || j > 30) return '';
+        return ` <span class="tag" style="background:rgba(74,152,145,0.2); color:#6fd3c4;" title="Arrivé il y a ${j} jour${j>1?'s':''} — objectifs et conseils adaptés">🌱 ${j === 0 ? '1er jour' : j+' j'}</span>`;
+      })();
+      const salaireChip = `<span class="sv-chip ${isMe?'sv-perso':'sv-pay'}">💰 Salaire estimé (mois) <b style="color:var(--green);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></span>`;
+      return `<div class="sv-ec ${isMe?'me':''} ${alerte?'alert':''}">
+        <div class="sv-ehd">
+          <span class="sv-av">${svIni(r.agent)}</span>
+          <div class="sv-et"><b>${escapeHtml(r.agent)}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''}${recrue}
+            <div class="sv-etags"><span class="tag ${r.statusCls}">${r.statusLabel}</span><span class="tag ${badge.cls}" title="${badge.title}" style="cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span></div>
+          </div>
+        </div>
+        <div class="sv-tiles">
+          <div><div class="sv-lab">Jour</div><div class="sv-num">${r.dayRealized}<small> / ${r.dayObjective || '—'}</small></div></div>
+          <div><div class="sv-lab">Semaine</div><div class="sv-num">${r.weekReal}<small> / ${r.weekObjective || '—'}</small></div></div>
+          <div><div class="sv-lab">Mois</div><div class="sv-num">${r.monthReal}<small> / ${r.monthObj || '—'}</small></div></div>
+          <div><div class="sv-lab">% du mini</div><div class="sv-num" style="color:${r.monthObj>0 ? svCouleurPct(r.pctMonth) : 'var(--muted)'};">${r.monthObj>0 ? r.pctMonth+'%' : '—'}</div></div>
+        </div>
+        ${r.monthObj>0 ? `<div class="supervision-progress"><div class="fill ${r.pctMonth>=100?'over':(r.pctMonth<50?'under':'')}" style="width:${Math.min(100,r.pctMonth)}%;"></div></div>` : ''}
+        <div class="sv-chips">
+          <span class="sv-chip">📅 Projection ${projHtml}</span>
+          <span class="sv-chip">☕ Pause ${pauseHtml} ${pauseMonthNote}</span>
+          <span class="sv-chip">Assiduité <span class="tag ${(r.retardsCumules>=3 || (r.tier && r.tier.level>=3))?'late':(r.retardsCumules>=1?'warn':'ok')}">${r.tier ? r.tier.label : 'Aucun retard'}</span></span>
+          ${salaireChip}
+        </div>
+        ${(!isMe && comment) ? `<div class="sv-conseil ${r.dayRealized<=0?'zero':''}">💬 ${comment}</div>` : ''}
+      </div>`;
     }));
-    html += rowsHtml.join('');
+    equipeCartesHtml = `<div class="sv-grid">${cartes.join('')}</div>
+      <div class="sv-total" style="margin-top:14px;">
+        <div class="sv-lab" style="margin-bottom:8px;">TOTAL ÉQUIPE</div>
+        <div class="sv-tiles">
+          <div><div class="sv-lab">Jour</div><div class="sv-num">${totalDayReal}<small> / ${totalDayObj || '—'}</small></div></div>
+          <div><div class="sv-lab">Semaine</div><div class="sv-num">${totalWeekReal}<small> / ${totalWeekObj || '—'}</small></div></div>
+          <div><div class="sv-lab">Mois</div><div class="sv-num">${totalMonthReal}<small> / ${totalMonthObj || '—'}</small></div></div>
+          <div><div class="sv-lab">% du mini</div><div class="sv-num">${teamPct||0}%</div></div>
+        </div>
+        <div class="sv-pay" style="margin-top:10px; font-size:13px;">💰 Salaires de l'équipe (estimé, mois) : <b style="color:var(--green);">${totalSalaryTeam.toLocaleString('fr-FR')} DH</b></div>
+      </div>`;
   }
 
-  html += `</tbody>
-    <tfoot><tr style="font-weight:800; border-top:2px solid var(--border);">
-      <td colspan="4">TOTAL ÉQUIPE</td>
-      <td>${totalDayReal}/${totalDayObj||'—'}</td>
-      <td>${totalWeekReal}/${totalWeekObj||'—'}</td>
-      <td>${totalMonthReal}/${totalMonthObj||'—'}</td>
-      <td>${teamPct||0}%</td>
-      <td>—</td>
-      <td>—</td>
-      <td>—</td>
-      <td>${totalSalaryTeam.toLocaleString('fr-FR')} DH</td>
-    </tr></tfoot>
-    </table></div>`;
-
+  let indepCartesHtml = '';
   if(indepRows.length){
-    html += `
-    <div class="section-title" style="margin-top:28px;">🧑‍💼 Indépendants — à part, hors objectif d'équipe</div>
-    <div class="section-sub">Payés dès le 1er contrat, sans obligation. S'ils se fixent un objectif du jour dans l'Arena, c'est uniquement pour le défi perso — ces chiffres ne comptent jamais dans le total et le % de l'équipe ci-dessus.</div>
-    <div style="overflow-x:auto;">
-    <table class="salary-table"><thead><tr>
-      <th>Agent</th><th>Statut aujourd'hui</th><th>Défi du jour</th><th>Contrats (mois)</th><th>Salaire estimé (mois)</th>
-    </tr></thead><tbody>` + indepRows.map(r=>{
+    indepCartesHtml = `<div class="sv-grid">` + indepRows.map(r=>{
       const isMe = r.agent === supervisor;
       const hasDefi = r.dayObjective > 0;
       const defiHit = hasDefi && r.dayRealized >= r.dayObjective;
-      return `<tr>
-        <td><b>${r.agent}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''} <span class="tag independant">Indé</span></td>
-        <td><span class="tag ${r.statusCls}">${r.statusLabel}</span></td>
-        <td>${hasDefi ? `${r.dayRealized} / ${r.dayObjective}${defiHit ? ' ✅' : ''}` : '<span style="color:var(--muted);">Aucun défi fixé</span>'}</td>
-        <td><b>${r.monthReal}</b></td>
-        <td>${isMe
-              ? `<span class="sup-perso-val"><b style="color:var(--independant);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></span><span class="sup-perso-dots">••••• DH</span>`
-              : `<b style="color:var(--independant);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b>`}</td>
-      </tr>`;
-    }).join('') + `</tbody>
-    <tfoot><tr style="font-weight:800; border-top:2px solid var(--border); color:var(--independant);">
-      <td colspan="3">TOTAL INDÉPENDANTS</td>
-      <td>${teamMonthContracts - totalMonthReal}</td>
-      <td>${totalSalaryIndep.toLocaleString('fr-FR')} DH</td>
-    </tr></tfoot>
-    </table></div>`;
+      return `<div class="sv-ec ${isMe?'me':''}">
+        <div class="sv-ehd">
+          <span class="sv-av">${svIni(r.agent)}</span>
+          <div class="sv-et"><b>${escapeHtml(r.agent)}</b>${isMe ? ' <span class="tag ok" style="background:rgba(255,215,0,0.15);color:var(--gold);">Toi</span>' : ''} <span class="tag independant">Indé</span>
+            <div class="sv-etags"><span class="tag ${r.statusCls}">${r.statusLabel}</span></div>
+          </div>
+        </div>
+        <div class="sv-tiles" style="grid-template-columns:repeat(2,1fr);">
+          <div><div class="sv-lab">Défi du jour</div><div class="sv-num" style="font-size:${hasDefi?'19':'13'}px;">${hasDefi ? `${r.dayRealized}<small> / ${r.dayObjective}</small>${defiHit ? ' ✅' : ''}` : '<span style="color:var(--muted);font-weight:600;">Aucun défi fixé</span>'}</div></div>
+          <div><div class="sv-lab">Contrats (mois)</div><div class="sv-num">${r.monthReal}</div></div>
+        </div>
+        <div class="sv-chips"><span class="sv-chip ${isMe?'sv-perso':'sv-pay'}">💰 Salaire estimé (mois) <b style="color:var(--independant);">${r.salaryMonth.toLocaleString('fr-FR')} DH</b></span></div>
+      </div>`;
+    }).join('') + `</div>
+      <div class="sv-total" style="margin-top:14px; border-color:rgba(155,89,182,.4);">
+        <div class="sv-lab" style="margin-bottom:8px; color:var(--independant);">TOTAL INDÉPENDANTS</div>
+        <div style="font-size:14px;"><b>${teamMonthContracts - totalMonthReal}</b> contrat${(teamMonthContracts - totalMonthReal)>1?'s':''} ce mois <span class="sv-pay">· <b style="color:var(--independant);">${totalSalaryIndep.toLocaleString('fr-FR')} DH</b></span></div>
+      </div>`;
   }
 
   // ---- Objectifs personnels du mois : ce que chaque agent (indépendants inclus) vise lui-même,
@@ -23325,12 +23614,12 @@ async function renderSupervisionReel(){
   const teamDesiredPct = totalDesiredTarget > 0 ? Math.round((totalDesiredReal/totalDesiredTarget)*100) : 0;
   const belowDesiredCount = desiredRowsSet.filter(r=>r.desiredPct < 70).length;
 
-  html += `
-    <div class="section-title" style="margin-top:28px;">🎯 Objectifs personnels du mois — motivation (indépendants inclus)</div>
+  persoObjHtml += `
+    <div class="section-title">🎯 Objectifs personnels du mois — motivation (indépendants inclus)</div>
     <div class="section-sub">Chiffre que chaque agent vise lui-même ce mois-ci, en plus du mini obligatoire (réglable par l'agent dans Mes Objectifs, ou par toi dans Admin → Production). Suivi individuel, ne compte jamais dans le total d'équipe ci-dessus.</div>`;
 
   if(desiredRowsSet.length){
-    html += `
+    persoObjHtml += `
     <div class="supervision-card" style="text-align:center; margin:14px 0 18px;">
       <div class="label">🎯 Vue d'ensemble — objectifs perso cumulés</div>
       <div class="big ${teamDesiredPct>=100?'gold':(teamDesiredPct>=50?'green':'red')}">${totalDesiredReal}<span style="font-size:20px;color:var(--muted);"> / ${totalDesiredTarget}</span></div>
@@ -23355,14 +23644,78 @@ async function renderSupervisionReel(){
       </div>`;
     }).join('') + `</div>`;
   } else {
-    html += `<div class="empty" style="margin-top:10px;">Aucun agent n'a encore fixé d'objectif personnel ce mois-ci.</div>`;
+    persoObjHtml += `<div class="empty" style="margin-top:10px;">Aucun agent n'a encore fixé d'objectif personnel ce mois-ci.</div>`;
   }
 
   if(desiredRowsUnset.length){
-    html += `<div class="section-sub" style="margin-top:10px;">Sans objectif perso fixé pour l'instant : ${desiredRowsUnset.map(r=>r.agent).join(', ')}.</div>`;
+    persoObjHtml += `<div class="section-sub" style="margin-top:10px;">Sans objectif perso fixé pour l'instant : ${desiredRowsUnset.map(r=>r.agent).join(', ')}.</div>`;
   }
 
-  detail.innerHTML = html;
+  // ---- Assemblage (r294) : chaque tuile EST l'en-tête de sa section ----
+  const svTag = (cls, txt)=> `<span class="tag ${cls}">${txt}</span>`;
+  const svBarre = (pct, cls)=> `<div class="sv-bar"><i class="${cls||''}" style="width:${Math.max(0,Math.min(100,pct))}%"></i></div>`;
+  const svPl = (n, mot)=> `${n} ${mot}${n>1?'s':''}`;
+  const dayPct = totalDayObjSet > 0 ? Math.round(100*totalDayRealizedAll/totalDayObjSet) : 0;
+  const svEnPause = teamRows.filter(r=>/^En pause/.test(r.statusLabel)).length;
+  const svPresents = teamRows.filter(r=>/^(Présent|En pause|Journée terminée)/.test(r.statusLabel)).length;
+  const svAvs = `<div class="sv-avs">` + teamRows.map(r=>{
+    const cls = r.statusCls==='late' ? 'b' : (/^En pause/.test(r.statusLabel) ? 'w' : (/^(Présent|Journée terminée)/.test(r.statusLabel) ? 'g' : ''));
+    return `<span class="sv-av ${cls}" title="${escapeHtml(r.agent)} — ${escapeHtml(r.statusLabel)}">${svIni(r.agent)}</span>`;
+  }).join('') + `</div>`;
+
+  const corpsAujourdhui = `<div class="sv-card">${pressureHtml}</div>`
+    + svCarte("🎯 Objectif fixé et réalisé — aujourd'hui", "Une carte par agent : classement, séries, 5 derniers jours, objectifs du mois, commentaire. Indépendants inclus : leur défi perso ne compte pas dans l'équipe.", '', objBlockHtml)
+    + svCarte('💬 Conseil du matin — objectif du jour', '', '', dailyBriefingGuide + dailyBriefingHtml)
+    + `<div class="sv-card">${conformiteHtml}</div>`
+    + `<div class="sv-card">${meilleurHtml}</div>`;
+  const corpsSemaine = `<div class="sv-card">${weeklyBriefingHtml}</div>`;
+  const corpsMois = `<div class="sv-card">${persoObjHtml}</div><div class="sv-card">${tendanceHtml}</div><div class="sv-card">${meilleurHtml}</div>`;
+  const corpsEquipe = svCarte('👥 Détail équipe — objectif mensuel obligatoire',
+      "Mis à jour en direct à chaque contrat. « Jour » = réalisé / visé par l'agent. Avancée du jour : rouge à 0, orange à 1-2, vert dès 3. « Projection » = rythme actuel prolongé jusqu'à la fin du mois : vert s'il atteint son minimum, rouge sinon. « Pause » = pause libre prise aujourd'hui / budget (⚠️ si dépassée).", '', equipeCartesHtml)
+    + (indepRows.length ? svCarte('🧑‍💼 Indépendants — à part, hors objectif d\'équipe',
+      "Payés dès le 1er contrat, sans obligation. S'ils se fixent un défi du jour dans l'Arena, c'est uniquement pour le défi perso — ces chiffres ne comptent jamais dans le total ni le % de l'équipe.", '', indepCartesHtml) : '');
+  const corpsRetours = `<div class="sv-card"><div class="sv-chd"><div><h3>📊 Statistiques retours &amp; rétractations</h3><p><b>Ce sont des statistiques, pas des montants d'argent.</b> Un <b>retour</b> = un contrat signé par l'agent que le client annule ensuite (facturation). Une <b>rétractation</b> = le client change d'avis dans le délai légal. Les pourcentages montrent la qualité des contrats de chaque agent : moyenne mois par mois (les retours d'un mois ne sont connus que 2 mois plus tard).</p></div></div><div id="supRetoursHote"><div class="empty">⏳ Chargement de l'historique…</div></div></div>`;
+  const corpsSalaire = (svMyRow ? `<div class="cash-period-grid">
+      <div class="cash-period-card">
+        <div class="cp-label">💰 Ton salaire (mois)</div>
+        <div class="cp-amount">${svMyRow.salaryMonth.toLocaleString('fr-FR')} DH</div>
+        <div class="cp-sub">${svMyRow.monthReal} contrat${svMyRow.monthReal>1?'s':''} personnel${svMyRow.monthReal>1?'s':''}</div>
+      </div>
+      <div class="cash-period-card" style="border-color:rgba(255,215,0,0.3);">
+        <div class="cp-label">📊 Prime de supervision (mois)</div>
+        <div class="cp-amount">${supervisorBonus.toLocaleString('fr-FR')} DH</div>
+        <div class="cp-sub">${contractsUnderSupervision} contrat${contractsUnderSupervision>1?'s':''} des agents supervisés (hors toi)</div>
+      </div>
+      <div class="cash-period-card" style="border-color:rgba(52,183,116,0.3);">
+        <div class="cp-label">💎 Total estimé (toi)</div>
+        <div class="cp-amount">${svTotalToi.toLocaleString('fr-FR')} DH</div>
+        <div class="cp-sub">Salaire personnel + prime de supervision</div>
+      </div>
+    </div>` : '') + svPrimeHtml;
+
+  detail.innerHTML =
+      svTuile('aujourdhui', '☀️', 'rgba(229,168,61,.14)', "Aujourd'hui", 'contrats réalisés / objectifs fixés ce matin',
+        `<span class="sv-tv">${totalDayRealizedAll}${totalDayObjSet>0 ? ` <span class="u">/ ${totalDayObjSet}</span>` : ''}</span>`,
+        totalDayObjSet>0 ? svBarre(dayPct, dayPct>=100?'gold':(dayPct<50?'bad':'warn')) : '',
+        strugglingRows.length ? svTag('late', svPl(strugglingRows.length, 'agent') + ' menacé' + (strugglingRows.length>1?'s':'')) : svTag('ok', '✅ Aucune alerte'),
+        corpsAujourdhui)
+    + svTuile('semaine', '📅', 'rgba(90,167,255,.13)', 'Cette semaine', 'Du lundi à aujourd\'hui · bilan, évolution, conseils',
+        `<span class="sv-tv">${totalWeekReal}${totalWeekObj>0 ? ` <span class="u">/ ${totalWeekObj}</span>` : ` <span class="u">contrats</span>`}</span>`,
+        totalWeekObj>0 ? svBarre(Math.round(100*totalWeekReal/totalWeekObj), totalWeekReal>=totalWeekObj?'gold':'warn') : '',
+        '', corpsSemaine)
+    + svTuile('mois', '🗓️', 'rgba(52,183,116,.13)', 'Ce mois-ci',
+        `${totalMonthReal} sur ${totalMonthObj||'—'} (minimum)${svViseOk ? ` · ${totalMonthReal} sur ${totalMonthDesired} (objectif fixé)` : ''}`,
+        `<span class="sv-tv" style="color:${svColMin};">${totalMonthObj>0 ? teamPct : '—'}<span class="u"> % du minimum</span></span>`,
+        (totalMonthObj>0 ? svBarre(teamPct, teamPct>=100?'gold':(teamPct<50?'bad':'warn')) : '') + (svViseOk ? `<div style="height:5px"></div>` + svBarre(visePct, 'info') : ''),
+        svViseOk && resteVise>0 ? `<span class="tag" style="background:rgba(90,167,255,.15);color:#5aa7ff;">encore ${resteVise}</span>` : '', corpsMois)
+    + svTuile('equipe', '👥', 'rgba(255,215,0,.12)', 'Équipe', `Détail de chaque agent${indepRows.length ? ` · ${svPl(indepRows.length,'indépendant')} à part` : ''}`,
+        `<span class="sv-tv">${svPresents}<span class="u"> présent${svPresents>1?'s':''} sur ${teamRows.length}</span></span>`, svAvs,
+        svEnPause>0 ? svTag('warn', `${svEnPause} en pause`) : '', corpsEquipe)
+    + svTuile('retours', '📊', 'rgba(229,72,77,.13)', 'Statistiques retours &amp; rétractations', '<span id="svRetSub">Des statistiques, pas des montants — touche pour voir</span>',
+        `<span class="sv-tv" id="svRetVal"><span class="u">—</span></span>`, '', '<span id="svRetTag"></span>', corpsRetours)
+    + svTuile('salaire', '💰', 'rgba(255,215,0,.12)', 'Mon salaire', `Total estimé ce mois · prime de supervision ${supervisorBonus.toLocaleString('fr-FR')} DH`,
+        `<span class="sv-tv" style="color:var(--gold);">${svTotalToi.toLocaleString('fr-FR')}<span class="u"> DH</span></span>`, '', '', corpsSalaire, 'sv-perso gd');
+  svApresRendu();
   renderWeeklyBriefingSection('weeklyBriefingSup', 'weeklyBriefingWeekSelectSupervision');
   checkWeeklyBriefingReminderSupervision(supervisor);
   // 🎯 Point du jour : recalculé à chaque rendu de Supervision (donc aussi à l'auto-refresh 30 s).
@@ -23381,23 +23734,7 @@ async function renderSupervisionReel(){
   renderBestWorstDayPanel('supBestWorstDayPanel');
 
   // ---- Salaire personnel du superviseur + sa prime ----
-  const myRow = rows.find(r=>r.agent===supervisor);
-  salary.innerHTML = myRow ? `
-    <div class="cash-period-card">
-      <div class="cp-label">💰 Ton salaire (mois)</div>
-      <div class="cp-amount">${myRow.salaryMonth.toLocaleString('fr-FR')} DH</div>
-      <div class="cp-sub">${myRow.monthReal} contrat${myRow.monthReal>1?'s':''} personnel${myRow.monthReal>1?'s':''}</div>
-    </div>
-    <div class="cash-period-card" style="border-color:rgba(255,215,0,0.3);">
-      <div class="cp-label">📊 Prime de supervision (mois)</div>
-      <div class="cp-amount">${supervisorBonus.toLocaleString('fr-FR')} DH</div>
-      <div class="cp-sub">${contractsUnderSupervision} contrat${contractsUnderSupervision>1?'s':''} des agents supervisés (hors toi)</div>
-    </div>
-    <div class="cash-period-card" style="border-color:rgba(52,183,116,0.3);">
-      <div class="cp-label">💎 Total estimé (toi)</div>
-      <div class="cp-amount">${(myRow.salaryMonth + supervisorBonus).toLocaleString('fr-FR')} DH</div>
-      <div class="cp-sub">Salaire personnel + prime de supervision</div>
-    </div>` : '';
+  salary.innerHTML = '';   // le salaire vit désormais dans la section « Mon salaire » (voir plus haut)
 
   // Le tableau de bord vient d'être régénéré : on remet l'état du bouton « masquer mes montants »
   // (la classe est sur la vue, elle survit au rendu — c'est juste le libellé du bouton qu'on resynchronise).
@@ -23743,8 +24080,8 @@ function rsCellule(agent, m){
   const v = d.v[agent] || 0, x = d.x[agent] || 0;
   return { base: v, ret: d.r[agent] || 0, x: x, baseX: v + x };
 }
-window.rmRetoursRendre = function(sansCharger){
-  const hote = document.getElementById('rmRetoursHote'); if(!hote) return;
+function rsRendreHote(hote, sup, sansCharger){
+  if(!hote) return;
   if(!sansCharger && (!RS.donnees || RS._p !== RS.produit)){ RS._p = RS.produit; RS.donnees = null; }
   if(!RS.donnees){ hote.innerHTML = '<div class="empty">⏳ Chargement de l\'historique…</div>'; rsCharger(); return; }
   const prime = RS.produit === 'prime';
@@ -23785,6 +24122,18 @@ window.rmRetoursRendre = function(sansCharger){
       return '<div title="' + nomMois(m) + ' (retenu ' + nomMois(rsAjoute(m, 2)).split(' ')[0] + ')' + (pale && estIncomplet(m) ? ' ⏳ retours encore en cours d\'arrivée' : '') + ' : ' + (v == null ? (pale && !compte(a, m) ? 'pas encore d\'historique de retours' : 'pas de données') : fmtP(Math.round(v*10)/10) + ' (' + c[cle] + '/' + c[cleBase] + ')') + '" style="flex:1;min-width:5px;height:' + (v == null ? 3 : Math.max(4, Math.round(34 * v / mx))) + 'px;background:' + (v == null ? 'rgba(255,255,255,.12)' : coul(v, seuils)) + ';border-radius:3px 3px 0 0;' + (pale && estIncomplet(m) ? 'opacity:.35;' : '') + '"></div>';
     }).join('') + '</div>';
   };
+  // Supervision : pas de barres, des pastilles « août 22 % → sept. 28 % → oct. 35 % ↗ en hausse »
+  const pilules = (a, cle, cleBase, seuils, pale)=> {
+    const ms = (pale ? choisis : choisisX).slice(0, 3).slice().reverse();
+    const items = ms.map(m=>{ const c = rsCellule(a, m); if(pale && !compte(a, m)) return null; return (c && c[cleBase] > 0) ? { m: m, v: Math.round(1000 * c[cle] / c[cleBase]) / 10, n: c[cle], b: c[cleBase] } : null; }).filter(Boolean);
+    if(!items.length) return '<div style="font-size:12px;color:var(--muted);margin-top:8px;">pas encore de données</div>';
+    let h2 = '<div class="sv-trend">' + items.map((it, k)=> (k ? '<span class="sv-ar">→</span>' : '') + '<span class="sv-tp" title="' + nomMois(it.m) + ' : ' + it.n + ' sur ' + it.b + '"><span>' + nomMois(it.m).split(' ')[0] + '</span><b style="color:' + coul(it.v, seuils) + ';">' + fmtP(it.v) + '</b></span>').join('');
+    if(items.length >= 2){
+      const d = items[items.length - 1].v - items[0].v;
+      h2 += d > 2 ? '<span style="font-size:12px;font-weight:700;color:#e5484d;">↗ en hausse</span>' : (d < -2 ? '<span style="font-size:12px;font-weight:700;color:#34b774;">↘ en baisse</span>' : '<span style="font-size:12px;font-weight:700;color:var(--muted);">→ stable</span>');
+    }
+    return h2 + '</div>';
+  };
   const gros = (titre, m, seuils, barresHtml)=> '<div style="flex:1;min-width:130px;"><div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">' + titre + '</div>' +
     '<div style="font-size:30px;font-weight:900;line-height:1.1;color:' + coul(m.val, seuils) + ';">' + fmtP(m.val) + '</div>' +
     '<div style="font-size:11.5px;color:var(--muted);">' + m.sr + ' sur ' + m.sb + '</div>' + (barresHtml || '') + '</div>';
@@ -23799,7 +24148,7 @@ window.rmRetoursRendre = function(sansCharger){
   const dureeLib = RS.duree === 0 ? 'tout l\'historique' : (RS.duree + ' dernier' + (RS.duree > 1 ? 's' : '') + ' mois');
   let h = '<div class="settings-box" style="padding:20px;">' +
     '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;justify-content:space-between;">' +
-      '<div><div style="font-size:20px;font-weight:900;">📊 Stats ' + (prime ? 'retours &amp; rétractations' : 'retours Ilek') + '</div>' +
+      '<div>' + (sup ? '' : '<div style="font-size:20px;font-weight:900;">📊 Stats ' + (prime ? 'retours &amp; rétractations' : 'retours Ilek') + '</div>') +
       '<div style="font-size:12.5px;color:var(--muted);margin-top:3px;">' + (mois.length ? mois.length + ' mois d\'historique · moyenne sur : ' + choisis.slice().reverse().map(nomMois).join(', ') : '') + '</div></div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + sel(RS.produit, [['prime', '🔵 Prime'], ['ilek', '🟢 Ilek']], 'rsChoix_produit') +
         sel(RS.duree, [[1, '1 mois'], [2, '2 mois'], [3, '3 mois'], [4, '4 mois'], [6, '6 mois'], [12, '12 mois'], [0, 'Tout']], 'rsChoix_duree') +
@@ -23811,21 +24160,27 @@ window.rmRetoursRendre = function(sansCharger){
     (prime ? '<div style="flex:1;min-width:230px;padding:16px 18px;border-radius:16px;background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid ' + coul(eqX.val, SX) + ';"><div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);">↪️ Rétractations — équipe</div><div style="font-size:46px;font-weight:900;line-height:1.05;color:' + coul(eqX.val, SX) + ';">' + fmtP(eqX.val) + '</div><div style="font-size:12.5px;color:var(--muted);">' + eqX.sr + ' rétractation' + (eqX.sr > 1 ? 's' : '') + ' sur ' + eqX.sb + ' contrats</div></div>' : '') +
     '<div style="flex:1;min-width:200px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid var(--border);font-size:12.5px;line-height:1.9;"><b>Code couleur</b><br><span style="color:#34b774;">●</span> bon : retours ≤ ' + SR[0] + ' % · rétractations ≤ 5 %<br><span style="color:#e8a33d;">●</span> à surveiller : ≤ ' + SR[1] + ' % · ≤ 10 %<br><span style="color:#e5484d;">●</span> mauvais : au-dessus</div></div>';
   // ── Une carte par agent, les plus mauvais en premier
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:16px;">' + lignes.map(l=>{
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(' + (sup ? 420 : 320) + 'px,1fr));gap:12px;margin-top:16px;">' + lignes.map(l=>{
     const pire = coul(l.r.val, SR);
-    return '<div style="padding:16px;border-radius:16px;background:var(--panel2);border:1px solid var(--border);border-left:5px solid ' + pire + ';">' +
+    const estSup = sup && (()=>{ try{ return isSupervisor(l.a); }catch(e){ return false; } })();
+    return '<div class="' + (estSup ? 'sv-stat-sup' : '') + '" style="padding:16px;border-radius:16px;background:var(--panel2);border:1px solid var(--border);border-left:5px solid ' + pire + ';">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><b style="font-size:16px;">' + escapeHtml(l.a) + '</b><span style="font-size:11.5px;color:var(--muted);">' + l.r.sb + ' ' + baseLib + '</span></div>' +
-      '<div style="display:flex;gap:16px;">' + gros('Retours', l.r, SR, barres(l.a, 'ret', 'base', SR, true)) + (prime ? gros('Rétractations', l.x, SX, barres(l.a, 'x', 'baseX', SX, false)) : '') + '</div></div>';
+      '<div style="display:flex;gap:' + (sup ? '14px;flex-direction:column' : '16px') + ';">' + gros('Retours', l.r, SR, (sup ? pilules : barres)(l.a, 'ret', 'base', SR, true)) + (prime ? gros('Rétractations', l.x, SX, (sup ? pilules : barres)(l.a, 'x', 'baseX', SX, false)) : '') + '</div></div>';
   }).join('') + '</div>';
-  h += '<div style="font-size:11.5px;color:var(--muted);margin-top:8px;">' + (prime ? '<b>Comment lire :</b> chaque mois = les contrats de ce mois-là. Leurs retours sont retenus 2 mois plus tard : les retours retenus en septembre comptent pour <b>juillet</b>. Pour chaque agent, on commence à compter à partir de <b>son premier mois avec des retours</b> (avant, pas de faux 0 %). Un mois n\'est <b>complet</b> que quand les retours de ses 2 mois suivants sont importés : les barres pâles (les 2 derniers mois) ne le sont pas encore, donc trop basses. <b>Les rétractations</b>, elles, sont comptées dès le 1er mois : aucune attente. ' : 'Pour Ilek, les retours sont ceux que tu as importés. ') + 'Les petites barres montrent chaque période (de la plus ancienne à la plus récente, 12 maximum) : passe la souris dessus. Cumulée = tous les ' + baseLib + ' mis ensemble ; Moyenne des mois = chaque mois compte autant.</div>';
+  h += '<div style="font-size:11.5px;color:var(--muted);margin-top:8px;">' + (prime ? '<b>Comment lire :</b> chaque mois = les contrats de ce mois-là. Leurs retours sont retenus 2 mois plus tard : les retours retenus en septembre comptent pour <b>juillet</b>. Pour chaque agent, on commence à compter à partir de <b>son premier mois avec des retours</b> (avant, pas de faux 0 %). Un mois n\'est <b>complet</b> que quand les retours de ses 2 mois suivants sont importés : ' + (sup ? 'les 2 derniers mois' : 'les barres pâles (les 2 derniers mois)') + ' ne le sont pas encore, donc trop basses. <b>Les rétractations</b>, elles, sont comptées dès le 1er mois : aucune attente. ' : 'Pour Ilek, les retours sont ceux que tu as importés. ') + (sup ? 'Les pastilles montrent les derniers mois, du plus ancien au plus récent : passe la souris dessus pour voir le détail. ' : 'Les petites barres montrent chaque période (de la plus ancienne à la plus récente, 12 maximum) : passe la souris dessus. ') + 'Cumulée = tous les ' + baseLib + ' mis ensemble ; Moyenne des mois = chaque mois compte autant.</div>';
   // ── Tableau détaillé (replié)
   const cel = (c)=> (!c || (!c.base && !c.ret && !c.baseX)) ? '<span style="color:var(--muted);">—</span>' :
     '<span style="color:' + coul(pct(c.base, c.ret), SR) + ';font-weight:800;">' + fmtP(pct(c.base, c.ret)) + '</span> <span style="color:var(--muted);font-size:11px;">' + c.ret + '/' + c.base + '</span>' +
     (prime ? '<br><span style="color:' + coul(pct(c.baseX, c.x), SX) + ';font-weight:800;">' + fmtP(pct(c.baseX, c.x)) + '</span> <span style="color:var(--muted);font-size:11px;">' + c.x + '/' + c.baseX + '</span>' : '');
   h += '<details style="margin-top:12px;"><summary style="cursor:pointer;font-weight:800;">🔎 Voir le détail mois par mois' + (prime ? ' <span style="font-weight:600;color:var(--muted);">(ligne 1 : retours · ligne 2 : rétractations)</span>' : '') + '</summary><div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;font-size:12.5px;border-collapse:collapse;"><tr style="text-align:left;color:var(--muted);font-size:11.5px;"><th>Agent</th>' + mois.map(m=>'<th>' + nomMois(m) + (prime ? '<br><span style="font-weight:500;font-size:10px;">retenu ' + nomMois(rsAjoute(m, 2)).split(' ')[0] + '</span>' : '') + '</th>').join('') + '</tr>' +
-    lignes.slice().sort((u, v)=>u.a.localeCompare(v.a)).map(l=>'<tr style="border-top:1px solid var(--border);"><td><b>' + escapeHtml(l.a) + '</b></td>' + mois.map(m=>'<td>' + cel(rsCellule(l.a, m)) + '</td>').join('') + '</tr>').join('') +
+    lignes.slice().sort((u, v)=>u.a.localeCompare(v.a)).map(l=>'<tr class="' + (sup && (()=>{ try{ return isSupervisor(l.a); }catch(e){ return false; } })() ? 'sv-stat-sup' : '') + '" style="border-top:1px solid var(--border);"><td><b>' + escapeHtml(l.a) + '</b></td>' + mois.map(m=>'<td>' + cel(rsCellule(l.a, m)) + '</td>').join('') + '</tr>').join('') +
     '</table></div></details></div>';
   hote.innerHTML = h;
+  if(sup) svMajTuileRetours(eqR, eqX, lignes, SR, SX, prime);
+}
+window.rmRetoursRendre = function(sansCharger){
+  rsRendreHote(document.getElementById('rmRetoursHote'), false, sansCharger);
+  rsRendreHote(document.getElementById('supRetoursHote'), true, sansCharger);
 };
 window.rsChoix_produit = function(v){ RS.produit = v; RS.donnees = null; rmRetoursRendre(); };
 window.rsChoix_anciens = function(v){ RS.anciens = (v === '1'); rmRetoursRendre(true); };
@@ -31433,7 +31788,7 @@ function applySupPrivacy(){
   const btn = document.getElementById('supPrivacyBtn');
   if(btn){
     btn.classList.toggle('on', on);
-    btn.textContent = on ? '👁️ Afficher mon salaire & ma prime' : '🙈 Masquer mon salaire & ma prime';
+    btn.textContent = on ? '✅ Quitter le mode présentation' : '🎬 Mode présentation';
   }
 }
 function toggleSupPrivacy(){
@@ -36572,6 +36927,7 @@ async function renderAssistanceHistory(){
       '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Supprime tout ce qui a été créé par les agents « test » : contrats du CRM, lignes du Google Sheet et de la boîte CRM, messages Telegram récents du bot. <b>Rien n\'est supprimé avant ta confirmation.</b></div></div>';
     h += adProduitsCarte();
     h += adDatesCarte();
+    h += adAgentCarte();
     h += adCopiesCarte();
     h += adMigrationCarte();
     h += adAideCarte();
@@ -36696,6 +37052,65 @@ async function renderAssistanceHistory(){
       '<input type="search" id="adAideRecherche" placeholder="Chercher (ex. : fiche 2, Sheet, doublon, sauvegarde…)" value="' + esc(adAide.q) + '" oninput="adAideFiltre(this.value)" style="width:100%;box-sizing:border-box;margin-top:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg,transparent);color:inherit;font-size:13px;">' +
       '<div id="adAideListe">' + adAideListe() + '</div></div>';
   }
+  // ───────────────── changer l'agent d'un contrat Ilek (le contrat va chez le bon agent + la case « vendeur » du Sheet est corrigée) ─────────────────
+  var CHANGER_AGENT_URL = 'https://europe-west1-pointage-vortex-nova.cloudfunctions.net/changerAgent';
+  var adAg = { q: '', trouves: null, msg: '', occupe: false };
+  function adAgentCarte(){
+    var h = '<div class="ct-item" style="margin-top:10px;"><div class="ct-item-head"><b>🔁 Changer l\'agent d\'un contrat Ilek</b></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Un contrat a été envoyé au nom du mauvais agent ? Cherche-le par son numéro ou le nom du client, choisis le bon agent : le contrat est déplacé chez lui (c\'est lui qui est payé, pas l\'autre) et la case « vendeur » de ton Google Sheet est corrigée. Rien n\'est renvoyé sur Telegram, rien n\'est compté deux fois.</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"><input type="search" id="adAgQ" placeholder="N° de contrat ou nom du client" value="' + esc(adAg.q) + '" onkeydown="if(event.key===\'Enter\') adAgChercher()" style="flex:1;min-width:220px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);">' +
+      '<button type="button" class="ct-btn ok" onclick="adAgChercher()">🔎 Chercher</button></div>';
+    if(adAg.trouves){
+      if(!adAg.trouves.length) h += '<div style="margin-top:8px;font-size:13px;">Aucun contrat Ilek ne correspond.</div>';
+      var agents = (config.agents || []).filter(function(a){ return !adEstTest({ agent: a }); });
+      adAg.trouves.forEach(function(x, i){
+        var c = x.champs || {};
+        h += '<div style="margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:13px;">' +
+          '<b>' + esc([c.nom, c.prenom].filter(Boolean).join(' ') || '?') + '</b> · n° ' + esc(String(c.numero || '—')) + (c.numeroGaz ? ' / gaz ' + esc(String(c.numeroGaz)) : '') + ' · ' + esc(TYPES_ILEK[c.type] || c.type || '') + ' · ' + esc(isoVersFr(c.date)) +
+          '<div style="margin-top:4px;">Agent actuel : <b>' + esc(x.agent || '?') + '</b> · statut : ' + esc(x.statut || '?') + '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;"><span>Nouvel agent :</span><select id="adAgNouveau' + i + '" style="padding:6px 8px;">' +
+          agents.map(function(a){ return '<option value="' + esc(a) + '"' + (a === x.agent ? ' selected' : '') + '>' + esc(a) + '</option>'; }).join('') + '</select>' +
+          '<button type="button" class="ct-btn ok" ' + (adAg.occupe ? 'disabled ' : '') + 'onclick="adAgChanger(' + i + ')">Changer l\'agent</button></div></div>';
+      });
+    }
+    if(adAg.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adAg.msg) + '</div>';
+    return h + '</div>';
+  }
+  window.adAgChercher = async function(){
+    var el = document.getElementById('adAgQ'); adAg.q = el ? el.value.trim() : adAg.q;
+    var q = adAg.q.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if(q.length < 3){ adAg.msg = 'Tape au moins 3 caractères.'; adAg.trouves = null; adRendre(); return; }
+    adAg.msg = ''; var tous = [];
+    try{ tous = await ilekContratsTous(); }catch(e){ adAg.msg = 'Lecture impossible : ' + (e && e.message ? e.message : e); adRendre(); return; }
+    adAg.trouves = tous.filter(function(x){
+      var c = x.champs || {}, z = function(t){ return String(t == null ? '' : t).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+      return [c.numero, c.numeroGaz, c.nom, c.prenom, (c.nom || '') + (c.prenom || ''), (c.prenom || '') + (c.nom || '')].some(function(t){ return z(t) && z(t).indexOf(q) >= 0; });
+    }).slice(0, 20);
+    adRendre();
+  };
+  window.adAgChanger = async function(i){
+    var x = (adAg.trouves || [])[i]; if(!x || adAg.occupe) return;
+    var sel = document.getElementById('adAgNouveau' + i), nouveau = sel ? sel.value : '';
+    var c = x.champs || {};
+    if(!nouveau || nouveau === x.agent){ uiAlert('Choisis un agent différent de l\'agent actuel.'); return; }
+    var nom = [c.nom, c.prenom].filter(Boolean).join(' ');
+    if(!await uiAsk('Changer l\'agent du contrat n° ' + (c.numero || '?') + ' (' + nom + ') ?\n\n' + (x.agent || '?') + '  →  ' + nouveau + '\n\nLe contrat sera payé à ' + nouveau + ', plus à ' + (x.agent || '?') + '. La case « vendeur » du Google Sheet sera corrigée.')) return;
+    var cleNouvelle = CT_PREFIX + slugDe(nouveau) + ':' + String(x._key).slice(CT_PREFIX.length).split(':').slice(1).join(':');
+    try{
+      adAg.occupe = true; adAg.msg = 'Un instant…'; adRendre();
+      var u = firebase.auth().currentUser; if(!u) throw new Error('Session expirée : reconnecte-toi en admin.');
+      var jeton = await u.getIdToken();
+      var r = await fetch(CHANGER_AGENT_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + jeton }, body: JSON.stringify({ cle: x._key, nouvelleCle: cleNouvelle, agent: nouveau }) });
+      var j = await r.json().catch(function(){ return {}; });
+      if(!r.ok) throw new Error(j.erreur || ('Erreur ' + r.status));
+      ilekMem.tous = null; ilekMem.par = {};
+      try{ clearRenderCaches(); }catch(e){}
+      adAg.trouves = null;
+      adAg.msg = '✅ Contrat n° ' + j.numero + ' (' + j.client + ') : ' + j.ancien + ' → ' + j.nouveau + '.\n' +
+        (j.sheet === 'corrigee' ? 'Google Sheet : case « vendeur » corrigée (ligne ' + j.ligne + ').' : (j.sheet === 'deja' ? 'Google Sheet : déjà à jour.' : 'Google Sheet : ce contrat n\'y est pas (encore), rien à corriger.'));
+    }catch(e){ adAg.msg = '⚠️ Rien n\'a été changé : ' + (e && e.message ? e.message : e); }
+    adAg.occupe = false; adRendre();
+  };
   // ───────────────── copies de nuit du Sheet (filet de sécurité) ─────────────────
   var COPIES_URL = 'https://europe-west1-pointage-vortex-nova.cloudfunctions.net/copiesSheet';
   var adCopies = { liste: null, msg: '', occupe: false, charge: false, telecharge: false };
