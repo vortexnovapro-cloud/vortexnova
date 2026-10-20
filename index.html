@@ -3426,7 +3426,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-20-r311';
+const APP_VERSION = '2026-10-20-r312';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -23048,7 +23048,7 @@ function svMajTuileRetours(eqR, eqX, lignes, SR, SX, prime){
   var f = function(x){ return x == null ? '—' : String(x).replace('.', ',') + ' %'; };
   v.innerHTML = '<span style="color:' + col(eqR.val, SR) + '">' + f(eqR.val) + '</span>' + (prime ? ' <span class="u">· <span style="color:' + col(eqX.val, SX) + '">' + f(eqX.val) + '</span></span>' : '');
   var sub = document.getElementById('svRetSub');
-  if(sub) sub.innerHTML = prime ? 'Retours · rétractations (moyenne) — des statistiques, pas des montants' : 'Retours Ilek — des statistiques, pas des montants';
+  if(sub) sub.innerHTML = prime ? 'Retours · rétractations — des statistiques, pas des montants' : 'Retours Ilek — des statistiques, pas des montants';
   var tg = document.getElementById('svRetTag');
   if(tg){ var n = lignes.filter(function(l){ return l.r.val != null && l.r.val > SR[0]; }).length; tg.innerHTML = n ? '<span class="tag warn">' + n + ' à surveiller</span>' : '<span class="tag ok">Rien à signaler</span>'; }
 }
@@ -24048,7 +24048,7 @@ function rmBarre(d, p){
 
 function rmChargerAutres(){ try{ renderIndepSupervisorCommissionTable(); }catch(e){} try{ renderManualPrimesList(); }catch(e){} }
 // ───────── 📊 Statistiques de retours / rétractations : agent par agent, mois par mois ─────────
-var RS = { produit: 'prime', anciens: false, complets: true, complet: {}, duree: 3, mode: 'mensuel', mois: null, donnees: null, coh: {}, charge: false };
+var RS = { produit: 'prime', anciens: false, complets: true, complet: {}, duree: 3, moisChoisi: null, mode: 'mensuel', mois: null, donnees: null, coh: {}, charge: false };
 var RS_CACHE = {};
 var RS_P = null;
 function rsAjoute(m, n){ let [y, k] = m.split('-').map(Number); k += n; while(k > 12){ k -= 12; y++; } while(k < 1){ k += 12; y--; } return y + '-' + String(k).padStart(2, '0'); }
@@ -24144,8 +24144,10 @@ function rsRendreHote(hote, sup, sansCharger){
   const premierRetour = (a)=>{ if(debutAgent[a] !== undefined) return debutAgent[a]; let d = null; mois.forEach(m=>{ const c = rsCellule(a, m); if(c && c.ret > 0 && (d == null || m < d)) d = m; }); return debutAgent[a] = d; };
   const compte = (a, m)=>{ const d = premierRetour(a); return d != null && m >= d; };
   const base = (prime && RS.complets) ? mois.filter(m=>!estIncomplet(m)) : mois;
-  const choisis = RS.duree === 0 ? base : base.slice(0, RS.duree);
-  const choisisX = RS.duree === 0 ? mois : mois.slice(0, RS.duree);   // rétractations : comptées dès le 1er mois, aucune attente
+  // r312 — UN SEUL MOIS à la fois (celui choisi dans la liste), jamais plusieurs mois mélangés. Par défaut : le plus récent mois affichable.
+  const moisSel = (RS.moisChoisi && mois.indexOf(RS.moisChoisi) >= 0) ? RS.moisChoisi : (base[0] || mois[0]);
+  const choisis = moisSel ? [moisSel] : [];
+  const choisisX = moisSel ? [moisSel] : [];
   let agents = new Set(); mois.forEach(m=>{ const d = RS.donnees[m]; if(!prime) Object.keys(d).forEach(a=>agents.add(a)); else [d.v, d.x, d.r, d.f || {}].forEach(o=>Object.keys(o).forEach(a=>agents.add(a))); });
   try{ agentsReels().forEach(a=>{ if(prime || (window.__ilekAgents||[]).indexOf(a) >= 0) agents.add(a); }); }catch(e){}
   agents = Array.from(agents).filter(a=>{ try{ return !isTestAgentName(a); }catch(e){ return true; } });
@@ -24176,7 +24178,7 @@ function rsRendreHote(hote, sup, sansCharger){
   };
   // Supervision : pas de barres, des pastilles « août 22 % → sept. 28 % → oct. 35 % ↗ en hausse »
   const pilules = (a, cle, cleBase, seuils, pale)=> {
-    const ms = (pale ? choisis : (cle === 'fac' ? mois.filter(m=>(RS.complet || {})[m]) : choisisX)).slice(0, 3).slice().reverse();
+    const ms = (pale ? base : (cle === 'fac' ? mois.filter(m=>(RS.complet || {})[m]) : mois)).slice(0, 3).slice().reverse();
     const items = ms.map(m=>{ const c = rsCellule(a, m); if(cle === 'fac' && !(RS.complet || {})[m]) return null; if(pale && !compte(a, m)) return null; return (c && c[cleBase] > 0) ? { m: m, v: Math.round(1000 * c[cle] / c[cleBase]) / 10, n: c[cle], b: c[cleBase] } : null; }).filter(Boolean);
     if(!items.length) return '<div style="font-size:12px;color:var(--muted);margin-top:8px;">pas encore de données</div>';
     let h2 = '<div class="sv-trend">' + items.map((it, k)=> (k ? '<span class="sv-ar">→</span>' : '') + '<span class="sv-tp" title="' + nomMois(it.m) + ' : ' + it.n + ' sur ' + it.b + '"><span>' + nomMois(it.m).split(' ')[0] + '</span><b style="color:' + coul(it.v, seuils) + ';">' + fmtP(it.v) + '</b></span>').join('');
@@ -24194,7 +24196,7 @@ function rsRendreHote(hote, sup, sansCharger){
     const cs = choisis.filter(m=>compte(a, m)).map(m=>rsCellule(a, m)), csX = choisisX.map(m=>rsCellule(a, m));
     // Façon facture : tous les mois choisis, à partir du 1er mois où l'agent a eu un retour sur facture
     let dF = null; mois.forEach(m=>{ const c = rsCellule(a, m); if(c && c.fac > 0 && (dF == null || m < dF)) dF = m; });
-    const moisF = mois.filter(m=>(RS.complet || {})[m]), csF = (RS.duree === 0 ? moisF : moisF.slice(0, RS.duree)).filter(m=>dF != null && m >= dF).map(m=>rsCellule(a, m));
+    const csF = (moisSel && (RS.complet || {})[moisSel] && dF != null && moisSel >= dF) ? [rsCellule(a, moisSel)] : [];
     return { a: a, cs: cs, csX: csX, csF: csF, r: moyenne(cs, 'ret', 'base'), f: moyenne(csF, 'fac', 'base'), x: moyenne(csX, 'x', 'baseX') };
   }).sort((u, v)=> (v.r.val == null ? -1 : v.r.val) - (u.r.val == null ? -1 : u.r.val) || u.a.localeCompare(v.a));
   const tot = { base: 0, ret: 0, x: 0, baseX: 0, baseF: 0, fac: 0 };
@@ -24204,9 +24206,9 @@ function rsRendreHote(hote, sup, sansCharger){
   let h = '<div class="settings-box" style="padding:20px;">' +
     '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;justify-content:space-between;">' +
       '<div>' + (sup ? '' : '<div style="font-size:20px;font-weight:900;">📊 Stats ' + (prime ? 'retours &amp; rétractations' : 'retours Ilek') + '</div>') +
-      '<div style="font-size:12.5px;color:var(--muted);margin-top:3px;">' + (mois.length ? mois.length + ' mois d\'historique · moyenne sur : ' + choisis.slice().reverse().map(nomMois).join(', ') : '') + '</div></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin-top:3px;">' + (mois.length ? 'Mois affiché : ' + nomMois(moisSel) : '') + '</div></div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + sel(RS.produit, [['prime', '🔵 Prime'], ['ilek', '🟢 Ilek']], 'rsChoix_produit') +
-        sel(RS.duree, [[1, '1 mois'], [2, '2 mois'], [3, '3 mois'], [4, '4 mois'], [6, '6 mois'], [12, '12 mois'], [0, 'Tout']], 'rsChoix_duree') +
+        sel(moisSel, mois.map(m=>[m, nomMois(m)]), 'rsChoix_mois') +
         sel(RS.anciens ? '1' : '0', [['0', 'Agents en poste'], ['1', 'Avec les anciens agents']], 'rsChoix_anciens') + (prime ? sel(RS.complets ? '1' : '0', [['1', 'Mois complets seulement'], ['0', 'Avec les 4 derniers mois (provisoires)']], 'rsChoix_complets') : '') + '</div></div>';
   if(!mois.length){ hote.innerHTML = h + '<div class="empty" style="margin-top:14px;">Aucune donnée d\'historique pour l\'instant (il faut avoir importé la production et les retours des mois passés).</div></div>' + (sup ? '' : rsZoneControle()); return; }
   // ── Grandes tuiles équipe
@@ -24404,6 +24406,7 @@ window.rsChoix_produit = function(v){ RS.produit = v; RS.donnees = null; rmRetou
 window.rsChoix_anciens = function(v){ RS.anciens = (v === '1'); rmRetoursRendre(true); };
 window.rsChoix_complets = function(v){ RS.complets = (v === '1'); rmRetoursRendre(true); };
 window.rsChoix_duree = function(v){ RS.duree = Number(v); rmRetoursRendre(true); };
+window.rsChoix_mois = function(v){ RS.moisChoisi = v; rmRetoursRendre(true); };
 window.rsChoix_mode = function(v){ RS.mode = 'mensuel'; rmRetoursRendre(true); };
 
 function rmTab(p){
