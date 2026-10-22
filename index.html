@@ -2013,6 +2013,8 @@ async function tryDeviceGateAdmin(){
           <div class="mega-section-title">🚨 Alertes</div>
           <div class="mega-section-sub">Ce qui mérite ton attention en premier.</div>
 
+          <div id="sheetModifsPanel"></div>
+
           <div class="section-title" style="margin-top:0;">🤖 Ce que le CRM a fait tout seul <span id="autoJournalBadge"></span></div>
           <div class="section-sub">Chaque modification automatique (contrat remplacé, ligne corrigée dans le Sheet…) est notée ici avec l'explication. Rien ne part sur Telegram.</div>
           <div id="autoJournalPanel"></div>
@@ -3426,7 +3428,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-20-r312';
+const APP_VERSION = '2026-10-23-r318';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -4764,6 +4766,63 @@ async function storageDelete(key){
 // faire échouer l'action réelle qu'il essaie de documenter — d'où le try/catch qui avale l'erreur.
 // LIMITE CONNUE : le mot de passe Admin est partagé entre toutes les personnes qui le connaissent — donc
 // "Admin" comme acteur veut dire "quelqu'un qui avait le mot de passe admin", pas une personne précise.
+
+// ───────── r316 — Modifications du Google Sheet faites par le serveur : alerte bien visible, copie de la ligne d'avant, bouton « Remettre » ─────────
+var RESTAURER_SHEET_URL = 'https://europe-west1-pointage-vortex-nova.cloudfunctions.net/restaurerSheet';
+var smEtat = { items: null, msg: '', occupe: false };
+function smVu(){ try{ return Number(localStorage.getItem('sheetModifsVu') || 0); }catch(e){ return 0; } }
+window.smTousVus = function(){ try{ localStorage.setItem('sheetModifsVu', String(Date.now())); }catch(e){} window.renderSheetModifs(); };
+window.renderSheetModifs = async function(){
+  var el = document.getElementById('sheetModifsPanel'); if(!el) return;
+  try{
+    var res = await storageGet('sheetModifs'), items = [];
+    try{ items = (res && res.value ? (JSON.parse(res.value).items || []) : []); }catch(e){ items = []; }
+    smEtat.items = items.slice().reverse();
+  }catch(e){ smEtat.items = smEtat.items || []; }
+  var vu = smVu(), l = smEtat.items || [];
+  var neufs = l.filter(function(x){ return Date.parse(x.ts) > vu; });
+  var graves = neufs.filter(function(x){ return x.action === 'doublon_present' || x.action === 'a_la_main'; }).length;
+  var ICONE = { supprimee:'🗑️', corrigee:'✏️', doublon_evite:'🛑', doublon_present:'⚠️', a_la_main:'⚠️' };
+  var TITRE = { supprimee:'Ligne supprimée du Sheet', corrigee:'Ligne corrigée dans le Sheet', doublon_evite:'Doublon évité (rien écrit)', doublon_present:'DOUBLON dans le Sheet', a_la_main:'À vérifier à la main dans le Sheet' };
+  var h = '<div class="section-title" style="margin-top:0;">📋 Modifications du Google Sheet ' + (neufs.length ? '<span style="background:' + (graves ? '#e5484d' : '#d97706') + ';color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;">' + neufs.length + ' nouvelle' + (neufs.length > 1 ? 's' : '') + '</span>' : '') + '</div>' +
+    '<div class="section-sub">Chaque fois que le serveur touche à ton Sheet (ligne supprimée, corrigée, doublon repéré), c\'est noté ici ET sur Telegram. La ligne d\'avant est gardée : le bouton « Remettre » la remet comme avant.</div>';
+  if(neufs.length) h += '<div style="margin-bottom:8px;"><button type="button" class="ct-btn" onclick="smTousVus()">✔ Tout marquer comme vu</button></div>';
+  if(!l.length) h += '<div class="empty">Aucune modification du Sheet pour le moment.</div>';
+  l.slice(0, 20).forEach(function(x){
+    var neuf = Date.parse(x.ts) > vu, grave = x.action === 'doublon_present' || x.action === 'a_la_main', d = new Date(x.ts);
+    h += '<div style="border:1px solid ' + (grave && neuf ? 'rgba(229,72,77,.7)' : (neuf ? 'rgba(217,119,6,.6)' : 'var(--border)')) + ';border-radius:10px;padding:9px 12px;margin-bottom:7px;' + (neuf ? 'background:' + (grave ? 'rgba(229,72,77,.08)' : 'rgba(217,119,6,.07)') + ';' : '') + '">' +
+      '<div style="font-weight:800;">' + (ICONE[x.action] || '•') + ' ' + escapeHtml(TITRE[x.action] || x.action) + (neuf ? ' <span style="font-size:11px;color:#e5484d;">NOUVEAU</span>' : '') + (x.annule ? ' <span style="font-size:11px;color:#16a34a;">✔ remise comme avant</span>' : '') + '</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin:2px 0 4px;">' + d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) + ' · ' + escapeHtml(x.produit || '') + ' · onglet « ' + escapeHtml(x.onglet || '') + ' »' + (x.ligne ? ' · ligne ' + x.ligne : '') + '</div>' +
+      '<div style="font-size:13px;line-height:1.4;"><b>' + escapeHtml(x.resume || '') + '</b><br>' + escapeHtml(x.raison || '') + '</div>' +
+      ((!x.annule && !x.sansRetour) ? '<div style="margin-top:6px;"><button type="button" class="ct-btn nc" ' + (smEtat.occupe ? 'disabled ' : '') + 'onclick="smRemettre(\'' + escapeHtml(x.id) + '\')">↩️ Remettre comme avant</button></div>' : '') + '</div>';
+  });
+  if(smEtat.msg) h += '<div style="font-size:12.5px;white-space:pre-line;margin:6px 0;">' + escapeHtml(smEtat.msg) + '</div>';
+  // r316 — alerte doublons de contrats (Ilek et Prime, tous agents) : relue au plus toutes les 10 minutes
+  try{
+    var dbE = window.adDbEtat ? window.adDbEtat() : { occupe: true }, nbDb = window.adDbNb ? window.adDbNb() : 0, nbAn = window.adAnNb ? window.adAnNb() : 0;
+    if(nbAn) h = '<div style="border:2px solid #e5484d;background:rgba(229,72,77,.09);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-weight:800;">🚫 ' + nbAn + ' contrat' + (nbAn > 1 ? 's' : '') + ' Prime annulé' + (nbAn > 1 ? 's' : '') + ' (« Pas valide ») encore compté' + (nbAn > 1 ? 's' : '') + ' dans la facturation. Voir la carte « 🚫 Contrats Prime annulés mais encore comptés » dans l\'onglet Ilek.</div>' + h;
+    if(nbDb) h = '<div style="border:2px solid #e5484d;background:rgba(229,72,77,.09);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-weight:800;">⚠️ ' + nbDb + ' doublon' + (nbDb > 1 ? 's' : '') + ' de contrat détecté' + (nbDb > 1 ? 's' : '') + ' (Ilek / Prime). Voir la carte « 🧾 Contrats envoyés en double » dans l\'onglet Ilek.</div>' + h;
+    if(!dbE.occupe && (!dbE.t || Date.now() - dbE.t > 600000)){ dbE.t = Date.now(); setTimeout(function(){ try{ window.adDbChercher(true); }catch(e){} }, 0); }
+  }catch(e){}
+  el.innerHTML = h;
+};
+window.smRemettre = async function(id){
+  if(smEtat.occupe) return;
+  var x = (smEtat.items || []).filter(function(z){ return z.id === id; })[0]; if(!x) return;
+  if(!(await uiConfirm({ titre:'Remettre comme avant ?', icone:'↩️', ton:'warn',
+      texte: x.action === 'supprimee' ? 'La ligne supprimée sera remise dans le Google Sheet, à sa place si possible.' : 'Les cases corrigées retrouveront leur valeur d\'avant.',
+      details:[['Onglet', x.onglet || ''], ['Contrat', x.resume || ''], ['Pourquoi c\'était modifié', x.raison || '']], oui:'Oui, remettre', non:'Annuler' }))) return;
+  smEtat.occupe = true; smEtat.msg = 'Un instant…'; window.renderSheetModifs();
+  try{
+    var u = firebase.auth().currentUser; if(!u) throw new Error('Session expirée : reconnecte-toi en admin.');
+    var jeton = await u.getIdToken();
+    var r = await fetch(RESTAURER_SHEET_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + jeton }, body: JSON.stringify({ id: id }) });
+    var j = await r.json().catch(function(){ return {}; });
+    if(!r.ok) throw new Error(j.erreur || ('Erreur ' + r.status));
+    smEtat.msg = '✅ Remis comme avant (onglet « ' + (j.onglet || '') + ' », ligne ' + (j.ligne || '?') + ').';
+  }catch(e){ smEtat.msg = '⚠️ Rien n\'a été remis : ' + (e && e.message ? e.message : e); }
+  smEtat.occupe = false; window.renderSheetModifs();
+};
 // Journal « Ce que le CRM a fait tout seul » : chaque action automatique y laisse une ligne claire (écrite aussi par le serveur).
 async function autoLog(action, details){
   if(!firebaseReady || !db) return;
@@ -4773,6 +4832,7 @@ async function autoLog(action, details){
 function autoJournalVu(){ try{ return Number(localStorage.getItem('autoJournalVu') || 0); }catch(e){ return 0; } }
 window.autoJournalLu = function(){ try{ localStorage.setItem('autoJournalVu', String(Date.now())); }catch(e){} renderAutoJournal(); };
 async function renderAutoJournal(){
+  try{ if(window.renderSheetModifs) window.renderSheetModifs(); }catch(e){}
   var el = document.getElementById('autoJournalPanel'); if(!el) return;
   try{ if(window.ilekRattraper) await window.ilekRattraper(); }catch(e){}
   if(!firebaseReady || !db){ el.innerHTML = '<div class="empty">Journal indisponible hors ligne.</div>'; return; }
@@ -9106,24 +9166,33 @@ function enerNiveau(n){
   if(n === 4) return { cle:'bien', ton:'ok',     court:'pas mal' };
   return { cle:'top', ton:'top', court:'très bien' };
 }
+// ⚡ Énergie du mois d'un agent (somme des jours du mois de `jour`) — AFFICHAGE seulement.
+function enerMois(agent, jour){
+  try{
+    var idx = window.__energieIdx; if(!agent || !idx) return 0;
+    var ym = String(jour || todayStr()).slice(0,7), t = 0;
+    Object.keys(idx).forEach(function(d){ if(d.slice(0,7) === ym && idx[d]) t += (idx[d][agent] || 0); });
+    return t;
+  }catch(e){ return 0; }
+}
 function enerPhrase(n, pour){
   const lv = enerNiveau(n); if(!lv) return '';
   const e = `${n} énergie${n>1?'s':''}`;
   if(pour === 'agent'){
     return ({
-      min:  `0 en assistance, ${e} aujourd'hui : c'est le minimum syndical, tu peux faire mieux.`,
-      moy:  `0 en assistance, ${e} : une journée moyenne, il y a de la marge.`,
-      cor:  `0 en assistance, ${e} : c'est correct, continue sur cette lancée.`,
-      bien: `0 en assistance, ${e} : pas mal du tout, beau travail.`,
-      top:  `0 en assistance, mais ${e} : très belle journée, bravo !`
+      min:  `${e} aujourd'hui : c'est lancé, continue.`,
+      moy:  `${e} aujourd'hui : une journée correcte.`,
+      cor:  `${e} aujourd'hui : c'est bien, continue sur cette lancée.`,
+      bien: `${e} aujourd'hui : pas mal du tout, beau travail.`,
+      top:  `${e} aujourd'hui : très belle journée, bravo !`
     })[lv.cle];
   }
   return ({
-    min:  `0 en assistance, ${e} aujourd'hui : le minimum syndical.`,
-    moy:  `0 en assistance, ${e} aujourd'hui : une journée moyenne.`,
-    cor:  `0 en assistance, ${e} aujourd'hui : une journée correcte.`,
-    bien: `0 en assistance, ${e} aujourd'hui : pas mal du tout.`,
-    top:  `0 en assistance, ${e} aujourd'hui : une très bonne journée.`
+    min:  `${e} aujourd'hui.`,
+    moy:  `${e} aujourd'hui : une journée correcte.`,
+    cor:  `${e} aujourd'hui : une bonne journée.`,
+    bien: `${e} aujourd'hui : pas mal du tout.`,
+    top:  `${e} aujourd'hui : une très bonne journée.`
   })[lv.cle];
 }
 async function enerCharger(){
@@ -11841,8 +11910,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
       const monthlyBlock = (mo.mini>0 || viseAffichable || mo.ilek || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
-          ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>Objectif minimum du mois</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
-          ${viseAffichable ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+          ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>Objectif minimum du mois${enerMois(r.agent, dateStr)>0 ? ' (assistance)' : ''}</span><b style="color:${mo.monthlyRealized>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
+          ${viseAffichable ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois${enerMois(r.agent, dateStr)>0 ? ' (assistance)' : ''}</span><b style="color:${mo.monthlyRealized>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${mo.ilek ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-top:5px;" title="Énergies Ilek nettes (retours déduits) depuis le 1er du mois"><span>⚡ Énergie ce mois</span><b style="color:${(mo.ilek.objectif>0 && mo.ilek.atteint)?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${ilekNbG(mo.ilek.nets)}${mo.ilek.objectif>0?`<span style="opacity:0.55;"> / ${mo.ilek.objectif}</span>`:''}</b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
           ${dayRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.2); border:1px solid rgba(184,147,90,0.55); font-size:12.5px; font-weight:800; color:#d8b26e;\">${escapeHtml(dayRecordByAgent[r.agent])}</div>` : ''}
@@ -11880,7 +11949,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           : `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">Contrats ${dayIsOver ? 'de la journée' : "d'aujourd'hui"}</div>
              <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
-               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? 'var(--muted)' : barColor};" title="Contrats signés ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / objectif du jour — le cumul du mois est juste en dessous.">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? ' assistance' : ''}</span>${enerJour(r.agent, dateStr)>0 ? `<span title="${enerPhrase(enerJour(r.agent, dateStr), 'chef') || ''}" style="display:inline-block; margin-left:9px; padding:3px 9px; border-radius:9px; font-size:13px; font-weight:800; letter-spacing:0; vertical-align:middle; color:#34b774; background:rgba(52,183,116,.14); border:1px solid rgba(52,183,116,.45);">⚡ ${enerJour(r.agent, dateStr)} énergie${enerJour(r.agent, dateStr)>1?'s':''}</span>` : ''}</span>
+               <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? 'var(--muted)' : barColor};" title="Contrats signés ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / objectif du jour — le cumul du mois est juste en dessous.">${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? `<span style="font-size:19px; color:#34b774;">⚡ ${enerJour(r.agent, dateStr)} énergie${enerJour(r.agent, dateStr)>1?'s':''}</span><span style="font-size:12px; color:var(--muted); font-weight:500;"> aujourd'hui · assistance : aucune</span>` : `${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span>`}${(enerJour(r.agent, dateStr)>0 && !(r.realized<=0)) ? `<span title="${enerPhrase(enerJour(r.agent, dateStr), 'chef') || ''}" style="display:inline-block; margin-left:9px; padding:3px 9px; border-radius:9px; font-size:13px; font-weight:800; letter-spacing:0; vertical-align:middle; color:#34b774; background:rgba(52,183,116,.14); border:1px solid rgba(52,183,116,.45);">⚡ ${enerJour(r.agent, dateStr)} énergie${enerJour(r.agent, dateStr)>1?'s':''}</span>` : ''}</span>
                ${(r.realized<=0 && enerJour(r.agent, dateStr)>0) ? '' : `<span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%</span>`}
              </div>`}
         ${historyStripHtml(stripByAgent[r.agent])}
@@ -15505,7 +15574,11 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   // Seul bloc à utiliser le rouge — et à mesure que l'écart se creuse, le ton monte franchement : on
   // encourage quand c'est acquis, on pousse quand ça se resserre, on met une vraie pression et on fait
   // sentir le risque réel (le salaire) quand c'est mal engagé. Jamais d'humour ici, c'est du concret.
-  if(mini > 0){
+  const enMoisN = enerMois(agentName, refDayForSeed || todayStr());
+  if(mini > 0 && enMoisN > 0 && monthlyRealized < mini){
+    // ⚡ Agent qui fait aussi de l'énergie : ligne neutre, sans alerte rouge (affichage seulement).
+    lines.push(mk('ℹ️', `Assistance : ${monthlyRealized} sur le minimum de ${mini}. Énergie : ${enMoisN} ce mois. Les deux comptent, rien n'est perdu.`, SLATE, SLATE_BG));
+  } else if(mini > 0){
     const miniGap = Math.max(0, mini - monthlyRealized);
     if(miniGap <= 0 && moisTermine){
       lines.push(mk('📌', `Mois terminé : objectif minimum atteint (${monthlyRealized}/${mini}). Mois validé, bravo !`, SAGE, SAGE_BG));
@@ -24028,8 +24101,8 @@ async function rmRemplirMontants(year, month){
       const recents = P.liste.filter(m=>P.data[m]).slice(0, 3);
       let rxV = 0, rxX = 0; recents.forEach(m=>{ rxX += g(m, 'x'); rxV += g(m, 'v'); });
       const mr = recents[0], vr = mr ? g(mr, 'v') : 0, xr = mr ? g(mr, 'x') : 0;
-      h.innerHTML = '📉 Moyenne des retours : <b>' + pc(r1, v1) + '</b> sur ' + nomP(m1) + ' (retenus en ' + nomP(rsAjoute(m1, 2)) + ') · <b>' + Math.round(taux*100) + ' %</b> sur ' + lib3
-        + '<br>↪️ Moyenne des rétractations : <b>' + (mr ? pc(xr, xr + vr) : '—') + '</b> sur ' + (mr ? nomP(mr) : '—') + ' · <b>' + pc(rxX, rxX + rxV) + '</b> sur les ' + recents.length + ' derniers mois (' + recents.slice().reverse().map(nomP).join(', ') + ')'
+      h.innerHTML = '📉 Retours, mois par mois : ' + bonnesA.map((m, i)=> nomP(m) + ' <b>' + pc(g(m, 'r'), g(m, 'v')) + '</b>' + (i === 0 ? ' (retenus en ' + nomP(rsAjoute(m, 2)) + ')' : '')).join(' · ')
+        + '<br>↪️ Rétractations, mois par mois : ' + recents.map(m=> nomP(m) + ' <b>' + pc(g(m, 'x'), g(m, 'x') + g(m, 'v')) + '</b>').join(' · ')
         + '<div class="rm-hint">Retours attendus ce mois : ~' + attendus + ' (prévision selon les statistiques de l\'agent)' + (reste>0 && cout>0 ? ' → paie estimée après retours : <b>'+Math.round(d.total - reste*cout).toLocaleString('fr-FR')+' DH</b>' : '') + '.</div>';
     });
   }catch(e){
@@ -26131,8 +26204,10 @@ function billingClasserDoublon(row, existants){
   return meilleur;
 }
 function billingResumeLigne(r){ return { numContrat: String(r.numContrat || ''), nom: r.nom || '', agent: r.agent || '', date: r.date || '', reference: r.reference || '' }; }
+// r315 — D'où vient chaque ligne reçue (pour comprendre les doublons). Mémoire seulement : rien n'est ajouté aux contrats enregistrés.
+const BILLING_ORIGINE = new WeakMap();
 function billingEntreeDoublon(row, cmp, nc, issue){
-  return { id: 'D' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), nc: !!nc, issue: issue || 'ignore',
+  return { id: 'D' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), nc: !!nc, issue: issue || 'ignore', origine: BILLING_ORIGINE.get(row) || '',
     ligne: billingResumeLigne(row), avec: billingResumeLigne(cmp.avec), raisons: cmp.raisons };
 }
 function billingEntreeSuspect(row, cmp, nc){
@@ -29714,7 +29789,7 @@ async function syncBackofficeInbox(opts){
     const monthVal = r.dateISO.slice(0, 7);
     const bac = nonConforme ? byMonthNC : byMonth;
     if(!bac[monthVal]) bac[monthVal] = [];
-    bac[monthVal].push({
+    const _ligne = {
       date: r.dateISO, datePropre: r.dateISO, produit: r.produit, reference: r.reference,
       nom: r.nom, dateNaissance: r.dateNaissance, adresse: r.adresse, email: r.email,
       telephone: r.telephone, agent, agentRaw: r.agent, numContrat: r.numContrat,
@@ -29725,7 +29800,9 @@ async function syncBackofficeInbox(opts){
       conforme: nonConforme ? 'non' : 'oui',
       receivedAt: (data && data.receivedAt) || new Date().toISOString(),
       _fixes: r._fixes, _warnings: r._warnings
-    });
+    };
+    bac[monthVal].push(_ligne);
+    BILLING_ORIGINE.set(_ligne, (data && (data.source === 'crm-messagerie' || data.contratKey)) ? 'le serveur' : (source === 'firestore' ? 'la boîte de secours' : 'un envoi extérieur (Pabbly ou autre)'));
     // 🐛 BUG CORRIGÉ (r214) — renvoie maintenant le MOIS plutôt qu'un simple true/false, pour que
     // l'appelant sache à quel mois rattacher chaque document/clé source. Indispensable pour ne
     // supprimer une entrée de la boîte QUE si son mois a été sauvegardé avec succès (voir plus bas) :
@@ -36971,12 +37048,23 @@ async function renderAssistanceHistory(){
   async function boRemplacerAnciens(key){
     var nz = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, ''); };
     var n = boTous.filter(function(x){ return x._key === key; })[0];
-    if(!n || produitDe(n) !== 'ilek' || !n.champs || n.champs.type !== 'dual') return;
-    var mes = [n.champs.numero, n.champs.numeroGaz].filter(Boolean).map(nz);
-    var anciens = boTous.filter(function(y){
-      return y._key !== key && produitDe(y) === 'ilek' && y.agent === n.agent && !y.remplacePar && (y.statut === 'conforme' || y.statut === 'attente') && y.champs &&
-        [y.champs.numero, y.champs.numeroGaz].filter(Boolean).map(nz).some(function(z){ return mes.indexOf(z) >= 0; });
-    });
+    if(!n || produitDe(n) !== 'ilek' || !n.champs) return;
+    var anciens;
+    if(n.champs.type === 'dual'){
+      var mes = [n.champs.numero, n.champs.numeroGaz].filter(Boolean).map(nz);
+      anciens = boTous.filter(function(y){
+        return y._key !== key && produitDe(y) === 'ilek' && y.agent === n.agent && !y.remplacePar && (y.statut === 'conforme' || y.statut === 'attente') && y.champs &&
+          [y.champs.numero, y.champs.numeroGaz].filter(Boolean).map(nz).some(function(z){ return mes.indexOf(z) >= 0; });
+      });
+    } else {
+      // r314 — Électricité seule ou gaz seul renvoyé corrigé : même agent, même type, même numéro de contrat = c'est le même contrat.
+      var num = nz(n.champs.numero);
+      if(!num || (n.champs.type !== 'electricite' && n.champs.type !== 'gaz')) return;
+      anciens = boTous.filter(function(y){
+        return y._key !== key && produitDe(y) === 'ilek' && y.agent === n.agent && !y.remplacePar && (y.statut === 'conforme' || y.statut === 'attente') && y.champs &&
+          y.champs.type === n.champs.type && nz(y.champs.numero) === num;
+      });
+    }
     for(var i = 0; i < anciens.length; i++) await remplacerUn(n, key, anciens[i]);
   }
   async function remplacerUn(n, key, o){
@@ -36985,17 +37073,17 @@ async function renderAssistanceHistory(){
       await boModifier(o._key, function(v){
         if(v.statut !== 'conforme' && v.statut !== 'attente') return;
         v.statut = 'refuse'; v.remplacePar = key; v.envoye = true;
-        v.commentaire = 'Remplacé automatiquement par ton contrat corrigé (électricité #' + n.champs.numero + ' + gaz #' + n.champs.numeroGaz + '). Tu n\'es payé qu\'une seule fois.';
+        v.commentaire = 'Remplacé automatiquement par ton contrat corrigé (' + (n.champs.type === 'dual' ? 'électricité #' + n.champs.numero + ' + gaz #' + n.champs.numeroGaz : '#' + n.champs.numero) + '). Tu n\'es payé qu\'une seule fois.';
         v.commentaireVisible = true; v.decidePar = 'CRM (automatique)'; v.decideLe = new Date().toISOString();
         fait = true;
       });
     }catch(e){ console.warn('remplacement', e); }
     if(!fait) return;
     var mAnc = String(oc.date || '').slice(0, 7), mNou = String(n.champs.date || '').slice(0, 7);
-    autoLog('Ancien contrat Ilek remplacé par le dual corrigé',
-      'Agent ' + n.agent + ' · client ' + nomChamps(n.champs) + '. L\'ancien contrat #' + (oc.numero || '?') + (oc.type === 'dual' ? '' : ' (électricité seule)') + ' (' + (STATUTS[etait] || {}).label + ') est passé « Pas valide » : il n\'est plus compté ni payé. ' +
-      'Le nouveau dual #' + n.champs.numero + ' / gaz #' + n.champs.numeroGaz + ' compte pour 2 énergies, une seule fois.' +
-      (mAnc && mNou && mAnc !== mNou ? ' ⚠️ L\'ancien contrat était daté de ' + mAnc + ' et le nouveau de ' + mNou + ' : le mois ' + mAnc + ' perd 1 énergie, le mois ' + mNou + ' gagne 2.' : '') +
+    autoLog('Ancien contrat Ilek remplacé par le contrat corrigé',
+      'Agent ' + n.agent + ' · client ' + nomChamps(n.champs) + '. L\'ancien contrat #' + (oc.numero || '?') + (oc.type === 'dual' ? '' : (oc.type === 'gaz' ? ' (gaz seul)' : ' (électricité seule)')) + ' (' + (STATUTS[etait] || {}).label + ') est passé « Pas valide » : il n\'est plus compté ni payé. ' +
+      (n.champs.type === 'dual' ? 'Le nouveau dual #' + n.champs.numero + ' / gaz #' + n.champs.numeroGaz + ' compte pour 2 énergies, une seule fois.' : 'Le nouveau contrat #' + n.champs.numero + ' compte pour 1 énergie, une seule fois.') +
+      (mAnc && mNou && mAnc !== mNou ? ' ⚠️ L\'ancien contrat était daté de ' + mAnc + ' et le nouveau de ' + mNou + ' : le mois ' + mAnc + ' perd ' + (oc.type === 'dual' ? 2 : 1) + ' énergie(s), le mois ' + mNou + ' gagne ' + (n.champs.type === 'dual' ? 2 : 1) + '.' : '') +
       ' Dans le tableau Sheet : si le serveur n\'a pas pu fusionner les lignes, supprime à la main la ligne de l\'ancien contrat #' + (oc.numero || '?') + '.');
     toast('🤖 Ancien contrat #' + (oc.numero || '?') + ' remplacé automatiquement (voir le journal en Vue d\'ensemble)', 'ok');
   }
@@ -37792,7 +37880,8 @@ async function renderAssistanceHistory(){
         noms.forEach(function(n){
           var e1 = (st[l3[0]][n] || {}).en || 0, r1 = (st[l3[0]][n] || {}).ret || 0, e3 = 0, r3 = 0;
           l3.forEach(function(m){ var c = st[m][n] || {}; e3 += c.en || 0; r3 += c.ret || 0; });
-          adIlek.taux[n] = { p1: e1 > 0 ? Math.round(100 * r1 / e1) : null, p3: e3 > 0 ? Math.round(100 * r3 / e3) : null };
+          adIlek.taux[n] = { p1: e1 > 0 ? Math.round(100 * r1 / e1) : null, p3: e3 > 0 ? Math.round(100 * r3 / e3) : null,
+            mois: l3.map(function(m){ var c = st[m][n] || {}; return { nom: ['janv','févr','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'][Number(m.slice(5, 7)) - 1], p: (c.en || 0) > 0 ? Math.round(100 * (c.ret || 0) / c.en) : null }; }) };
         });
       }catch(e){ adIlek.taux = {}; }
     }catch(e){ adIlek.data = []; adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
@@ -37885,7 +37974,7 @@ async function renderAssistanceHistory(){
           '<div class="rm-nom"><span>' + esc(n) + '</span><span class="rm-chip">' + (ob > 0 ? '🎯 Avec objectif' : '💵 ' + apres + ' DH / énergie') + '</span></div>' +
           '<div class="rm-amt"><div class="rm-big">' + (d ? d.montant.toLocaleString('fr-FR') : (adIlek.charge ? '…' : '0')) + ' DH <small>net Énergie ce mois</small></div>' +
           '<div class="rm-mut" style="margin-top:4px;">' + (d ? d.contrats + ' contrat' + (d.contrats > 1 ? 's' : '') + ' · ' + d.energies + ' énergie' + (d.energies > 1 ? 's' : '') + ' · ' + d.retoursEnergies + ' retour' + (d.retoursEnergies > 1 ? 's' : '') + ' (−' + ilekNb(d.retires) + ') · <b>' + ilekNb(d.nets) + ' payées</b> ' + atteint : '') + '</div>' +
-          '<div class="rm-mut" style="margin-top:4px;">📉 Moyenne des retours : <b>' + ((adIlek.taux && adIlek.taux[n] && adIlek.taux[n].p1 != null) ? adIlek.taux[n].p1 + ' %' : '—') + '</b> le mois dernier · <b>' + ((adIlek.taux && adIlek.taux[n] && adIlek.taux[n].p3 != null) ? adIlek.taux[n].p3 + ' %' : '—') + '</b> sur 3 mois <span style="font-size:11.5px;">(détail : onglet « 📊 Retours »)</span></div></div>' +
+          '<div class="rm-mut" style="margin-top:4px;">📉 Retours, mois par mois : ' + ((adIlek.taux && adIlek.taux[n] && adIlek.taux[n].mois && adIlek.taux[n].mois.length) ? adIlek.taux[n].mois.map(function(z){ return esc(z.nom) + ' <b>' + (z.p != null ? z.p + ' %' : '—') + '</b>'; }).join(' · ') : '—') + ' <span style="font-size:11.5px;">(détail : onglet « 📊 Retours »)</span></div></div>' +
           '<div style="margin-top:10px;font-size:13px;line-height:1.55;background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.35);border-radius:10px;padding:8px 10px;"><b>Actuellement</b><br>' + situation + '</div>' +
           '<details><summary>⚙️ Montants de ' + esc(n) + '</summary>' +
           '<div class="rm-bloc"><h4>💵 Commission</h4>' +
@@ -37915,8 +38004,170 @@ async function renderAssistanceHistory(){
       (duMois.length ? '<div style="margin-top:8px;font-size:13px;">' + duMois.map(function(r){ return '<div style="padding:4px 0;border-top:1px solid var(--border);">#' + esc(r.numero) + ' · ' + esc(r.nom || '') + ' — ' + esc(r.agent) + ' (' + (r.energies || 1) + ' énergie' + ((r.energies || 1) > 1 ? 's' : '') + ') <button type="button" class="ct-btn" style="padding:2px 8px;font-size:12px;" data-n="' + esc(r.numero) + '" onclick="adIlekRetirer(this.getAttribute(\'data-n\'))">✖ Retirer</button></div>'; }).join('') + '</div>' : '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Aucun retour importé pour ce mois.</div>') +
       (adIlek.msg ? '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adIlek.msg) + '</div>' : '') + '</div></div>';
     h += adCarHtml();
+    h += adDoublonsHtml();
+    h += adAnnulesHtml();
     return h;
   }
+
+  // ───────── r315 — Contrats Ilek envoyés en double (même numéro d'électricité ou de gaz). Les noms ne comptent PAS : un client peut avoir 2 contrats séparés. ─────────
+  var adDb = { l: null, occupe: false, msg: '' };
+  window.adDbEtat = function(){ return adDb; }; window.adDbNb = function(){ return adDb.l ? adDbGroupes().length : 0; };
+  function adDbGroupes(){
+    // r316 — Un numéro de contrat = UN contrat, qu'il soit rangé dans la case « électricité » ou « gaz » (cases inversées), avec ou sans zéros devant.
+    // Ilek : on ne regarde QUE les numéros. Prime : un seul contrat par client, donc aussi la référence, et nom + naissance / téléphone.
+    var nzn = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+(?=[0-9a-z])/, ''); };
+    var nzt = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+    var map = {}, lib = {}, seuls = [], vusTypo = {};
+    function ajoute(k, v, l){ (map[k] = map[k] || []); if(map[k].indexOf(v) < 0) map[k].push(v); lib[k] = l; }
+    (adDb.l || []).forEach(function(v){
+      var c = v.champs || {};
+      if(v.remplacePar || (v.statut !== 'conforme' && v.statut !== 'attente')) return;
+      var ilek = produitDe(v) === 'ilek', P = ilek ? 'I' : 'P';
+      if(ilek && c.type === 'dual' && nzn(c.numero) && nzn(c.numero) === nzn(c.numeroGaz)) seuls.push({ k: 'S' + v._key, id: 'S' + v._key, l: [v], lib: 'Même numéro dans la case électricité ET dans la case gaz (dual) — l\'agent s\'est trompé', seul: true });
+      [c.numero, ilek ? c.numeroGaz : null].forEach(function(n){ n = nzn(n); if(n) ajoute(P + 'N' + n, v, 'Numéro de contrat ' + String(n).toUpperCase() + ' (' + (ilek ? 'Ilek' : 'Prime') + ')'); });
+      if(!ilek){
+        var ref = nzt(c.reference), nom = nzt([c.nom, c.prenom].join('')), nai = nzt(c.naissance), tel = String(c.telephone || '').replace(/\D/g, '').slice(-9);
+        if(ref) ajoute('PR' + ref, v, 'Même référence ' + String(c.reference).toUpperCase() + ' (Prime) — à vérifier');
+        if(nom && nai) ajoute('PNN' + nom + '|' + nai, v, 'Même client (nom + date de naissance) (Prime) — à vérifier');
+        if(nom && tel.length >= 9) ajoute('PNT' + nom + '|' + tel, v, 'Même client (nom + téléphone) (Prime) — à vérifier');
+        if(tel.length >= 9 && nai) ajoute('PTN' + tel + '|' + nai, v, 'Même téléphone + date de naissance (Prime) — à vérifier');
+      }
+    });
+    // r317 — faute de frappe probable : même agent, numéros qui ne diffèrent que d'UN chiffre, et même client (nom, téléphone, e-mail ou naissance)
+    try{
+      var ilekL = (adDb.l || []).filter(function(v){ return produitDe(v) === 'ilek' && !v.remplacePar && (v.statut === 'conforme' || v.statut === 'attente'); });
+      var voisin = {}, nomsDe = function(v){ var c = v.champs || {}; return String(c.nom || '').toLowerCase().replace(/[^a-zà-ÿ]/g, ''); };
+      var memeCl = function(a, b){ var x = a.champs || {}, y = b.champs || {}; var t1 = String(x.telephone || '').replace(/\D/g, '').slice(-9), t2 = String(y.telephone || '').replace(/\D/g, '').slice(-9);
+        return (nomsDe(a) && nomsDe(a) === nomsDe(b)) || (t1.length >= 9 && t1 === t2) || (x.email && y.email && nzt(x.email) === nzt(y.email)) || (x.naissance && x.naissance === y.naissance); };
+      ilekL.forEach(function(v){ var c = v.champs || {}; [c.numero, c.type === 'dual' ? c.numeroGaz : null].forEach(function(n){ n = nzn(n); if(n.length < 5) return;
+        for(var i = 0; i < n.length; i++){ var k = n.slice(0, i) + n.slice(i + 1); (voisin[k] = voisin[k] || []).push({ v: v, n: n }); } }); });
+      Object.keys(voisin).forEach(function(k){ var l = voisin[k]; if(l.length < 2) return;
+        for(var a = 0; a < l.length; a++) for(var b = a + 1; b < l.length; b++){
+          var A = l[a], B = l[b]; if(A.v === B.v || A.n === B.n || A.v.agent !== B.v.agent || !memeCl(A.v, B.v)) continue;
+          var id = [A.v._key, B.v._key].sort().join('|'); if(id in vusTypo) continue; vusTypo[id] = 1;
+          seuls.push({ k: 'T' + id, id: 'T' + id, l: [A.v, B.v].sort(function(x, y){ return String(x.creeLe || '') < String(y.creeLe || '') ? -1 : 1; }), lib: 'Numéros presque identiques (' + A.n.toUpperCase() + ' / ' + B.n.toUpperCase() + ') pour le même client — faute de frappe ? — à vérifier' });
+        } });
+    }catch(e){ console.warn('fautes de frappe', e); }
+    var vus = {}, res = seuls.slice();
+    Object.keys(map).forEach(function(k){
+      var l = map[k]; if(l.length < 2) return;
+      var id = l.map(function(x){ return x._key; }).sort().join('|'); if(vus[id]) return; vus[id] = 1;
+      l = l.slice().sort(function(a, b){ return String(a.creeLe || '') < String(b.creeLe || '') ? -1 : 1; });
+      res.push({ k: k, id: id, l: l, lib: lib[k] });
+    });
+    return res;
+  }
+  function adDoublonsHtml(){
+    var h = '<div class="ct-item" style="margin-top:10px;border-color:#dc2626;"><div class="ct-item-head"><b>🧾 Contrats envoyés en double (Ilek et Prime)</b></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;"><b>Ilek :</b> on cherche le même numéro de contrat (case électricité ou gaz, même inversé), jamais le nom : un client peut avoir un contrat gaz et un contrat électricité séparés. <b>Prime :</b> un seul contrat par client, donc on regarde aussi la référence, le nom, la date de naissance et le téléphone. Rien ne change sans ton clic sur chaque doublon.</div>' +
+      '<button type="button" class="ct-btn nc" ' + (adDb.occupe ? 'disabled ' : '') + 'onclick="adDbChercher()">🔎 ' + (adDb.l ? 'Chercher à nouveau' : 'Chercher les doublons') + '</button>';
+    if(adDb.l){
+      var gr = adDbGroupes();
+      h += '<div style="font-size:13px;margin:8px 0;">' + (gr.length ? '⚠️ <b>' + gr.length + '</b> numéro(s) en double.' : '✅ Aucun numéro en double.') + '</div>';
+      gr.forEach(function(g, gi){
+        h += '<div style="padding:8px 0;border-top:1px solid var(--border);font-size:13px;"><b>' + esc(g.lib || '') + '</b> — ' + g.l.length + ' contrats';
+        g.l.forEach(function(v, vi){
+          var c = v.champs || {};
+          h += '<div style="margin:4px 0 4px 8px;">• ' + esc(nomChamps(c)) + ' · ' + esc(v.agent || '') + ' · ' + (produitDe(v) !== 'ilek' ? 'Prime' : (c.type === 'dual' ? 'dual' : (c.type === 'gaz' ? 'gaz seul' : 'électricité seule'))) + ' · fait le ' + esc(adFrJour(c.date || '')) + ' · ' + esc((STATUTS[v.statut] || {}).label || v.statut) + ' · reçu le ' + esc(adFrJour(String(v.creeLe || '').slice(0, 10))) + (vi === g.l.length - 1 ? ' <i>(le plus récent)</i>' : '') +
+            (g.seul ? '' : ' <button type="button" class="ct-btn nc" ' + (adDb.occupe ? 'disabled ' : '') + 'onclick="adDbGarder(' + gi + ',' + vi + ')">Garder celui-ci</button>') + '</div>';
+        });
+        if(g.seul) h += '<div style="font-size:12px;color:var(--muted);">Un seul contrat concerné : l\'agent doit le renvoyer corrigé (le bon numéro de gaz).</div></div>'; else h += '<div style="font-size:12px;color:var(--muted);">« Garder celui-ci » : les autres passent « Pas valide » (jamais payés ni comptés deux fois). Si ce n\'est pas un doublon, ne clique sur rien.</div></div>';
+      });
+    }
+    if(adDb.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adDb.msg) + '</div>';
+    return h + '</div>';
+  }
+
+  // ───────── r317 — Contrats Prime ANNULÉS (« Pas valide ») qui sont pourtant encore comptés dans la facturation du mois ─────────
+  // On ne retire rien sans ton clic, et jamais dans un mois déjà figé (payé).
+  var adAn = { l: null, occupe: false, msg: '' };
+  window.adAnEtat = function(){ return adAn; };
+  window.adAnNb = function(){ return adAn.l ? adAn.l.length : 0; };
+  async function adAnCharger(){
+    var nzn = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+(?=[0-9a-z])/, ''); };
+    var out = [];
+    var cand = (adDb.l || []).filter(function(v){ return produitDe(v) !== 'ilek' && v.statut === 'refuse' && v.champs && v.champs.numero && v.champs.date; });
+    var mois = {}; cand.forEach(function(v){ moisVoisins(String(v.champs.date).slice(0, 7)).forEach(function(m){ mois[m] = 1; }); });
+    var stores = {}; for(var m in mois){ try{ stores[m] = await getBillingProd(m); }catch(e){ stores[m] = { rows: [] }; } }
+    cand.forEach(function(v){
+      var num = nzn(v.champs.numero); if(!num) return;
+      moisVoisins(String(v.champs.date).slice(0, 7)).forEach(function(m){
+        ((stores[m] && stores[m].rows) || []).forEach(function(r){
+          if(r && !r.retracted && nzn(r.numContrat) === num && String(r.agent || '').toLowerCase() === String(v.agent || '').toLowerCase()) out.push({ v: v, m: m, num: num, nom: r.nom || '', date: r.datePropre || r.date || '' });
+        });
+      });
+    });
+    adAn.l = out;
+  }
+  window.adAnCharger = adAnCharger;
+  function adAnnulesHtml(){
+    var h = '<div class="ct-item" style="margin-top:10px;border-color:#dc2626;"><div class="ct-item-head"><b>🚫 Contrats Prime annulés mais encore comptés</b></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Un contrat « Pas valide » ne doit ni compter ni être payé. Ici : ceux qui sont pourtant encore dans la facturation d\'un mois. Rien n\'est retiré sans ton clic, et jamais dans un mois déjà figé (payé).</div>';
+    if(!adAn.l) h += '<div style="font-size:13px;">' + (adDb.l ? 'Calcul…' : 'Clique sur « Chercher les doublons » ci-dessus pour charger les contrats.') + '</div>';
+    else if(!adAn.l.length) h += '<div style="font-size:13px;">✅ Aucun contrat annulé n\'est encore compté.</div>';
+    else adAn.l.forEach(function(x, i){
+      var c = x.v.champs || {};
+      h += '<div style="padding:8px 0;border-top:1px solid var(--border);font-size:13px;"><b>' + esc(nomChamps(c)) + '</b> · n° ' + esc(String(c.numero)) + ' · ' + esc(x.v.agent || '') + ' · fait le ' + esc(adFrJour(c.date || '')) + ' · compté dans la facturation de ' + esc(billingMonthLabel(x.m)) +
+        ' <button type="button" class="ct-btn nc" ' + (adAn.occupe ? 'disabled ' : '') + 'onclick="adAnRetirer(' + i + ')">Retirer de la facturation</button></div>';
+    });
+    if(adAn.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adAn.msg) + '</div>';
+    return h + '</div>';
+  }
+  window.adAnRetirer = async function(i){
+    var x = (adAn.l || [])[i]; if(!x || adAn.occupe) return;
+    var c = x.v.champs || {};
+    var ok = await uiConfirm({ titre:'Retirer ce contrat annulé de la facturation ?', icone:'🚫', ton:'danger',
+      texte:'Ce contrat est « Pas valide » : il ne doit pas compter ni être payé. Il sera retiré de la facturation de ' + billingMonthLabel(x.m) + '. Les compteurs du jour sont recalculés.',
+      details:[['Agent', x.v.agent || '?'], ['Client', nomChamps(c)], ['Numéro', String(c.numero)], ['Mois de facturation', billingMonthLabel(x.m)]], oui:'Oui, retirer', non:'Annuler' });
+    if(!ok) return;
+    adAn.occupe = true; adAn.msg = 'Un instant…'; try{ adRendre(); }catch(e){}
+    try{
+      var fige = await getBillingPayslips(x.m);
+      if(fige && fige.entries && fige.entries.length) throw new Error('Le mois ' + billingMonthLabel(x.m) + ' est déjà figé (payé) : je ne touche à rien. À décider avec toi.');
+      var store = await getBillingProd(x.m), rows = (store && store.rows) || [];
+      var nzn = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+(?=[0-9a-z])/, ''); };
+      var idx = rows.findIndex(function(r){ return r && !r.retracted && nzn(r.numContrat) === x.num && String(r.agent || '').toLowerCase() === String(x.v.agent || '').toLowerCase(); });
+      if(idx < 0) throw new Error('Ce contrat n\'est plus dans la facturation (déjà retiré ?). Rien n\'a été changé.');
+      var r = rows[idx]; rows.splice(idx, 1); store.rows = rows;
+      await billingSave(billingProdKey(x.m), store);
+      try{ await syncProdBoardRealizedForDates([r.date || r.datePropre]); }catch(e){}
+      billingInvalidate(); try{ clearRenderCaches(); }catch(e){}
+      try{ logAudit('Admin', 'Contrat Prime annulé retiré de la facturation', (x.v.agent || '?') + ' — ' + (r.nom || '') + ' n° ' + (r.numContrat || '') + ' (' + x.m + ') : « Pas valide », il ne compte plus'); }catch(e){}
+      try{ autoLog('Contrat annulé retiré de la facturation', (x.v.agent || '?') + ' — ' + (r.nom || '') + ' n° ' + (r.numContrat || '') + ' (mois ' + x.m + '). Ligne d\'origine : date ' + (r.date || '?') + ', agent ' + (r.agent || '?') + '.'); }catch(e){}
+      adAn.msg = '✅ Retiré de la facturation de ' + billingMonthLabel(x.m) + '.';
+      await adAnCharger();
+    }catch(e){ adAn.msg = '⚠️ ' + (e && e.message ? e.message : e); }
+    adAn.occupe = false; try{ adRendre(); }catch(e){} try{ if(window.renderSheetModifs) window.renderSheetModifs(); }catch(e){}
+  };
+  window.adDbChercher = async function(silencieux){
+    if(adDb.occupe || !firebaseReady || !db) return;
+    adDb.occupe = true; adDb.msg = silencieux === true ? '' : 'Un instant…'; if(silencieux !== true){ try{ adRendre(); }catch(e){} }
+    try{
+      var snap = await rangePrefix(CT_PREFIX).get(), l = [];
+      snap.forEach(function(doc){ var v = lire(doc); if(v){ v._key = doc.id; l.push(v); } });
+      adDb.l = l; adDb.msg = ''; adDb.t = Date.now(); try{ await adAnCharger(); }catch(e){ console.warn('annulés', e); }
+    }catch(e){ adDb.msg = silencieux === true ? '' : ('❌ ' + (e && e.message ? e.message : e)); }
+    adDb.occupe = false; try{ adRendre(); }catch(e){} try{ if(window.renderSheetModifs) window.renderSheetModifs(); }catch(e){}
+  };
+  window.adDbGarder = async function(gi, vi){
+    if(adDb.occupe) return;
+    var g = adDbGroupes()[gi]; if(!g) return;
+    var garde = g.l[vi], autres = g.l.filter(function(x, i){ return i !== vi; });
+    var gc = garde.champs || {};
+    var ok = await uiConfirm({ titre:'Garder ce contrat ?', icone:'🧾', ton:'warn',
+      texte:'Le contrat de ' + nomChamps(gc) + ' (agent ' + (garde.agent || '?') + ') est gardé. Les ' + autres.length + ' autre(s) passent « Pas valide » : ils ne seront plus ni comptés ni payés. Dans le Google Sheet, la ligne de l\'ancien contrat est à supprimer à la main.',
+      details: autres.map(function(x){ return ['Passe « Pas valide »', nomChamps(x.champs) + ' · ' + (x.agent || '') + ' · fait le ' + adFrJour((x.champs || {}).date || '')]; }),
+      oui:'Oui, garder celui-ci', non:'Annuler' });
+    if(!ok) return;
+    adDb.occupe = true; adDb.msg = 'Un instant…'; try{ adRendre(); }catch(e){}
+    try{
+      for(var i = 0; i < autres.length; i++) await remplacerUn(garde, garde._key, autres[i]);
+      adDb.msg = '✅ Fait. Pense à supprimer dans le Google Sheet la ligne de l\'ancien contrat (colonne rouge).';
+      await adDbChercher();
+      adDb.msg = '✅ Fait. Pense à supprimer dans le Google Sheet la ligne de l\'ancien contrat.'; 
+    }catch(e){ adDb.msg = '❌ ' + (e && e.message ? e.message : e); }
+    adDb.occupe = false; try{ adRendre(); }catch(e){}
+  };
   // ───────── CAR du gaz : on le met à la main dans le Sheet, puis on l'importe ici pour les contrats déjà envoyés ─────────
   function adCarHtml(){
     var manque = null;
@@ -38178,7 +38429,8 @@ async function renderAssistanceHistory(){
       var q = z.at ? new Date(z.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
       var issue = z.issue === 'ecarte' ? 'écarté par toi' : (z.issue === 'garde' ? 'gardé par toi (autre contrat)' : 'ignoré automatiquement');
       return '<div style="padding:7px 0;border-top:1px solid var(--border);font-size:12.5px;"><b>' + adResume(z.ligne) + '</b> — ' + issue + ' <span style="color:var(--muted);">(' + esc(q) + ')</span>' +
-        '<div style="color:var(--muted);">Ressemblait à ' + adResume(z.avec) + ' · ' + esc((z.raisons || []).join(' · ')) + '</div></div>';
+        '<div style="color:var(--muted);">Ressemblait à ' + adResume(z.avec) + ' · ' + esc((z.raisons || []).join(' · ')) + '</div>' +
+        '<div style="color:var(--muted);">Reçu par : ' + (z.origine ? esc(z.origine) : 'origine non notée (avant cette mise à jour)') + '</div></div>';
     }).join('') + '</div>';
     return h + '</div>';
   }
@@ -38278,6 +38530,7 @@ async function renderAssistanceHistory(){
           store.rows = store.rows || []; store.month = g.m;
           var ajoutes = 0, ignores = [], suspects = [];
           g.rows.forEach(function(r){
+            if(!BILLING_ORIGINE.get(r)) BILLING_ORIGINE.set(r, 'le rattrapage (le CRM relit les contrats du serveur)');
             var cmp = billingClasserDoublon(r, existants);
             if(cmp && cmp.niveau === 'certain'){ bilan.deja++; ignores.push(billingEntreeDoublon(r, cmp, g.nc)); return; }
             if(cmp && cmp.niveau === 'probable'){ bilan.suspects = (bilan.suspects || 0) + 1; suspects.push(billingEntreeSuspect(r, cmp, g.nc)); return; }
