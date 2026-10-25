@@ -27173,6 +27173,7 @@ async function billingAnalyzeReturns(text, monthVal){
       r, keys, kind, agent, agentSource, vendeurFichier, month, monthSource, confidence, aVerifier,
       nonConforme: trouveNonConforme,
       duplicate: dupInFile ? 'dans ce fichier' : (dupMonth ? `déjà importé (${dupMonth})` : null),
+      dupMois: dupMonth || null, dupFichier: !!dupInFile, deuxFois: false,
       originMonth: found ? found.month : null,
       skip: !!(dupInFile || dupMonth)
     });
@@ -27205,6 +27206,33 @@ async function runReturnsAnalysis(text){
   renderReturnsPreview();
 }
 
+// 💸 2e PRÉLÈVEMENT (r320) — le contrat prévoit qu'un même impayé puisse être retenu sur DEUX mois de paie.
+// Éligible : retour déjà enregistré sur un AUTRE mois de paie (pas un doublon du fichier, pas une
+// rétractation : celles-ci ne sont jamais comptées deux fois). Rien n'est coché par défaut.
+function deuxFoisEligible(x){
+  return !!(x && x.duplicate && x.dupMois && !x.dupFichier && x.kind !== 'retracted' && x.dupMois !== x.month);
+}
+function rerenderDeuxFois(){
+  const y = window.scrollY;
+  const l = document.getElementById('deuxFoisListe');
+  const st = l ? l.scrollTop : 0;
+  renderReturnsPreview();
+  const l2 = document.getElementById('deuxFoisListe');
+  if(l2) l2.scrollTop = st;
+  window.scrollTo(0, y);
+}
+function toggleDeuxFois(i, on){
+  const x = pendingReturnsImport && pendingReturnsImport.items[i];
+  if(!x || !deuxFoisEligible(x)) return;
+  x.deuxFois = !!on; x.skip = !on;
+  rerenderDeuxFois();
+}
+function toggleToutesDeuxFois(on){
+  if(!pendingReturnsImport) return;
+  pendingReturnsImport.items.forEach(x=>{ if(deuxFoisEligible(x)){ x.deuxFois = !!on; x.skip = !on; } });
+  rerenderDeuxFois();
+}
+
 function renderReturnsPreview(){
   const el = document.getElementById('billingRetReport');
   if(!el || !pendingReturnsImport) return;
@@ -27214,6 +27242,9 @@ function renderReturnsPreview(){
   const nVerif = actifs.filter(x => x.confidence === 'verifier').length;
   const nImpo = actifs.filter(x => x.confidence === 'impossible').length;
   const nDup = items.filter(x => x.skip).length;
+  const nDupBox = items.filter(x => x.duplicate).length;
+  const nEligibles = items.filter(deuxFoisEligible).length;
+  const nDeux = items.filter(x => x.deuxFois && !x.skip).length;
   const nRetract = actifs.filter(x => x.kind === 'retracted').length;
 
   const moisTouches = [...new Set(actifs.map(x => x.month))].sort();
@@ -27239,16 +27270,28 @@ function renderReturnsPreview(){
       <div style="font-weight:800; color:var(--red); font-size:12.5px;">🚨 ${unreadable} ligne${unreadable>1?'s':''} du fichier n'${unreadable>1?'ont':'a'} pas pu être lue${unreadable>1?'s':''} du tout</div>
       <div style="font-size:12px; color:var(--muted); margin-top:4px; line-height:1.5;">Aucun agent, nom, numéro NI référence de contrat n'a été trouvé sur ${unreadable>1?'ces lignes':'cette ligne'} — probablement une ligne vide, un en-tête recopié, ou des colonnes trop décalées pour être reconnues. ${unreadable>1?'Absentes':'Absente'} de la liste ci-dessous : c'est ${unreadable>1?'la cause la plus probable':'une cause possible'} d'un écart entre ce que tu attendais et ce qui a été importé. Ouvre le fichier source et vérifie ${unreadable>1?'ces lignes':'cette ligne'} à l'œil.</div>
     </div>` : ''}
-    ${nDup ? `<div style="margin-top:12px; padding:10px 12px; border-radius:9px; background:rgba(122,167,217,0.10); border:1px solid rgba(122,167,217,0.35);">
-      <div style="font-weight:800; color:#7aa7d9; font-size:12.5px; margin-bottom:6px;">🔁 ${nDup} doublon${nDup>1?'s':''} ignoré${nDup>1?'s':''} — déjà enregistré${nDup>1?'s':''} ailleurs</div>
+    ${nDupBox ? `<div style="margin-top:12px; padding:10px 12px; border-radius:9px; background:rgba(122,167,217,0.10); border:1px solid rgba(122,167,217,0.35);">
+      <div style="font-weight:800; color:#7aa7d9; font-size:12.5px; margin-bottom:6px;">🔁 ${nDupBox} doublon${nDupBox>1?'s':''} — déjà enregistré${nDupBox>1?'s':''} ailleurs${nDeux ? ` (dont ${nDeux} compté${nDeux>1?'s':''} une 2e fois)` : ''}</div>
       <div style="font-size:12px; color:var(--muted); margin-bottom:8px; line-height:1.5;">${nDup>1?'Ces lignes correspondent':'Cette ligne correspond'} à ${nDup>1?'des contrats':'un contrat'} déjà retenu${nDup>1?'s':''} une fois (même contrat retrouvé sur un autre mois, ou répété plus loin dans ce fichier) — ${nDup>1?'elles ne sont':"elle n'est"} pas réenregistrée${nDup>1?'s':''} pour ne pas compter deux fois le même retour. Si l'ancien enregistrement s'est trompé de mois ou d'agent, clique dessus pour l'ouvrir dans « Trouver un contrat » et le corriger directement.</div>
+      ${nEligibles ? `<div style="margin:0 0 10px; padding:10px 12px; border-radius:9px; background:rgba(229,168,61,0.10); border:1px solid rgba(229,168,61,0.45);">
+        <div style="font-weight:800; color:var(--amber); font-size:12.5px;">💸 Prélever une 2e fois — prévu au contrat</div>
+        <div style="font-size:12px; color:var(--muted); margin:4px 0 8px; line-height:1.5;">Coche les contrats à retenir AUSSI sur ${escapeHtml(billingMonthLabel(pendingReturnsImport.monthVal))}. Ils seront marqués « 2e prélèvement » (avec le mois du 1er prélèvement) pour que tu les retrouves. Rien n'est coché au départ. Les rétractations ne sont jamais comptées deux fois.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+          <button onclick="toggleToutesDeuxFois(true)" style="padding:6px 12px; border-radius:7px; border:1px solid rgba(229,168,61,0.6); background:rgba(229,168,61,0.15); color:var(--amber); font-weight:700; cursor:pointer; font-size:12px;">☑️ Tout cocher</button>
+          <button onclick="toggleToutesDeuxFois(false)" style="padding:6px 12px; border-radius:7px; border:1px solid var(--border); background:transparent; color:var(--muted); font-weight:700; cursor:pointer; font-size:12px;">⬜ Tout décocher</button>
+          <b style="font-size:12px;">${nDeux} / ${nEligibles} coché${nDeux>1?'s':''}</b>
+        </div>
+        <div id="deuxFoisListe" style="max-height:280px; overflow:auto; display:grid; gap:4px;">
+          ${items.map((x, i) => deuxFoisEligible(x) ? `<label style="display:flex; gap:8px; align-items:center; font-size:12px; cursor:pointer;"><input type="checkbox" ${x.deuxFois ? 'checked' : ''} onchange="toggleDeuxFois(${i}, this.checked)"><span><b>${escapeHtml(x.r.nom || x.r.numContrat || x.r.reference || '?')}</b> — ${escapeHtml(x.agent || 'sans agent')} · 1er prélèvement : ${escapeHtml(billingMonthLabel(x.dupMois))}</span></label>` : '').join('')}
+        </div>
+      </div>` : ''}
       <div style="display:flex; flex-wrap:wrap; gap:6px;">
-        ${items.filter(x=>x.skip).slice(0,20).map(x=>{
+        ${items.filter(x=>x.skip && !deuxFoisEligible(x)).slice(0,20).map(x=>{
           const k = String(x.r.numContrat || x.r.reference || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
           const label = `${x.r.nom || x.r.numContrat || x.r.reference || '?'} — ${x.duplicate}`;
           return k ? `<button onclick="jumpToContractSearch('${k}')" title="Ouvrir ce contrat dans « Trouver un contrat » pour vérifier ou corriger l'ancien enregistrement" style="padding:5px 10px; border-radius:7px; border:1px solid rgba(122,167,217,0.5); background:rgba(122,167,217,0.12); color:#7aa7d9; font-weight:700; cursor:pointer; font-size:11.5px;">🔍 ${escapeHtml(label)}</button>` : `<span style="font-size:11.5px; color:var(--muted);">${escapeHtml(label)}</span>`;
         }).join('')}
-        ${nDup>20 ? `<span style="font-size:11.5px; color:var(--muted); align-self:center;">… et ${nDup-20} autre${nDup-20>1?'s':''}</span>` : ''}
+        ${(()=>{ const reste = items.filter(x=>x.skip && !deuxFoisEligible(x)).length; return reste>20 ? `<span style="font-size:11.5px; color:var(--muted); align-self:center;">… et ${reste-20} autre${reste-20>1?'s':''}</span>` : ''; })()}
       </div>
     </div>` : ''}
     <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -27309,7 +27352,7 @@ function renderReturnsPreview(){
       <td style="white-space:nowrap;">${badge}</td>
       <td style="white-space:nowrap;">${x.kind === 'retracted' ? '🔻 Rétractation' : '📉 Impayé'}</td>
       <td>${escapeHtml(x.r.nom || '—')}</td>
-      <td>${escapeHtml(x.r.numContrat || x.r.reference || '—')}${x.originMonth ? `<div style="font-size:11px; color:var(--muted);">signé ${escapeHtml(billingMonthLabel(x.originMonth))}</div>` : ''}</td>
+      <td>${escapeHtml(x.r.numContrat || x.r.reference || '—')}${x.originMonth ? `<div style="font-size:11px; color:var(--muted);">signé ${escapeHtml(billingMonthLabel(x.originMonth))}</div>` : ''}${x.deuxFois ? `<div style="font-size:11px; color:var(--amber); font-weight:700;">💸 2e prélèvement (1er : ${escapeHtml(billingMonthLabel(x.dupMois))})</div>` : ''}</td>
       <td><select onchange="pendingReturnsImport.items[${i}].agent=this.value" style="min-width:130px;">
         <option value="">— aucun —</option>
         ${allKnownAgents().map(a=>`<option value="${escapeHtml(a)}"${a === x.agent ? ' selected' : ''}>${escapeHtml(a)}${isArchivedAgent(a) ? ' (ancien)' : ''}</option>`).join('')}
@@ -27374,11 +27417,14 @@ function rapportRetoursHtml(r){
     ${ligne('🔻', 'Rétractations appliquées', r.retractAppliquees, 'var(--green)')}
     ${ligne('🔁', 'Rétractations déjà appliquées avant', r.retractDeja, 'var(--muted)', 'réimport, rien de compté deux fois')}
     ${ligne('🔁', 'Impayés déjà enregistrés avant', r.impayesDejaPresents, 'var(--muted)', 'rien de compté deux fois')}
+    ${ligne('💸', '2e prélèvement', r.deuxFois, 'var(--amber)', 'déjà retenus un autre mois, comptés aussi sur ce mois (compris dans les impayés retenus)')}
     ${ligne('👯', 'Doublons ignorés', r.doublons, 'var(--muted)')}
     ${ligne('🚫', 'Lignes écartées à la main', r.ecartees, 'var(--muted)')}
     ${ligne('❓', 'Impayés SANS agent', r.impayesSansAgent, 'var(--red)', 'retenus à personne → « Retours à trancher »')}
     ${ligne('⏳', 'Rétractations en attente', r.retractEnAttente, 'var(--amber)', 'contrat pas encore dans la production')}
     ${ligne('⚠️', 'Lignes illisibles', r.illisibles, 'var(--red)', 'à vérifier dans le fichier')}
+    ${(r.deuxFoisListe || []).length ? `<details style="margin-top:8px;"><summary style="cursor:pointer; font-weight:700;">💸 Liste des 2e prélèvements (${r.deuxFois})</summary>
+      <div style="margin-top:8px; max-height:260px; overflow:auto; display:grid; gap:3px; font-size:12px;">${r.deuxFoisListe.map(d => `<div>${escapeHtml(d.nom || d.num || '?')} — <b>${escapeHtml(d.agent || 'sans agent')}</b> <span style="color:var(--muted);">(1er prélèvement : ${d.premier ? escapeHtml(billingMonthLabel(d.premier)) : '?'})</span></div>`).join('')}</div></details>` : ''}
     ${parAgent.length ? `<details style="margin-top:8px;"><summary style="cursor:pointer; font-weight:700;">👤 Impayés par agent (${parAgent.length} agent${parAgent.length>1?'s':''})</summary>
       <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">${parAgent.map(([a,n])=>`<span class="tag" style="background:var(--panel2);">${escapeHtml(a)} : <b>${n}</b></span>`).join('')}</div></details>` : ''}
   </div>`;
@@ -27397,7 +27443,8 @@ async function confirmReturnsImportInterne(){
   pendingImportSauve = pendingReturnsImport;
   const items = pendingReturnsImport.items.filter(x => !x.skip);
   const sansAgent = items.filter(x => !x.agent).length;
-  if(!await uiAsk(`Enregistrer ${items.length} ligne${items.length>1?'s':''} ?\n\n${sansAgent ? `⚠️ ${sansAgent} sans agent : elles seront enregistrées mais retenues à personne, tu pourras les trancher plus tard dans « Retours à trancher ».\n\n` : ''}Les rétractations marqueront leur contrat d'origine dans son mois de signature. Les impayés seront retenus sur le mois de paie affiché.`)) return;
+  const nbDeux = items.filter(x => x.deuxFois).length;
+  if(!await uiAsk(`Enregistrer ${items.length} ligne${items.length>1?'s':''} ?\n\n${nbDeux ? `💸 dont ${nbDeux} compté${nbDeux>1?'s':''} une 2e fois (2e prélèvement, déjà retenu${nbDeux>1?'s':''} un autre mois).\n\n` : ''}${sansAgent ? `⚠️ ${sansAgent} sans agent : elles seront enregistrées mais retenues à personne, tu pourras les trancher plus tard dans « Retours à trancher ».\n\n` : ''}Les rétractations marqueront leur contrat d'origine dans son mois de signature. Les impayés seront retenus sur le mois de paie affiché.`)) return;
 
   const el = document.getElementById('billingRetReport');
   if(el) el.innerHTML = '<div class="empty">⏳ Enregistrement…</div>';
@@ -27483,6 +27530,7 @@ async function confirmReturnsImportInterne(){
   const byMonth = {};
   items.filter(i => i.kind !== 'retracted').forEach(x=>{
     const r = { ...x.r, agentRaw: x.r.agent, agent: x.agent || '', matchedVia: x.agentSource, originMonth: x.originMonth || '' };
+    if(x.deuxFois){ r.deuxiemePrelevement = true; r.premierPrelevementMois = x.dupMois || ''; }
     // ═══ RETOUR SUR UN CONTRAT NON CONFORME : ENREGISTRE, MAIS PAS RETENU A L'AGENT ═══
     // On reutilise `dismissed`, le drapeau que TOUT le CRM respecte deja (retenue de paie, solde de
     // depart, pack patron, historiques). Creer un drapeau neuf aurait oblige a l'ajouter dans chacun
@@ -27537,6 +27585,8 @@ async function confirmReturnsImportInterne(){
       totalFichier: (pendingImportSauve && pendingImportSauve.totalRows) || tous.length,
       illisibles: (pendingImportSauve && pendingImportSauve.unreadable) || 0,
       doublons: tous.filter(x => x.skip && x.duplicate).length,
+      deuxFois: tous.filter(x => x.deuxFois && !x.skip).length,
+      deuxFoisListe: tous.filter(x => x.deuxFois && !x.skip).slice(0, 400).map(x => ({ nom: x.r.nom || '', agent: x.agent || '', num: x.r.numContrat || x.r.reference || '', premier: x.dupMois || '' })),
       ecartees: tous.filter(x => x.skip && !x.duplicate).length,
       retractAppliquees: retractApplied, retractDeja, retractEnAttente: retractNotFound,
       impayesParAgent, impayesSansAgent, impayesDejaPresents,
@@ -28703,7 +28753,7 @@ function billingAgentSheetHTML(d, forImage){
     // paie plus haut, l'ordre n'y change rien mais on ne touche jamais à une donnée qu'on affiche.
     // La numérotation suit l'ordre affiché : la ligne 1 est bien la première du tableau.
     [...ret.rows].reverse().forEach((r, i) => {
-      html += `<tr><td>${i + 1}</td><td>${escapeHtml(r.produit)}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
+      html += `<tr><td>${i + 1}</td><td>${escapeHtml(r.produit)}</td><td>${escapeHtml(r.nom)}${(!forImage && r.deuxiemePrelevement) ? ` <span style="color:var(--amber); font-weight:700; font-size:11px;" title="Déjà retenu un autre mois (1er prélèvement : ${escapeHtml(r.premierPrelevementMois || '?')})">💸 2e prélèvement</span>` : ''}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
     });
     html += '</tbody></table></div>';
 
@@ -32195,6 +32245,7 @@ async function searchContractGlobal(){
            : r.dismissed ? '<span style="color:var(--muted);">écarté</span>'
            : (r.agent ? '<span style="color:var(--red);">retour imputé à ' + escapeHtml(r.agent) + '</span>'
                       : '<span style="color:var(--amber);">à trancher</span>');
+      if(r.deuxiemePrelevement) etat += ' <span style="color:var(--amber); font-weight:700;">💸 2e prélèvement</span>';
       // Corriger sans quitter la recherche : changer l'agent, déplacer vers un autre mois de paie,
       // écarter, ou supprimer. AVANT, cette colonne ne faisait que RENVOYER vers « Retours à trancher »
       // — un panneau qui ne liste QUE les retours SANS agent : un retour déjà imputé (le cas le plus
@@ -33003,9 +33054,10 @@ async function runReturnKindAudit(){
       const keys = billingRowKeys(row);
       const matchedKey = keys.find(k => keySeen[k]);
       if(matchedKey){
-        duplicates.push({ k: matchedKey, a: keySeen[matchedKey], b: { mv, i, nom: row.nom, num: row.numContrat || row.reference } });
+        // r320 : un « 2e prélèvement » voulu par l'admin n'est pas un doublon à corriger.
+        if(!row.deuxiemePrelevement && !keySeen[matchedKey].deux) duplicates.push({ k: matchedKey, a: keySeen[matchedKey], b: { mv, i, nom: row.nom, num: row.numContrat || row.reference } });
       } else {
-        keys.forEach(k => { if(!keySeen[k]) keySeen[k] = { mv, i, nom: row.nom, num: row.numContrat || row.reference }; });
+        keys.forEach(k => { if(!keySeen[k]) keySeen[k] = { mv, i, nom: row.nom, num: row.numContrat || row.reference, deux: !!row.deuxiemePrelevement }; });
       }
     });
   });
