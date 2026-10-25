@@ -19748,6 +19748,20 @@ async function weekRealizedContracts(agent){
 // cette valeur : l'énergie est payée à part (réglages Ilek). Ici elle ne sert qu'à atteindre l'objectif
 // (et donc la prime d'objectif et les primes au-delà), comme l'a demandé l'admin.
 const ENERGIE_EQUIV_ASSISTANCE = 2;
+// r327 — RÈGLE DE L'ADMIN : à partir d'octobre 2026, l'énergie ne se paie plus « à part » (commission Ilek par énergie) pour un
+// salarié qui a un objectif. Ses énergies comptent dans l'objectif (1 énergie = 2 assistances) et la paie suit les règles Prime :
+// fixe, prime d'assiduité, prime d'objectif, prix par contrat au-delà de l'objectif. Les mois avant octobre 2026 ne bougent pas.
+// Les indépendants et les agents « sans objectif » gardent l'ancien calcul (l'équivalence ne s'applique pas à eux : sans cela
+// leur énergie ne serait plus payée du tout).
+const ENERGIE_PAYE_PAR_OBJECTIF_DES = '2026-10';
+function energiePayeParObjectif(agent, mois){
+  try{
+    if(String(mois) < ENERGIE_PAYE_PAR_OBJECTIF_DES) return false;
+    const [y, m] = String(mois).split('-').map(Number);
+    const pay = getAgentPay(agent, y, m);
+    return !pay.isIndep && !pay.noObjectif && (pay.objectifMensuel || 0) > 0;
+  }catch(e){ return false; }
+}
 const ENERGIE_EQUIV_CACHE = {};
 async function energieEquivalentObjectif(agent, year, month){
   const k = agent + '|' + year + '-' + String(month).padStart(2,'0');
@@ -22799,7 +22813,9 @@ function cashIlekPaint(){
   const d = document.getElementById('cashIlekDetail'), sm = document.getElementById('cashIlekSim');
   if(!c || c.agent !== currentCashAgent){ if(d) d.innerHTML = ''; if(sm) sm.innerHTML = ''; return; }
   const il = c.il, nets = Math.round(il.nets * 10) / 10;
-  const detail = il.objectif > 0
+  const detail = il.integre
+    ? `${nets} énergie${nets>1?'s':''} comptée${nets>1?'s':''} dans ton objectif (1 énergie = 2 assistances), pas de paiement à part`
+    : il.objectif > 0
     ? (il.atteint ? `objectif atteint (${nets}/${il.objectif}) : fixe ${fmt(il.fixeVerse)} DH` + (il.auTarif > 0 ? ` + ${Math.round(il.auTarif*10)/10} × ${il.commission} DH` : '') : `objectif ${nets}/${il.objectif} : le fixe se débloque à ${il.objectif} énergies`)
     : `${nets} énergie${nets>1?'s':''} × ${il.commission} DH`;
   if(d) d.innerHTML = `
@@ -22821,7 +22837,9 @@ async function cashOrigineRendre(agent, totalPrime){
   window.__cashIlek = { il, prime, ener, tot, agent }; try{ cashIlekPaint(); }catch(e){}
   const pc = v => tot > 0 ? Math.round(100 * v / tot) : 0;
   const nets = Math.round(il.nets * 10) / 10;
-  const detail = il.objectif > 0
+  const detail = il.integre
+    ? `${nets} énergie${nets>1?'s':''} comptée${nets>1?'s':''} dans ton objectif (1 énergie = 2 assistances), pas de paiement à part`
+    : il.objectif > 0
     ? (il.atteint ? `objectif atteint (${nets}/${il.objectif}) : fixe ${fmt(il.fixeVerse)} DH` + (il.auTarif > 0 ? ` + ${Math.round(il.auTarif*10)/10} × ${il.commission} DH` : '') : `objectif ${nets}/${il.objectif} : le fixe se débloque à ${il.objectif} énergies`)
     : `${nets} énergie${nets>1?'s':''} × ${il.commission} DH`;
   el.innerHTML = `<div style="padding:16px 18px;border-radius:14px;background:var(--panel2);border:1px solid var(--border);">
@@ -37785,9 +37803,10 @@ async function renderAssistanceHistory(){
     var cApres = (R.commissions && R.commissions[agent] !== undefined && Number(R.commissions[agent]) >= 0) ? Number(R.commissions[agent]) : R.commission;
     var cAvant = (R.avants && Number(R.avants[agent]) > 0) ? Number(R.avants[agent]) : 0;
     var avantQte = ob > 0 ? Math.min(nets, ob) : 0;
-    return { agent: agent, mois: mois, contrats: val.length, energies: en, retours: mes, retoursEnergies: retEn, diviseur: R.diviseur, retires: retires,
+    var integre = (typeof energiePayeParObjectif === 'function') && energiePayeParObjectif(agent, mois);   // r327 : payé par l'objectif, plus « à part »
+    return { agent: agent, mois: mois, integre: integre, contrats: val.length, energies: en, retours: mes, retoursEnergies: retEn, diviseur: R.diviseur, retires: retires,
              nets: nets, netsEstimes: netsEstimes, estimeBoss: estime, estime: false, chute: R.chute, commission: cApres, commissionAvant: cAvant, avantQte: avantQte, objectif: ob, fixe: fx, fixeVerse: fixeVerse, atteint: atteint, auTarif: auTarif,
-             montant: Math.round(fixeVerse + avantQte * cAvant + auTarif * cApres) };
+             montant: integre ? 0 : Math.round(fixeVerse + avantQte * cAvant + auTarif * cApres), montantAncienCalcul: Math.round(fixeVerse + avantQte * cAvant + auTarif * cApres) };
   };
   var ilekNb = function(n){ return String(Math.round(n * 10) / 10).replace('.', ','); };
   // Énergies Ilek (conformes, Dual = 2) par jour : index construit une fois par lecture des contrats
