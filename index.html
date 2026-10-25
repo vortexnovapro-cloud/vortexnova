@@ -11657,7 +11657,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     const mini = pay.isIndep || pay.noObjectif ? 0 : (pay.objectifMensuel || 0);
     // r326 — Total « pour l'objectif » = assistances + énergies comptées 2 assistances chacune. `monthlyRealized`
     // (assistances seules) reste intact : classements, records et totaux d'équipe continuent de le lire.
-    const objReal = (isEnergieSeule(r.agent) ? 0 : monthlyRealized) + equivObj;
+    const objReal = monthlyRealized + equivObj;
     // Statut spécial du jour (absence justifiée/injustifiée, congé, mise à pied...) — pour que le
     // commentaire "aujourd'hui vs hier" (dayOverDayComment) ne traite jamais une absence comme un
     // relâchement, ni une absence VRAIMENT injustifiée comme un simple mauvais jour anodin.
@@ -15621,7 +15621,7 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   const _rdObj = String(refDayForSeed || todayStr()).split('-').map(Number);
   const assistReal = monthlyRealized;
   const eqObj = (mini > 0 || vise > 0) ? energieEquivSync(agentName, _rdObj[0], _rdObj[1]) : 0;
-  const objRealTot = (isEnergieSeule(agentName) ? 0 : monthlyRealized) + eqObj;
+  const objRealTot = monthlyRealized + eqObj;
   const paceObjTot = daysElapsed > 0 ? objRealTot / daysElapsed : 0;
   ((monthlyRealized, currentPace)=>{
   if(mini > 0 && enMoisN > 0 && monthlyRealized < mini){
@@ -16480,7 +16480,7 @@ async function buildBriefingRows(baseRows){
         (isIndep || pay.noObjectif) ? Promise.resolve(0) : energieEquivalentObjectif(agent, y, m)
       ]);
       const mini = (isIndep || pay.noObjectif) ? 0 : (pay.objectifMensuel || 0);
-      const objReal = (isEnergieSeule(agent) ? 0 : monthlyRealized) + equivObj;   // r326 : total « pour l'objectif »
+      const objReal = monthlyRealized + equivObj;   // r326 : total « pour l'objectif »
       return { agent, isIndep, todayRealized: todayProd.realized || 0, todayObjective: todayProd.objective || 0, monthlyRealized, objReal, mini, vise: desired || 0 };
     }));
   }
@@ -19708,7 +19708,7 @@ async function monthlyRealizedContractsBrut(agent, year, month){
     const p = (board.agents && board.agents[agent]) || null;
     if(p) total += (p.realized || 0);
   });
-  return Math.max(0, total - retractations);
+  return Math.max(0, total - retractations) + await energieContratsSeule(agent, year, month);
 }
 
 // Contrats de la semaine (lundi → aujourd'hui)
@@ -19757,6 +19757,7 @@ const ENERGIE_PAYE_PAR_OBJECTIF_DES = '2026-10';
 function energiePayeParObjectif(agent, mois){
   try{
     if(String(mois) < ENERGIE_PAYE_PAR_OBJECTIF_DES) return false;
+    if(isEnergieSeule(agent)) return true;   // « énergie uniquement » : ses énergies SONT ses contrats (1 énergie = 1 contrat), payées comme Prime
     const [y, m] = String(mois).split('-').map(Number);
     const pay = getAgentPay(agent, y, m);
     return !pay.isIndep && !pay.noObjectif && (pay.objectifMensuel || 0) > 0;
@@ -19772,8 +19773,20 @@ async function energieEquivalentObjectif(agent, year, month){
       v = d ? Math.round((Number(d.nets) || 0) * ENERGIE_EQUIV_ASSISTANCE) : 0;
     }
   }catch(e){ v = 0; }
+  if(isEnergieSeule(agent)) v = 0;   // pas d'équivalence : leurs énergies sont déjà comptées comme contrats (voir energieContratsSeule)
   ENERGIE_EQUIV_CACHE[k] = { v, t: Date.now() };
   return v;
+}
+// r328 — Agent « énergie uniquement » : 1 énergie = 1 contrat. Ses énergies nettes du mois (retours Ilek déduits) s'ajoutent à son
+// total de contrats ; tout le reste (objectif, prime d'objectif, prix par contrat au-delà, classements) suit alors les règles Prime.
+async function energieContratsSeule(agent, year, month){
+  try{
+    if(!isEnergieSeule(agent)) return 0;
+    const mois = year + '-' + String(month).padStart(2,'0');
+    if(mois < ENERGIE_PAYE_PAR_OBJECTIF_DES || typeof window.ilekDuMois !== 'function') return 0;
+    const d = await window.ilekDuMois(agent, mois);
+    return d ? Math.round(Number(d.nets) || 0) : 0;
+  }catch(e){ return 0; }
 }
 // Version SYNCHRONE pour les estimations « du jour / de la semaine » (fonctions non asynchrones) : lit la
 // dernière valeur connue et relance un calcul en arrière-plan si elle a plus d'une minute. La paie du mois
@@ -19791,7 +19804,7 @@ function energieEquivSync(agent, year, month){
 async function monthlyObjectifStatus(agent, year, month, realizedOverride){
   const pay = getAgentPay(agent, year, month);
   const energieSeule = isEnergieSeule(agent);
-  const assist = energieSeule ? 0 : (realizedOverride != null ? realizedOverride : await monthlyRealizedContracts(agent, year, month));
+  const assist = realizedOverride != null ? realizedOverride : await monthlyRealizedContracts(agent, year, month);
   if(pay.isIndep){
     return { agent, objectif: 0, realized: assist, atteint: false, extraCount: 0, primeObjectif: 0, primeExtra: 0, pct: 100, remaining: 0, isIndep: true };
   }
@@ -24732,7 +24745,7 @@ async function renderMonthlyObjectif(){
     // réellement payée (celle du calcul de paie, full.status) et on montre les deux compteurs.
     const stPaye = (full && full.status) ? full.status : r;
     // Agent « énergie uniquement » : seules ses énergies comptent pour l'objectif, ses assistances éventuelles n'y figurent pas.
-    const payableAssist = r.energieSeule ? 0 : ((full && full.breakdown && full.breakdown.payable != null) ? full.breakdown.payable : (r.realizedAssistance != null ? r.realizedAssistance : r.realized));
+    const payableAssist = (full && full.breakdown && full.breakdown.payable != null) ? full.breakdown.payable : (r.realizedAssistance != null ? r.realizedAssistance : r.realized);
     // r323 : l'équivalence énergie (1 énergie = 2 assistances) fait partie de l'objectif ET de ce qui est « payé » pour l'objectif.
     const equivE = r.equivEnergie || 0;
     const payableCount = payableAssist + equivE;
