@@ -5854,6 +5854,7 @@ function renderAgentChips(){
     const pills = [];
     if(indep) pills.push(pill('🧑‍💼','Indépendant','#c084fc','Indépendant : pas de pointage, payé au contrat'));
     if(!indep && noObj) pills.push(pill('🎯', esc3(getNoObjectifLabel(name)), '#e5a83d', 'Sans objectif : payé dès le 1er contrat'));
+    if(isEnergieSeule(name)) pills.push(pill('⚡','Énergie uniquement','#34b774','Pas d\'assistance : objectif compté en énergie (1 énergie = 2 assistances)'));
     if(isSup) pills.push(pill('📊','Superviseur','#e5c24a','Accès à la Supervision'));
     if(isBackoffice(name)) pills.push(pill('📥','Backoffice','#e8a33d','Accès à l\'onglet Backoffice'));
     if(isTrainer) pills.push(pill('🎓','Formateur ADF','#4a9891','Formateur ADF'));
@@ -5875,6 +5876,8 @@ function renderAgentChips(){
       <details class="st-det" open><summary>Profil et paie</summary>
         ${ROW('Indépendant','Pas de pointage, payé au contrat', SW('toggleIndependant', indep))}
         ${ROW('Sans objectif','Payé dès le 1er contrat', SW('toggleNoObjectif', noObj))}
+        ${ROW('⚡ Énergie uniquement','Pas d\'assistance : objectif compté en énergie', SW('toggleEnergieSeule', isEnergieSeule(name)))}
+        ${isEnergieSeule(name) ? ROW('👁️ Afficher l\'assistance','Montrer ses blocs assistance dans son espace', SW('toggleEnergieAfficheAssist', !assistanceMasquee(name))) : ''}
         ${noObj ? ROW('Nom du statut affiché','Ex : Backoffice, Confirmé', VAL('editStatusLabel', esc3(getNoObjectifLabel(name)))) : ''}
         ${ROW('Découverte','Ne gagne rien, contrats comptés', SW('toggleDecouverte', inDecouverte))}
         ${inDecouverte ? ROW('Terminer la découverte','Salarié normal ensuite', VAL('setDecouverteEndDate', decouverteEnd ? fr(decouverteEnd) : 'Choisir la date')) : ''}
@@ -5908,6 +5911,36 @@ function renderAgentChips(){
 
 function hasNoObjectif(agent){
   return !!(config.agentsNoObjectif && config.agentsNoObjectif[agent] === true);
+}
+
+// ⚡ r321 — Agent « énergie uniquement » : il ne fait pas d'assistance (Prime), seulement de l'énergie (Ilek).
+// Conséquence sur l'OBJECTIF : seules ses énergies comptent (1 énergie = 2 assistances, voir
+// energieEquivalentObjectif). Le prix par contrat de la paie, lui, n'est jamais touché par cette équivalence.
+function isEnergieSeule(agent){
+  return !!(config.agentsEnergieSeule && config.agentsEnergieSeule[agent] === true);
+}
+// 👁️ r322 — Un agent « énergie uniquement » ne voit plus ses blocs assistance dans son Arena (compteur de
+// contrats/rétractations, validation backoffice, barème des retours), sauf si l'admin active l'interrupteur
+// « Afficher l'assistance » sur sa fiche. Rien n'est supprimé : c'est un simple affichage.
+function assistanceMasquee(agent){
+  return isEnergieSeule(agent) && !(config.agentsEnergieAfficheAssist && config.agentsEnergieAfficheAssist[agent] === true);
+}
+async function toggleEnergieAfficheAssist(name){
+  if(!config.agentsEnergieAfficheAssist) config.agentsEnergieAfficheAssist = {};
+  if(config.agentsEnergieAfficheAssist[name] === true) delete config.agentsEnergieAfficheAssist[name];
+  else config.agentsEnergieAfficheAssist[name] = true;
+  await saveConfigSilent();
+  try{ logAudit('Admin', `Affichage de l'assistance ${config.agentsEnergieAfficheAssist[name] ? 'activé' : 'masqué'} — ${name}`, ''); }catch(e){}
+  renderAgentChips();
+}
+async function toggleEnergieSeule(name){
+  if(!config.agentsEnergieSeule) config.agentsEnergieSeule = {};
+  config.agentsEnergieSeule[name] = !isEnergieSeule(name);
+  if(!config.agentsEnergieSeule[name]) delete config.agentsEnergieSeule[name];
+  await saveConfigSilent();
+  try{ logAudit('Admin', `Statut « énergie uniquement » ${isEnergieSeule(name) ? 'activé' : 'retiré'} — ${name}`, ''); }catch(e){}
+  renderAgentChips();
+  renderAgentPayTable();
 }
 
 // « Sans objectif » effectif = statut permanent (🎯) OU formation écoute en cours (🌱, auto-expirante).
@@ -7170,6 +7203,8 @@ async function removeAgent(name){
   if(config.agentsBackoffice) delete config.agentsBackoffice[name];
   if(config.agentsTest) delete config.agentsTest[name];
   if(config.agentsNoObjectif) delete config.agentsNoObjectif[name];
+  if(config.agentsEnergieSeule) delete config.agentsEnergieSeule[name];
+  if(config.agentsEnergieAfficheAssist) delete config.agentsEnergieAfficheAssist[name];
   if(config.agentsADFTrainer) delete config.agentsADFTrainer[name];
   if(config.agentsEcoutesAutorisees) delete config.agentsEcoutesAutorisees[name];
   if(config.prodConfig && config.prodConfig.agentPay) delete config.prodConfig.agentPay[name];
@@ -19684,19 +19719,35 @@ async function weekRealizedContracts(agent){
 // paie, qui raisonne sur les contrats PAYÉS (réalisé − retours convertis en contrats) : un agent que
 // ses retours font passer sous son minimum perd sa prime d'objectif, c'est la règle du patron.
 // Sans ce paramètre, la fonction se comporte exactement comme avant (affichage Arena, classements).
+// ⚡ r321 — POUR L'OBJECTIF SEULEMENT : 1 énergie Ilek (nette de ses retours) = 2 assistances.
+// Exemple : 20 assistances + 20 énergies = 20 + 40 = 60. Le prix par contrat de la paie n'utilise jamais
+// cette valeur : l'énergie est payée à part (réglages Ilek). Ici elle ne sert qu'à atteindre l'objectif
+// (et donc la prime d'objectif et les primes au-delà), comme l'a demandé l'admin.
+const ENERGIE_EQUIV_ASSISTANCE = 2;
+async function energieEquivalentObjectif(agent, year, month){
+  try{
+    if(typeof window.ilekDuMois !== 'function') return 0;
+    const d = await window.ilekDuMois(agent, `${year}-${String(month).padStart(2,'0')}`);
+    return d ? Math.round((Number(d.nets) || 0) * ENERGIE_EQUIV_ASSISTANCE) : 0;
+  }catch(e){ return 0; }
+}
+
 async function monthlyObjectifStatus(agent, year, month, realizedOverride){
   const pay = getAgentPay(agent, year, month);
-  const realized = realizedOverride != null ? realizedOverride : await monthlyRealizedContracts(agent, year, month);
+  const energieSeule = isEnergieSeule(agent);
+  const assist = energieSeule ? 0 : (realizedOverride != null ? realizedOverride : await monthlyRealizedContracts(agent, year, month));
   if(pay.isIndep){
-    return { agent, objectif: 0, realized, atteint: false, extraCount: 0, primeObjectif: 0, primeExtra: 0, pct: 100, remaining: 0, isIndep: true };
+    return { agent, objectif: 0, realized: assist, atteint: false, extraCount: 0, primeObjectif: 0, primeExtra: 0, pct: 100, remaining: 0, isIndep: true };
   }
+  const equivEnergie = await energieEquivalentObjectif(agent, year, month);
+  const realized = assist + equivEnergie;
   const objectif = pay.objectifMensuel || 0;
   const atteint = objectif > 0 && realized >= objectif;
   const extraCount = atteint ? Math.max(0, realized - objectif) : 0;
   const primeObjectif = atteint ? pay.primeObjectifJour : 0;
   const primeExtra = extraCount * pay.primeExtraContrat;
   const pct = objectif > 0 ? Math.round((realized / objectif) * 100) : (realized > 0 ? 100 : 0);
-  return { agent, objectif, realized, atteint, extraCount, primeObjectif, primeExtra, pct, remaining: Math.max(0, objectif - realized), isIndep: false };
+  return { agent, objectif, realized, atteint, extraCount, primeObjectif, primeExtra, pct, remaining: Math.max(0, objectif - realized), isIndep: false, realizedAssistance: assist, equivEnergie, energieSeule };
 }
 
 async function monthlyDeductions(agent, year, month, dateRangeOverride){
@@ -21253,8 +21304,9 @@ async function renderArena(){
   const myRow = currentArenaAgent ? rankings.find(r=>r.agent === currentArenaAgent) : null;
 
   document.getElementById('arenaObjectifBox').style.display = 'none';
-  document.getElementById('arenaRetractBox').style.display = currentArenaAgent ? 'flex' : 'none';
-  if(currentArenaAgent){
+  const masqueAssist = !!(currentArenaAgent && assistanceMasquee(currentArenaAgent));
+  document.getElementById('arenaRetractBox').style.display = (currentArenaAgent && !masqueAssist) ? 'flex' : 'none';
+  if(currentArenaAgent && !masqueAssist){
     const netContracts = await monthlyRealizedContracts(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     const rc = await getMonthlyRetractCount(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
     const grossContracts = netContracts + rc;
