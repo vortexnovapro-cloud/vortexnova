@@ -13216,6 +13216,8 @@ async function computeTotalPayrollMonth(year, month){
       // payableNow : contrats reellement PAYES a ce jour (apres retours), souvent inferieur a `realized`.
       // C'est lui qui decide des primes ; `realized` est ce que l'agent voit dans son Arena.
       payableNow: (res && res.breakdown) ? res.breakdown.payable : 0,
+      // r329 — énergies comptées pour l'objectif (1 énergie = 2 assistances pour un agent mixte)
+      equivObj: (res && res.status && res.status.equivEnergie) || 0,
       // r226 — rétractations et retours du mois, pour les voir directement dans la Projection.
       validated: (res && res.breakdown) ? (res.breakdown.validated || 0) : 0,
       retractions: (res && res.breakdown) ? (res.breakdown.retractions || 0) : 0,
@@ -19687,7 +19689,7 @@ async function monthlyRealizedContractsBrut(agent, year, month){
         backofficeMonthlyCount(agent, year, month),
         monthlyRetractions(agent, year, month)
       ]);
-      return Math.max(0, bo - retractations);
+      return Math.max(0, bo - retractations) + await energieContratsSeule(agent, year, month);   // r330 : énergies des agents « énergie uniquement »
     }
   }catch(e){ console.error('getPaySource:', e); /* en cas de souci, on retombe sur les compteurs agents */ }
 
@@ -22569,15 +22571,15 @@ async function renderCash(){
       ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
   } else if(monthRes){
     hero.innerHTML = `
-      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 ${retoursImportedForMonth ? 'Ton salaire NET réel' : 'Ton salaire BRUT ESTIMÉ'}, maintenant</div>
+      <div style="font-size:13px; color:#ffd700; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">💰 ${retoursImportedForMonth ? 'Ton salaire NET réel' : 'Ton salaire BRUT ESTIMÉ'}, à ce jour</div>
       <div class="arena-big-num" style="background:linear-gradient(90deg,#ffd700,#34b774); -webkit-background-clip:text; background-clip:text; color:transparent;">${rt.total.toLocaleString('fr-FR')}<span style="-webkit-text-fill-color:var(--muted); color:var(--muted);"> DH</span></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''}${(rt.retractions > 0 ? ` · Rétractations : <b>${rt.retractions}</b>` : '') + (retoursImportedForMonth ? ' · <b>retours clients déduits</b>' : ' · retours clients pas encore importés')}</div>
+      <div style="color:var(--muted); font-size:12px; margin-top:2px;">${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth} jours ouvrés écoulés · ${rt.contractsRealized} contrat${rt.contractsRealized>1?'s':''} payé${rt.contractsRealized>1?'s':''}${(rt.contractsBrut!==rt.contractsRealized || rt.returnsCount>0) ? ` <b title="${rt.retractions} rétractation(s) et ${rt.returnsCount} retour(s) de facturation ${rt.returnsDivisor===1?'en 1:1':'÷'+rt.returnsDivisor} (= ${rt.returnsDeducted} contrat(s) en moins) déjà retirés de ce total.">(sur ${rt.contractsBrut} signés)</b>` : ''}${(monthRes.status.equivEnergie > 0) ? ` <b title="Pour l'objectif, 1 énergie = 2 assistances.">+ ${Math.round(monthRes.status.equivEnergie/2*10)/10} énergie${monthRes.status.equivEnergie/2>1?'s':''} = ${monthRes.status.equivEnergie} pour l'objectif</b>` : ''}${monthRes.status.objectif?` / objectif ${monthRes.status.objectif}`:''}${(rt.retractions > 0 ? ` · Rétractations : <b>${rt.retractions}</b>` : '') + (retoursImportedForMonth ? ' · <b>retours clients déduits</b>' : ' · retours clients pas encore importés')}</div>
       <div style="color:var(--muted); font-size:13px; margin-top:6px;" id="cashMyRankLine">${CASH_RANG_EN_ATTENTE}</div>
       <div class="cash-breakdown" style="margin-top:14px;">
         <div><span>Fixe + prime fixe (prorata ${elapsedWorkingDaysThisMonth}/${totalWorkingDaysThisMonth}j)</span><b>${rt.fixedProrated.toLocaleString('fr-FR')} DH</b></div>
         <div class="${assiduiteAcquise?'hit':'miss'}"><span>Prime assiduité</span><b>${assiduiteAcquise ? 'incluse ci-dessus' : 'Perdue (retards)'}</b></div>
         ${(pay.perContract>0 || rt.contractPart>0) ? `<div><span>Commission contrats${explicationCommission ? `<small>${explicationCommission}</small>` : ''}</span><b>${rt.contractPart.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        <div class="${rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif (${monthRes.status.objectif||'—'})</span><b>${rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : (monthRes.status.objectif ? 'Pas encore atteint' : 'Non réglé')}</b></div>
+        <div class="${rt.objectifPrimes>0?'hit':'miss'}"><span>Prime objectif (${monthRes.status.objectif||'—'})</span><b>${rt.objectifPrimes>0 ? '+'+rt.objectifPrimes.toLocaleString('fr-FR')+' DH' : (monthRes.status.objectif ? ('Pas encore atteint' + (monthRes.status.equivEnergie > 0 ? ` (${monthRes.status.realized}/${monthRes.status.objectif})` : '')) : 'Non réglé')}</b></div>
         ${rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision (${contractsUnderSupervision} contrats équipe)</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
@@ -24108,7 +24110,9 @@ async function renderAgentPayTable(){
   // Les agents archivés restent en fin de liste, grisés : leurs conditions de l'époque servent aux mois passés.
   const payRowAgents = agentsReels().concat(archivedAgents());
   const faitMois = {};
-  await Promise.all(payRowAgents.map(async a=>{ if(isArchivedAgent(a)) return; try{ faitMois[a] = await monthlyRealizedContracts(a, year, month); }catch(e){} }));
+  const faitObj = {};   // r329 : contrats payés (après retours) + énergies comptées pour l'objectif, comme la paie
+  await Promise.all(payRowAgents.map(async a=>{ if(isArchivedAgent(a)) return; try{ faitMois[a] = await monthlyRealizedContracts(a, year, month); }catch(e){}
+    try{ const brO = await payableContractsBreakdown(a, year, month); faitObj[a] = (await monthlyObjectifStatus(a, year, month, brO.payable)).realized; }catch(e){} }));
   payRowAgents.forEach((agent,i)=>{
     const p = getAgentPay(agent);
     const c = getProdConfig().agentPay[agent] || {};
@@ -24148,13 +24152,14 @@ async function renderAgentPayTable(){
     else reglages = blocFixe + blocComm + blocObj + blocAssid + blocSup + blocRet;
     const type = archived ? 'old' : (isIndep ? 'ind' : (noObj || decActive ? 'bo' : 'sal'));
     const fait = faitMois[agent];
+    const faitO = faitObj[agent] != null ? faitObj[agent] : fait;
     const fixeEff = Math.round((p.baseSalary || 0) + (p.primeFixeMensuelle || 0)), assidEff = Math.round(p.primeAssiduite || 0);
     const mini = Number(p.objectifMensuel) || 0, avantT = Number(p.perContractBeforeObjectif) || 0, apresT = Number(p.perContract) || 0, extraT = Number(p.primeExtraContrat) || 0, primeObj = Number(p.primeObjectifJour) || 0;
     let actuel;
     if(lockObjectifRow || mini <= 0){
       actuel = `💵 <b>Sans objectif</b> : <b>${apresT} DH par contrat</b> (bonus assistance Prime), dès le 1er contrat`;
     } else {
-      const etatObj = (fait == null) ? '' : (fait >= mini ? ' — <span style="color:var(--green);">✔ objectif atteint</span>' : ` — <span style="color:var(--muted);">objectif non atteint (${fait}/${mini})</span>`);
+      const etatObj = (faitO == null) ? '' : (faitO >= mini ? ' — <span style="color:var(--green);">✔ objectif atteint</span>' : ` — <span style="color:var(--muted);">objectif non atteint (${faitO}/${mini})</span>`);
       actuel = `🎯 Objectif : <b>${mini} contrats</b>${etatObj}<br>🏆 Prime d'objectif : <b>${primeObj} DH</b>${primeObj > 0 ? ' (versée une fois, si atteint)' : ''}<br>💵 Par contrat : <b>${avantT} DH</b> avant l'objectif · <b>${apresT} DH</b> au-delà${extraT > 0 ? ` · bonus <b>${extraT} DH</b> par contrat au-delà` : ''}`;
     }
     actuel += `<br>🏦 ${fixeEff > 0 ? `Salaire fixe : <b>${fixeEff.toLocaleString('fr-FR')} DH / mois</b>` : 'Pas de salaire fixe'}${assidEff > 0 ? ` · assiduité : <b>${assidEff} DH</b>` : ''} <span style="color:var(--muted);">(commun assistance + énergie)</span>`;
@@ -24191,7 +24196,7 @@ async function rmRemplirMontants(year, month){
       const agent = dec(z.dataset.amt), d = det[agent];
       if(!d){ z.innerHTML = '<div class="rm-mut" style="margin-top:8px;">Pas de calcul pour ce mois.</div>'; return; }
       const p = getAgentPay(agent, year, month);
-      z.innerHTML = '<div class="rm-big">'+Math.round(d.total).toLocaleString('fr-FR')+' DH <small>net Prime ce mois</small></div>'+rmBarre(d,p)+'<div class="rm-ilek"></div><div class="rm-est"><span class="rm-mut">📉 estimation des retours…</span></div>';
+      z.innerHTML = '<div class="rm-big">'+Math.round(d.total).toLocaleString('fr-FR')+' DH <small>net Prime — estimation fin de mois</small></div>'+rmBarre(d,p)+'<div class="rm-ilek"></div><div class="rm-est"><span class="rm-mut">📉 estimation des retours…</span></div>';
       z._d = d;
     });
   }catch(e){
@@ -24251,9 +24256,12 @@ async function rmRemplirMontants(year, month){
 }
 function rmBarre(d, p){
   if(!p.isIndep && !p.noObjectif && (p.objectifMensuel||0) > 0){
-    const real = (d.payableNow != null ? d.payableNow : d.realized) || 0;
+    const payes = (d.payableNow != null ? d.payableNow : d.realized) || 0;
+    const eq = d.equivObj || 0;
+    const real = payes + eq;   // total « pour l'objectif » : contrats payés + énergies comptées (1 énergie = 2 assistances)
     const pc = Math.min(100, Math.round(100*real/p.objectifMensuel));
-    return '<div class="rm-bar"><i style="width:'+pc+'%"></i></div><div class="rm-mut">'+real+' contrat(s) payé(s) sur '+p.objectifMensuel+' (objectif minimum) — <b style="color:'+(real>=p.objectifMensuel?'var(--green)':'var(--amber)')+';">'+(real>=p.objectifMensuel?'atteint':'encore '+(p.objectifMensuel-real))+'</b></div>';
+    const detailEq = eq > 0 ? ' + '+(Math.round(eq/2*10)/10)+' énergie(s) = '+real : '';
+    return '<div class="rm-bar"><i style="width:'+pc+'%"></i></div><div class="rm-mut">'+payes+' contrat(s) payé(s)'+detailEq+' sur '+p.objectifMensuel+' (objectif minimum) — <b style="color:'+(real>=p.objectifMensuel?'var(--green)':'var(--amber)')+';">'+(real>=p.objectifMensuel?'atteint':'encore '+(p.objectifMensuel-real))+'</b></div>';
   }
   return '<div class="rm-mut" style="margin-top:6px;">'+(d.realized||0)+' contrat(s) ce mois'+((p.isIndep||p.noObjectif)?' — payé dès le 1er':'')+'</div>';
 }
@@ -28957,9 +28965,10 @@ function billingAgentSheetHTML(d, forImage){
       line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, commissionContrats, { plus: true });
     }
     if(st.objectif > 0){
-      const manquantObj = Math.max(0, st.objectif - (br ? br.payable : st.realized));
+      const faitObjFeuille = (st.equivEnergie > 0) ? st.realized : (br ? br.payable : st.realized);   // r329 : inclut les énergies comptées
+      const manquantObj = Math.max(0, st.objectif - faitObjFeuille);
       const tipObj = `Calculé sur les contrats PAYÉS (après rétractations et retours), pas sur les contrats signés — un agent qui tombe sous son minimum à cause de ses retours perd cette prime, même s'il a signé plus que l'objectif.`;
-      line(`Prime objectif (${st.objectif} contrats payés) <span title="${tipObj}" style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span>${st.atteint ? ' — atteint' : ` — pas encore atteint (${br ? br.payable : st.realized}/${st.objectif}, ${manquantObj} manquant${manquantObj>1?'s':''})`}`, st.atteint ? st.primeObjectif : 0, { plus: true, color: st.atteint ? 'var(--green)' : 'var(--muted)' });
+      line(`Prime objectif (${st.objectif} contrats payés) <span title="${tipObj}" style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span>${st.atteint ? ' — atteint' : ` — pas encore atteint (${faitObjFeuille}/${st.objectif}, ${manquantObj} manquant${manquantObj>1?'s':''})`}`, st.atteint ? st.primeObjectif : 0, { plus: true, color: st.atteint ? 'var(--green)' : 'var(--muted)' });
     } else {
       line('Prime objectif — non réglé pour cet agent', 0, { color: 'var(--muted)' });
     }
