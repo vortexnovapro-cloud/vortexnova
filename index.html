@@ -3428,7 +3428,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-26-r333';
+const APP_VERSION = '2026-10-26-r335';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -11426,7 +11426,7 @@ async function renderBilanIlek(force){
       </div>
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px;">${avecObj ? 'Objectifs du mois · toute l\'équipe' : 'Énergies du jour'} · ${tot.c} contrat${tot.c>1?'s':''}</div>
       <div style="font-size:13px;font-weight:700;color:${couleurEq};line-height:1.4;">${msgEq}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:6px;">⚡ ${tot.el} élec · 🔥 ${tot.g} gaz · ⚡🔥 ${tot.d} dual${tot.nc?` · <span style="color:#e55a5a;">${tot.nc} non conforme${tot.nc>1?'s':''}</span>`:''}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;">⚡ ${tot.el} élec · 🔥 ${tot.g} gaz · ⚡🔥 ${tot.d} dual${tot.nc?` · <span style="color:#e55a5a;">${tot.nc} non conforme${tot.nc>1?'s':''}${adminInfoBtn('adminAllerNonConformes()', 'Voir la liste des contrats non conformes')}</span>`:''}</div>
     </div>`;
     let h = `<div style="font-family:'Inter',sans-serif;">${anneau}`;
     const cartes = actifs.concat(inactifs);   // une carte pour CHAQUE agent Ilek, comme le bilan Prime (ceux sans contrat ce jour-là en dernier)
@@ -11447,7 +11447,7 @@ async function renderBilanIlek(force){
         h += `<div class="ilk-card objsnap-card" style="font-family:'Inter',sans-serif;padding:19px;border-radius:18px;background:var(--panel2);border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};border-top:4px solid #22c55e;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div style="font-weight:800;font-size:17px;">${i<3&&a.energies>0?medals[i]+' ':''}${esc3(a.agent)}</div><div style="font-size:12px;font-weight:700;color:${dc(a.energies,a.hier)};">${delta(a.energies,a.hier)}</div></div>
           <div style="font-size:36px;font-weight:900;line-height:1.15;margin-top:8px;">${a.energies} <span style="font-size:14px;color:var(--muted);font-weight:700;">${a.energies>1?'énergies':'énergie'} aujourd'hui</span>${LIA[a.agent] ? `<span title="Assistance (Prime) du même jour" style="display:inline-block;margin-left:9px;padding:3px 9px;border-radius:9px;font-size:12.5px;font-weight:700;letter-spacing:0;vertical-align:middle;color:var(--muted);background:rgba(255,255,255,.06);border:1px solid var(--border);">🛡️ ${LIA[a.agent].today} assistance</span>` : ''}</div>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${a.contrats} contrat${a.contrats>1?'s':''} · ${det}</div>${a.nc?`<div style="font-size:12px;color:#e55a5a;margin-top:4px;">${a.nc} non conforme${a.nc>1?'s':''} (non compté${a.nc>1?'s':''})</div>`:''}
+          <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${a.contrats} contrat${a.contrats>1?'s':''} · ${det}</div>${a.nc?`<div style="font-size:12px;color:#e55a5a;margin-top:4px;">${a.nc} non conforme${a.nc>1?'s':''} (non compté${a.nc>1?'s':''})${adminInfoBtn('adminAllerNonConformes()', 'Voir la liste des contrats non conformes')}</div>`:''}
           ${ob>0 ? `<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:12px 0 4px;"><div style="width:${pc}%;height:100%;background:${barCol};"></div></div><div style="text-align:right;font-size:12px;font-weight:800;color:${barCol};">${pc}%</div>` : ''}
           ${m ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:13px;">
             ${ob>0 ? `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>Objectif du mois</span><b style="color:${hit?'#4f9d78':'var(--text)'};font-size:14px;">${ilekNbG(nets)}<span style="opacity:.55;"> / ${ob}</span></b></div>` : `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>⚡ Énergies ce mois</span><b style="color:var(--text);font-size:14px;">${ilekNbG(nets)}</b></div>`}
@@ -12981,7 +12981,7 @@ async function renderBossRevenue(force){
       <td title="${fixedTip}" style="cursor:help;">${d.fixedProrated.toLocaleString('fr-FR')} DH</td>
       <td title="${commTip}" style="cursor:help;">${gainContrats>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${gainContrats.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}${(d.contractPart>0 && d.extraPart>0) ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">dont ${d.contractPart.toLocaleString('fr-FR')} DH commission + ${d.extraPart.toLocaleString('fr-FR')} DH bonus/contrat</div>` : (d.extraPart>0 ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">bonus par contrat au-delà de l'objectif</div>` : '')}${objRegle ? `<div style="font-size:11px; margin-top:2px; color:${d.resteAvantCommission>0 ? 'var(--amber)' : 'var(--green)'};">${d.payableMonth}/${payD.objectifMensuel} ce mois${d.resteAvantCommission>0 ? ` · encore ${d.resteAvantCommission}` : ' · objectif dépassé'}</div>${objReduit ? `<div style="font-size:10.5px; margin-top:1px; color:var(--accent);" title="Cet agent n'a pas travaillé le mois entier (embauche ou départ en cours de mois). Son objectif minimum est réduit dans la même proportion que son salaire fixe : ${objBrut} × ${Math.round(payD.prorationFactor*100)}% = ${payD.objectifMensuel}. On ne lui demande pas les contrats d'un mois complet pour une partie de mois.">objectif réduit ${objBrut} → ${payD.objectifMensuel} (${Math.round(payD.prorationFactor*100)}% du mois)</div>` : ''}` : ''}</td>
       <td>${d.objectifPrimes>0 ? `<span style="color:var(--green);">+${d.objectifPrimes.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
-      <td>${d.deductionsTotal>0 ? `<span style="color:var(--red);">-${d.deductionsTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>'}</td>
+      <td>${d.deductionsTotal>0 ? `<span style="color:var(--red);">-${d.deductionsTotal.toLocaleString('fr-FR')} DH</span>${adminInfoBtn(`adminAllerRetards('${adminAg(d.agent)}','${(expenseFrom||todayStr()).slice(0,7)}')`, 'Voir d\'où vient cette retenue : jour par jour, avec le règlement')}` : '<span style="color:var(--muted);">0 DH</span>'}</td>
       <td>${d.manualPrimesTotal!==0 ? `<span style="color:${d.manualPrimesTotal>0?'var(--gold)':'var(--red)'};">${d.manualPrimesTotal>0?'+':''}${d.manualPrimesTotal.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td>${d.supervisorBonus>0 ? `<span style="color:var(--gold);">+${d.supervisorBonus.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
       <td><b style="color:${d.isIndep?'var(--independant)':'var(--green)'};">${d.total.toLocaleString('fr-FR')} DH</b></td>
@@ -13355,16 +13355,62 @@ async function realizedContractsForDateRange(agent, fromDateStr, toDateStr){
   });
   return total;
 }
-// 📋 Détail des retenues du règlement : une ligne par retenue (date, raison, montant). Sans ça, « Retenues
-// règlement -488 DH » était un total impossible à vérifier. AFFICHAGE seulement — rien n'est recalculé.
-function retenuesDetailHtml(items){
-  const l = (items || []).filter(i=> i && Number(i.amount) !== 0).slice().sort((a,b)=> String(a.date).localeCompare(String(b.date)));
-  if(!l.length) return '';
-  const rows = l.map(i=>{
-    const d = String(i.date||'').split('-'); const dj = d.length===3 ? d[2]+'/'+d[1] : '';
-    return `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px;"><span style="color:var(--muted);">${dj} — ${escapeHtml(String(i.label||''))}</span><b style="color:var(--red);white-space:nowrap;">-${Math.round(i.amount).toLocaleString('fr-FR')} DH</b></div>`;
-  }).join('');
-  return `<details style="margin:2px 0 6px;"><summary style="cursor:pointer;font-size:12px;color:var(--muted);">📋 Voir le détail des retenues</summary><div style="padding:4px 0 0 4px;">${rows}</div></details>`;
+// ⓘ Petit bouton cliquable à côté d'une retenue : il amène l'agent au panneau « ⏰ Retards et Absences »
+// (en bas de « Mon argent »), ouvre le détail jour par jour + le rappel du règlement et le met en évidence.
+// AFFICHAGE seulement — rien n'est recalculé.
+
+// ⓘ côté ADMIN : petit bouton rond qui emmène à l'endroit où le chiffre est expliqué. Affichage seulement.
+function adminAg(a){ return String(a||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+function adminInfoBtn(js, tip){
+  return `<button type="button" onclick="event.stopPropagation();${js}" title="${tip}" style="margin-left:6px;width:18px;height:18px;border-radius:50%;border:1px solid var(--muted);background:transparent;color:var(--muted);font-size:11px;font-weight:800;line-height:1;cursor:pointer;padding:0;vertical-align:middle;">i</button>`;
+}
+// → Vue d'ensemble, panneau « Retards et absences » de l'agent (détail jour par jour, avec le règlement)
+async function adminAllerRetards(agent, ym){
+  showAdminSub('overview');
+  const ms = document.getElementById('monthSelect');
+  if(ms && ym && ms.value !== ym){ ms.value = ym; }
+  await new Promise(r=>setTimeout(r, 200));
+  const sel = document.getElementById('raaAgentSelect');
+  if(sel) sel.value = agent;
+  try{ await renderRetardsAbsencesAdmin(true); }catch(e){}
+  allerAuxRetenues('adminRetardsAbsencesPanel');
+}
+// → Facturation, fiche de paie de l'agent pour ce mois
+function adminAllerFiche(agent, ym){
+  showAdminSub('billing');
+  setTimeout(async ()=>{
+    const a = document.getElementById('billingAgentSelect'); if(a) a.value = agent;
+    const m = document.getElementById('billingSheetMonth'); if(m && ym) m.value = ym;
+    try{ await renderBillingAgentSheet(); }catch(e){}
+    document.getElementById('billingAgentSheet')?.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 80);
+}
+// → Facturation, liste des contrats non conformes
+function adminAllerNonConformes(){
+  showAdminSub('billing');
+  setTimeout(()=>{ document.getElementById('nonConfPanel')?.scrollIntoView({ behavior:'smooth', block:'start' }); }, 120);
+}
+// → Facturation, « Trouver un contrat » pré-rempli avec le nom de l'agent
+function adminAllerContrats(agent){
+  showAdminSub('billing');
+  setTimeout(()=>jumpToContractSearch(agent), 120);
+}
+// → dans la fiche de paie : descend à la section « Retours de facturation »
+function adminAllerRetoursFiche(){
+  document.getElementById('billingRetoursSection')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function retenuesInfoBtn(cid){
+  return `<button type="button" onclick="allerAuxRetenues('${cid||'cashRetardsAbsencesPanel'}')" title="Voir d'où vient cette retenue : jour par jour, avec le règlement" style="margin-left:6px;width:18px;height:18px;border-radius:50%;border:1px solid var(--muted);background:transparent;color:var(--muted);font-size:11px;font-weight:800;line-height:1;cursor:pointer;padding:0;vertical-align:middle;">i</button>`;
+}
+function allerAuxRetenues(cid){
+  cid = cid || 'cashRetardsAbsencesPanel';
+  const el = document.getElementById(cid); if(!el) return;
+  const d = document.getElementById(cid + '-detail'), b = document.getElementById(cid + '-toggle');
+  if(d && b && d.style.display !== 'block') b.click();
+  el.scrollIntoView({ behavior:'smooth', block:'start' });
+  el.style.transition = 'box-shadow .3s'; el.style.boxShadow = '0 0 0 2px var(--accent)'; el.style.borderRadius = '12px';
+  setTimeout(()=>{ el.style.boxShadow = ''; }, 2400);
 }
 async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange){
   const pay = getAgentPay(agent, year, month);
@@ -14668,7 +14714,7 @@ async function renderAllMonthly(){
       <td>${isIndep ? '—' : s.absences}</td>
       <td>${isIndep ? '—' : (s.justifiedAbsenceCount>0 ? `<span title="Hors compteur, ne compte pas dans le cumul assiduité">${s.justifiedAbsenceCount}</span>` : '0')}</td>
       <td>${isIndep ? '—' : `<b>${s.retardsCumules}</b>`}</td>
-      <td>${isIndep ? '—' : `<span class="tag ${!isAssiduiteAcquise(s)?'late':'ok'}" ${s.departsSansJustif>0?`title="Départ sans justificatif (${s.departsSansJustif}×)"`:''}>${!isAssiduiteAcquise(s)?'Perdue':'Acquise'}</span>`}</td>
+      <td>${isIndep ? '—' : `<span class="tag ${!isAssiduiteAcquise(s)?'late':'ok'}" ${s.departsSansJustif>0?`title="Départ sans justificatif (${s.departsSansJustif}×)"`:''}>${!isAssiduiteAcquise(s)?'Perdue':'Acquise'}</span>${!isAssiduiteAcquise(s) ? adminInfoBtn(`adminAllerRetards('${adminAg(s.agent)}')`, 'Voir pourquoi la prime est perdue : retards et absences jour par jour') : ''}`}</td>
       <td>${isIndep ? '—' : s.phoneYoutube}</td>
       <td>${isIndep ? '—' : s.objectif}</td>
       <td>
@@ -22581,7 +22627,7 @@ async function renderCash(){
         ${rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.returnsCount>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
-        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>${retenuesDetailHtml(rt.deductionsItems)}` : ''}
+        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
       ${statutRetoursBanner}
       ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
@@ -22600,7 +22646,7 @@ async function renderCash(){
         ${rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.returnsCount>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
-        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>${retenuesDetailHtml(rt.deductionsItems)}` : ''}
+        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement${retenuesInfoBtn()}</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
       ${statutRetoursBanner}
       ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
@@ -23015,7 +23061,7 @@ function renderCashRealGrid(){
         ${contractLinesFor(ceDay, `${todayCount} contrat${todayCount>1?'s':''}`)}
         ${monthContracts >= (pay.objectifMensuel||0) && pay.primeExtraContrat>0 ? `<div class="hit"><span>Bonus extra (proportionnel)</span><b>+${Math.max(0, daySal - supervisorBonusDay - Math.round((pay.baseSalary+pay.primeFixeMensuelle)/(getProdConfig().daysPerMonth||22)) - ceDay.total).toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${isSupervisorAgent ? `<div class="${supervisorBonusDay>0?'hit':''}"><span>Prime supervision (${contractsUnderSupervisionDay} contrat${contractsUnderSupervisionDay>1?'s':''} équipe)</span><b>${supervisorBonusDay>0?'+':''}${supervisorBonusDay.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${todayDeduction>0 ? `<div class="miss"><span>Retenue règlement (retard/absence)</span><b>-${Math.round(todayDeduction).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${todayDeduction>0 ? `<div class="miss"><span>Retenue règlement (retard/absence)${retenuesInfoBtn()}</span><b>-${Math.round(todayDeduction).toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
     </div>
     <div class="cash-period-card">
@@ -23026,7 +23072,7 @@ function renderCashRealGrid(){
         <div><span>Quote-part fixe × ${weekData.daysElapsed}j</span><b>${Math.round(((pay.baseSalary+pay.primeFixeMensuelle)/(getProdConfig().daysPerMonth||22))*weekData.daysElapsed).toLocaleString('fr-FR')} DH</b></div>
         ${contractLinesFor(ceWeek, `${weekData.total} contrat${weekData.total>1?'s':''}`)}
         ${isSupervisorAgent ? `<div class="${supervisorBonusWeek>0?'hit':''}"><span>Prime supervision (${contractsUnderSupervisionWeek} contrat${contractsUnderSupervisionWeek>1?'s':''} équipe)</span><b>${supervisorBonusWeek>0?'+':''}${supervisorBonusWeek.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${weekDeduction>0 ? `<div class="miss"><span>Retenue règlement (retard/absence)</span><b>-${Math.round(weekDeduction).toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${weekDeduction>0 ? `<div class="miss"><span>Retenue règlement (retard/absence)${retenuesInfoBtn()}</span><b>-${Math.round(weekDeduction).toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
     </div>
     <div class="cash-period-card" style="border-color:rgba(255,215,0,0.35); background:linear-gradient(160deg, var(--panel2), rgba(255,255,255,0.015));">
@@ -23043,7 +23089,7 @@ function renderCashRealGrid(){
         ${contractLinesFor(rt ? rt.contractDetail : contractEarnings(pay, monthContracts, monthContracts), `${rt ? rt.contractsRealized : monthContracts} contrat${(rt ? rt.contractsRealized : monthContracts)>1?'s':''}`)}
         ${rt && rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt && rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${rt && rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement (mois)</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>${retenuesDetailHtml(rt.deductionsItems)}` : ''}
+        ${rt && rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement (mois)${retenuesInfoBtn()}</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
 
         <div style="border-top:2px solid var(--gold); margin-top:10px; padding-top:8px;"><span><b>Total Prime du mois à ce jour</b></span><b style="color:var(--gold); font-size:16px;">${rt ? rt.total.toLocaleString('fr-FR') : 0} DH</b></div>
         <div id="cashIlekDetail"></div>
@@ -23546,7 +23592,7 @@ async function renderSupervisionReel(){
   };
   const infobulle = (arr, fn, entete)=> entete + '&#10;&#10;' + arr.map(r => '• ' + fn(r)).join('&#10;');
 
-  const alerteHtml = enRetardRows.length ? `<span style="color:var(--red);font-weight:700;" title="${infobulle(enRetardRows, ligneAgent, 'Moins de 70 % de leur objectif minimum du mois. Format : réalisé / minimum (pourcentage, contrats restants).')}">🚨 En retard : ${nomsCourts(enRetardRows, 4)}</span>` : '';
+  const alerteHtml = enRetardRows.length ? `<span style="color:var(--red);font-weight:700;" title="${infobulle(enRetardRows, ligneAgent, 'Moins de 70 % de leur objectif minimum du mois. Format : réalisé / minimum (pourcentage, contrats restants).')}">🚨 En retard : ${enRetardRows.slice(0,4).map(r=>`<a href="#" onclick="event.preventDefault();event.stopPropagation();jumpToAgentDay('${adminAg(r.agent)}','${todayStr().slice(0,7)}')" title="Voir la journée de ${escapeHtml(r.agent)}" style="color:inherit;text-decoration:underline dotted;">${escapeHtml(r.agent)}</a>`).join(', ')}${enRetardRows.length>4 ? ` +${enRetardRows.length-4}` : ''}</span>` : '';
   const presqueHtml = presqueRows.length ? `<div class="sub" style="margin-top:5px;font-size:11px;color:var(--amber);" title="${infobulle(presqueRows, ligneAgent, 'Entre 70 % et 99 % de leur minimum : en bonne voie, mais pas encore au but. Format : réalisé / minimum (pourcentage, contrats restants).')}">⏳ Bientôt au mini : ${nomsCourts(presqueRows, 4)} <span style="opacity:0.7;cursor:help;">ⓘ</span></div>` : '';
   const sousViseHtml = sousViseRows.length ? `<div class="sub" style="margin-top:5px;font-size:11px;" title="${infobulle(sousViseRows, ligneVise, "Ils ont atteint leur minimum obligatoire, mais pas l'objectif qu'ils se sont fixé eux-mêmes dans l'Arena. Ce n'est pas une faute — c'est le sujet d'un briefing. Format : réalisé / visé (contrats restants).")}">🎯 Sous leur visé : ${nomsCourts(sousViseRows, 4)} <span style="opacity:0.7;cursor:help;">ⓘ</span></div>` : '';
 
@@ -24814,7 +24860,7 @@ async function renderMonthlyObjectif(){
     html += `<tr class="${rowClass}">
       <td style="font-weight:800;">${rankEmoji(r.rank, rows.length)}</td>
       <td><b>${r.agent}${indepTag}</b></td>
-      <td><b>${r.realized}</b>${equivE ? `<div style="font-size:11px;color:var(--amber);" title="Pour l'objectif, 1 énergie = 2 assistances.">⚡ ${r.realizedAssistance} assist. + ${Math.round(equivE/2*10)/10} énergie${equivE/2>1?'s':''} <span style="opacity:.8;">(pour l'objectif, 1 énergie = 2 assistances)</span></div>` : ''}${payableCount !== r.realized ? `<div style="font-size:11px;color:var(--muted);" title="Contrats réellement payés = signés − rétractés − retours convertis">${payableCount} payé${payableCount>1?'s':''}</div>` : ''}</td>
+      <td><b>${r.realized}</b>${r.realized>0 ? adminInfoBtn(`adminAllerContrats('${adminAg(r.agent)}')`, 'Voir les contrats de cet agent (recherche par son nom)') : ''}${equivE ? `<div style="font-size:11px;color:var(--amber);" title="Pour l'objectif, 1 énergie = 2 assistances.">⚡ ${r.realizedAssistance} assist. + ${Math.round(equivE/2*10)/10} énergie${equivE/2>1?'s':''} <span style="opacity:.8;">(pour l'objectif, 1 énergie = 2 assistances)</span></div>` : ''}${payableCount !== r.realized ? `<div style="font-size:11px;color:var(--muted);" title="Contrats réellement payés = signés − rétractés − retours convertis">${payableCount} payé${payableCount>1?'s':''}</div>` : ''}</td>
       <td>${isFreeRow ? '∞' : (r.objectif > 0 ? r.objectif : '—')}${proratedTag}</td>
       <td>
         <input type="number" min="0" step="1" value="${desiredObjAdmin || ''}" placeholder="—"
@@ -24825,8 +24871,8 @@ async function renderMonthlyObjectif(){
       <td class="lb-pct ${pctCls}">${isFreeRow ? '🎯' : (stPaye.objectif>0 ? pctPaye+'%' : '—')}</td>
       <td>${isFreeRow ? '—' : (stPaye.objectif>0 ? (stPaye.remaining>0 ? stPaye.remaining+' à faire' : '✅ atteint') : '—')}</td>
       <td>${primeTxt}</td>
-      <td>${isFreeRow ? '—' : (full && full.deductions.total>0 ? `<span style="color:var(--red);">-${full.deductions.total.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">0 DH</span>')}</td>
-      <td><b style="color:${r.isIndep?'var(--independant)':(noObj?'var(--amber)':'var(--green)')};">${fullTotalWithSupervisor.toLocaleString('fr-FR')} DH</b>${supervisorBonusMo>0 ? `<div style="font-size:11px;color:var(--muted);">dont +${supervisorBonusMo.toLocaleString('fr-FR')} DH supervision</div>` : ''}${full && full.manualPrimesTotal!==0 ? `<div style="font-size:11px;color:${full.manualPrimesTotal>0?'var(--gold)':'var(--red)'};">${full.manualPrimesTotal>0?'🎁 dont +':'➖ dont '}${full.manualPrimesTotal.toLocaleString('fr-FR')} DH prime(s)/retenue(s) manuelle(s)</div>` : ''}</td>
+      <td>${isFreeRow ? '—' : (full && full.deductions.total>0 ? `<span style="color:var(--red);">-${full.deductions.total.toLocaleString('fr-FR')} DH</span>${adminInfoBtn(`adminAllerRetards('${adminAg(r.agent)}','${monthVal}')`, 'Voir d\'où vient cette retenue : jour par jour, avec le règlement')}` : '<span style="color:var(--muted);">0 DH</span>')}</td>
+      <td><b style="color:${r.isIndep?'var(--independant)':(noObj?'var(--amber)':'var(--green)')};">${fullTotalWithSupervisor.toLocaleString('fr-FR')} DH</b>${adminInfoBtn(`adminAllerFiche('${adminAg(r.agent)}','${monthVal}')`, 'Voir la fiche de paie de cet agent : brut, retenues, retours, salaire net')}${supervisorBonusMo>0 ? `<div style="font-size:11px;color:var(--muted);">dont +${supervisorBonusMo.toLocaleString('fr-FR')} DH supervision</div>` : ''}${full && full.manualPrimesTotal!==0 ? `<div style="font-size:11px;color:${full.manualPrimesTotal>0?'var(--gold)':'var(--red)'};">${full.manualPrimesTotal>0?'🎁 dont +':'➖ dont '}${full.manualPrimesTotal.toLocaleString('fr-FR')} DH prime(s)/retenue(s) manuelle(s)</div>` : ''}</td>
     </tr>`;
   }
   const totalMasseSalariale = totalBrutTeam + totalBrutBackoffice;
@@ -28824,13 +28870,13 @@ function billingAgentSheetHTML(d, forImage){
   const cards = [
     { lbl: 'Contrats backoffice', val: d.importedTotal ? d.importedValid : '—', sub: d.importedTotal ? `${d.importedTotal} importés − ${d.retractedCount} rétractés` : 'aucun import pour ce mois', color: 'var(--text)' },
     { lbl: 'Contrats comptés (paie)', val: d.counterRealized, sub: `🔒 backoffice validé − ${d.retractCounter} rétractation${d.retractCounter>1?'s':''}`, color: 'var(--text)' },
-    { lbl: 'Retours facturation', val: ret.count, sub: `${ret.divisor === 1 ? '1:1' : '÷'+ret.divisor} → ${d.salary.breakdown ? d.salary.breakdown.returnsDeducted : 0} contrat(s) en moins`, color: 'var(--red)' },
-    { lbl: 'Salaire net réel', val: fmt(d.salary.total) + ' DH', sub: `brut ${fmt(d.salary.brut)} DH − retenues ${fmt(ded.total)} DH`, color: d.salary.total >= 0 ? 'var(--green)' : 'var(--red)' }
+    { info: adminInfoBtn(`adminAllerRetoursFiche()`, 'Voir plus bas la liste des retours de facturation de cet agent'), lbl: 'Retours facturation', val: ret.count, sub: `${ret.divisor === 1 ? '1:1' : '÷'+ret.divisor} → ${d.salary.breakdown ? d.salary.breakdown.returnsDeducted : 0} contrat(s) en moins`, color: 'var(--red)' },
+    { info: adminInfoBtn(`adminAllerRetards('${adminAg(d.agent)}','${d.monthVal}')`, 'Voir d\'où viennent les retenues : jour par jour, avec le règlement'), lbl: 'Salaire net réel', val: fmt(d.salary.total) + ' DH', sub: `brut ${fmt(d.salary.brut)} DH − retenues ${fmt(ded.total)} DH`, color: d.salary.total >= 0 ? 'var(--green)' : 'var(--red)' }
   ];
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:18px;">';
   cards.forEach(c => {
     html += `<div style="padding:14px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
-      <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">${c.lbl}</div>
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:700;">${c.lbl}${(!forImage && c.info) ? c.info : ''}</div>
       <div style="font-size:24px; font-weight:800; margin-top:5px; color:${c.color};">${c.val}</div>
       <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">${escapeHtml(String(c.sub))}</div>
     </div>`;
@@ -28908,7 +28954,7 @@ function billingAgentSheetHTML(d, forImage){
   }
 
   // --- Tableau des retours
-  html += `<div class="section-title" style="margin-top:26px; font-size:15px; color:var(--red);">Retours de facturation${ret.periodLabel ? ` — ${escapeHtml(ret.periodLabel)}` : ''}</div>`;
+  html += `<div id="billingRetoursSection" class="section-title" style="margin-top:26px; font-size:15px; color:var(--red);">Retours de facturation${ret.periodLabel ? ` — ${escapeHtml(ret.periodLabel)}` : ''}</div>`;
   if(ret.count){
     const dedContracts = d.salary.breakdown ? d.salary.breakdown.returnsDeducted : 0;
     const scaleTxt = !ret.auto ? 'diviseur forcé manuellement'
@@ -29039,7 +29085,7 @@ function billingAgentSheetHTML(d, forImage){
   if(!d.assiduiteAcquise){
     line(`Prime d'assiduité perdue (${d.stats.retardsCumules} retards/absences)`, 0, { color: 'var(--muted)' });
   }
-  line('TOTAL RETENUES', -ded.total, { bold: true });
+  line('TOTAL RETENUES' + (forImage ? '' : adminInfoBtn(`adminAllerRetards('${adminAg(d.agent)}','${d.monthVal}')`, 'Voir d\'où viennent les retenues : jour par jour, avec le règlement')), -ded.total, { bold: true });
   if(d.salary.retenueDepart){
     line(`🔒 Retenue de départ : primes + commission, versées en ${escapeHtml(billingMonthLabel(d.salary.retenueDepart.versementMois))} après déduction des retours`, -d.salary.retenueDepart.montant, { color: 'var(--amber)' });
   }
