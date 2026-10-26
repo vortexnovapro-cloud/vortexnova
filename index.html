@@ -3428,7 +3428,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-26-r332';
+const APP_VERSION = '2026-10-26-r333';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -13355,6 +13355,17 @@ async function realizedContractsForDateRange(agent, fromDateStr, toDateStr){
   });
   return total;
 }
+// 📋 Détail des retenues du règlement : une ligne par retenue (date, raison, montant). Sans ça, « Retenues
+// règlement -488 DH » était un total impossible à vérifier. AFFICHAGE seulement — rien n'est recalculé.
+function retenuesDetailHtml(items){
+  const l = (items || []).filter(i=> i && Number(i.amount) !== 0).slice().sort((a,b)=> String(a.date).localeCompare(String(b.date)));
+  if(!l.length) return '';
+  const rows = l.map(i=>{
+    const d = String(i.date||'').split('-'); const dj = d.length===3 ? d[2]+'/'+d[1] : '';
+    return `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px;"><span style="color:var(--muted);">${dj} — ${escapeHtml(String(i.label||''))}</span><b style="color:var(--red);white-space:nowrap;">-${Math.round(i.amount).toLocaleString('fr-FR')} DH</b></div>`;
+  }).join('');
+  return `<details style="margin:2px 0 6px;"><summary style="cursor:pointer;font-size:12px;color:var(--muted);">📋 Voir le détail des retenues</summary><div style="padding:4px 0 0 4px;">${rows}</div></details>`;
+}
 async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange){
   const pay = getAgentPay(agent, year, month);
   const monthStats = await monthlyStats(agent, year, month);
@@ -13547,6 +13558,7 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
     returnsCount: brRT.returnsCount, returnsDivisor: brRT.returnsDivisor,
     objectifPrimes: Math.round(objectifPrimes),
     deductionsTotal: ded.total || 0,
+    deductionsItems: ded.items || [],
     manualPrimesTotal: manualPrimesTotal || 0,
     supervisorBonus: Math.round(supervisorBonusAmt),
     indepCommission: Math.round(indepCommissionAmt),
@@ -20118,7 +20130,11 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
   const retardAbsenceLost = ded.items.filter(i=> /^(Retard|Absence|Mise à pied)/.test(i.label)).reduce((s,i)=> s + i.amount, 0);
   const pauseLost = ded.items.filter(i=> i.label.startsWith('Dépassement pause')).reduce((s,i)=> s + i.amount, 0);
   const primeAssiduitePerdue = count >= 3;
-  const totalLostThisMonth = retardAbsenceLost + pauseLost + (primeAssiduitePerdue ? (payMois.primeAssiduite||0) : 0);
+  // Autres retenues du règlement (départ avant l'heure, téléphone/YouTube, objectif manuel, retour client, absence justifiée non payée…) :
+  // elles étaient dans « Retenues règlement » (Mon argent) mais pas dans ce panneau — d'où -488 DH d'un côté et -5 DH de l'autre.
+  const autresItems = ded.items.filter(i=> !/^(Retard|Absence|Mise à pied|Dépassement pause)/.test(i.label) && Number(i.amount) !== 0);
+  const autresLost = autresItems.reduce((s,i)=> s + i.amount, 0);
+  const totalLostThisMonth = retardAbsenceLost + pauseLost + autresLost + (primeAssiduitePerdue ? (payMois.primeAssiduite||0) : 0);
   const fmt = n => Math.round(n).toLocaleString('fr-FR');
 
   // 5 paliers du règlement, espacés régulièrement sur la frise (0/1/3/5/6 → positions 0/25/50/75/100%).
@@ -20183,7 +20199,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
   // Journal des jours concernés — dates précises de chaque retard/absence/mise à pied du mois, pour
   // vérifier en un clic sans avoir à rouvrir l'Explorateur (Admin → Vue d'ensemble).
   const eventItems = ded.items
-    .filter(i=> /^(Retard|Absence|Mise à pied|Dépassement pause)/.test(i.label))
+    .filter(i=> /^(Retard|Absence|Mise à pied|Dépassement pause)/.test(i.label) || (Number(i.amount) !== 0))
     .sort((a,b)=> a.date.localeCompare(b.date));
   const eventsHtml = eventItems.length
     ? eventItems.map(i=>{
@@ -20205,7 +20221,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
         <div class="raa-hero-item">
           <div class="raa-hero-num" style="color:${captionColor};">${count}</div>
           <div class="raa-hero-lbl">retard${count>1?'s':''}/absence${count>1?'s':''}</div>
-          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''}${pauseLost>0 ? ` (-${fmt(pauseLost)} DH)` : ''}${stats.pauseOverEquivalentRetards>0 ? ` → +${stats.pauseOverEquivalentRetards} équiv.` : ''} · ${stats.absences} absence${stats.absences>1?'s':''}${stats.justifiedAbsenceCount>0 ? ` · ${stats.justifiedAbsenceCount} absence${stats.justifiedAbsenceCount>1?'s':''} justifiée${stats.justifiedAbsenceCount>1?'s':''} (hors compteur)` : ''}</div>
+          <div class="raa-hero-breakdown">${stats.retards} retard${stats.retards>1?'s':''} arrivée · ${stats.pauseOver} pause${stats.pauseOver>1?'s':''}${pauseLost>0 ? ` (-${fmt(pauseLost)} DH)` : ''}${stats.pauseOverEquivalentRetards>0 ? ` → +${stats.pauseOverEquivalentRetards} équiv.` : ''} · ${stats.absences} absence${stats.absences>1?'s':''}${stats.justifiedAbsenceCount>0 ? ` · ${stats.justifiedAbsenceCount} absence${stats.justifiedAbsenceCount>1?'s':''} justifiée${stats.justifiedAbsenceCount>1?'s':''} (hors compteur)` : ''}${autresLost>0 ? ` · autres retenues du règlement (-${fmt(autresLost)} DH)` : ''}</div>
         </div>
         <div class="raa-hero-sep"></div>
         <div class="raa-hero-item">
@@ -22565,7 +22581,7 @@ async function renderCash(){
         ${rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.returnsCount>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
-        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>${retenuesDetailHtml(rt.deductionsItems)}` : ''}
       </div>
       ${statutRetoursBanner}
       ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
@@ -22584,7 +22600,7 @@ async function renderCash(){
         ${rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${monthRetractions>0 ? `<div class="miss"><span>Contrats rétractés (${monthRetractions})</span><b>${monthContracts + monthRetractions} signés → ${monthContracts}</b></div>` : ''}
         ${rt.returnsCount>0 ? `<div class="miss"><span>Retours de facturation (${rt.returnsCount} ${rt.returnsDivisor===1?'en 1:1':'÷ '+rt.returnsDivisor})</span><b title="${rt.returnsCount} retour(s) de facturation reçu(s) et importés pour ce mois, divisé(s) par ${rt.returnsDivisor===1?'1 — aucune réduction, palier le plus défavorable':rt.returnsDivisor+' selon ta discipline (retards/absences) ou ton volume ce mois'} : ${rt.returnsCount} ÷ ${rt.returnsDivisor} = ${rt.returnsDeducted} contrat(s) de moins comptés comme payés. ${monthContracts + monthRetractions} signés − ${monthRetractions} rétracté${monthRetractions>1?'s':''} − ${rt.returnsDeducted} retour${rt.returnsDeducted>1?'s':''} = ${rt.contractsRealized} payés." style="cursor:help; text-decoration:underline dotted;">${monthContracts} → ${rt.contractsRealized}</b></div>` : ''}
-        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>${retenuesDetailHtml(rt.deductionsItems)}` : ''}
       </div>
       ${statutRetoursBanner}
       ${supIneligReason ? `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:rgba(229,72,77,0.14); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600; text-align:left;">🚫 Aujourd'hui ${supIneligReason}, tu es à 0 DH/contrat des agents de base — ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}`;
@@ -23027,7 +23043,7 @@ function renderCashRealGrid(){
         ${contractLinesFor(rt ? rt.contractDetail : contractEarnings(pay, monthContracts, monthContracts), `${rt ? rt.contractsRealized : monthContracts} contrat${(rt ? rt.contractsRealized : monthContracts)>1?'s':''}`)}
         ${rt && rt.supervisorBonus>0 ? `<div class="hit"><span>📊 Prime supervision</span><b>+${rt.supervisorBonus.toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${rt && rt.manualPrimesTotal!==0 ? `<div class="${rt.manualPrimesTotal>0?'hit':'miss'}"><span>${rt.manualPrimesTotal>0?'🎁':'➖'} Prime(s)/retenue(s) manuelle(s)</span><b>${rt.manualPrimesTotal>0?'+':''}${rt.manualPrimesTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
-        ${rt && rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement (mois)</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${rt && rt.deductionsTotal>0 ? `<div class="miss"><span>Retenues règlement (mois)</span><b>-${rt.deductionsTotal.toLocaleString('fr-FR')} DH</b></div>${retenuesDetailHtml(rt.deductionsItems)}` : ''}
 
         <div style="border-top:2px solid var(--gold); margin-top:10px; padding-top:8px;"><span><b>Total Prime du mois à ce jour</b></span><b style="color:var(--gold); font-size:16px;">${rt ? rt.total.toLocaleString('fr-FR') : 0} DH</b></div>
         <div id="cashIlekDetail"></div>
