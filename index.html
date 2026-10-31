@@ -3430,7 +3430,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-26-r338';
+const APP_VERSION = '2026-10-31-r339';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -5391,6 +5391,7 @@ async function basculerRetractation(monthVal, agent, numContrat){
     row.retractPayMonth = resolveRetractPayMonth(monthVal, null);
   } else {
     delete row.retractPayMonth;
+    delete row.retractedCourrier;
   }
   const moisDePaie = row.retractPayMonth || monthVal;
   await billingSave(billingProdKey(monthVal), data);
@@ -12550,7 +12551,11 @@ async function getTotalContractsMonth(year, month){
   // ⚠️ La MASSE SALARIALE, elle, continue volontairement de tourner sur config.agents seul : archiver
   // signifie « son solde est payé », le réintégrer ferait repayer des gens.
   const totals = await Promise.all(allKnownAgents().map(agent=> monthlyRealizedContracts(agent, year, month)));
-  return totals.reduce((s,x)=> s+x, 0);
+  // ✉️ r339 — Les rétractations reçues par COURRIER (pas encore traitées par le client) sont déjà retirées
+  // à l'agent ci-dessus, mais le patron est encore payé dessus : on les remet dans SON total du mois.
+  let courrier = 0;
+  try{ courrier = await courrierContratsMois(year, month); }catch(e){ console.warn('courrierContratsMois', e); }
+  return totals.reduce((s,x)=> s+x, 0) + courrier;
 }
 
 // Détail du même total, séparé entre agents en poste et ex-agents archivés — pour pouvoir afficher
@@ -12810,6 +12815,11 @@ async function renderBossRevenue(force){
       : Promise.resolve(null)
   ]);
   const periodCalc = computeBossRevenue(periodTotal);
+  // ✉️ Rétractations reçues par courrier, encore payées au patron (déjà comprises dans periodTotal quand la
+  // période est « depuis le 1er du mois » ; sur une plage de dates les rétractations ne sont de toute façon
+  // pas déduites, donc ces contrats y sont déjà comptés).
+  let courrierN = 0;
+  try{ if(isMonthToDateRange) courrierN = await courrierContratsMois(nowForRevenue.getFullYear(), nowForRevenue.getMonth()+1); }catch(e){}
   // ⚡ Énergie (Ilek) du mois : calculée au mois, donc intégrée seulement quand la période = « depuis le 1er du mois »
   let ilekP = null;
   try{
@@ -12827,6 +12837,7 @@ async function renderBossRevenue(force){
   // exactement le bug corrige le 26/08/2026 un peu plus haut. La carte dédiée affiche le cumul des deux.
   const ncRows = await lireNonConformesPeriode(expenseFrom, expenseTo);
   const ncCalc = computeBossRevenue(ncRows.length);
+  const ncInv = ncRows.filter(r => r.source === SOURCE_INVERSION).length;
   const ncParAgent = {};
   ncRows.forEach(r=>{ const a = r.agent || '?'; ncParAgent[a] = (ncParAgent[a] || 0) + 1; });
   const isSingleDay = expenseFrom === expenseTo;
@@ -12849,6 +12860,7 @@ async function renderBossRevenue(force){
         <div><span>Commission de base</span><b>${Math.round(calc.base).toLocaleString('fr-FR')} DH</b></div>
         ${config.bossBonusPct>0 ? `<div class="hit"><span>Bonus (+${config.bossBonusPct}%)</span><b>+${Math.round(calc.bonus).toLocaleString('fr-FR')} DH</b></div>` : ''}
         ${calc.totalContracts>0 ? `<div title="Ton gain total ÷ le nombre de contrats bruts signés — le rendement moyen réel par contrat, une fois le taux de retour et le bonus pris en compte."><span>Taux effectif / contrat brut</span><b>${effectiveRate.toLocaleString('fr-FR')} DH</b></div>` : ''}
+        ${(label.indexOf('🛡️')===0 && courrierN>0) ? `<div class="hit" title="Le client t'a prévenu d'une rétractation reçue par courrier, pas encore traitée : l'agent est déjà retenu, mais toi tu es encore payé dessus. Ces contrats sont compris dans le chiffre ci-dessus."><span>dont ${courrierN} rétractation${courrierN>1?'s':''} courrier</span><b style="color:var(--amber);">encore payée${courrierN>1?'s':''}</b></div>` : ''}
         ${(label.indexOf('🛡️')===0 && ncRows.length>0) ? `<div class="hit" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;" title="Contrats non conformes : ton client te paie dessus, l'agent non."><span>+ ${ncRows.length} non conformes</span><b>+${Math.round(ncCalc.total).toLocaleString('fr-FR')} DH</b></div><div class="hit"><span><b>Total avec non conformes</b></span><b style="color:var(--gold);">${Math.round(calc.total + ncCalc.total).toLocaleString('fr-FR')} DH</b></div>` : ''}
       </div>
     </div>`;
@@ -12900,7 +12912,7 @@ async function renderBossRevenue(force){
       <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-bottom:6px;">💰 Gains Net (Prévisionnel)</div>
       <div style="font-size:28px; font-weight:900; color:${netPositive?'var(--green)':'var(--red)'};">${netPositive?'':'-'}${Math.round(Math.abs(netPeriod)).toLocaleString('fr-FR')} DH</div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;">
-        ${periodLabel} : ${Math.round(periodCalc.total + caIlekP).toLocaleString('fr-FR')} DH de chiffre d'affaires${ilekDansPeriode ? ` (🛡️ Assistance ${Math.round(periodCalc.total).toLocaleString('fr-FR')} + ⚡ Énergie ${Math.round(caIlekP).toLocaleString('fr-FR')})` : ''} moins ${Math.round(expense.grandTotal + salIlekP).toLocaleString('fr-FR')} DH de dépenses réelles sur la même période.
+        ${periodLabel} : ${Math.round(periodCalc.total + caIlekP).toLocaleString('fr-FR')} DH de chiffre d'affaires${ilekDansPeriode ? ` (🛡️ Assistance ${Math.round(periodCalc.total).toLocaleString('fr-FR')} + ⚡ Énergie ${Math.round(caIlekP).toLocaleString('fr-FR')})` : ''} moins ${Math.round(expense.grandTotal + salIlekP).toLocaleString('fr-FR')} DH de dépenses réelles sur la même période.${courrierN>0 ? `<br>✉️ <b style="color:var(--text);">${courrierN} rétractation${courrierN>1?'s':''} courrier</b> comprise${courrierN>1?'s':''} : l'agent n'est pas payé dessus, toi tu l'es encore pour l'instant.` : ''}
       </div>
     </div>`;
 
@@ -12915,6 +12927,7 @@ async function renderBossRevenue(force){
       </div>
       <div class="cash-breakdown" style="margin-top:12px;">
         <div title="Contrats que le backoffice a déclarés non conformes sur la période. Rétractés exclus."><span>Contrats non conformes</span><b style="color:var(--amber);">${ncRows.length}</b></div>
+        ${ncInv>0 ? `<div title="Contrats que tu as passés toi-même en non conforme parce que le nom et le prénom étaient inversés."><span style="opacity:0.85;">dont 🔀 inversion nom prénom</span><b>${ncInv}</b></div>` : ''}
         ${Object.keys(ncParAgent).sort((a,b)=> ncParAgent[b]-ncParAgent[a] || a.localeCompare(b)).map(a=>
           `<div><span style="opacity:0.85;">· ${escapeHtml(a)}</span><b>${ncParAgent[a]}</b></div>`).join('')}
         <div title="Même calcul que ta commission habituelle : taux de retour estimé et bonus appliqués de la même façon."><span>Effectifs (-${config.bossReturnRatePct||0}% retour estimé)</span><b>${Math.round(ncCalc.effectiveContracts*10)/10}</b></div>
@@ -26870,6 +26883,14 @@ async function importBillingProd(text, monthVal){
   for(const mv of Object.keys(rowsByMonth)){
     const store = await getBillingProd(mv);
     store.rows = store.rows || [];
+    // 🔀 r339 — Un contrat que tu as passé en « inversion nom prénom » est dans les non conformes : un
+    // réimport du fichier de production ne doit pas le remettre côté agent (il serait payé deux fois).
+    try{
+      const ncInv = await getBillingNonConf(mv);
+      const cleInv = new Set();
+      (ncInv.rows || []).forEach(x => { if(x.source === SOURCE_INVERSION) billingDedupKeys(x).forEach(k => cleInv.add(k)); });
+      if(cleInv.size) rowsByMonth[mv] = rowsByMonth[mv].filter(r => !billingDedupKeys(r).some(k => cleInv.has(k)));
+    }catch(e){ console.warn('inversions non conformes (réimport)', e); }
     const retractedKeys = new Set();
     const seen = new Set();
     store.rows.forEach(r=>{
@@ -26897,6 +26918,7 @@ async function importBillingProd(text, monthVal){
           if(r.retractPayMonth == null && ancien.retractPayMonth != null) r.retractPayMonth = ancien.retractPayMonth;
           if(r._reviewed == null && ancien._reviewed != null) r._reviewed = ancien._reviewed;
           if(r._rid == null && ancien._rid != null) r._rid = ancien._rid;
+          if(r.retractedCourrier == null && ancien.retractedCourrier) r.retractedCourrier = true;   // ✉️ la marque courrier survit au réimport
           store.rows[idx] = r;
         }
         return;
@@ -30934,8 +30956,9 @@ async function renderNonConfPanel(){
       <td><b>${escapeHtml(r.agent || '—')}</b></td>
       <td>${escapeHtml(r.nom || '—')}</td>
       <td style="font-family:monospace; font-size:11.5px;">${escapeHtml(r.numContrat || r.reference || '—')}</td>
+      <td style="white-space:nowrap;">${r.source === SOURCE_INVERSION ? '<span style="color:var(--independant); font-weight:700;">🔀 Inversion nom prénom</span>' : '<span style="color:var(--muted);">Backoffice</span>'}</td>
       <td>${r.retracted ? '<span class="tag warn">rétracté</span>' : ''}</td>
-      <td><button onclick="retirerNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Retire cette ligne du classeur des non conformes. N'ajoute rien à la paie de l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">🗑️ Retirer</button></td>
+      <td>${r.source === SOURCE_INVERSION ? `<button onclick="remettreInversion('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Annule l'inversion : le contrat redevient conforme et payé à l'agent." style="padding:6px 12px;border-radius:8px;border:1px solid var(--green);background:transparent;color:var(--green);font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;">↩️ Remettre comme avant</button>` : `<button onclick="retirerNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Retire cette ligne du classeur des non conformes. N'ajoute rien à la paie de l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">🗑️ Retirer</button>`}</td>
     </tr>`;
   }).join('');
   el.innerHTML = bandeauConflits + `
@@ -30945,7 +30968,7 @@ async function renderNonConfPanel(){
     </div>
     <div style="overflow-x:auto;">
       <table class="salary-table">
-        <thead><tr><th>Date</th><th>Agent</th><th>Client</th><th>N° / Référence</th><th></th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Agent</th><th>Client</th><th>N° / Référence</th><th>Motif</th><th></th><th></th></tr></thead>
         <tbody>${lignes}</tbody>
       </table>
     </div>`;
@@ -32502,11 +32525,20 @@ async function searchContractGlobal(){
           </div>
         </div>`;
     } else {
-      etat = r.retracted ? '<span style="color:var(--red);">rétracté</span>' : '<span style="color:var(--green);">actif</span>';
+      etat = r.retractedCourrier ? '<span style="color:var(--amber);" title="Rétractation reçue par courrier : l\'agent est déjà retenu, toi tu es encore payé dessus.">✉️ rétracté (courrier)</span>'
+           : r.retracted ? '<span style="color:var(--red);">rétracté</span>' : '<span style="color:var(--green);">actif</span>';
       // Agir sans quitter la recherche : marquer/annuler la rétractation du contrat trouvé, où qu'il soit.
       action = `<button onclick="toggleRetractedFromSearch('${mv}', '${key}')"
         title="${r.retracted ? 'Annuler la rétractation : le contrat redevient payé à l\'agent.' : 'Marquer ce contrat comme rétracté : l\'agent n\'est pas payé dessus et son compteur du mois augmente de 1.'}"
         style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '↩️ Annuler' : '🔻 Rétracter'}</button>`;
+      if(r.retractedCourrier) action = '';   // courrier : un seul bouton d'annulation, le sien (évite deux « Annuler »)
+      const stBtn = 'padding:5px 11px; border-radius:7px; background:transparent; font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;';
+      if(!r.retracted || r.retractedCourrier){
+        action += ` <button onclick="toggleRetracteCourrier('${mv}', '${key}')" title="${r.retractedCourrier ? 'Annuler la rétractation courrier : le contrat redevient payé à l\'agent.' : 'Le client t\'a prévenu qu\'il a reçu un courrier de rétractation, pas encore traité : l\'agent est retenu (+1 rétracté), toi tu restes payé dessus.'}" style="${stBtn} border:1px solid ${r.retractedCourrier ? 'var(--red)' : 'var(--amber)'}; color:${r.retractedCourrier ? 'var(--red)' : 'var(--amber)'};">${r.retractedCourrier ? '↩️ Annuler courrier' : '✉️ Rétracté courrier'}</button>`;
+      }
+      if(!r.retracted){
+        action += ` <button onclick="marquerInversionNomPrenom('${mv}', '${key}')" title="Nom et prénom inversés : le contrat passe en non conforme. L\'agent n\'est plus payé dessus, toi tu l\'encaisses." style="${stBtn} border:1px solid var(--independant); color:var(--independant);">🔀 Inversion nom prénom</button>`;
+      }
       action += ` ${boutonModifierContrat(mv, r, key, 'srch' + idx)}`;
       action += ` <button onclick="deleteContractAndRefresh('${mv}', '${key}', 'search')" title="Supprimer définitivement ce contrat — pour une ligne fautive. S'il s'agit d'un vrai contrat mal daté, utilise plutôt « Contrats à vérifier » pour le déplacer." style="padding:5px 9px; border-radius:7px; border:1px solid rgba(229,90,90,0.5); background:transparent; color:var(--red); font-weight:700; cursor:pointer; font-size:12px;">🗑️</button>`;
       if(r._warnings && r._warnings.length){
@@ -32521,7 +32553,7 @@ async function searchContractGlobal(){
       <td>${escapeHtml(r.numContrat || '—')}<div style="font-size:11px; color:var(--muted);">${escapeHtml(r.reference || '')}</div></td>
       <td style="white-space:nowrap;">${escapeHtml(r.datePropre || r.date || '—')}</td>
       <td>${etat}</td>
-      <td>${action}</td>
+      <td>${isRet ? action : `<div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; min-width:250px;">${action}</div>`}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
@@ -32682,6 +32714,143 @@ async function deleteContractFromMonth(monthVal, key, silent){
   return true;
 }
 
+
+// ═════════════════════════════════════════════════════════════════════
+// ✉️ r339 — RÉTRACTATION REÇUE PAR COURRIER  /  🔀 INVERSION NOM PRÉNOM
+// ═════════════════════════════════════════════════════════════════════
+// ✉️ Rétracté courrier : le client te prévient qu'il a reçu un courrier de rétractation, mais ne l'a pas
+// encore traité. Côté agent c'est une rétractation NORMALE (+1 rétracté, pas payé dessus — même geste que
+// « Rétracter »). Côté patron, tu restes payé dessus : le contrat est compté dans ton chiffre d'affaires
+// du mois tant que la marque ✉️ est là (voir courrierContratsMois).
+// 🔀 Inversion nom prénom : le contrat passe en NON CONFORME (liste « Contrats non conformes »), exactement
+// comme un non conforme du backoffice : l'agent n'est plus payé dessus, il ne compte plus dans son objectif
+// ni dans la prime des superviseurs ; toi tu l'encaisses. Annulable : « Remettre comme avant ».
+const SOURCE_INVERSION = 'inversion-nom-prenom';
+
+// Nombre de contrats « rétractés courrier » qui pèsent sur CE mois de paie — même règle de mois que
+// computeExactRetractCount, pour qu'on ajoute exactement ce qui a été retiré à l'agent.
+async function courrierContratsMois(year, month){
+  const mv = billingMonthVal(year, month);
+  const own = await getBillingProd(mv);
+  let n = (own.rows || []).filter(r => r.agent && r.retracted && r.retractedCourrier && (!r.retractPayMonth || r.retractPayMonth === mv)).length;
+  for(let back = 1; back <= 2; back++){
+    const d = new Date(year, month - 1 - back, 1);
+    const past = await getBillingProd(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
+    n += (past.rows || []).filter(r => r.agent && r.retracted && r.retractedCourrier && r.retractPayMonth === mv).length;
+  }
+  return n;
+}
+
+async function rafraichirApresMarquage(){
+  billingContractIndexCache = null;
+  billingInvalidate();
+  clearRenderCaches();
+  try{ await searchContractGlobal(); }catch(e){}
+  try{ renderBillingAgentSheet(); }catch(e){}
+  try{ renderBillingImportSummary(); }catch(e){}
+  try{ await renderNonConfPanel(); }catch(e){}
+  try{ if(typeof renderBossRevenue === 'function') await renderBossRevenue(true); }catch(e){}
+}
+
+async function toggleRetracteCourrier(monthVal, key){
+  if(!monthVal || !key){ uiAlert("Ce contrat n'a ni numéro ni référence : je ne peux pas le retrouver. Corrige-le d'abord avec « Modifier »."); return; }
+  const data = await getBillingProd(monthVal);
+  const row = (data.rows || []).find(r => billingRowKeys(r).includes(String(key).toLowerCase()));
+  if(!row){ uiAlert('Contrat introuvable — il a peut-être été réimporté depuis.'); return; }
+  if(!row.agent){ uiAlert("Ce contrat n'est rattaché à aucun agent : rattache-le d'abord (import → bouton Rattacher)."); return; }
+  const annule = !!row.retractedCourrier;
+  if(!annule && row.retracted){ uiAlert("Ce contrat est déjà marqué rétracté (rétractation normale). Annule-la d'abord si tu veux la passer en « courrier »."); return; }
+  const qui = `${row.nom || '?'} — n° ${row.numContrat || row.reference || key}\nAgent : ${row.agent}\nMois : ${billingMonthLabel(monthVal)}`;
+  const msg = annule
+    ? `Annuler la rétractation courrier ?\n\n${qui}\n\n• ${row.agent} : le contrat redevient payé, son compteur de rétractés baisse de 1\n• Toi : le contrat reste compté normalement`
+    : `Marquer ce contrat « rétracté courrier » ?\n\n${qui}\n\n• ${row.agent} : +1 rétracté, il n'est pas payé dessus (comme une rétractation normale)\n• Toi : tu restes payé dessus, compté dans « Gains Net », tant que le client n'a pas traité le courrier\n• Quand le client le traitera, il arrivera par le fichier habituel : aucun double comptage`;
+  if(!await uiAsk(msg)) return;
+  const res = await basculerRetractation(monthVal, row.agent, row.numContrat || row.reference);
+  if(!res){ uiAlert('Contrat introuvable — il a peut-être été réimporté depuis.'); return; }
+  const d2 = await getBillingProd(monthVal);
+  const r2 = (d2.rows || []).find(r => billingRowKeys(r).includes(String(key).toLowerCase()));
+  if(r2){
+    if(annule) delete r2.retractedCourrier; else r2.retractedCourrier = true;
+    await billingSave(billingProdKey(monthVal), d2);
+  }
+  logAudit('Admin', annule ? 'Rétractation courrier annulée' : 'Contrat marqué rétracté COURRIER',
+           `${row.agent} — contrat ${row.numContrat || row.reference || key} — ${monthVal}`);
+  await rafraichirApresMarquage();
+  try{ showToast(annule ? '↩️ Rétractation courrier annulée' : '✉️ Marqué rétracté courrier — toi tu restes payé dessus', 'ok', 5000); }catch(e){}
+}
+
+async function marquerInversionNomPrenom(monthVal, key){
+  if(!monthVal || !key){ uiAlert("Ce contrat n'a ni numéro ni référence : je ne peux pas le retrouver. Corrige-le d'abord avec « Modifier »."); return; }
+  const data = await getBillingProd(monthVal);
+  const row = (data.rows || []).find(r => billingRowKeys(r).includes(String(key).toLowerCase()));
+  if(!row){ uiAlert('Contrat introuvable — il a peut-être été réimporté depuis.'); return; }
+  if(!row.agent){ uiAlert("Ce contrat n'est rattaché à aucun agent : rattache-le d'abord (import → bouton Rattacher)."); return; }
+  if(row.retracted){ uiAlert("Ce contrat est marqué rétracté : annule d'abord la rétractation avant de le passer en inversion."); return; }
+  const qui = `${row.nom || '?'} — n° ${row.numContrat || row.reference || key}\nAgent : ${row.agent}\nMois : ${billingMonthLabel(monthVal)}`;
+  if(!await uiAsk(`Passer ce contrat en NON CONFORME (inversion nom prénom) ?\n\n${qui}\n\n• ${row.agent} n'est plus payé dessus et il ne compte plus dans son objectif\n• Il ne compte plus pour la prime des superviseurs\n• Toi : tu l'encaisses, il apparaît dans « Contrats non conformes » (motif : Inversion nom prénom)\n• Tu peux l'annuler : « Remettre comme avant »`)) return;
+  const copie = JSON.parse(JSON.stringify(row));
+  const nc = Object.assign({}, copie, {
+    conforme: 'non', source: SOURCE_INVERSION, motif: 'Inversion nom prénom',
+    retracted: false, receivedAt: new Date().toISOString(), _origine: copie
+  });
+  const store = await getBillingNonConf(monthVal);
+  store.rows = store.rows || [];
+  const ks = billingDedupKeys(nc);
+  const dejaLa = ks.length && store.rows.some(x => billingDedupKeys(x).some(k => ks.includes(k)));
+  if(!dejaLa) store.rows.push(nc);
+  store.month = monthVal;
+  try{ await billingSave(billingNonConfKey(monthVal), store); }
+  catch(e){ uiAlert('Enregistrement impossible : ' + (e && e.message ? e.message : e) + '\n\nRien n\'a été changé.'); return; }
+  const ok = await deleteContractFromMonth(monthVal, key, true);
+  if(!ok){
+    // Retour arrière : on retire la ligne non conforme qu'on vient d'ajouter, pour ne jamais laisser un doublon.
+    try{
+      const st2 = await getBillingNonConf(monthVal);
+      st2.rows = (st2.rows || []).filter(x => !(x.source === SOURCE_INVERSION && billingDedupKeys(x).some(k => ks.includes(k))));
+      await billingSave(billingNonConfKey(monthVal), st2);
+    }catch(e){}
+    uiAlert("Le contrat n'a pas pu être retiré de la production : rien n'a été changé.");
+    await rafraichirApresMarquage();
+    return;
+  }
+  logAudit('Admin', 'Contrat passé en NON CONFORME (inversion nom prénom)',
+           `${row.agent} — contrat ${row.numContrat || row.reference || key} — ${monthVal} — l'agent n'est plus payé dessus, le patron oui`);
+  await rafraichirApresMarquage();
+  try{ showToast('🔀 Passé en non conforme (inversion nom prénom) : ' + (row.nom || ''), 'ok', 5000); }catch(e){}
+}
+
+async function remettreInversion(monthVal, ident, btn){
+  const store = await getBillingNonConf(monthVal);
+  const rows = (store && store.rows) || [];
+  let idx = -1;
+  if(String(ident).startsWith('idx:')) idx = Number(String(ident).slice(4));
+  else idx = rows.findIndex(r => (billingDedupKeys(r)[0] || '') === ident);
+  if(idx < 0 || idx >= rows.length){ uiAlert("Cette ligne n'est plus dans la liste — elle va se rafraîchir."); await renderNonConfPanel(); return; }
+  const r = rows[idx];
+  if(r.source !== SOURCE_INVERSION){ uiAlert("Ce contrat n'est pas une inversion nom prénom : utilise « Retirer »."); return; }
+  const quoi = `${r.agent || '?'} — ${r.nom || r.numContrat || r.reference || 'contrat'}`;
+  if(!await uiAsk(`Remettre ce contrat comme avant ?\n\n${quoi}\n\n• Il redevient CONFORME et payé à ${r.agent || "l'agent"}\n• Il compte de nouveau dans son objectif\n• Il quitte la liste des non conformes`)) return;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+  const orig = Object.assign({}, r._origine || {});
+  Object.keys(orig).length || Object.assign(orig, r);
+  ['_origine','conforme','source','motif'].forEach(k=>{ if(r._origine === undefined || k !== 'conforme') {} });
+  const prod = await getBillingProd(monthVal);
+  prod.rows = prod.rows || [];
+  const ks = billingDedupKeys(orig);
+  if(!(ks.length && prod.rows.some(x => billingDedupKeys(x).some(k => ks.includes(k))))) prod.rows.push(orig);
+  prod.month = monthVal;
+  try{ await billingSave(billingProdKey(monthVal), prod); }
+  catch(e){ uiAlert('Enregistrement impossible : ' + (e && e.message ? e.message : e) + '\n\nRien n\'a été changé.'); if(btn){ btn.disabled = false; btn.textContent = '↩️ Remettre comme avant'; } return; }
+  rows.splice(idx, 1);
+  store.rows = rows;
+  try{ await billingSave(billingNonConfKey(monthVal), store); }
+  catch(e){ uiAlert("Le contrat est revenu dans la production mais est encore dans les non conformes (enregistrement impossible). Il apparaîtra dans le bandeau « doublons » : tranche-le avec « conforme »."); }
+  try{ const iso = parseContractDate(orig.datePropre || orig.date); if(iso) await syncProdBoardRealizedForDates([iso]); }catch(e){}
+  logAudit('Admin', 'Inversion nom prénom annulée', `${quoi} — ${monthVal} — contrat remis conforme, payé à l'agent`);
+  await rafraichirApresMarquage();
+  try{ showToast('↩️ Contrat remis comme avant : ' + (r.nom || ''), 'ok', 5000); }catch(e){}
+}
+
 async function deleteContractAndRefresh(monthVal, key, source){
   if(!(await deleteContractFromMonth(monthVal, key))) return;
   if(source === 'search') await searchContractGlobal();
@@ -32702,6 +32871,7 @@ async function toggleRetractedFromSearch(monthVal, key){
   if(!await uiAsk(`${next ? 'Marquer' : 'Ne plus marquer'} le contrat ${row.numContrat || key} (${row.nom || '?'}) comme rétracté ?\n\nAgent : ${row.agent}\nMois : ${billingMonthLabel(monthVal)}\n\n${next ? "L'agent ne sera pas payé sur ce contrat." : "L'agent sera de nouveau payé sur ce contrat."}`)) return;
 
   row.retracted = next;
+  if(!next) delete row.retractedCourrier;
   await billingSave(billingProdKey(monthVal), data);
   const [y, m] = monthVal.split('-').map(Number);
   const current = await getMonthlyRetractCount(row.agent, y, m);
