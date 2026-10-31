@@ -3430,7 +3430,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-31-r339';
+const APP_VERSION = '2026-10-31-r340';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -32455,11 +32455,18 @@ async function searchContractGlobal(){
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     mvs.push(billingMonthVal(d.getFullYear(), d.getMonth() + 1));
   }
-  const [prods, rets] = await Promise.all([
+  const [prods, rets, ncs] = await Promise.all([
     Promise.all(mvs.map(mv => getBillingProd(mv))),
-    Promise.all(mvs.map(mv => getBillingReturns(mv)))
+    Promise.all(mvs.map(mv => getBillingReturns(mv))),
+    // r340 — les contrats NON CONFORMES (backoffice ou inversion nom prénom) se retrouvent aussi : ils ne sont
+    // plus dans la production, donc la recherche ne les voyait plus.
+    Promise.all(mvs.map(mv => getBillingNonConf(mv).catch(() => ({ rows: [] }))))
   ]);
   mvs.forEach((mv, i)=>{
+    ((ncs[i] && ncs[i].rows) || []).forEach((r, ri)=>{
+      const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.telephone, r.email, r.agent].join(' '));
+      if(hay.includes(q)) found.push({ type: 'nonconf', mv, r, ri });
+    });
     (prods[i].rows || []).forEach(r=>{
       const hay = billingNormKey([r.numContrat, r.reference, r.nom, r.telephone, r.email, r.agent].join(' '));
       if(hay.includes(q)) found.push({ type: 'contrat', mv, r });
@@ -32477,11 +32484,22 @@ async function searchContractGlobal(){
 
   let html = `<div style="font-size:13px; color:var(--muted); margin-bottom:8px;">${found.length} résultat${found.length>1?'s':''} pour « <b style="color:var(--text);">${escapeHtml(raw)}</b> »</div>`;
   html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Type</th><th>Mois</th><th>Agent</th><th>Client</th><th>N° contrat</th><th>Date</th><th>État</th><th>Action</th></tr></thead><tbody>';
-  found.slice(0, 80).forEach(({ type, mv, r }, idx)=>{
+  found.slice(0, 80).forEach(({ type, mv, r, ri }, idx)=>{
     const isRet = type === 'retour';
     let etat = '—', action = '';
     const key = String(r.numContrat || r.reference || '').replace(/'/g, "\\'");
-    if(isRet){
+    const isNc = type === 'nonconf';
+    if(isNc){
+      const inv = r.source === SOURCE_INVERSION;
+      const identNc = String(billingDedupKeys(r)[0] || ('idx:' + ri)).replace(/'/g, "\\'");
+      etat = (inv ? '<span style="color:var(--independant);">🔀 non conforme (inversion nom prénom)</span>'
+                  : '<span style="color:var(--amber);">🚫 non conforme (backoffice)</span>')
+           + '<div style="font-size:11px; color:var(--muted); margin-top:2px;">actif pour toi · pas payé à l\'agent</div>'
+           + (r.retracted ? '<div style="font-size:11px; color:var(--red);">rétracté</div>' : '');
+      action = inv
+        ? `<button onclick="remettreInversion('${mv}', '${identNc}', this)" title="Annule l'inversion : le contrat redevient conforme et payé à l'agent." style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:transparent; color:var(--green); font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">↩️ Remettre comme avant</button>`
+        : '<span style="font-size:12px; color:var(--muted);">Voir « Contrats non conformes »</span>';
+    } else if(isRet){
       etat = r.reclassifiedAsRetraction ? '<span style="color:var(--independant);">🏷️ reclassé en rétractation</span>'
            : r.dismissed ? '<span style="color:var(--muted);">écarté</span>'
            : (r.agent ? '<span style="color:var(--red);">retour imputé à ' + escapeHtml(r.agent) + '</span>'
@@ -32546,7 +32564,7 @@ async function searchContractGlobal(){
       }
     }
     html += `<tr>
-      <td>${isRet ? '📉 Retour' : '📄 Contrat'}</td>
+      <td>${isRet ? '📉 Retour' : (isNc ? '🚫 Non conforme' : '📄 Contrat')}</td>
       <td style="white-space:nowrap;">${escapeHtml(billingMonthLabel(mv))}</td>
       <td><b>${escapeHtml(r.agent || r.agentRaw || '—')}</b></td>
       <td>${escapeHtml(r.nom || '—')}</td>
