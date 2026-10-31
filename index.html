@@ -3430,7 +3430,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-31-r340';
+const APP_VERSION = '2026-10-31-r341';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12681,7 +12681,7 @@ async function lireNonConformesPeriode(fromISO, toISO){
       const store = await getBillingNonConf(mv);
       (store.rows || []).forEach(r=>{
         if(r.retracted) return;
-        const d = r.datePropre || r.date;
+        const d = dateIsoNC(r);
         if(!d || d < fromISO || d > toISO) return;
         const cles = billingRowKeys(r);
         if(cles.length && cles.some(k => clesProd[k])) return;   // doublon conforme/non conforme
@@ -30901,7 +30901,7 @@ async function renderNonConfPanel(){
   }
   // Tri du plus recent au plus ancien : on corrige presque toujours une erreur du jour meme.
   const tri = rows.map((r, i)=> ({ r, i })).sort((a, b)=>
-    String(b.r.datePropre || b.r.date || '').localeCompare(String(a.r.datePropre || a.r.date || ''))
+    dateIsoNC(b.r).localeCompare(dateIsoNC(a.r))
     || String(a.r.agent || '').localeCompare(String(b.r.agent || '')));
   const parAgent = {};
   rows.forEach(r=>{ if(r.retracted) return; const a = r.agent || '?'; parAgent[a] = (parAgent[a] || 0) + 1; });
@@ -30950,7 +30950,7 @@ async function renderNonConfPanel(){
     // a un reordonnancement de la liste. Sinon, et seulement sinon, la position dans le classeur.
     const cles = billingDedupKeys(r);
     const ident = cles.length ? cles[0] : `idx:${i}`;
-    const d = (r.datePropre || r.date || '').split('-').reverse().join('/');
+    const d = dateIsoNC(r).split('-').reverse().join('/');
     return `<tr${r.retracted ? ' style="opacity:0.5;"' : ''}>
       <td>${escapeHtml(d || '—')}</td>
       <td><b>${escapeHtml(r.agent || '—')}</b></td>
@@ -32744,6 +32744,15 @@ async function deleteContractFromMonth(monthVal, key, silent){
 // comme un non conforme du backoffice : l'agent n'est plus payé dessus, il ne compte plus dans son objectif
 // ni dans la prime des superviseurs ; toi tu l'encaisses. Annulable : « Remettre comme avant ».
 const SOURCE_INVERSION = 'inversion-nom-prenom';
+// Date ISO (AAAA-MM-JJ) d'un contrat non conforme. 🐛 r341 : un contrat venu de la production garde dans
+// `datePropre` le texte d'ORIGINE du fichier (ex. « 20/10/2026 ») alors que `date` est en ISO. Les calculs de
+// période comparaient `datePropre` à des dates ISO : le contrat passé en inversion était écarté de la carte
+// « Non conformes » (et du chiffre d'affaires) sans que rien ne le dise.
+function dateIsoNC(r){
+  const d = String((r && r.date) || '');
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  return parseContractDate((r && (r.datePropre || r.date)) || '') || '';
+}
 
 // Nombre de contrats « rétractés courrier » qui pèsent sur CE mois de paie — même règle de mois que
 // computeExactRetractCount, pour qu'on ajoute exactement ce qui a été retiré à l'agent.
@@ -32811,6 +32820,8 @@ async function marquerInversionNomPrenom(monthVal, key){
     conforme: 'non', source: SOURCE_INVERSION, motif: 'Inversion nom prénom',
     retracted: false, receivedAt: new Date().toISOString(), _origine: copie
   });
+  const isoNc = dateIsoNC(copie);          // la copie « non conforme » porte une vraie date ISO ; l'original (_origine) reste intact
+  if(isoNc){ nc.date = isoNc; nc.datePropre = isoNc; }
   const store = await getBillingNonConf(monthVal);
   store.rows = store.rows || [];
   const ks = billingDedupKeys(nc);
