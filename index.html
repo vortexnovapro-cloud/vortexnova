@@ -3430,7 +3430,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-31-r341';
+const APP_VERSION = '2026-10-31-r342';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12838,8 +12838,8 @@ async function renderBossRevenue(force){
   const ncRows = await lireNonConformesPeriode(expenseFrom, expenseTo);
   const ncCalc = computeBossRevenue(ncRows.length);
   const ncInv = ncRows.filter(r => r.source === SOURCE_INVERSION).length;
-  const ncParAgent = {};
-  ncRows.forEach(r=>{ const a = r.agent || '?'; ncParAgent[a] = (ncParAgent[a] || 0) + 1; });
+  const ncParAgent = {}, ncParAgentInv = {};
+  ncRows.forEach(r=>{ const a = r.agent || '?'; ncParAgent[a] = (ncParAgent[a] || 0) + 1; if(r.source === SOURCE_INVERSION) ncParAgentInv[a] = (ncParAgentInv[a] || 0) + 1; });
   const isSingleDay = expenseFrom === expenseTo;
   const isTodayOnly = isSingleDay && expenseFrom === todayStr();
   const periodLabel = isTodayOnly ? "Aujourd'hui"
@@ -12927,9 +12927,9 @@ async function renderBossRevenue(force){
       </div>
       <div class="cash-breakdown" style="margin-top:12px;">
         <div title="Contrats que le backoffice a déclarés non conformes sur la période. Rétractés exclus."><span>Contrats non conformes</span><b style="color:var(--amber);">${ncRows.length}</b></div>
-        ${ncInv>0 ? `<div title="Contrats que tu as passés toi-même en non conforme parce que le nom et le prénom étaient inversés."><span style="opacity:0.85;">dont 🔀 inversion nom prénom</span><b>${ncInv}</b></div>` : ''}
+        ${ncInv>0 ? `<div title="Contrats que tu as passés toi-même en non conforme parce que le nom et le prénom étaient inversés. Clique pour voir la liste : agent, client, numéro."><span style="opacity:0.85;">dont 🔀 inversion nom prénom</span><b><span class="clk-amount" onclick="adminAllerNonConformes('${String(expenseFrom).slice(0,7)}','inv')">${ncInv}</span></b></div>` : ''}
         ${Object.keys(ncParAgent).sort((a,b)=> ncParAgent[b]-ncParAgent[a] || a.localeCompare(b)).map(a=>
-          `<div><span style="opacity:0.85;">· ${escapeHtml(a)}</span><b>${ncParAgent[a]}</b></div>`).join('')}
+          `<div><span style="opacity:0.85;">· ${escapeHtml(a)}${ncParAgentInv[a] ? ` <span style="opacity:0.8;">(dont ${ncParAgentInv[a]} 🔀)</span>` : ''}</span><b>${ncParAgent[a]}</b></div>`).join('')}
         <div title="Même calcul que ta commission habituelle : taux de retour estimé et bonus appliqués de la même façon."><span>Effectifs (-${config.bossReturnRatePct||0}% retour estimé)</span><b>${Math.round(ncCalc.effectiveContracts*10)/10}</b></div>
         ${config.bossBonusPct>0 ? `<div class="hit"><span>dont bonus (+${config.bossBonusPct}%)</span><b>+${Math.round(ncCalc.bonus).toLocaleString('fr-FR')} DH</b></div>` : ''}
         <div class="hit" title="Ce que tu encaisses au total sur la période : les contrats conformes de la carte de gauche, plus ces non conformes. Volontairement affiché ici et pas dans « Gains Net » : ce dernier reste calé sur la même base que le 🧾 Bilan net du mois, pour que les deux chiffres de la page ne se contredisent jamais."><span>Conformes + non conformes</span><b>${Math.round(periodCalc.total + ncCalc.total).toLocaleString('fr-FR')} DH</b></div>
@@ -13401,9 +13401,14 @@ function adminAllerFiche(agent, ym){
   }, 80);
 }
 // → Facturation, liste des contrats non conformes
-function adminAllerNonConformes(){
+function adminAllerNonConformes(mv, filtre){
+  window.ncFiltreMotif = (filtre === 'inv') ? 'inv' : '';
   showAdminSub('billing');
-  setTimeout(()=>{ document.getElementById('nonConfPanel')?.scrollIntoView({ behavior:'smooth', block:'start' }); }, 120);
+  setTimeout(async ()=>{
+    const m = document.getElementById('ncPanelMonth'); if(m && mv && /^\d{4}-\d{2}$/.test(String(mv))) m.value = mv;
+    try{ await renderNonConfPanel(); }catch(e){}
+    document.getElementById('nonConfPanel')?.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 120);
 }
 // → Facturation, « Trouver un contrat » pré-rempli avec le nom de l'agent
 function adminAllerContrats(agent){
@@ -30900,7 +30905,8 @@ async function renderNonConfPanel(){
     return;
   }
   // Tri du plus recent au plus ancien : on corrige presque toujours une erreur du jour meme.
-  const tri = rows.map((r, i)=> ({ r, i })).sort((a, b)=>
+  const filtreInv = window.ncFiltreMotif === 'inv';
+  const tri = rows.map((r, i)=> ({ r, i })).filter(x => !filtreInv || x.r.source === SOURCE_INVERSION).sort((a, b)=>
     dateIsoNC(b.r).localeCompare(dateIsoNC(a.r))
     || String(a.r.agent || '').localeCompare(String(b.r.agent || '')));
   const parAgent = {};
@@ -30961,7 +30967,8 @@ async function renderNonConfPanel(){
       <td>${r.source === SOURCE_INVERSION ? `<button onclick="remettreInversion('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Annule l'inversion : le contrat redevient conforme et payé à l'agent." style="padding:6px 12px;border-radius:8px;border:1px solid var(--green);background:transparent;color:var(--green);font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;">↩️ Remettre comme avant</button>` : `<button onclick="retirerNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Retire cette ligne du classeur des non conformes. N'ajoute rien à la paie de l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">🗑️ Retirer</button>`}</td>
     </tr>`;
   }).join('');
-  el.innerHTML = bandeauConflits + `
+  const bandeauFiltre = filtreInv ? `<div style="padding:9px 13px;border-radius:9px;background:rgba(232,168,56,0.12);border:1px solid var(--amber);margin-bottom:10px;font-size:12.5px;">🔀 Tu vois seulement les <b>inversions nom prénom</b> (${tri.length}). <button onclick="window.ncFiltreMotif='';renderNonConfPanel();" style="margin-left:8px;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;">Tout afficher</button></div>` : '';
+  el.innerHTML = bandeauConflits + bandeauFiltre + `
     <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px; line-height:1.7;">
       <b style="color:var(--amber);">${actifs} contrat${actifs>1?'s':''} non conforme${actifs>1?'s':''}</b> sur ${escapeHtml(billingMonthLabel(monthVal))}${Object.keys(parAgent).length ? ' — ' + Object.keys(parAgent).sort((a,b)=> parAgent[b]-parAgent[a] || a.localeCompare(b)).map(a=> `${escapeHtml(a)} : ${parAgent[a]}`).join(' · ') : ''}.<br>
       Aucun n'est payé à l'agent et aucun ne compte dans son objectif.
