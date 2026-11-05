@@ -2252,20 +2252,6 @@ async function tryDeviceGateAdmin(){
           </div>
         </div>
 
-        <div class="settings-box" style="border-color:rgba(255,215,0,0.4);">
-          <label style="margin-bottom:6px;">📊 Prime de supervision — ajuster une journée</label>
-          <div class="section-sub" style="margin-top:-6px;">Par défaut, le CRM décide seul : un superviseur présent et à l'heure touche sa prime, un superviseur absent ou en retard de plus de 10 minutes la perd, et sa part est partagée à parts égales entre les présents. Ici tu peux le contredire sur <b>une journée précise</b> : retirer sa prime à quelqu'un, la donner à quelqu'un que le CRM avait exclu, et surtout <b>choisir qui récupère la part retirée</b> au lieu du partage automatique.</div>
-          <div class="section-sub" style="margin-top:6px;">Chaque changement s'enregistre tout seul et se répercute partout : Supervision, Mon argent, masse salariale et fiche de paie. ⚠️ La prime n'est jamais reportée : ce qui n'est donné à personne un jour est perdu pour tout le monde.</div>
-          <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
-            <div>
-              <label style="margin-bottom:4px;">Date</label>
-              <input type="date" id="supOverrideDate" onchange="renderSupervisorDayOverridePanel()">
-            </div>
-            <button type="button" onclick="supOverrideToday()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📅 Aujourd'hui</button>
-            <button type="button" onclick="renderSupervisorDayOverridePanel()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:700; font-size:12.5px; cursor:pointer;">🔄 Actualiser</button>
-          </div>
-          <div id="supervisorDayOverridePanel" style="margin-top:12px;"></div>
-        </div>
 
         <div class="settings-box" style="border-color:rgba(155,89,182,0.35);">
           <label style="margin-bottom:6px;">🔻 Rétractations clients (réservé à l'admin)</label>
@@ -2293,15 +2279,6 @@ async function tryDeviceGateAdmin(){
           <div id="retractAdminContractsList" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);"></div>
         </div>
 
-        <div class="settings-box" style="border-color:rgba(231,76,60,0.4);">
-          <label style="margin-bottom:6px;">📊 Qualité des agents — rétractations, retours, non conformes</label>
-          <div class="section-sub" style="margin-top:-6px;">Lecture seule : rien ici ne modifie la paie. Classé du plus mauvais au meilleur.</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">
-            <button type="button" id="qaTabPrime" onclick="qaChoisir('prime')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:700;cursor:pointer;">Assistance (Prime)</button>
-            <button type="button" id="qaTabIlek" onclick="qaChoisir('ilek')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">Ilek (énergies)</button>
-          </div>
-          <div id="qaPanel"><button type="button" onclick="qaInit()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:700;cursor:pointer;">📊 Afficher le tableau</button></div>
-        </div>
 
         <div class="settings-box">
           <label style="margin-bottom:14px;">Enregistrer une infraction (téléphone/YouTube, objectif non atteint)</label>
@@ -2556,6 +2533,20 @@ async function tryDeviceGateAdmin(){
           <div id="manualPrimesList" style="margin-top:12px;"></div>
         </div>
           </details>
+        <div class="settings-box" style="border-color:rgba(255,215,0,0.4);">
+          <label style="margin-bottom:6px;">📊 Prime de supervision — ajuster une journée</label>
+          <div class="section-sub" style="margin-top:-6px;">Par défaut, le CRM décide seul : un superviseur présent et à l'heure touche sa prime, un superviseur absent ou en retard de plus de 10 minutes la perd, et sa part est partagée à parts égales entre les présents. Ici tu peux le contredire sur <b>une journée précise</b> : retirer sa prime à quelqu'un, la donner à quelqu'un que le CRM avait exclu, et surtout <b>choisir qui récupère la part retirée</b> au lieu du partage automatique.</div>
+          <div class="section-sub" style="margin-top:6px;">Chaque changement s'enregistre tout seul et se répercute partout : Supervision, Mon argent, masse salariale et fiche de paie. ⚠️ La prime n'est jamais reportée : ce qui n'est donné à personne un jour est perdu pour tout le monde.</div>
+          <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
+            <div>
+              <label style="margin-bottom:4px;">Date</label>
+              <input type="date" id="supOverrideDate" onchange="renderSupervisorDayOverridePanel()">
+            </div>
+            <button type="button" onclick="supOverrideToday()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📅 Aujourd'hui</button>
+            <button type="button" onclick="renderSupervisorDayOverridePanel()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:700; font-size:12.5px; cursor:pointer;">🔄 Actualiser</button>
+          </div>
+          <div id="supervisorDayOverridePanel" style="margin-top:12px;"></div>
+        </div>
         </div>
         <div class="rm-panel" id="rmPanelIlek"><div id="remuIlekHost"><div class="empty">Chargement…</div></div></div>
         <div class="rm-panel" id="rmPanelRetours"><div id="rmRetoursHote"><div class="empty">Chargement…</div></div></div>
@@ -2795,6 +2786,16 @@ async function tryDeviceGateAdmin(){
           <div id="backofficeInboxPanel" style="margin-top:12px;"></div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(231,76,60,0.4);">
+          <label style="margin-bottom:6px;">📊 Qualité des agents — rétractations, retours, non conformes</label>
+          <div class="section-sub" style="margin-top:-6px;">Lecture seule : rien ici ne modifie la paie. Classé du plus mauvais au meilleur.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">
+            <button type="button" id="qaTabPrime" onclick="qaChoisir('prime')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:700;cursor:pointer;">Assistance (Prime)</button>
+            <button type="button" id="qaTabIlek" onclick="qaChoisir('ilek')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">Ilek (énergies)</button>
+          </div>
+          <div id="qaPanel"><button type="button" onclick="qaInit()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:700;cursor:pointer;">📊 Afficher le tableau</button></div>
+        </div>
+
         <div class="settings-box" style="border-color:rgba(229,168,61,0.45);">
           <label>🚫 Contrats non conformes</label>
           <div class="section-sub">Les contrats que le backoffice a déclarés non conformes arrivent par le <b>second groupe Telegram</b> et sont rangés <b>à part</b>. Ils ne sont <b>pas payés à l'agent</b> et ne comptent <b>pas dans son objectif</b> — mais ils comptent pour toi, et tu les retrouves dans <b>Vue d'ensemble → 💰 Mon chiffre d'affaires</b>.<br><span style="opacity:0.85;">Si le backoffice en a envoyé un par erreur, retire-le ici.</span></div>
@@ -2920,6 +2921,19 @@ async function tryDeviceGateAdmin(){
           <button onclick="analyzeReturnsFromPaste()" title="Importe les retours collés ci-dessus et les impute au mois de paie choisi. Chaque retour est rattaché à son agent via le numéro ou la référence du contrat d'origine." style="margin-top:10px; padding:10px 18px;border-radius:8px;border:1px solid var(--red);background:rgba(229,90,90,0.18);color:var(--red);font-weight:700;cursor:pointer;">🔍 Analyser le fichier</button>
           <div id="billingRetReport" style="margin-top:14px;"></div>
           <div id="retoursRapportsPanel"></div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(22,163,74,0.5);">
+          <label>🟢 Retours Ilek — fichier Excel et marquage à la main</label>
+          <div class="section-sub">Comme pour Prime : les énergies retirées par Ilek (rétractation, impayé, autre). 1 ligne = 1 énergie, sans division. Tout ce qui n'est pas validé n'est pas payé.</div>
+          <div id="billingIlekRetoursHost"><div class="empty">Ouvre l'onglet pour charger les retours…</div></div>
+          <div id="ilekManuelHost" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);"></div>
+        </div>
+
+        <div class="settings-box" style="border-color:rgba(61,139,253,0.45);">
+          <label>🔎 Écart avec la facturation</label>
+          <div class="section-sub">Compare les contrats validés chez le backoffice avec ce qui est rangé dans ta facturation.</div>
+          <div id="adEcartHost"><div class="empty">Chargement…</div></div>
         </div>
 
         <div class="settings-box" style="border-color:rgba(229,90,90,0.4);">
@@ -3258,42 +3272,7 @@ async function tryDeviceGateAdmin(){
           <div class="section-sub" style="margin-top:-10px;">💡 Les 3 alertes (son + notification + titre d'onglet clignotant) se déclenchent avant la déconnexion automatique, dans l'ordre indiqué. Elles doivent être inférieures au délai de déconnexion ci-dessus (par défaut : 30s, 10s, 5s avant). Le même système de 3 alertes protège aussi le <b>panneau Admin</b> (délai réglable juste au-dessus) — pratique quand il reste ouvert sur un téléphone posé sur un bureau.</div>
           <div class="section-sub" style="margin:-10px 0 18px;">Ces deux tolérances s'appliquent uniquement à l'<b>heure de début</b> d'une pause (déjeuner pour la première, les autres pauses de la journée pour la seconde) — utile pour un agent en appel téléphonique qui ne peut pas décrocher pile à l'heure prévue. La <b>durée</b> de la pause, elle, reste stricte : aucun dépassement toléré, quelle que soit l'heure de début. Le <b>retard à l'arrivée</b> n'a lui aucune tolérance (règlement interne : dès la 1ère minute, sans exception) — ces réglages n'ont donc aucun effet dessus.</div>
 
-          <div id="ipLockBox" style="margin:6px 0 26px;padding:16px;border:1px solid var(--border);border-radius:12px;">
-            <label style="margin-bottom:6px;">🌐 Verrouillage par adresse IP</label>
-            <div class="section-sub" style="margin-top:-2px;">Les agents que tu coches ne peuvent utiliser le CRM que depuis la connexion de l'entreprise : <b>tout le temps</b> ou <b>entre deux heures</b> (heure du Maroc). Hors de ces adresses, ils voient « Connexion refusée hors de l'entreprise » et ne peuvent rien faire.</div>
-            <label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer;"><input type="checkbox" id="ipLockEnabled" style="width:auto;"> Activer le verrouillage</label>
-            <label style="margin:10px 0 6px;">Adresses IP autorisées</label>
-            <div id="ipLockIps" style="display:flex;flex-direction:column;gap:6px;"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
-              <input type="text" id="ipLockNewIp" placeholder="ex : 102.50.251.62" style="max-width:220px;">
-              <button onclick="ipLockAjouterIp()" style="padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">➕ Ajouter</button>
-              <button onclick="ipLockDetecter()" style="padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">🔎 Voir mon adresse actuelle</button>
-            </div>
-            <div id="ipLockDetected" class="section-sub" style="margin-top:6px;"></div>
-            <label style="margin:16px 0 6px;">Agents verrouillés</label>
-            <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Verrouillé</th><th>Quand</th><th>De</th><th>À</th></tr></thead><tbody id="ipLockAgents"></tbody></table></div>
-            <label style="display:flex;gap:8px;align-items:center;margin:12px 0 4px;cursor:pointer;"><input type="checkbox" id="ipLockFailOpen" style="width:auto;"> Si l'adresse ne peut pas être vérifiée (panne internet du service de vérification), laisser passer</label>
-            <div class="section-sub" style="margin-top:0;">Décoché : l'agent verrouillé est bloqué tant que la vérification échoue (plus sûr, mais il ne peut pas travailler pendant une panne).</div>
-            <button onclick="saveIpLock()" style="margin-top:10px;padding:10px 18px;border-radius:8px;border:1px solid var(--accent, var(--green));background:transparent;color:var(--text);font-weight:700;cursor:pointer;">💾 Enregistrer le verrouillage</button>
-          </div>
 
-          <div id="supScheduleBox" style="margin:6px 0 26px;padding:16px;border:1px solid var(--border);border-radius:12px;">
-            <label style="margin-bottom:6px;">👔 Horaires des superviseurs</label>
-            <div class="section-sub" style="margin-top:-2px;">Un seul horaire pour <b>tous les superviseurs</b> (les agents gardent l'horaire officiel ci-dessus). Retards, départs anticipés, pauses, déconnexion automatique et paie suivent cet horaire. Le samedi reste non travaillé.</div>
-            <label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer;"><input type="checkbox" id="supSchedEnabled" style="width:auto;"> Utiliser un horaire spécial pour les superviseurs</label>
-            <div class="settings-grid">
-              <div><label>Début de journée</label><input type="time" id="supSchedStart"></div>
-              <div><label>Fin de journée</label><input type="time" id="supSchedEnd"></div>
-              <div><label>Déjeuner : début <small style="opacity:.7">(vide = comme les agents)</small></label><input type="time" id="supSchedLunchStart"></div>
-              <div><label>Déjeuner : fin</label><input type="time" id="supSchedLunchEnd"></div>
-              <div><label>Déjeuner du vendredi : début <small style="opacity:.7">(vide = comme les agents)</small></label><input type="time" id="supSchedFriStart"></div>
-              <div><label>Déjeuner du vendredi : fin</label><input type="time" id="supSchedFriEnd"></div>
-              <div><label>À partir du <small style="opacity:.7">(vide = toutes les journées, passées comprises)</small></label><input type="date" id="supSchedFrom"></div>
-            </div>
-            <div class="section-sub" style="margin-top:8px;">💡 Pour changer l'horaire plus tard sans toucher au passé : modifie les heures et mets la date du premier jour concerné dans « À partir du ». Les journées d'avant gardent l'ancien horaire.</div>
-            <button onclick="saveSupSchedule()" style="margin-top:10px;padding:10px 18px;border-radius:8px;border:1px solid var(--accent, var(--green));background:transparent;color:var(--text);font-weight:700;cursor:pointer;">💾 Enregistrer les horaires des superviseurs</button>
-            <div id="supSchedHistory" style="margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.7;"></div>
-          </div>
 
           <label style="margin-bottom:10px;">🍽️ Déjeuner (horaire fixe)</label>
           <div class="section-sub" style="margin-top:-6px;">Le seul créneau à heure fixe — les agents pointent "Départ déjeuner" / "Retour déjeuner" dans cette fenêtre.</div>
@@ -3363,6 +3342,43 @@ async function tryDeviceGateAdmin(){
             <div class="save-note" id="saveNote"></div>
           </div>
         </div>
+
+          <div class="settings-box" id="supScheduleBox">
+            <label style="margin-bottom:6px;">👔 Horaires des superviseurs</label>
+            <div class="section-sub" style="margin-top:-2px;">Un seul horaire pour <b>tous les superviseurs</b> (les agents gardent l'horaire officiel ci-dessus). Retards, départs anticipés, pauses, déconnexion automatique et paie suivent cet horaire. Le samedi reste non travaillé.</div>
+            <label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer;"><input type="checkbox" id="supSchedEnabled" style="width:auto;"> Utiliser un horaire spécial pour les superviseurs</label>
+            <div class="settings-grid">
+              <div><label>Début de journée</label><input type="time" id="supSchedStart"></div>
+              <div><label>Fin de journée</label><input type="time" id="supSchedEnd"></div>
+              <div><label>Déjeuner : début <small style="opacity:.7">(vide = comme les agents)</small></label><input type="time" id="supSchedLunchStart"></div>
+              <div><label>Déjeuner : fin</label><input type="time" id="supSchedLunchEnd"></div>
+              <div><label>Déjeuner du vendredi : début <small style="opacity:.7">(vide = comme les agents)</small></label><input type="time" id="supSchedFriStart"></div>
+              <div><label>Déjeuner du vendredi : fin</label><input type="time" id="supSchedFriEnd"></div>
+              <div><label>À partir du <small style="opacity:.7">(vide = toutes les journées, passées comprises)</small></label><input type="date" id="supSchedFrom"></div>
+            </div>
+            <div class="section-sub" style="margin-top:8px;">💡 Pour changer l'horaire plus tard sans toucher au passé : modifie les heures et mets la date du premier jour concerné dans « À partir du ». Les journées d'avant gardent l'ancien horaire.</div>
+            <button onclick="saveSupSchedule()" style="margin-top:10px;padding:10px 18px;border-radius:8px;border:1px solid var(--accent, var(--green));background:transparent;color:var(--text);font-weight:700;cursor:pointer;">💾 Enregistrer les horaires des superviseurs</button>
+            <div id="supSchedHistory" style="margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.7;"></div>
+          </div>
+
+          <div class="settings-box" id="ipLockBox">
+            <label style="margin-bottom:6px;">🌐 Verrouillage par adresse IP</label>
+            <div class="section-sub" style="margin-top:-2px;">Les agents que tu coches ne peuvent utiliser le CRM que depuis la connexion de l'entreprise : <b>tout le temps</b> ou <b>entre deux heures</b> (heure du Maroc). Hors de ces adresses, ils voient « Connexion refusée hors de l'entreprise » et ne peuvent rien faire.</div>
+            <label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer;"><input type="checkbox" id="ipLockEnabled" style="width:auto;"> Activer le verrouillage</label>
+            <label style="margin:10px 0 6px;">Adresses IP autorisées</label>
+            <div id="ipLockIps" style="display:flex;flex-direction:column;gap:6px;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+              <input type="text" id="ipLockNewIp" placeholder="ex : 102.50.251.62" style="max-width:220px;">
+              <button onclick="ipLockAjouterIp()" style="padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">➕ Ajouter</button>
+              <button onclick="ipLockDetecter()" style="padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">🔎 Voir mon adresse actuelle</button>
+            </div>
+            <div id="ipLockDetected" class="section-sub" style="margin-top:6px;"></div>
+            <label style="margin:16px 0 6px;">Agents verrouillés</label>
+            <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Verrouillé</th><th>Quand</th><th>De</th><th>À</th></tr></thead><tbody id="ipLockAgents"></tbody></table></div>
+            <label style="display:flex;gap:8px;align-items:center;margin:12px 0 4px;cursor:pointer;"><input type="checkbox" id="ipLockFailOpen" style="width:auto;"> Si l'adresse ne peut pas être vérifiée (panne internet du service de vérification), laisser passer</label>
+            <div class="section-sub" style="margin-top:0;">Décoché : l'agent verrouillé est bloqué tant que la vérification échoue (plus sûr, mais il ne peut pas travailler pendant une panne).</div>
+            <button onclick="saveIpLock()" style="margin-top:10px;padding:10px 18px;border-radius:8px;border:1px solid var(--accent, var(--green));background:transparent;color:var(--text);font-weight:700;cursor:pointer;">💾 Enregistrer le verrouillage</button>
+          </div>
 
         <div class="settings-box" style="border-color:rgba(229,90,90,0.45);">
           <label>🌍 Heure du Maroc — utilisée pour tous les pointages</label>
@@ -5708,6 +5724,7 @@ function showAdminSub(sub){
     renderUndoPanel();          // ↩️ rappelle qu'un import est encore annulable
     renderBackofficeInboxPanel();
     renderNonConfPanel();       // 🚫 liste des non conformes du mois, avec le retrait
+    try{ if(window.ilekManuelRendre) window.ilekManuelRendre(); }catch(e){}   // r351 : marquage manuel des retours Ilek
     renderNonConfReturnsPanel();// ↩️ retours tombant sur un contrat non conforme
     renderPaySourcePanel();
     renderReturnCostPerAgent();
@@ -22627,21 +22644,56 @@ async function qaCharger(){
         var nbRet = br.retractions || 0, nbRetour = br.returnsCount || 0, nbNc = det.filter(function(d){ return d.type === 'nc'; }).length;
         // Rétractations du compteur de paie non rattachées à un contrat de la liste (saisies « à l'aveugle » ou en retard).
         var liees = det.filter(function(d){ return d.type === 'retract'; }).length;
-        lignes.push({ agent:a, archive:isArchivedAgent(a), signes:br.validated || 0, nets:br.payable || 0, n:{ retract:nbRet, retour:nbRetour, retires:(br.returnsDeducted || 0), nc:nbNc }, sansDetail: Math.max(0, nbRet - liees), det:det });
+        let obj = null; try{ obj = await qaObjectifPrime(a, y, m, br.payable || 0); }catch(e){}
+        lignes.push({ obj:obj, agent:a, archive:isArchivedAgent(a), signes:br.validated || 0, nets:br.payable || 0, n:{ retract:nbRet, retour:nbRetour, retires:(br.returnsDeducted || 0), nc:nbNc }, sansDetail: Math.max(0, nbRet - liees), det:det });
       }));
     } else {
-      var ilek = [];
+      var ilek = [], viseMap = {}; try{ viseMap = await window.ilekViseDuMois(mv) || {}; }catch(e){}
       await Promise.all(agents.map(async function(a){
         var d = await window.ilekDuMois(a, mv); if(!d) return;
-        var det = (d.retours || []).map(function(r){ return { type: r.motif || 'autre', num:r.numero || '', nom:r.nom || '', date:r.le || '', motif:(r.motifTexte || '') + (r.energie ? ' · ' + r.energie : '') }; });
+        var det = (d.retours || []).map(function(r){ var tp = (r.motif === 'retractation' || r.motif === 'impaye') ? r.motif : 'autre'; return { type: tp, num:r.numero || '', nom:r.nom || '', date:(r.le || '').slice(0,10), motif:[(r.motifTexte || (tp === 'autre' && r.motif && r.motif !== 'autre' ? r.motif : '')), r.energie, r.commentaire ? '« ' + r.commentaire + ' »' : ''].filter(Boolean).join(' · ') }; });
         var n = { retractation:0, impaye:0, autre:0 };
         (d.retours || []).forEach(function(r){ var k = (r.motif === 'retractation' || r.motif === 'impaye') ? r.motif : 'autre'; n[k] += Number(r.energies) || 1; });
-        ilek.push({ agent:a, archive:isArchivedAgent(a), signes:d.energies || 0, nets:d.nets || 0, n:n, sansDetail:0, det:det });
+        var oI = { mini: Number(d.objectif) || 0, vise: Number(viseMap[a]) || 0, fait: Number(d.nets) || 0, texte: (d.energies || 0) + ' énergie(s) − ' + (d.retoursEnergies || 0) + ' retirée(s) = ' + (Math.round((Number(d.nets) || 0) * 10) / 10) };
+        ilek.push({ obj:oI, agent:a, archive:isArchivedAgent(a), signes:d.energies || 0, nets:d.nets || 0, n:n, sansDetail:0, det:det });
       }));
       lignes = ilek;
     }
   }catch(e){ console.error('qaCharger', e); el.innerHTML = '<div class="empty">⚠️ Lecture impossible : ' + qaEsc(e.message || e) + '</div>'; return; }
   qaEtat.donnees = lignes; qaRendu();
+}
+
+
+// r351 — Objectif du mois d'un agent pour « Qualité des agents ». Même calcul que la paie : pour Prime, les énergies nettes valent
+// ENERGIE_EQUIV_ASSISTANCE assistances (monthlyObjectifStatus) ; pour Ilek, on compte les énergies nettes (retours déduits).
+async function qaObjectifPrime(a, y, m, payable){
+  const st = await monthlyObjectifStatus(a, y, m, payable);
+  if(!st || st.isIndep) return null;
+  const vise = await getMonthlyDesiredObjective(a, y, m);
+  const equiv = Math.max(0, (st.realized || 0) - payable);
+  return { mini: st.objectif || 0, vise: vise || 0, fait: st.realized || 0,
+    texte: payable + ' assistance' + (payable > 1 ? 's' : '') + (equiv > 0 ? ' + ' + (equiv / ENERGIE_EQUIV_ASSISTANCE) + ' énergie(s) × ' + ENERGIE_EQUIV_ASSISTANCE : '') + ' = ' + (st.realized || 0) };
+}
+function qaEtatObjectif(o, mv){
+  if(!o || !(o.mini > 0)) return { c:'var(--muted)', t:'Pas d\'objectif minimum' };
+  if(o.fait >= o.mini) return { c:'var(--green)', t:'Objectif atteint' };
+  const cur = todayStr().slice(0,7);
+  if(mv < cur) return { c:'var(--red)', t:'Objectif manqué' };
+  if(mv > cur) return { c:'var(--muted)', t:'À venir' };
+  const y = Number(mv.slice(0,4)), m = Number(mv.slice(5,7)), jours = new Date(y, m, 0).getDate(), j = nowMA().getDate();
+  const attendu = o.mini * j / jours;
+  return o.fait >= attendu * 0.9 ? { c:'var(--amber)', t:'Dans les temps' } : { c:'var(--red)', t:'En retard sur le rythme' };
+}
+function qaObjCellule(l, mv, unite){
+  const o = l.obj;
+  if(!o) return '<td style="color:var(--muted);font-size:12px;">Indépendant</td>';
+  const e = qaEtatObjectif(o, mv), cible = o.vise > o.mini ? o.vise : o.mini;
+  if(!(cible > 0)) return '<td style="color:var(--muted);font-size:12px;">Pas d\'objectif<br><span style="font-size:11px;">' + qaEsc(o.texte) + '</span></td>';
+  const pct = Math.min(100, Math.round(o.fait / cible * 100)), tick = o.mini > 0 && o.vise > o.mini ? Math.round(o.mini / cible * 100) : 0;
+  const manque = o.mini > o.fait ? o.mini - o.fait : 0, manqueV = o.vise > o.fait ? o.vise - o.fait : 0;
+  return '<td style="min-width:190px;text-align:left;"><div style="font-weight:700;color:' + e.c + ';font-size:12.5px;">' + e.t + ' — ' + o.fait + ' / ' + o.mini + (o.vise > 0 ? ' <span style="color:var(--muted);font-weight:600;">(visé ' + o.vise + ')</span>' : '') + '</div>' +
+    '<div style="position:relative;height:8px;border-radius:5px;background:rgba(127,127,127,0.22);margin:5px 0;"><div style="height:100%;width:' + pct + '%;border-radius:5px;background:' + e.c + ';"></div>' + (tick ? '<div style="position:absolute;left:' + tick + '%;top:-2px;width:2px;height:12px;background:var(--text);opacity:.7;" title="Objectif minimum"></div>' : '') + '</div>' +
+    '<div style="font-size:11px;color:var(--muted);line-height:1.5;">' + qaEsc(o.texte) + (manque ? '<br>Il manque ' + manque + ' pour le minimum' + (manqueV ? ', ' + manqueV + ' pour le visé' : '') : (manqueV ? '<br>Il manque ' + manqueV + ' pour le visé' : '')) + '</div></td>';
 }
 
 function qaTypes(){
@@ -22666,6 +22718,7 @@ function qaRendu(){
   lignes.sort(function(a,b){
     var x, y;
     if(col === 'agent'){ return sg * a.agent.localeCompare(b.agent, 'fr'); }
+    if(col === 'obj'){ var ra = (a.obj && a.obj.mini > 0) ? a.obj.fait / a.obj.mini : 99, rb = (b.obj && b.obj.mini > 0) ? b.obj.fait / b.obj.mini : 99; return -sg * (ra - rb); }   // « plus mauvais » = le plus loin de son objectif (1er clic : les plus en retard en haut)
     if(col === 'signes' || col === 'nets' || col === 'total' || col === 'pct'){ x = a[col]; y = b[col]; }
     else { x = a.n[col] || 0; y = b.n[col] || 0; }
     return (x === y) ? (b.total - a.total) : sg * (x - y);
@@ -22676,23 +22729,23 @@ function qaRendu(){
     '<button type="button" onclick="qaMois(-1)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;">◀</button>' +
     '<b>' + qaEsc(billingMonthLabel(qaEtat.mois)) + '</b>' +
     '<button type="button" onclick="qaMois(1)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;">▶</button>' +
-    '<select onchange="qaRegler(\'agent\', this.value)"><option value="">Tous les agents</option>' + qaEtat.donnees.filter(function(l){ return qaEtat.archives || !l.archive; }).map(function(l){ return '<option value="' + qaEsc(l.agent) + '"' + (qaEtat.agent === l.agent ? ' selected' : '') + '>' + qaEsc(l.agent) + '</option>'; }).join('') + '</select>' +
-    '<select onchange="qaRegler(\'type\', this.value)"><option value="">Tous les types</option>' + types.map(function(t){ return '<option value="' + t[0] + '"' + (qaEtat.type === t[0] ? ' selected' : '') + '>' + t[1] + ' seulement</option>'; }).join('') + '</select>' +
+    '<select style="max-width:240px;" onchange="qaRegler(\'agent\', this.value)"><option value="">Tous les agents</option>' + qaEtat.donnees.filter(function(l){ return qaEtat.archives || !l.archive; }).map(function(l){ return '<option value="' + qaEsc(l.agent) + '"' + (qaEtat.agent === l.agent ? ' selected' : '') + '>' + qaEsc(l.agent) + '</option>'; }).join('') + '</select>' +
+    '<select style="max-width:240px;" onchange="qaRegler(\'type\', this.value)"><option value="">Tous les types</option>' + types.map(function(t){ return '<option value="' + t[0] + '"' + (qaEtat.type === t[0] ? ' selected' : '') + '>' + t[1] + ' seulement</option>'; }).join('') + '</select>' +
     '<input type="text" placeholder="🔎 n° de contrat, client, motif…" value="' + qaEsc(qaEtat.texte) + '" onchange="qaRegler(\'texte\', this.value)" style="min-width:200px;">' +
     '<label style="display:inline-flex;gap:5px;align-items:center;font-size:12.5px;"><input type="checkbox" ' + (qaEtat.archives ? 'checked' : '') + ' onchange="qaRegler(\'archives\', this.checked)"> Afficher les anciens agents</label>' +
     '</div>';
   if(!lignes.length){ el.innerHTML = h + '<div class="empty">Aucun agent à afficher pour ce choix.</div>'; return; }
   var unite = qaEtat.produit === 'prime' ? 'contrats' : 'énergies';
-  h += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr>' + th('agent','Agent') + th('signes','Signés') + th('nets','Nets') +
+  h += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr>' + th('agent','Agent') + th('signes','Signés') + th('nets','Nets') + th('obj','Objectif du mois') +
     types.map(function(t){ return th(t[0], t[1]) + (t[0] === 'retour' ? th('retires','Contrats retirés') : ''); }).join('') + th('total','Total') + th('pct','Part des ' + unite + ' signés perdue') + '</tr></thead><tbody>';
   lignes.forEach(function(l){
     var ouv = !!qaEtat.ouverts[l.agent], safe = l.agent.replace(/'/g, "\\'");
     var coul = l.pct >= 20 ? 'var(--red)' : (l.pct >= 10 ? 'var(--amber)' : 'var(--text)');
-    h += '<tr style="cursor:pointer;" onclick="qaOuvrir(\'' + safe + '\')"><td><b>' + (ouv ? '▾ ' : '▸ ') + qaEsc(l.agent) + '</b>' + (l.archive ? ' <span style="color:var(--muted);font-size:11px;">(ancien)</span>' : '') + '</td><td>' + l.signes + '</td><td>' + l.nets + '</td>' +
+    h += '<tr style="cursor:pointer;" onclick="qaOuvrir(\'' + safe + '\')"><td><b>' + (ouv ? '▾ ' : '▸ ') + qaEsc(l.agent) + '</b>' + (l.archive ? ' <span style="color:var(--muted);font-size:11px;">(ancien)</span>' : '') + '</td><td>' + l.signes + '</td><td>' + l.nets + '</td>' + qaObjCellule(l, qaEtat.mois, unite) +
       types.map(function(t){ return '<td>' + (l.n[t[0]] || 0) + '</td>' + (t[0] === 'retour' ? '<td>' + (l.n.retires || 0) + '</td>' : ''); }).join('') +
       '<td><b>' + l.total + '</b></td><td style="color:' + coul + ';font-weight:700;">' + (Math.round(l.pct * 10) / 10).toString().replace('.', ',') + ' %</td></tr>';
     if(ouv){
-      h += '<tr><td colspan="' + (5 + types.length + (qaEtat.produit === 'prime' ? 1 : 0)) + '" style="background:rgba(127,127,127,0.07);">';
+      h += '<tr><td colspan="' + (6 + types.length + (qaEtat.produit === 'prime' ? 1 : 0)) + '" style="background:rgba(127,127,127,0.07);">';
       if(!l.detF.length) h += '<i style="color:var(--muted);">Aucun détail à afficher.</i>';
       else h += '<table class="salary-table"><thead><tr><th>Type</th><th>N°</th><th>Client</th><th>Date / mois</th><th>Motif</th></tr></thead><tbody>' +
         l.detF.map(function(d){ return '<tr><td>' + qaEsc(labels[d.type] || d.type) + '</td><td>' + qaEsc(d.num) + '</td><td>' + qaEsc(d.nom) + '</td><td>' + qaEsc(d.date) + '</td><td style="font-size:12px;color:var(--muted);">' + qaEsc(d.motif) + '</td></tr>'; }).join('') + '</tbody></table>';
@@ -31601,7 +31654,7 @@ async function renderNonConfPanel(){
       <td style="font-family:monospace; font-size:11.5px;">${escapeHtml(r.numContrat || r.reference || '—')}</td>
       <td style="white-space:nowrap;">${r.source === SOURCE_INVERSION ? '<span style="color:var(--independant); font-weight:700;">🔀 Inversion nom prénom</span>' : '<span style="color:var(--muted);">Backoffice</span>'}</td>
       <td>${r.retracted ? '<span class="tag warn">rétracté</span>' : ''}</td>
-      <td>${r.source === SOURCE_INVERSION ? `<button onclick="remettreInversion('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Annule l'inversion : le contrat redevient conforme et payé à l'agent." style="padding:6px 12px;border-radius:8px;border:1px solid var(--green);background:transparent;color:var(--green);font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;">↩️ Remettre comme avant</button>` : `<button onclick="retirerNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Retire cette ligne du classeur des non conformes. N'ajoute rien à la paie de l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">🗑️ Retirer</button>`}</td>
+      <td><button onclick="basculerRetracteNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="${r.retracted ? 'Retire la marque rétracté' : 'Le contrat reste ici, marqué rétracté : tu n\'es plus payé dessus. L\'agent n\'est pas touché.'}" style="padding:6px 12px;border-radius:7px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:700;font-size:11.5px;cursor:pointer;margin-right:6px;white-space:nowrap;">${r.retracted ? '↩️ Retirer « rétracté »' : '🔻 Passer en rétractation'}</button>${r.source === SOURCE_INVERSION ? `<button onclick="remettreInversion('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Annule l'inversion : le contrat redevient conforme et payé à l'agent." style="padding:6px 12px;border-radius:8px;border:1px solid var(--green);background:transparent;color:var(--green);font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;">↩️ Remettre comme avant</button>` : `<button onclick="retirerNonConforme('${escapeHtml(monthVal)}', '${escapeHtml(ident)}', this)" title="Retire cette ligne du classeur des non conformes. N'ajoute rien à la paie de l'agent." style="padding:6px 12px;border-radius:7px;border:1px solid var(--red);background:rgba(229,72,77,0.1);color:var(--red);font-weight:700;font-size:11.5px;cursor:pointer;">🗑️ Retirer</button>`}</td>
     </tr>`;
   }).join('');
   const bandeauFiltre = filtreInv ? `<div style="padding:9px 13px;border-radius:9px;background:rgba(232,168,56,0.12);border:1px solid var(--amber);margin-bottom:10px;font-size:12.5px;">🔀 Tu vois seulement les <b>inversions nom prénom</b> (${tri.length}). <button onclick="window.ncFiltreMotif='';renderNonConfPanel();" style="margin-left:8px;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;">Tout afficher</button></div>` : '';
@@ -31691,6 +31744,31 @@ function ncTousRendu(){
 async function ncTousTrancher(monthVal, cle, choix, btn){
   await trancherConflitNC(monthVal, cle, choix, btn);
   await ncChercherTousMois();
+}
+
+// r351 — Passer un contrat NON CONFORME en rétractation (ou l'en retirer). Le contrat RESTE dans la liste des non
+// conformes : on pose seulement la marque « rétracté », qui le sort de TON chiffre d'affaires (tu n'es plus payé dessus).
+// L'agent n'est jamais touché : il n'est déjà pas payé sur un non conforme, et aucun compteur de rétractation n'est modifié.
+async function basculerRetracteNonConforme(monthVal, ident, btn){
+  if(!monthVal || !ident) return;
+  const store = await getBillingNonConf(monthVal);
+  const rows = (store && store.rows) || [];
+  let idx = ident.startsWith('idx:') ? Number(ident.slice(4)) : rows.findIndex(r => (billingDedupKeys(r)[0] || '') === ident);
+  if(idx < 0 || idx >= rows.length){ uiAlert("Cette ligne n'est plus dans la liste — elle a dû être retirée entre-temps. La liste va se rafraîchir."); await renderNonConfPanel(); return; }
+  const r = rows[idx], next = !r.retracted;
+  if(!(await window.uiConfirm({ titre: next ? 'Passer ce non conforme en rétractation ?' : 'Retirer la marque « rétracté » ?', icone:'↩️', ton:'warn',
+    details:[['Agent', r.agent || '?'], ['Client', r.nom || ''], ['Numéro', r.numContrat || r.reference || ''], ['Mois', billingMonthLabel(monthVal)]],
+    liste: next ? ["Le contrat reste dans la liste des non conformes, marqué « rétracté ».", "Tu n'es plus payé dessus.", "L'agent n'est pas touché : il n'était déjà pas payé sur ce contrat."]
+                : ["Le contrat redevient un non conforme normal, compté dans ton chiffre d'affaires."],
+    oui: next ? 'Oui, passer en rétractation' : 'Oui, retirer la marque', non:'Annuler' }))) return;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+  if(next){ r.retracted = true; r.retractedAt = new Date().toISOString(); } else { delete r.retracted; delete r.retractedAt; }
+  try{ await billingSave(billingNonConfKey(monthVal), store); }
+  catch(e){ if(next){ delete r.retracted; delete r.retractedAt; } else { r.retracted = true; } uiAlert('Enregistrement impossible : ' + (e && e.message ? e.message : e)); if(btn){ btn.disabled = false; } return; }
+  logAudit('Admin', next ? 'Non conforme passé en rétractation' : 'Marque rétracté retirée d\'un non conforme', `${r.agent || '?'} — contrat ${r.numContrat || r.reference || '?'} — ${monthVal}`);
+  try{ billingInvalidate(); clearRenderCaches(); }catch(e){}
+  await renderNonConfPanel();
+  try{ if((document.getElementById('globalSearchInput') || {}).value) await searchContractGlobal(); }catch(e){}
 }
 
 async function retirerNonConforme(monthVal, ident, btn){
@@ -33218,6 +33296,7 @@ async function searchContractGlobal(){
       action = inv
         ? `<button onclick="remettreInversion('${mv}', '${identNc}', this)" title="Annule l'inversion : le contrat redevient conforme et payé à l'agent." style="padding:5px 11px; border-radius:7px; border:1px solid var(--green); background:transparent; color:var(--green); font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">↩️ Remettre comme avant</button>`
         : '<span style="font-size:12px; color:var(--muted);">Voir « Contrats non conformes »</span>';
+      action = `<button onclick="basculerRetracteNonConforme('${mv}', '${identNc}', this)" title="Le contrat reste en non conforme, marqué rétracté : tu n'es plus payé dessus. L'agent n'est pas touché." style="padding:5px 11px;border-radius:7px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;margin-bottom:4px;white-space:nowrap;">${r.retracted ? '↩️ Retirer « rétracté »' : '🔻 Passer en rétractation'}</button><br>` + action;
     } else if(isRet){
       etat = r.reclassifiedAsRetraction ? '<span style="color:var(--independant);">🏷️ reclassé en rétractation</span>'
            : r.dismissed ? '<span style="color:var(--muted);">écarté</span>'
@@ -38426,7 +38505,7 @@ async function renderAssistanceHistory(){
           (auto ? ' <button type="button" class="ct-btn nc" style="padding:3px 9px;font-size:12px;" onclick="boRenvoyer(\'' + esc(x._key) + '\')">🔁 Renvoyer</button>' : '') + '</li>'; }).join('') + '</ul></div>';
       return r;
     }
-    h += ctlBloc('prime', '🔵 Prime', false) + adEcartCarte() + ctlBloc('ilek', '🟢 Ilek', true) +
+    h += ctlBloc('prime', '🔵 Prime', false) + ctlBloc('ilek', '🟢 Ilek', true) +
       (tests ? '<div style="font-size:12px;color:var(--muted);">🧪 ' + tests + ' contrat(s) de test non comptés</div>' : '');
     h += '</div>';
     // nettoyage des données de test (aperçu d'abord, suppression seulement après confirmation)
@@ -39123,6 +39202,25 @@ async function renderAssistanceHistory(){
     try{ logAudit('Admin', 'Ilek : ' + champ + (agent ? ' (' + agent + ')' : '') + ' = ' + valeur, ''); }catch(e){}
     adIlekRafraichir();
   };
+  window.ilekViseDuMois = async function(mois){ try{ return await enerObjLire('Mois', mois); }catch(e){ return {}; } };
+  function adIlekRetoursHtml(){
+    var h = '';
+    var T = ilekMem.ret || { rows: [] };
+    var duMois = T.rows.filter(function(r){ return r.mois === adIlek.mois; });
+    h += '<div><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;"><b>↩️ Retours Ilek du mois</b><input type="month" value="' + esc(adIlek.mois) + '" onchange="adIlekMois(this.value)"></div>' +
+      '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
+        '<div style="font-size:12.5px;"><b>📄 Importer le fichier Excel d\'Ilek</b></div>' +
+        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Le CRM ne lit que les lignes « Annulé » (rétractation, impayé, autre) : <b>1 ligne = 1 énergie retirée</b>, sans aucune division. Elles sont retirées sur le mois affiché ci-dessus ; tu vérifies la liste avant de confirmer.</div>' +
+        '<input type="file" id="ilekXlsx" accept=".xlsx" style="max-width:100%;"> ' +
+        '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekFichier()">📄 Lire le fichier</button></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Ou colle ici les numéros de contrat Ilek revenus impayés (un par ligne, ou séparés par des espaces). Ils sont retirés sur le mois affiché ci-dessus. Un numéro déjà importé est ignoré.</div>' +
+      '<textarea id="ilekImportTxt" rows="3" placeholder="IL-5521&#10;IL-5530" style="width:100%;box-sizing:border-box;"></textarea>' +
+      '<div style="margin-top:6px;"><button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekImporter()">↩️ Importer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
+      (duMois.length ? '<div style="margin-top:8px;font-size:13px;">' + duMois.map(function(r){ return '<div style="padding:4px 0;border-top:1px solid var(--border);">#' + esc(r.numero) + ' · ' + esc(r.nom || '') + ' — ' + esc(r.agent) + ' (' + (r.energies || 1) + ' énergie' + ((r.energies || 1) > 1 ? 's' : '') + ')' + (r.motif ? ' · <b style="color:var(--amber);">' + esc(ilekMotifLib(r.motif)) + '</b>' : '') + (r.energie ? ' <span style="color:var(--muted);">(' + esc(r.energie) + ')</span>' : '') + (r.commentaire ? ' <span style="color:var(--muted);">· « ' + esc(r.commentaire) + ' »</span>' : '') + ' <button type="button" class="ct-btn" style="padding:2px 8px;font-size:12px;" data-n="' + esc(r.numero) + '" onclick="adIlekRetirer(this.getAttribute(\'data-n\'))">✖ Retirer</button></div>'; }).join('') + '</div>' : '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Aucun retour importé pour ce mois.</div>') +
+      (adIlek.msg ? '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adIlek.msg) + '</div>' : '') + '</div></div>';
+    return h;
+  }
+
   function adIlekCarte(){
     var R = ilekMem.reg || { agents: (((regl.produits || {}).ilek || {}).agents) || [], commission: 200, diviseur: 1, objectifs: {} };
     var p = ilekMem.reg ? { commission: ilekMem.reg.commission, diviseur: ilekMem.reg.diviseur, objectifs: ilekMem.reg.objectifs, fixes: ilekMem.reg.fixes, avants: ilekMem.reg.avants, commissions: ilekMem.reg.commissions, agents: ilekMem.reg.agents, caPatron: ilekMem.reg.caPatron, chute: ilekMem.reg.chute } : (((regl.produits || {}).ilek) || {});
@@ -39183,20 +39281,6 @@ async function renderAssistanceHistory(){
       });
       h += '</div>';
     }
-    // retours : import à part
-    var T = ilekMem.ret || { rows: [] };
-    var duMois = T.rows.filter(function(r){ return r.mois === adIlek.mois; });
-    h += '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);"><b>↩️ Retours Ilek du mois affiché</b>' +
-      '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
-        '<div style="font-size:12.5px;"><b>📄 Importer le fichier Excel d\'Ilek</b></div>' +
-        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Le CRM ne lit que les lignes « Annulé » (rétractation, impayé, autre) : <b>1 ligne = 1 énergie retirée</b>, sans aucune division. Elles sont retirées sur le mois affiché ci-dessus ; tu vérifies la liste avant de confirmer.</div>' +
-        '<input type="file" id="ilekXlsx" accept=".xlsx" style="max-width:100%;"> ' +
-        '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekFichier()">📄 Lire le fichier</button></div>' +
-      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Ou colle ici les numéros de contrat Ilek revenus impayés (un par ligne, ou séparés par des espaces). Ils sont retirés sur le mois affiché ci-dessus. Un numéro déjà importé est ignoré.</div>' +
-      '<textarea id="ilekImportTxt" rows="3" placeholder="IL-5521&#10;IL-5530" style="width:100%;box-sizing:border-box;"></textarea>' +
-      '<div style="margin-top:6px;"><button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekImporter()">↩️ Importer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
-      (duMois.length ? '<div style="margin-top:8px;font-size:13px;">' + duMois.map(function(r){ return '<div style="padding:4px 0;border-top:1px solid var(--border);">#' + esc(r.numero) + ' · ' + esc(r.nom || '') + ' — ' + esc(r.agent) + ' (' + (r.energies || 1) + ' énergie' + ((r.energies || 1) > 1 ? 's' : '') + ')' + (r.motif ? ' · <b style="color:var(--amber);">' + esc(ilekMotifLib(r.motif)) + '</b>' : '') + (r.energie ? ' <span style="color:var(--muted);">(' + esc(r.energie) + ')</span>' : '') + ' <button type="button" class="ct-btn" style="padding:2px 8px;font-size:12px;" data-n="' + esc(r.numero) + '" onclick="adIlekRetirer(this.getAttribute(\'data-n\'))">✖ Retirer</button></div>'; }).join('') + '</div>' : '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Aucun retour importé pour ce mois.</div>') +
-      (adIlek.msg ? '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adIlek.msg) + '</div>' : '') + '</div></div>';
     h += adCarHtml();
     h += adDoublonsHtml();
     h += adAnnulesHtml();
@@ -39486,7 +39570,7 @@ async function renderAssistanceHistory(){
   };
   // ───────── r347 — Import direct du fichier Excel Ilek ─────────
   // Une ligne « Annulé » = une énergie retirée, 1 pour 1 (aucune division). Un Dual annulé en entier = 2 lignes (gaz + électricité) = 2 énergies.
-  function ilekMotifLib(m){ return m === 'impaye' ? 'impayé' : (m === 'retractation' ? 'rétractation' : (m === 'autre' ? 'autre' : '')); }
+  function ilekMotifLib(m){ return m === 'impaye' ? 'impayé' : (m === 'retractation' ? 'rétractation' : (m === 'autre' ? 'autre' : (m ? String(m) : ''))); }   // r351 : un motif ajouté à la main s'affiche tel qu'il a été écrit
   window.ilekMotifsTexte = function(rows){
     var c = {}; (rows || []).forEach(function(r){ var l = ilekMotifLib(r.motif); if(l) c[l] = (c[l] || 0) + (Number(r.energies) || 1); });
     return Object.keys(c).map(function(l){ return l + ' : ' + c[l]; }).join(', ');
@@ -39573,6 +39657,155 @@ async function renderAssistanceHistory(){
       if(inp) inp.value = '';
     }catch(e){ adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
     finally{ adIlek.occupe = false; adIlekRafraichir(); }
+  };
+
+  // ═══════════════ r351 — MARQUER À LA MAIN un retour Ilek (rétractation, impayé, autre, ou un motif que tu ajoutes) ═══════════════
+  // Panneau indépendant (hôte « ilekManuelHost », Facturation & Paie) : il ne se redessine PAS quand les contrats bougent, pour ne pas
+  // effacer ce que tu es en train de taper. Seuls les contrats VALIDÉS sont proposés : ce qui n'est pas validé n'est pas payé, rien à retirer.
+  // Même règle que l'import Excel : 1 énergie = 1 retour, sans division ; un contrat dual a 2 énergies (gaz + électricité).
+  var ilekMan = { q: '', msg: '', occ: false };
+  async function ilekMotifsPersoLire(){
+    try{ var r = await storageGet('ilekMotifs'); var o = (r && r.value) ? JSON.parse(r.value) : null; return (o && Array.isArray(o.list)) ? o.list.filter(function(x){ return x && String(x).trim(); }) : []; }
+    catch(e){ return []; }
+  }
+  async function ilekMotifsPersoEcrire(l){ return await storageSet('ilekMotifs', JSON.stringify({ list: l })); }
+  function ilekMotifBase(txt){
+    var n = ilekNormNom(txt);
+    if(n === 'retractation') return 'retractation'; if(n === 'impaye') return 'impaye'; if(n === 'autre') return 'autre';
+    return null;
+  }
+  window.ilekManuelRendre = async function(){
+    var el = document.getElementById('ilekManuelHost'); if(!el) return;
+    var tous = [], T = { rows: [] }, perso = [];
+    try{ tous = await ilekContratsTous(); T = await ilekRetoursLire(); perso = await ilekMotifsPersoLire(); }
+    catch(e){ el.innerHTML = '<div class="empty">⚠️ Lecture impossible : ' + esc(e && e.message ? e.message : e) + '</div>'; return; }
+    var q = ilekNormNom(ilekMan.q);
+    var h = '<div style="font-weight:700;">✍️ Marquer à la main un retour Ilek</div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 8px;">Cherche le contrat (numéro, nom du client, agent, téléphone), puis choisis le motif. Il est retiré sur le mois <b>' + esc(adIlek.mois) + '</b> (change le mois plus haut si besoin), 1 énergie pour 1 énergie, sans division. Seuls les contrats validés sont proposés : ce qui n\'est pas validé n\'est pas payé.</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;"><input type="text" id="ilekManuelQ" value="' + esc(ilekMan.q) + '" placeholder="🔎 numéro, nom du client, agent…" style="flex:1;min-width:220px;" onkeydown="if(event.key===\'Enter\'){ilekManuelChercher();}">' +
+      '<button type="button" class="ct-btn nc" onclick="ilekManuelChercher()">Chercher</button></div>';
+    if(ilekMan.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(ilekMan.msg) + '</div>';
+    if(q.length >= 2){
+      var trouves = tous.filter(function(v){
+        if(typeof isTestAgentName === 'function' && isTestAgentName(v.agent)) return false;
+        var c = v.champs || {};
+        return ilekNormNom([c.numero, c.numeroGaz, c.nom, c.prenom, c.telephone, c.email, v.agent].join(' ')).indexOf(q) >= 0;
+      });
+      var valides = trouves.filter(function(v){ return v.statut === 'conforme'; });
+      var pasValides = trouves.length - valides.length;
+      if(!trouves.length) h += '<div style="margin-top:10px;font-size:13px;color:var(--muted);">Aucun contrat Ilek ne correspond à « ' + esc(ilekMan.q) + ' ».</div>';
+      else {
+        if(pasValides) h += '<div style="margin-top:10px;font-size:12.5px;color:var(--muted);">' + pasValides + ' contrat(s) trouvé(s) mais pas validé(s) : ils ne sont pas payés, il n\'y a rien à retirer.</div>';
+        var motifOpts = '<option value="retractation">Rétractation</option><option value="impaye">Impayé</option><option value="autre">Autre</option>' +
+          perso.map(function(p){ return '<option value="perso:' + esc(p) + '">' + esc(p) + '</option>'; }).join('') + '<option value="__nouveau">➕ Nouveau motif…</option>';
+        valides.slice(0, 15).forEach(function(v){
+          var c = v.champs || {}, dual = c.type === 'dual';
+          var nums = [c.numero, dual ? c.numeroGaz : null].filter(Boolean);
+          var deja = T.rows.filter(function(r){ return nums.some(function(n){ return ilekNormNum(n) === ilekNormNum(r.numero); }); });
+          h += '<div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
+            '<div><b>' + esc(nomChamps(c) || '—') + '</b> — ' + esc(v.agent) + ' · ' + (dual ? 'Dual (2 énergies)' : (c.type === 'gaz' ? 'Gaz' : 'Électricité')) + ' · ' + esc(String(c.date || '').split('-').reverse().join('/')) + '</div>' +
+            '<div style="font-size:12px;color:var(--muted);">N° ' + nums.map(esc).join(' · ') + '</div>';
+          if(deja.length) h += '<div style="margin-top:6px;font-size:12.5px;">' + deja.map(function(r){ return '<div>⚠️ Déjà retiré : #' + esc(r.numero) + ' — ' + esc(ilekMotifLib(r.motif)) + (r.energie ? ' (' + esc(r.energie) + ')' : '') + ' sur ' + esc(r.mois) + (r.commentaire ? ' · « ' + esc(r.commentaire) + ' »' : '') + ' <button type="button" class="ct-btn" style="padding:2px 8px;font-size:12px;" data-n="' + esc(r.numero) + '" onclick="adIlekRetirer(this.getAttribute(\'data-n\')).then(function(){ilekManuelRendre();})">✖ Retirer</button></div>'; }).join('') + '</div>';
+          var restant = nums.length - deja.length;
+          if(restant > 0 || (!dual && !deja.length)){
+            h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">' +
+              '<select id="ilM_mo_' + esc(v._key) + '">' + motifOpts + '</select>' +
+              (dual ? '<select id="ilM_en_' + esc(v._key) + '"><option value="both">Les 2 énergies</option><option value="gaz">Gaz seulement</option><option value="elec">Électricité seulement</option></select>' : '') +
+              '<input type="text" id="ilM_co_' + esc(v._key) + '" placeholder="Commentaire (facultatif)" style="flex:1;min-width:180px;">' +
+              '<button type="button" class="ct-btn nc" data-k="' + esc(v._key) + '" onclick="ilekManuelMarquer(this.getAttribute(\'data-k\'))">↩️ Marquer</button></div>';
+          }
+          h += '</div>';
+        });
+        if(valides.length > 15) h += '<div style="margin-top:8px;font-size:12px;color:var(--muted);">' + (valides.length - 15) + ' autre(s) résultat(s) : précise ta recherche.</div>';
+      }
+    }
+    // motifs ajoutés par toi + suggestions tirées des fichiers Excel
+    var vus = {}; T.rows.forEach(function(r){ if(r.motif === 'autre' && r.motifTexte){ var n = ilekNormNom(r.motifTexte); if(n && !ilekMotifBase(r.motifTexte) && !perso.some(function(p){ return ilekNormNom(p) === n; })) vus[r.motifTexte] = (vus[r.motifTexte] || 0) + 1; } });
+    var sugg = Object.keys(vus);
+    h += '<div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border);"><b style="font-size:13px;">🏷️ Tes motifs</b>' +
+      '<div style="font-size:12px;color:var(--muted);margin:3px 0 6px;">Rétractation, impayé et autre existent toujours. Ajoute ici les motifs que le fournisseur invente ; ils apparaissent ensuite dans la liste de choix.</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+      perso.map(function(p, i){ var n = T.rows.filter(function(r){ return ilekNormNom(r.motif) === ilekNormNom(p); }).length;
+        return '<span style="padding:3px 9px;border:1px solid var(--border);border-radius:14px;font-size:12.5px;">' + esc(p) + ' (' + n + ') <button type="button" class="ct-btn" style="padding:0 6px;font-size:12px;" onclick="ilekMotifRenommer(' + i + ')" title="Renommer">✏️</button>' +
+          (n ? '' : ' <button type="button" class="ct-btn" style="padding:0 6px;font-size:12px;" onclick="ilekMotifSupprimer(' + i + ')" title="Supprimer (possible parce qu\'il n\'est utilisé nulle part)">🗑️</button>') + '</span>'; }).join('') +
+      '<button type="button" class="ct-btn" onclick="ilekMotifAjouter()">➕ Ajouter un motif</button></div>' +
+      (sugg.length ? '<div style="margin-top:8px;font-size:12.5px;">💡 Vus dans tes fichiers Excel, pas encore dans ta liste : ' + sugg.map(function(t){ return '<button type="button" class="ct-btn" style="padding:2px 9px;font-size:12px;" data-t="' + esc(t) + '" onclick="ilekMotifAjouter(this.getAttribute(\'data-t\'))">➕ ' + esc(t) + ' (' + vus[t] + ')</button>'; }).join(' ') + '</div>' : '') + '</div>';
+    el.innerHTML = h;
+  };
+  window.ilekManuelChercher = function(){ var i = document.getElementById('ilekManuelQ'); ilekMan.q = i ? i.value : ''; ilekMan.msg = ''; window.ilekManuelRendre(); };
+  window.ilekMotifAjouter = async function(texte){
+    var t = texte;
+    if(t == null) t = await uiPrompt('Nouveau motif\nÉcris le motif exactement comme tu veux le voir (ex. déménagement).', '');
+    t = String(t == null ? '' : t).trim(); if(!t) return;
+    if(ilekMotifBase(t)){ ilekMan.msg = '« ' + t + ' » existe déjà (motifs de base).'; return window.ilekManuelRendre(); }
+    var l = await ilekMotifsPersoLire();
+    if(l.some(function(p){ return ilekNormNom(p) === ilekNormNom(t); })){ ilekMan.msg = '« ' + t + ' » existe déjà dans ta liste.'; return window.ilekManuelRendre(); }
+    l.push(t); var ok = await ilekMotifsPersoEcrire(l);
+    ilekMan.msg = ok ? '✅ Motif « ' + t + ' » ajouté.' : '❌ Enregistrement impossible.';
+    if(ok){ try{ logAudit('Admin', 'Motif Ilek ajouté : ' + t, ''); }catch(e){} }
+    window.ilekManuelRendre();
+  };
+  window.ilekMotifRenommer = async function(i){
+    var l = await ilekMotifsPersoLire(), ancien = l[i]; if(ancien == null) return;
+    var t = await uiPrompt('Renommer le motif\nLes retours déjà marqués avec ce motif prennent aussi le nouveau nom.', ancien);
+    t = String(t == null ? '' : t).trim(); if(!t || t === ancien) return;
+    if(ilekMotifBase(t) || l.some(function(p, k){ return k !== i && ilekNormNom(p) === ilekNormNom(t); })){ ilekMan.msg = '« ' + t + ' » existe déjà.'; return window.ilekManuelRendre(); }
+    window.ilekInvalider(); var T = await ilekRetoursLire();
+    var rows = T.rows.map(function(r){ return ilekNormNom(r.motif) === ilekNormNom(ancien) ? Object.assign({}, r, { motif: t }) : r; });
+    l[i] = t;
+    var ok = await storageSet('ilekRetours', JSON.stringify({ rows: rows })) && await ilekMotifsPersoEcrire(l);
+    ilekMan.msg = ok ? '✅ Motif renommé en « ' + t + ' ».' : '❌ Enregistrement impossible.';
+    if(ok){ try{ logAudit('Admin', 'Motif Ilek renommé : ' + ancien + ' → ' + t, ''); }catch(e){} }
+    adIlekRafraichir(); window.ilekManuelRendre();
+  };
+  window.ilekMotifSupprimer = async function(i){
+    var l = await ilekMotifsPersoLire(), m = l[i]; if(m == null) return;
+    window.ilekInvalider(); var T = await ilekRetoursLire();
+    if(T.rows.some(function(r){ return ilekNormNom(r.motif) === ilekNormNom(m); })){ ilekMan.msg = 'Ce motif est utilisé : tu peux le renommer, pas le supprimer.'; return window.ilekManuelRendre(); }
+    l.splice(i, 1); var ok = await ilekMotifsPersoEcrire(l);
+    ilekMan.msg = ok ? '✅ Motif supprimé.' : '❌ Enregistrement impossible.';
+    window.ilekManuelRendre();
+  };
+  window.ilekManuelMarquer = async function(cle){
+    if(ilekMan.occ) return; ilekMan.occ = true;
+    try{
+      var tous = await ilekContratsTous(), v = tous.filter(function(x){ return x._key === cle; })[0];
+      if(!v || v.statut !== 'conforme'){ ilekMan.msg = '⚠️ Ce contrat n\'est pas (ou plus) validé : rien à retirer.'; return; }
+      var c = v.champs || {}, dual = c.type === 'dual';
+      var mo = document.getElementById('ilM_mo_' + cle), co = document.getElementById('ilM_co_' + cle), en = document.getElementById('ilM_en_' + cle);
+      var choix = mo ? mo.value : 'autre', comm = co ? String(co.value || '').trim() : '', quoi = en ? en.value : 'both';
+      var motif, motifTexte = '';
+      if(choix === '__nouveau'){
+        var t = await uiPrompt('Nouveau motif\nÉcris le motif exactement comme tu veux le voir (ex. déménagement).', '');
+        t = String(t == null ? '' : t).trim(); if(!t){ return; }
+        var b = ilekMotifBase(t);
+        if(b){ motif = b; } else {
+          motif = t; motifTexte = t;
+          var l = await ilekMotifsPersoLire(); if(!l.some(function(p){ return ilekNormNom(p) === ilekNormNom(t); })){ l.push(t); await ilekMotifsPersoEcrire(l); }
+        }
+      } else if(choix.indexOf('perso:') === 0){ motif = choix.slice(6); motifTexte = motif; }
+      else motif = choix;
+      var cibles = [];
+      if(dual){
+        if(quoi !== 'gaz' && c.numero) cibles.push({ num: c.numero, energie: 'Electricité' });
+        if(quoi !== 'elec' && c.numeroGaz) cibles.push({ num: c.numeroGaz, energie: 'Gaz' });
+      } else cibles.push({ num: c.numero || c.numeroGaz, energie: c.type === 'gaz' ? 'Gaz' : 'Electricité' });
+      window.ilekInvalider(); var T = await ilekRetoursLire(), rows = T.rows.slice(), nouveaux = [];
+      cibles.forEach(function(x){
+        if(!x.num || rows.some(function(r){ return ilekNormNum(r.numero) === ilekNormNum(x.num); })) return;
+        nouveaux.push({ numero: String(x.num).toUpperCase(), agent: v.agent, mois: adIlek.mois, energies: 1, nom: nomChamps(c), le: new Date().toISOString(), motif: motif, motifTexte: motifTexte, energie: x.energie, commentaire: comm, manuel: true });
+      });
+      if(!nouveaux.length){ ilekMan.msg = 'Rien à marquer : ce contrat est déjà retiré.'; return; }
+      if(!(await uiConfirm({ titre:'Marquer ce retour Ilek ?', icone:'↩️', ton:'warn',
+        details:[['Agent', v.agent], ['Client', nomChamps(c) || ''], ['Motif', ilekMotifLib(motif)], ['Mois', adIlek.mois]],
+        liste: nouveaux.map(function(r){ return '#' + r.numero + ' (' + r.energie + ') : 1 énergie retirée'; }).concat(comm ? ['Commentaire : ' + comm] : []),
+        oui:'Oui, marquer', non:'Annuler' }))) return;
+      nouveaux.forEach(function(r){ rows.push(r); });
+      var ok = await storageSet('ilekRetours', JSON.stringify({ rows: rows }));
+      ilekMan.msg = ok ? '✅ ' + nouveaux.length + ' énergie(s) retirée(s) pour ' + v.agent + ' sur ' + adIlek.mois + ' (' + ilekMotifLib(motif) + ').' : '❌ Enregistrement impossible.';
+      if(ok){ try{ logAudit('Admin', 'Retour Ilek marqué à la main : ' + nouveaux.length + ' énergie(s) — ' + ilekMotifLib(motif), v.agent + ' — ' + nouveaux.map(function(r){ return r.numero; }).join(', ') + ' — ' + adIlek.mois); }catch(e){} }
+    }catch(e){ ilekMan.msg = '❌ ' + (e && e.message ? e.message : e); }
+    finally{ ilekMan.occ = false; adIlekRafraichir(); window.ilekManuelRendre(); }
   };
   window.adIlekRetirer = async function(numero){
     if(!(await uiConfirm({ titre:'Retirer ce retour Ilek ?', icone:'✖', ton:'warn', texte:'Le contrat #' + numero + ' ne sera plus compté comme retour.', oui:'Retirer', non:'Annuler' }))) return;
@@ -40022,6 +40255,8 @@ async function renderAssistanceHistory(){
     var note = adAttente > 0 ? '<div style="margin:0 0 10px;font-size:12.5px;color:var(--muted);">📥 ' + adAttente + ' contrat(s) en attente de vérification chez le backoffice.</div>' : '';
     el.innerHTML = derogs + note + h + envoiCtl;                    // les demandes de déblocage (urgentes) en premier
     try{ var ih = document.getElementById('remuIlekHost'); if(ih) ih.innerHTML = adIlekCarte(); }catch(e){}
+    try{ var rh = document.getElementById('billingIlekRetoursHost'); if(rh) rh.innerHTML = adIlekRetoursHtml(); }catch(e){}   // r351 : retours Ilek rangés à côté des retours Prime (Facturation & Paie)
+    try{ var eh = document.getElementById('adEcartHost'); if(eh) eh.innerHTML = adEcartCarte(); }catch(e){}                   // r351 : « Écart avec la facturation » rangé dans Facturation & Paie
     var tb = document.getElementById('subtabContrats');             // pastille rouge sur l'onglet quand une demande attend
     if(tb) tb.innerHTML = '📨 Contrats' + (adListe.length ? ' <span style="background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px;">' + adListe.length + '</span>' : '');
   }
