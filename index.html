@@ -2293,6 +2293,16 @@ async function tryDeviceGateAdmin(){
           <div id="retractAdminContractsList" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);"></div>
         </div>
 
+        <div class="settings-box" style="border-color:rgba(231,76,60,0.4);">
+          <label style="margin-bottom:6px;">📊 Qualité des agents — rétractations, retours, non conformes</label>
+          <div class="section-sub" style="margin-top:-6px;">Lecture seule : rien ici ne modifie la paie. Classé du plus mauvais au meilleur.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">
+            <button type="button" id="qaTabPrime" onclick="qaChoisir('prime')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:700;cursor:pointer;">Assistance (Prime)</button>
+            <button type="button" id="qaTabIlek" onclick="qaChoisir('ilek')" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">Ilek (énergies)</button>
+          </div>
+          <div id="qaPanel"><button type="button" onclick="qaInit()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-weight:700;cursor:pointer;">📊 Afficher le tableau</button></div>
+        </div>
+
         <div class="settings-box">
           <label style="margin-bottom:14px;">Enregistrer une infraction (téléphone/YouTube, objectif non atteint)</label>
           <div class="section-sub" style="margin-top:-10px;">Les rétractations se gèrent maintenant dans le bloc dédié ci-dessus (admin uniquement).</div>
@@ -22572,6 +22582,127 @@ async function supervisorMonthlyBonus(year, month){
     });
   }
   return { dh, contracts };
+}
+
+
+// ═══ r348 — QUALITÉ DES AGENTS (lecture seule) ═══════════════════════════════════════════════════
+// Une ligne par agent : signés, nets, rétractations, retours, non conformes (Prime) ou énergies retirées
+// par motif (Ilek). Ne modifie jamais la paie : tout est relu depuis les mêmes sources que la paie.
+var qaEtat = { produit:'prime', mois:'', tri:'pct', sens:-1, agent:'', type:'', texte:'', archives:false, ouverts:{}, donnees:null };
+function qaEsc(x){ return escapeHtml(String(x == null ? '' : x)); }
+window.qaChoisir = function(p){
+  qaEtat.produit = p; qaEtat.type = ''; qaEtat.agent = ''; qaEtat.ouverts = {}; qaEtat.donnees = null; qaEtat.tri = 'pct'; qaEtat.sens = -1;
+  var a = document.getElementById('qaTabPrime'), b = document.getElementById('qaTabIlek');
+  if(a && b){
+    [[a,'prime'],[b,'ilek']].forEach(function(x){ var on = x[1] === p; x[0].style.background = on ? 'var(--accent)' : 'transparent'; x[0].style.color = on ? '#fff' : 'var(--text)'; x[0].style.borderColor = on ? 'var(--accent)' : 'var(--border)'; });
+  }
+  qaCharger();
+};
+window.qaInit = function(){ if(!qaEtat.mois) qaEtat.mois = todayStr().slice(0,7); qaCharger(); };
+window.qaMois = function(delta){
+  var p = qaEtat.mois.split('-').map(Number), d = new Date(p[0], p[1]-1+delta, 1);
+  qaEtat.mois = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); qaEtat.ouverts = {}; qaCharger();
+};
+window.qaRegler = function(champ, v){ qaEtat[champ] = v; qaRendu(); };
+window.qaTrier = function(col){ if(qaEtat.tri === col) qaEtat.sens = -qaEtat.sens; else { qaEtat.tri = col; qaEtat.sens = (col === 'agent') ? 1 : -1; } qaRendu(); };
+window.qaOuvrir = function(a){ qaEtat.ouverts[a] = !qaEtat.ouverts[a]; qaRendu(); };
+
+async function qaCharger(){
+  var el = document.getElementById('qaPanel'); if(!el) return;
+  if(!qaEtat.mois) qaEtat.mois = todayStr().slice(0,7);
+  el.innerHTML = '<div class="empty">⏳ Lecture des données…</div>';
+  var mv = qaEtat.mois, y = Number(mv.slice(0,4)), m = Number(mv.slice(5,7));
+  var agents = allKnownAgents().filter(function(a){ return !isSupervisor(a); });
+  var lignes = [];
+  try{
+    if(qaEtat.produit === 'prime'){
+      var res = await Promise.all([getBillingProd(mv), getBillingReturns(mv), getBillingNonConf(mv)]);
+      var prod = (res[0].rows || []), ret = (res[1].rows || []).filter(function(r){ return !r.dismissed; }), nc = (res[2].rows || []);
+      await Promise.all(agents.map(async function(a){
+        var br = await payableContractsBreakdown(a, y, m);
+        var det = [];
+        prod.filter(function(r){ return r.agent === a && r.retracted; }).forEach(function(r){ det.push({ type:'retract', num:r.numContrat || r.reference || '', nom:r.nom || '', date:r.datePropre || r.date || '', motif:'' }); });
+        ret.filter(function(r){ return r.agent === a; }).forEach(function(r){ det.push({ type:'retour', num:r.numContrat || '', nom:r.nom || '', date:r.originMonth || '', motif:r.motif || '' }); });
+        nc.filter(function(r){ return r.agent === a; }).forEach(function(r){ det.push({ type:'nc', num:r.numContrat || r.reference || '', nom:r.nom || '', date:r.datePropre || r.date || '', motif: r.source === 'inversion-nom-prenom' ? 'Inversion nom prénom' : (r.motif || 'Non conforme') }); });
+        var nbRet = br.retractions || 0, nbRetour = br.returnsCount || 0, nbNc = det.filter(function(d){ return d.type === 'nc'; }).length;
+        // Rétractations du compteur de paie non rattachées à un contrat de la liste (saisies « à l'aveugle » ou en retard).
+        var liees = det.filter(function(d){ return d.type === 'retract'; }).length;
+        lignes.push({ agent:a, archive:isArchivedAgent(a), signes:br.validated || 0, nets:br.payable || 0, n:{ retract:nbRet, retour:nbRetour, nc:nbNc }, sansDetail: Math.max(0, nbRet - liees), det:det });
+      }));
+    } else {
+      var ilek = [];
+      await Promise.all(agents.map(async function(a){
+        var d = await window.ilekDuMois(a, mv); if(!d) return;
+        var det = (d.retours || []).map(function(r){ return { type: r.motif || 'autre', num:r.numero || '', nom:r.nom || '', date:r.le || '', motif:(r.motifTexte || '') + (r.energie ? ' · ' + r.energie : '') }; });
+        var n = { retractation:0, impaye:0, autre:0 };
+        (d.retours || []).forEach(function(r){ var k = (r.motif === 'retractation' || r.motif === 'impaye') ? r.motif : 'autre'; n[k] += Number(r.energies) || 1; });
+        ilek.push({ agent:a, archive:isArchivedAgent(a), signes:d.energies || 0, nets:d.nets || 0, n:n, sansDetail:0, det:det });
+      }));
+      lignes = ilek;
+    }
+  }catch(e){ console.error('qaCharger', e); el.innerHTML = '<div class="empty">⚠️ Lecture impossible : ' + qaEsc(e.message || e) + '</div>'; return; }
+  qaEtat.donnees = lignes; qaRendu();
+}
+
+function qaTypes(){
+  return qaEtat.produit === 'prime'
+    ? [['retract','Rétractations'],['retour','Retours de facturation'],['nc','Non conformes']]
+    : [['retractation','Rétractations'],['impaye','Impayés'],['autre','Autres']];
+}
+function qaRendu(){
+  var el = document.getElementById('qaPanel'); if(!el || !qaEtat.donnees) return;
+  var types = qaTypes(), texte = (qaEtat.texte || '').toLowerCase().trim();
+  var lignes = qaEtat.donnees.filter(function(l){ return (qaEtat.archives || !l.archive) && (!qaEtat.agent || l.agent === qaEtat.agent); }).map(function(l){
+    var cles = qaEtat.type ? [qaEtat.type] : types.map(function(t){ return t[0]; });
+    var det = l.det.filter(function(d){
+      if(qaEtat.type && d.type !== qaEtat.type) return false;
+      if(!texte) return true;
+      return [d.num, d.nom, d.motif].join(' ').toLowerCase().indexOf(texte) >= 0;
+    });
+    var total = 0; cles.forEach(function(k){ total += l.n[k] || 0; });
+    return Object.assign({}, l, { total: total, pct: l.signes > 0 ? total / l.signes * 100 : (total > 0 ? 100 : 0), detF: det });
+  }).filter(function(l){ return (qaEtat.type || texte) ? (texte ? l.detF.length > 0 : l.total > 0) : true; });
+  var col = qaEtat.tri, sg = qaEtat.sens;
+  lignes.sort(function(a,b){
+    var x, y;
+    if(col === 'agent'){ return sg * a.agent.localeCompare(b.agent, 'fr'); }
+    if(col === 'signes' || col === 'nets' || col === 'total' || col === 'pct'){ x = a[col]; y = b[col]; }
+    else { x = a.n[col] || 0; y = b.n[col] || 0; }
+    return (x === y) ? (b.total - a.total) : sg * (x - y);
+  });
+  var th = function(c, t){ return '<th style="cursor:pointer;" onclick="qaTrier(\'' + c + '\')">' + t + (qaEtat.tri === c ? (qaEtat.sens < 0 ? ' ▼' : ' ▲') : '') + '</th>'; };
+  var labels = {}; types.forEach(function(t){ labels[t[0]] = t[1]; });
+  var h = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">' +
+    '<button type="button" onclick="qaMois(-1)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;">◀</button>' +
+    '<b>' + qaEsc(billingMonthLabel(qaEtat.mois)) + '</b>' +
+    '<button type="button" onclick="qaMois(1)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;">▶</button>' +
+    '<select onchange="qaRegler(\'agent\', this.value)"><option value="">Tous les agents</option>' + qaEtat.donnees.filter(function(l){ return qaEtat.archives || !l.archive; }).map(function(l){ return '<option value="' + qaEsc(l.agent) + '"' + (qaEtat.agent === l.agent ? ' selected' : '') + '>' + qaEsc(l.agent) + '</option>'; }).join('') + '</select>' +
+    '<select onchange="qaRegler(\'type\', this.value)"><option value="">Tous les types</option>' + types.map(function(t){ return '<option value="' + t[0] + '"' + (qaEtat.type === t[0] ? ' selected' : '') + '>' + t[1] + ' seulement</option>'; }).join('') + '</select>' +
+    '<input type="text" placeholder="🔎 n° de contrat, client, motif…" value="' + qaEsc(qaEtat.texte) + '" onchange="qaRegler(\'texte\', this.value)" style="min-width:200px;">' +
+    '<label style="display:inline-flex;gap:5px;align-items:center;font-size:12.5px;"><input type="checkbox" ' + (qaEtat.archives ? 'checked' : '') + ' onchange="qaRegler(\'archives\', this.checked)"> Afficher les anciens agents</label>' +
+    '</div>';
+  if(!lignes.length){ el.innerHTML = h + '<div class="empty">Aucun agent à afficher pour ce choix.</div>'; return; }
+  var unite = qaEtat.produit === 'prime' ? 'contrats' : 'énergies';
+  h += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr>' + th('agent','Agent') + th('signes','Signés') + th('nets','Nets') +
+    types.map(function(t){ return th(t[0], t[1]); }).join('') + th('total','Total') + th('pct','% des ' + unite + ' signés') + '</tr></thead><tbody>';
+  lignes.forEach(function(l){
+    var ouv = !!qaEtat.ouverts[l.agent], safe = l.agent.replace(/'/g, "\\'");
+    var coul = l.pct >= 20 ? 'var(--red)' : (l.pct >= 10 ? 'var(--amber)' : 'var(--text)');
+    h += '<tr style="cursor:pointer;" onclick="qaOuvrir(\'' + safe + '\')"><td><b>' + (ouv ? '▾ ' : '▸ ') + qaEsc(l.agent) + '</b>' + (l.archive ? ' <span style="color:var(--muted);font-size:11px;">(ancien)</span>' : '') + '</td><td>' + l.signes + '</td><td>' + l.nets + '</td>' +
+      types.map(function(t){ return '<td>' + (l.n[t[0]] || 0) + '</td>'; }).join('') +
+      '<td><b>' + l.total + '</b></td><td style="color:' + coul + ';font-weight:700;">' + (Math.round(l.pct * 10) / 10).toString().replace('.', ',') + ' %</td></tr>';
+    if(ouv){
+      h += '<tr><td colspan="' + (5 + types.length) + '" style="background:rgba(127,127,127,0.07);">';
+      if(!l.detF.length) h += '<i style="color:var(--muted);">Aucun détail à afficher.</i>';
+      else h += '<table class="salary-table"><thead><tr><th>Type</th><th>N°</th><th>Client</th><th>Date / mois</th><th>Motif</th></tr></thead><tbody>' +
+        l.detF.map(function(d){ return '<tr><td>' + qaEsc(labels[d.type] || d.type) + '</td><td>' + qaEsc(d.num) + '</td><td>' + qaEsc(d.nom) + '</td><td>' + qaEsc(d.date) + '</td><td style="font-size:12px;color:var(--muted);">' + qaEsc(d.motif) + '</td></tr>'; }).join('') + '</tbody></table>';
+      if(l.sansDetail > 0 && !qaEtat.type || (l.sansDetail > 0 && qaEtat.type === 'retract')) h += '<div style="margin-top:6px;font-size:12px;color:var(--amber);">⚠ ' + l.sansDetail + ' rétractation(s) comptée(s) pour la paie sans contrat rattaché dans la liste (saisie manuelle ou en retard).</div>';
+      h += '</td></tr>';
+    }
+  });
+  h += '</tbody></table></div>';
+  if(qaEtat.produit === 'ilek') h += '<div style="margin-top:8px;font-size:12px;color:var(--muted);">Ilek : on compte des énergies (un contrat dual = 2). Net = énergies signées − énergies retirées, 1 pour 1.</div>';
+  el.innerHTML = h;
 }
 
 function supervisorEstNet(sup){
