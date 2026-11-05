@@ -22612,7 +22612,7 @@ async function qaCharger(){
   if(!qaEtat.mois) qaEtat.mois = todayStr().slice(0,7);
   el.innerHTML = '<div class="empty">⏳ Lecture des données…</div>';
   var mv = qaEtat.mois, y = Number(mv.slice(0,4)), m = Number(mv.slice(5,7));
-  var agents = allKnownAgents().filter(function(a){ return !isSupervisor(a); });
+  var agents = allKnownAgents();   // r350 : les superviseurs travaillent aussi, ils sont inclus
   var lignes = [];
   try{
     if(qaEtat.produit === 'prime'){
@@ -22627,7 +22627,7 @@ async function qaCharger(){
         var nbRet = br.retractions || 0, nbRetour = br.returnsCount || 0, nbNc = det.filter(function(d){ return d.type === 'nc'; }).length;
         // Rétractations du compteur de paie non rattachées à un contrat de la liste (saisies « à l'aveugle » ou en retard).
         var liees = det.filter(function(d){ return d.type === 'retract'; }).length;
-        lignes.push({ agent:a, archive:isArchivedAgent(a), signes:br.validated || 0, nets:br.payable || 0, n:{ retract:nbRet, retour:nbRetour, nc:nbNc }, sansDetail: Math.max(0, nbRet - liees), det:det });
+        lignes.push({ agent:a, archive:isArchivedAgent(a), signes:br.validated || 0, nets:br.payable || 0, n:{ retract:nbRet, retour:nbRetour, retires:(br.returnsDeducted || 0), nc:nbNc }, sansDetail: Math.max(0, nbRet - liees), det:det });
       }));
     } else {
       var ilek = [];
@@ -22659,7 +22659,7 @@ function qaRendu(){
       if(!texte) return true;
       return [d.num, d.nom, d.motif].join(' ').toLowerCase().indexOf(texte) >= 0;
     });
-    var total = 0; cles.forEach(function(k){ total += l.n[k] || 0; });
+    var total = 0; cles.forEach(function(k){ total += l.n[(k === 'retour') ? 'retires' : k] || 0; });   // r349 : les retours comptent pour ce qu'ils retirent VRAIMENT (après le diviseur), pas en lignes brutes
     return Object.assign({}, l, { total: total, pct: l.signes > 0 ? total / l.signes * 100 : (total > 0 ? 100 : 0), detF: det });
   }).filter(function(l){ return (qaEtat.type || texte) ? (texte ? l.detF.length > 0 : l.total > 0) : true; });
   var col = qaEtat.tri, sg = qaEtat.sens;
@@ -22684,15 +22684,15 @@ function qaRendu(){
   if(!lignes.length){ el.innerHTML = h + '<div class="empty">Aucun agent à afficher pour ce choix.</div>'; return; }
   var unite = qaEtat.produit === 'prime' ? 'contrats' : 'énergies';
   h += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr>' + th('agent','Agent') + th('signes','Signés') + th('nets','Nets') +
-    types.map(function(t){ return th(t[0], t[1]); }).join('') + th('total','Total') + th('pct','% des ' + unite + ' signés') + '</tr></thead><tbody>';
+    types.map(function(t){ return th(t[0], t[1]) + (t[0] === 'retour' ? th('retires','Contrats retirés') : ''); }).join('') + th('total','Total') + th('pct','Part des ' + unite + ' signés perdue') + '</tr></thead><tbody>';
   lignes.forEach(function(l){
     var ouv = !!qaEtat.ouverts[l.agent], safe = l.agent.replace(/'/g, "\\'");
     var coul = l.pct >= 20 ? 'var(--red)' : (l.pct >= 10 ? 'var(--amber)' : 'var(--text)');
     h += '<tr style="cursor:pointer;" onclick="qaOuvrir(\'' + safe + '\')"><td><b>' + (ouv ? '▾ ' : '▸ ') + qaEsc(l.agent) + '</b>' + (l.archive ? ' <span style="color:var(--muted);font-size:11px;">(ancien)</span>' : '') + '</td><td>' + l.signes + '</td><td>' + l.nets + '</td>' +
-      types.map(function(t){ return '<td>' + (l.n[t[0]] || 0) + '</td>'; }).join('') +
+      types.map(function(t){ return '<td>' + (l.n[t[0]] || 0) + '</td>' + (t[0] === 'retour' ? '<td>' + (l.n.retires || 0) + '</td>' : ''); }).join('') +
       '<td><b>' + l.total + '</b></td><td style="color:' + coul + ';font-weight:700;">' + (Math.round(l.pct * 10) / 10).toString().replace('.', ',') + ' %</td></tr>';
     if(ouv){
-      h += '<tr><td colspan="' + (5 + types.length) + '" style="background:rgba(127,127,127,0.07);">';
+      h += '<tr><td colspan="' + (5 + types.length + (qaEtat.produit === 'prime' ? 1 : 0)) + '" style="background:rgba(127,127,127,0.07);">';
       if(!l.detF.length) h += '<i style="color:var(--muted);">Aucun détail à afficher.</i>';
       else h += '<table class="salary-table"><thead><tr><th>Type</th><th>N°</th><th>Client</th><th>Date / mois</th><th>Motif</th></tr></thead><tbody>' +
         l.detF.map(function(d){ return '<tr><td>' + qaEsc(labels[d.type] || d.type) + '</td><td>' + qaEsc(d.num) + '</td><td>' + qaEsc(d.nom) + '</td><td>' + qaEsc(d.date) + '</td><td style="font-size:12px;color:var(--muted);">' + qaEsc(d.motif) + '</td></tr>'; }).join('') + '</tbody></table>';
@@ -22701,6 +22701,7 @@ function qaRendu(){
     }
   });
   h += '</tbody></table></div>';
+  if(qaEtat.produit === 'prime') h += '<div style="margin-top:8px;font-size:12px;color:var(--muted);">« Retours de facturation » = lignes du fichier de retours. « Contrats retirés » = ce que ces retours enlèvent vraiment à l\'agent après ton diviseur. Le total et la part perdue comptent : rétractations + contrats retirés + non conformes.</div>';
   if(qaEtat.produit === 'ilek') h += '<div style="margin-top:8px;font-size:12px;color:var(--muted);">Ilek : on compte des énergies (un contrat dual = 2). Net = énergies signées − énergies retirées, 1 pour 1.</div>';
   el.innerHTML = h;
 }
