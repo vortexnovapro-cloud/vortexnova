@@ -2169,6 +2169,11 @@ async function tryDeviceGateAdmin(){
               <input type="checkbox" id="corrDepartSansJustif" style="width:auto; margin:0;">
               🚪 Départ SANS justificatif — l'agent perd sa prime d'assiduité du mois
             </label>
+            <label style="display:flex; align-items:center; gap:8px; margin:12px 0 0; cursor:pointer; font-weight:700;">
+              <input type="checkbox" id="corrSortieEntreprise" style="width:auto; margin:0;">
+              🌐 Sorti de l'entreprise (adresse IP non autorisée) — 1 retard + temps dehors retenu
+            </label>
+            <div class="section-sub" style="margin-top:4px;">Posée automatiquement par le verrouillage par adresse IP. Décoche pour l'annuler (panne, erreur).</div>
             <div class="section-sub" style="margin-top:6px;">À cocher uniquement si l'agent est parti avant l'heure sans justificatif. Un seul départ coché suffit à faire perdre la prime d'assiduité du mois. Décoche pour la lui rendre.</div>
           </div>
           <div style="margin-bottom:14px;">
@@ -2786,7 +2791,9 @@ async function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:12px; align-items:center;">
             <span style="display:inline-flex; align-items:center; gap:4px;"><button type="button" onclick="shiftMonthInput('ncPanelMonth',-1)" title="Mois précédent" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">◀</button><input type="month" id="ncPanelMonth" onchange="renderNonConfPanel()" title="Le mois des contrats non conformes affichés."><button type="button" onclick="shiftMonthInput('ncPanelMonth',1)" title="Mois suivant" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);cursor:pointer;">▶</button></span>
             <button onclick="renderNonConfPanel()" style="padding:9px 16px;border-radius:8px;border:1px solid var(--amber);background:rgba(229,168,61,0.12);color:var(--amber);font-weight:700;cursor:pointer;">🔄 Actualiser la liste</button>
+            <button onclick="ncChercherTousMois()" title="Cherche, sur les 18 derniers mois, les contrats présents à la fois dans la production (donc payés à l'agent) et dans les non conformes." style="padding:9px 16px;border-radius:8px;border:1px solid var(--red);background:rgba(229,72,77,0.10);color:var(--red);font-weight:700;cursor:pointer;">🔎 Chercher dans tous les mois</button>
           </div>
+          <div id="ncTousMois" style="margin-top:12px;"></div>
           <div id="nonConfPanel" style="margin-top:12px;"></div>
 
           <div style="margin-top:18px; padding-top:16px; border-top:1px dashed var(--border);">
@@ -3241,6 +3248,43 @@ async function tryDeviceGateAdmin(){
           <div class="section-sub" style="margin-top:-10px;">💡 Les 3 alertes (son + notification + titre d'onglet clignotant) se déclenchent avant la déconnexion automatique, dans l'ordre indiqué. Elles doivent être inférieures au délai de déconnexion ci-dessus (par défaut : 30s, 10s, 5s avant). Le même système de 3 alertes protège aussi le <b>panneau Admin</b> (délai réglable juste au-dessus) — pratique quand il reste ouvert sur un téléphone posé sur un bureau.</div>
           <div class="section-sub" style="margin:-10px 0 18px;">Ces deux tolérances s'appliquent uniquement à l'<b>heure de début</b> d'une pause (déjeuner pour la première, les autres pauses de la journée pour la seconde) — utile pour un agent en appel téléphonique qui ne peut pas décrocher pile à l'heure prévue. La <b>durée</b> de la pause, elle, reste stricte : aucun dépassement toléré, quelle que soit l'heure de début. Le <b>retard à l'arrivée</b> n'a lui aucune tolérance (règlement interne : dès la 1ère minute, sans exception) — ces réglages n'ont donc aucun effet dessus.</div>
 
+          <div id="ipLockBox" style="margin:6px 0 26px;padding:16px;border:1px solid var(--border);border-radius:12px;">
+            <label style="margin-bottom:6px;">🌐 Verrouillage par adresse IP</label>
+            <div class="section-sub" style="margin-top:-2px;">Les agents que tu coches ne peuvent utiliser le CRM que depuis la connexion de l'entreprise : <b>tout le temps</b> ou <b>entre deux heures</b> (heure du Maroc). Hors de ces adresses, ils voient « Connexion refusée hors de l'entreprise » et ne peuvent rien faire.</div>
+            <label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer;"><input type="checkbox" id="ipLockEnabled" style="width:auto;"> Activer le verrouillage</label>
+            <label style="margin:10px 0 6px;">Adresses IP autorisées</label>
+            <div id="ipLockIps" style="display:flex;flex-direction:column;gap:6px;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+              <input type="text" id="ipLockNewIp" placeholder="ex : 102.50.251.62" style="max-width:220px;">
+              <button onclick="ipLockAjouterIp()" style="padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">➕ Ajouter</button>
+              <button onclick="ipLockDetecter()" style="padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:700;cursor:pointer;">🔎 Voir mon adresse actuelle</button>
+            </div>
+            <div id="ipLockDetected" class="section-sub" style="margin-top:6px;"></div>
+            <label style="margin:16px 0 6px;">Agents verrouillés</label>
+            <div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>Agent</th><th>Verrouillé</th><th>Quand</th><th>De</th><th>À</th></tr></thead><tbody id="ipLockAgents"></tbody></table></div>
+            <label style="display:flex;gap:8px;align-items:center;margin:12px 0 4px;cursor:pointer;"><input type="checkbox" id="ipLockFailOpen" style="width:auto;"> Si l'adresse ne peut pas être vérifiée (panne internet du service de vérification), laisser passer</label>
+            <div class="section-sub" style="margin-top:0;">Décoché : l'agent verrouillé est bloqué tant que la vérification échoue (plus sûr, mais il ne peut pas travailler pendant une panne).</div>
+            <button onclick="saveIpLock()" style="margin-top:10px;padding:10px 18px;border-radius:8px;border:1px solid var(--accent, var(--green));background:transparent;color:var(--text);font-weight:700;cursor:pointer;">💾 Enregistrer le verrouillage</button>
+          </div>
+
+          <div id="supScheduleBox" style="margin:6px 0 26px;padding:16px;border:1px solid var(--border);border-radius:12px;">
+            <label style="margin-bottom:6px;">👔 Horaires des superviseurs</label>
+            <div class="section-sub" style="margin-top:-2px;">Un seul horaire pour <b>tous les superviseurs</b> (les agents gardent l'horaire officiel ci-dessus). Retards, départs anticipés, pauses, déconnexion automatique et paie suivent cet horaire. Le samedi reste non travaillé.</div>
+            <label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer;"><input type="checkbox" id="supSchedEnabled" style="width:auto;"> Utiliser un horaire spécial pour les superviseurs</label>
+            <div class="settings-grid">
+              <div><label>Début de journée</label><input type="time" id="supSchedStart"></div>
+              <div><label>Fin de journée</label><input type="time" id="supSchedEnd"></div>
+              <div><label>Déjeuner : début <small style="opacity:.7">(vide = comme les agents)</small></label><input type="time" id="supSchedLunchStart"></div>
+              <div><label>Déjeuner : fin</label><input type="time" id="supSchedLunchEnd"></div>
+              <div><label>Déjeuner du vendredi : début <small style="opacity:.7">(vide = comme les agents)</small></label><input type="time" id="supSchedFriStart"></div>
+              <div><label>Déjeuner du vendredi : fin</label><input type="time" id="supSchedFriEnd"></div>
+              <div><label>À partir du <small style="opacity:.7">(vide = toutes les journées, passées comprises)</small></label><input type="date" id="supSchedFrom"></div>
+            </div>
+            <div class="section-sub" style="margin-top:8px;">💡 Pour changer l'horaire plus tard sans toucher au passé : modifie les heures et mets la date du premier jour concerné dans « À partir du ». Les journées d'avant gardent l'ancien horaire.</div>
+            <button onclick="saveSupSchedule()" style="margin-top:10px;padding:10px 18px;border-radius:8px;border:1px solid var(--accent, var(--green));background:transparent;color:var(--text);font-weight:700;cursor:pointer;">💾 Enregistrer les horaires des superviseurs</button>
+            <div id="supSchedHistory" style="margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.7;"></div>
+          </div>
+
           <label style="margin-bottom:10px;">🍽️ Déjeuner (horaire fixe)</label>
           <div class="section-sub" style="margin-top:-6px;">Le seul créneau à heure fixe — les agents pointent "Départ déjeuner" / "Retour déjeuner" dans cette fenêtre.</div>
           <div id="breaksList"></div>
@@ -3430,7 +3474,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-10-31-r342';
+const APP_VERSION = '2026-11-05-r347';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -3998,7 +4042,7 @@ function isWithinScheduledHours(){
   // week-end ou un jour férié français (ex: pour consulter ses stats) pouvait donc se faire compter
   // inactif/déloger comme si c'était un jour normal de travail.
   if(!isWorkingDay(todayStr())) return false;
-  const sched = scheduleForDate(todayStr());
+  const sched = scheduleForDate(todayStr(), currentAgent);
   const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
   return nowMin >= toMinutes(sched.start) && nowMin <= toMinutes(sched.end);
 }
@@ -5048,6 +5092,8 @@ async function loadConfig(){
   populateBackofficeAgentSelect();
   document.getElementById('cfgStart').value = config.start;
   document.getElementById('cfgEnd').value = config.end;
+  try{ renderSupScheduleUI(); }catch(e){}
+  try{ ipLockRendreUI(); }catch(e){}
   document.getElementById('cfgTolerance').value = config.tolerance;
   if(!config.inactivityTimeoutMin) config.inactivityTimeoutMin = 5;
   document.getElementById('cfgInactivity').value = config.inactivityTimeoutMin;
@@ -5348,7 +5394,7 @@ async function renderRetractAdminContracts(){
     html += `<tr${red} data-search="${hay}">
       <td>${i + 1}</td>
       <td>${escapeHtml(r.datePropre || r.date)}</td>
-      <td>${escapeHtml(r.produit)}</td>
+      <td>${escapeHtml(billingProduitLibelle(r))}</td>
       <td>${escapeHtml(r.nom)}</td>
       <td>${escapeHtml(r.telephone)}</td>
       <td>${escapeHtml(key)}</td>
@@ -7289,6 +7335,253 @@ function addBreakRow(){
   config.breaks.push({ name: "Nouvelle pause", start: "14:00", end: "14:10" });
   renderBreaksEditor();
 }
+
+
+// ============================================================
+// 🌐 VERROUILLAGE PAR ADRESSE IP (Admin → Réglages)
+// ============================================================
+// Un site ne connaît pas l'adresse de celui qui l'ouvre : la page la demande donc à un service public
+// (plusieurs en secours). Réglage : config.ipLock = { enabled, ips:[...], failOpen, agents:{ nom:{ locked,
+// mode:'always'|'hours', start, end } } }. Seuls les agents cochés sont concernés ; l'admin ne l'est jamais.
+// Limite assumée : c'est un contrôle côté page — il arrête l'usage normal, pas un utilisateur capable de
+// modifier le code de la page.
+const IPLOCK_DEFAUT = { enabled: false, ips: ['102.50.251.62'], failOpen: false, agents: {} };
+let ipLockCache = { ip: null, at: 0 };
+function ipLockCfg(){
+  const c = config.ipLock || {};
+  return { enabled: !!c.enabled, ips: Array.isArray(c.ips) ? c.ips : IPLOCK_DEFAUT.ips, failOpen: !!c.failOpen, agents: c.agents || {} };
+}
+// L'agent est-il concerné MAINTENANT ? (verrouillé + toujours, ou dans la plage horaire du Maroc)
+function ipLockConcerne(agent){
+  const c = ipLockCfg();
+  if(!c.enabled || !agent) return false;
+  const r = c.agents[agent];
+  if(!r || !r.locked) return false;
+  if(r.mode !== 'hours') return true;
+  if(!r.start || !r.end) return true;
+  const n = nowMA(), m = n.getHours()*60 + n.getMinutes();
+  const a = toMinutes(r.start), b = toMinutes(r.end);
+  return a <= b ? (m >= a && m < b) : (m >= a || m < b);   // plage qui passe minuit acceptée
+}
+async function ipPubliqueActuelle(force){
+  if(!force && ipLockCache.ip && Date.now() - ipLockCache.at < 60000) return ipLockCache.ip;
+  const sources = [
+    async()=> (await (await fetch('https://api.ipify.org?format=json', {cache:'no-store', signal: AbortSignal.timeout(5000)})).json()).ip,
+    async()=> (await (await fetch('https://api.ip.sb/jsonip', {cache:'no-store', signal: AbortSignal.timeout(5000)})).json()).ip,
+    async()=> (await (await fetch('https://ipv4.icanhazip.com', {cache:'no-store', signal: AbortSignal.timeout(5000)})).text()).trim()
+  ];
+  for(const f of sources){
+    try{ const ip = String(await f() || '').trim(); if(/^[0-9a-fA-F:.]{3,45}$/.test(ip)){ ipLockCache = { ip, at: Date.now() }; return ip; } }catch(e){}
+  }
+  return null;
+}
+function ipLockMontrerRefus(ip, agent){
+  let o = document.getElementById('ipLockOverlay');
+  if(!o){
+    o = document.createElement('div'); o.id = 'ipLockOverlay';
+    o.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,12,18,0.96);display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;';
+    document.body.appendChild(o);
+  }
+  o.innerHTML = `<div style="max-width:420px;color:#fff;">
+    <div style="font-size:54px;margin-bottom:10px;">🚫</div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:10px;">Connexion refusée hors de l'entreprise</div>
+    <div style="opacity:.8;font-size:14px;line-height:1.6;margin-bottom:6px;">${ip ? 'Ton accès est limité à la connexion de l\'entreprise.' : 'Impossible de vérifier ta connexion pour le moment.'}</div>
+    ${ip ? `<div style="opacity:.55;font-size:12px;margin-bottom:18px;">Adresse détectée : ${escapeHtml(ip)}</div>` : '<div style="margin-bottom:18px;"></div>'}
+    <button onclick="document.getElementById('ipLockOverlay').remove()" style="padding:11px 26px;border-radius:10px;border:0;background:#fff;color:#111;font-weight:800;cursor:pointer;">Réessayer</button>
+  </div>`;
+}
+// true = autorisé. `afficher` : montre l'écran de refus.
+async function ipLockAutorise(agent, afficher){
+  if(!ipLockConcerne(agent)) return true;
+  const c = ipLockCfg();
+  const ip = await ipPubliqueActuelle();
+  if(ip === null){
+    if(c.failOpen) return true;
+    if(afficher) ipLockMontrerRefus(null, agent);
+    return false;
+  }
+  if(c.ips.map(x=>String(x).trim()).includes(ip)) return true;
+  if(afficher) ipLockMontrerRefus(ip, agent);
+  try{ logAudit && logAudit(agent, 'Connexion refusée (adresse IP non autorisée)', ip); }catch(e){}
+  return false;
+}
+// Surveillance en continu : un agent déjà connecté qui sort de l'entreprise (ou dont la plage horaire
+// de verrouillage commence) est déconnecté.
+async function ipLockSurveiller(){
+  if(!currentAgent || !ipLockConcerne(currentAgent)) return;
+  const ag = currentAgent;
+  // En pause (déjeuner ou pause libre) : on ne juge pas — personne n'est tenu d'être dans l'entreprise.
+  try{ if(freeBreakCache.dateStr === todayStr() && freeBreakCache.agent === ag && isOnAnyBreakNow(freeBreakCache.events || [])) return; }catch(e){}
+  const ip = await ipPubliqueActuelle();
+  const c = ipLockCfg();
+  // Adresse illisible (panne internet / service de vérification) : jamais de pénalité. Bloqué seulement
+  // si la case « laisser passer » est décochée.
+  if(ip === null){ if(c.failOpen) return; }
+  else if(c.ips.map(x=>String(x).trim()).includes(ip)) return;
+  currentAgent = null;
+  // Adresse lue et NON autorisée : sortie enregistrée pour la journée = 1 retard dans le compteur de la
+  // prime d'assiduité (aucune retenue en DH). Une seule fois par jour.
+  if(ip !== null){
+    try{
+      const dateStr = todayStr();
+      const log = await getDayLog(ag, dateStr);
+      const t = nowTimeStr();
+      const f = log.sortieHorsEntreprise;
+      const dejaDehors = extractLockouts(log.events).some(l => !l.end);   // déjà délogué et pas revenu
+      if(!f){
+        log.sortieHorsEntreprise = { time: t, ip, exits: [t] };
+        log.events.push({ type: 'auto_out', time: t });
+        await saveDayLog(ag, dateStr, log);
+        logAudit(ag, 'Sortie de l\'entreprise (adresse IP non autorisée) : 1 retard + temps non travaillé retenu', ip);
+      } else if(!dejaDehors){
+        // Nouvelle sortie le même jour : pas de retard en plus, mais le temps dehors est retenu aussi.
+        f.exits = Array.isArray(f.exits) && f.exits.length ? f.exits : [f.time];
+        f.exits.push(t);
+        log.events.push({ type: 'auto_out', time: t });
+        await saveDayLog(ag, dateStr, log);
+      }
+    }catch(e){ console.warn('enregistrement sortie entreprise', e); }
+  }
+  try{ document.getElementById('agentSelect').value = ''; }catch(e){}
+  try{ onAgentChange(); }catch(e){}
+  ipLockMontrerRefus(ip, ag);
+}
+setInterval(()=>{ ipLockSurveiller().catch(()=>{}); }, 120000);
+
+// Minutes non travaillées à cause des sorties de l'entreprise : de l'heure de la sortie jusqu'au retour
+// (reconnexion), ou jusqu'à un départ pointé (déjà retenu à part), ou jusqu'à la fin de la journée.
+// Le déjeuner prévu n'est jamais retenu.
+function minutesSortieEntreprise(log, dateStr, agent){
+  const f = log && log.sortieHorsEntreprise; if(!f) return 0;
+  const exits = (Array.isArray(f.exits) && f.exits.length) ? f.exits : [f.time];
+  const sched = scheduleForDate(dateStr, agent);
+  let finJour = toMinutes(sched.end);
+  if(dateStr === todayStr()){ const n = nowMA(); finJour = Math.min(finJour, n.getHours()*60 + n.getMinutes()); }
+  let tot = 0;
+  exits.forEach(t=>{
+    if(!t) return;
+    const deb = toMinutes(String(t).slice(0,5)); let fin = finJour;
+    (log.events || []).forEach(ev=>{
+      if((ev.type === 'auto_in' || ev.type === 'out') && ev.time){ const m = toMinutes(String(ev.time).slice(0,5)); if(m > deb && m < fin) fin = m; }
+    });
+    if(fin <= deb) return;
+    let mins = fin - deb;
+    (sched.breaks || []).filter(b => isLunchBreakName(b.name)).forEach(b=>{
+      const a = Math.max(deb, toMinutes(b.start)), z = Math.min(fin, toMinutes(b.end));
+      if(z > a) mins -= (z - a);
+    });
+    tot += Math.max(0, mins);
+  });
+  return tot;
+}
+function ipLockRendreUI(){
+  const c = ipLockCfg();
+  const en = document.getElementById('ipLockEnabled'); if(en) en.checked = c.enabled;
+  const fo = document.getElementById('ipLockFailOpen'); if(fo) fo.checked = c.failOpen;
+  const L = document.getElementById('ipLockIps');
+  if(L) L.innerHTML = c.ips.map((ip,i)=> `<div style="display:flex;gap:8px;align-items:center;"><code style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;">${escapeHtml(ip)}</code><button onclick="ipLockRetirerIp(${i})" title="Retirer cette adresse" style="border:0;background:transparent;cursor:pointer;">🗑️</button></div>`).join('') || '<div class="section-sub">Aucune adresse : tous les agents verrouillés seront bloqués.</div>';
+  const T = document.getElementById('ipLockAgents');
+  if(T){
+    const noms = (config.agents || []).filter(a => !isIndependant(a) && !isSupervisor(a) || isSupervisor(a));
+    T.innerHTML = noms.map((a,i)=>{
+      const r = c.agents[a] || {};
+      return `<tr><td><b>${escapeHtml(a)}</b></td>
+        <td><input type="checkbox" class="iplk-lock" data-ag="${escapeHtml(a)}" ${r.locked?'checked':''} style="width:auto;"></td>
+        <td><select class="iplk-mode" data-ag="${escapeHtml(a)}"><option value="always" ${r.mode!=='hours'?'selected':''}>Tout le temps</option><option value="hours" ${r.mode==='hours'?'selected':''}>Entre deux heures</option></select></td>
+        <td><input type="time" class="iplk-start" data-ag="${escapeHtml(a)}" value="${escapeHtml(r.start||'')}"></td>
+        <td><input type="time" class="iplk-end" data-ag="${escapeHtml(a)}" value="${escapeHtml(r.end||'')}"></td></tr>`;
+    }).join('');
+  }
+}
+function ipLockLireIps(){ return ipLockCfg().ips.slice(); }
+async function ipLockAjouterIp(){
+  const el = document.getElementById('ipLockNewIp'); const ip = (el.value || '').trim();
+  if(!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip) && !/^[0-9a-fA-F:]{3,45}$/.test(ip)){ await uiAlert('Adresse non valide. Exemple : 102.50.251.62'); return; }
+  config.ipLock = { ...ipLockCfg(), ips: [...new Set([...ipLockCfg().ips, ip])] };
+  el.value = ''; ipLockRendreUI();
+}
+function ipLockRetirerIp(i){
+  const ips = ipLockCfg().ips.slice(); ips.splice(i, 1);
+  config.ipLock = { ...ipLockCfg(), ips }; ipLockRendreUI();
+}
+async function ipLockDetecter(){
+  const d = document.getElementById('ipLockDetected'); d.textContent = 'Recherche de ton adresse…';
+  const ip = await ipPubliqueActuelle(true);
+  if(!ip){ d.textContent = 'Impossible de la lire pour le moment.'; return; }
+  const deja = ipLockCfg().ips.includes(ip);
+  d.innerHTML = `Ton adresse actuelle : <b>${escapeHtml(ip)}</b> ${deja ? '✅ déjà autorisée' : `<button onclick="document.getElementById('ipLockNewIp').value='${escapeHtml(ip)}';ipLockAjouterIp();" style="margin-left:8px;padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;">➕ L'autoriser</button>`}`;
+}
+async function saveIpLock(){
+  const agents = {};
+  document.querySelectorAll('.iplk-lock').forEach(cb=>{
+    const a = cb.dataset.ag;
+    const q = cls => document.querySelector(`.${cls}[data-ag="${CSS.escape(a)}"]`);
+    const mode = q('iplk-mode').value, start = q('iplk-start').value, end = q('iplk-end').value;
+    if(cb.checked || mode === 'hours') agents[a] = { locked: cb.checked, mode, start, end };
+  });
+  for(const [a, r] of Object.entries(agents)){
+    if(r.locked && r.mode === 'hours' && (!r.start || !r.end)){ await uiAlert(`Pour ${a} : mets l'heure de début ET de fin, ou choisis « Tout le temps ».`); return; }
+  }
+  const enabled = document.getElementById('ipLockEnabled').checked;
+  const ips = ipLockCfg().ips;
+  if(enabled && !ips.length && !await uiAsk('Aucune adresse autorisée : tous les agents verrouillés seront bloqués.\n\nContinuer ?')) return;
+  config.ipLock = { enabled, ips, failOpen: document.getElementById('ipLockFailOpen').checked, agents };
+  await saveConfigSilent();
+  logAudit('Admin', 'Verrouillage par adresse IP modifié', JSON.stringify(config.ipLock).slice(0, 300));
+  showToast('✅ Verrouillage enregistré');
+  ipLockRendreUI();
+}
+
+// ---- 👔 Horaires des superviseurs (réglage Admin) ----
+function renderSupScheduleUI(){
+  const ss = config.supSchedule || {};
+  const set = (id, v)=>{ const e = document.getElementById(id); if(e) e.value = v || ''; };
+  const chk = document.getElementById('supSchedEnabled'); if(chk) chk.checked = !!ss.enabled;
+  set('supSchedStart', ss.start || config.start); set('supSchedEnd', ss.end || config.end);
+  set('supSchedLunchStart', ss.lunchStart); set('supSchedLunchEnd', ss.lunchEnd);
+  set('supSchedFriStart', ss.friStart); set('supSchedFriEnd', ss.friEnd); set('supSchedFrom', '');
+  const h = document.getElementById('supSchedHistory'); if(!h) return;
+  const hist = (Array.isArray(ss.history) ? ss.history : []).slice().sort((a,b)=> String(a.until).localeCompare(String(b.until)));
+  const fr = d => String(d).split('-').reverse().join('/');
+  h.innerHTML = hist.length
+    ? '<b style="color:var(--text);">Périodes passées</b><br>' + hist.map((x,i)=> `• jusqu'au ${fr(x.until)} inclus : ${x.useGeneral ? 'horaire des agents' : `${x.start} – ${x.end}`} <button onclick="removeSupSchedulePeriod('${x.until}')" title="Supprimer cette période" style="border:0;background:transparent;cursor:pointer;">🗑️</button>`).join('<br>')
+    : 'Aucune période passée enregistrée.';
+}
+async function removeSupSchedulePeriod(until){
+  if(!await uiAsk('Supprimer cette période ?\n\nLes journées qu\'elle couvrait prendront l\'horaire suivant, ce qui peut recalculer des retards.')) return;
+  const ss = config.supSchedule; if(!ss) return;
+  ss.history = (ss.history || []).filter(x => x.until !== until);
+  await saveConfigSilent(); logAudit('Admin', 'Horaires superviseurs : période supprimée', until);
+  clearRenderCaches && clearRenderCaches(); renderSupScheduleUI();
+}
+async function saveSupSchedule(){
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const enabled = !!document.getElementById('supSchedEnabled').checked;
+  const next = { enabled, start: g('supSchedStart'), end: g('supSchedEnd'), lunchStart: g('supSchedLunchStart'), lunchEnd: g('supSchedLunchEnd'), friStart: g('supSchedFriStart'), friEnd: g('supSchedFriEnd') };
+  if(enabled){
+    if(!next.start || !next.end || toMinutes(next.end) <= toMinutes(next.start)){ await uiAlert('Mets un début et une fin de journée valides (la fin après le début).'); return; }
+    if((next.lunchStart && !next.lunchEnd) || (!next.lunchStart && next.lunchEnd) || (next.friStart && !next.friEnd) || (!next.friStart && next.friEnd)){ await uiAlert('Pour un déjeuner, remplis le début ET la fin (ou laisse les deux vides).'); return; }
+  }
+  const from = g('supSchedFrom');
+  const prev = config.supSchedule || { enabled: false, history: [] };
+  const history = Array.isArray(prev.history) ? prev.history.slice() : [];
+  if(from){
+    const d = new Date(from + 'T00:00:00'); d.setDate(d.getDate() - 1);
+    const until = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    if(history.some(x => x.until === until)){ await uiAlert('Une période se termine déjà à cette date. Supprime-la d\'abord (🗑️) ou choisis une autre date.'); return; }
+    history.push(prev.enabled
+      ? { until, start: prev.start, end: prev.end, lunchStart: prev.lunchStart || '', lunchEnd: prev.lunchEnd || '', friStart: prev.friStart || '', friEnd: prev.friEnd || '' }
+      : { until, useGeneral: true });
+  } else if(prev.enabled && (prev.start !== next.start || prev.end !== next.end)){
+    if(!await uiAsk('Tu n\'as pas mis de date « À partir du ».\n\nLe nouvel horaire s\'appliquera aussi aux journées déjà passées, ce qui peut recalculer d\'anciens retards.\n\nContinuer ?')) return;
+  }
+  config.supSchedule = { ...next, history };
+  await saveConfigSilent();
+  logAudit('Admin', 'Horaires superviseurs modifiés', JSON.stringify(config.supSchedule).slice(0, 300));
+  try{ clearRenderCaches(); }catch(e){}
+  renderSupScheduleUI();
+  showToast('✅ Horaires des superviseurs enregistrés');
+}
 function removeBreakRow(i){
   config.breaks.splice(i,1);
   renderBreaksEditor();
@@ -7406,6 +7699,7 @@ function cancelPwModal(){
 }
 
 async function checkAgentPassword(name){
+  if(!await ipLockAutorise(name, true)) return false;   // 🌐 verrouillage par adresse IP (Admin → Réglages)
   const pw = config.agentPasswords && config.agentPasswords[name];
   if(!pw) return true;
   if(authenticatedAgentsThisSession.has(name)) return true;
@@ -8133,6 +8427,7 @@ async function loadDayCorrectionForm(){
     document.getElementById('corrAbsenceDurationMinutes').value = '';
     document.getElementById('corrAbsenceDurationHours').value = '';
     { const cb = document.getElementById('corrDepartSansJustif'); if(cb) cb.checked = false; }
+    { const cb = document.getElementById('corrSortieEntreprise'); if(cb) cb.checked = false; }
     toggleAbsenceDurationField();
     document.getElementById('corrAttachmentFile').value = '';
     document.getElementById('corrAttachmentStatus').textContent = '';
@@ -8152,9 +8447,10 @@ async function loadDayCorrectionForm(){
   document.getElementById('corrAbsenceDurationMinutes').value = log.absenceDurationMinutes || '';
   document.getElementById('corrAbsenceDurationHours').value = log.absenceDurationMinutes ? Math.round((log.absenceDurationMinutes/60)*100)/100 : '';
   { const cb = document.getElementById('corrDepartSansJustif'); if(cb) cb.checked = !!log.departSansJustif; }
+  { const cb = document.getElementById('corrSortieEntreprise'); if(cb){ cb.checked = !!log.sortieHorsEntreprise; cb.dataset.orig = log.sortieHorsEntreprise ? JSON.stringify(log.sortieHorsEntreprise) : ''; } }
   {
     const info = document.getElementById('corrDepartInfo');
-    const depA = departAnticipe(log.events, dateStr);
+    const depA = departAnticipe(log.events, dateStr, agent);
     if(info){
       info.innerHTML = depA
         ? `🏃 <b style="color:var(--red);">Parti à ${depA.depart} au lieu de ${depA.finPrevue}</b> — ${depA.minutes} min non payées automatiquement.`
@@ -8184,7 +8480,7 @@ async function loadDayCorrectionForm(){
 function quickMarkPresentStandard(){
   const dateInput = document.getElementById('corrDate');
   if(!dateInput.value) dateInput.value = todayStr();
-  const sched = scheduleForDate(dateInput.value);
+  const sched = scheduleForDate(dateInput.value, (document.getElementById('corrAgent')||{}).value);
   document.getElementById('corrIn').value = sched.start;
   document.getElementById('corrOut').value = sched.end;
   renderCorrBreaksEditor(sched.breaks.map(b=>({ start: b.start, end: b.end })));
@@ -8260,6 +8556,7 @@ async function saveDayCorrection(){
     if(absenceComment) logToSave.absenceComment = absenceComment;
     if(absenceDurationMinutes) logToSave.absenceDurationMinutes = absenceDurationMinutes;
     { const cb = document.getElementById('corrDepartSansJustif'); if(cb && cb.checked) logToSave.departSansJustif = true; }
+    { const cb = document.getElementById('corrSortieEntreprise'); if(cb && cb.checked){ try{ logToSave.sortieHorsEntreprise = cb.dataset.orig ? JSON.parse(cb.dataset.orig) : { time: nowTimeStr(), ip: 'saisie admin' }; }catch(e){ logToSave.sortieHorsEntreprise = { time: nowTimeStr(), ip: 'saisie admin' }; } } }
 
     // Pièce jointe : encodée en base64 et écrite directement sur le log Firestore (pas de Firebase
     // Storage — forfait gratuit du projet). saveDayLog remplace tout le log à chaque sauvegarde, donc une
@@ -8740,7 +9037,7 @@ async function supervisorIneligibilityReasonToday(agent){
     if(realizedToday > 0) return null;
     return "car tu n'as pas encore pointé aujourd'hui";
   }
-  const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realizedToday));
+  const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realizedToday), agent);
   if(ev.lateMinutes > 10) return `à cause de ton retard supérieur à 10 min (${ev.lateMinutes} min)`;
   return null;
 }
@@ -9479,7 +9776,7 @@ async function renderAgentHistory(){
       const jaMeta = JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence];
       tagsHtml = `<span class="tag independant"${absenceCommentTitle(log)}>${jaMeta?jaMeta.icon:'🗓️'} ${lbl} · ${justifiedAbsenceStatusSuffix(log.justifiedAbsence)}</span>${absenceAttachmentLinkHtml(log)}`;
     } else {
-      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(currentAgent, dateStr, log));
+      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(currentAgent, dateStr, log), agent);
       if(ev.lateMinutes > 0){
         const sanction = ev.lateMinutes <= 10 ? '-30min salaire' : 'journée non payée';
         tagsHtml += `<span class="tag late">Retard ${ev.lateMinutes}min · ${sanction}</span>`;
@@ -9752,9 +10049,36 @@ function scheduleBaseForDate(dateStr){
   };
 }
 
-function scheduleForDate(dateStr){
+// 👔 Horaires des superviseurs : réglage unique pour tous les superviseurs (Admin → Réglages), avec
+// historique (chaque période passée vaut « jusqu'à cette date incluse »). null = pas d'horaire spécial :
+// on retombe sur l'horaire général. Les agents ne sont jamais concernés.
+function supScheduleFor(dateStr, agent){
+  const ss = config.supSchedule;
+  if(!agent || !ss || !isSupervisor(agent)) return null;
+  const hist = Array.isArray(ss.history) ? ss.history : [];
+  const ref = dateStr || todayStr();
+  const p = hist.filter(h=> h && h.until && ref <= h.until).sort((a,b)=> String(a.until).localeCompare(String(b.until)))[0];
+  const src = p || (ss.enabled ? ss : null);
+  if(!src || src.useGeneral || !src.start || !src.end) return null;
+  return src;
+}
+function workMinutesFor(agent){
+  const sp = supScheduleFor(todayStr(), agent);
+  return Math.max(60, toMinutes(sp ? sp.end : config.end) - toMinutes(sp ? sp.start : config.start));
+}
+function scheduleForDate(dateStr, agent){
   const dow = new Date(dateStr + 'T00:00:00').getDay();
-  const base = scheduleBaseForDate(dateStr || todayStr());
+  let base = scheduleBaseForDate(dateStr || todayStr());
+  const sp = supScheduleFor(dateStr || todayStr(), agent);
+  if(sp){
+    const bks = (base.breaks || []).map(b=>({...b}));
+    if(sp.lunchStart && sp.lunchEnd){
+      const li = bks.findIndex(b=>/d.jeuner|dejeuner|lunch/i.test(b.name));
+      if(li>=0) bks[li] = { ...bks[li], start: sp.lunchStart, end: sp.lunchEnd };
+    }
+    base = { ...base, start: sp.start, end: sp.end, breaks: bks,
+      fridayLunch: (sp.friStart && sp.friEnd) ? { enabled: true, start: sp.friStart, end: sp.friEnd } : base.fridayLunch };
+  }
   const breaks = (base.breaks || []).map(b=>({...b}));
   let note = null;
   const fl = base.fridayLunch || config.fridayLunch;
@@ -9814,19 +10138,19 @@ function matchBreaksToSchedule(breakPairs, schedBreaks){
 // ensuite. Le reste de la journée n'est pas payé : minutes manquantes × taux minute (le même que pour
 // les retards et les dépassements de pause). Renvoie null si la journée a été faite jusqu'au bout.
 // Une absence saisie par l'admin (justifiée, autorisée…) prend le dessus : elle est traitée ailleurs.
-function departAnticipe(events, dateStr){
+function departAnticipe(events, dateStr, agent){
   if(!events || !events.length || !isWorkingDay(dateStr)) return null;
   if(lastEventType(events) !== 'out') return null;             // revenu après, ou pas de départ pointé
   const outEvt = [...events].reverse().find(e=>e.type==='out');
   if(!outEvt || !outEvt.time) return null;
-  const sched = scheduleForDate(dateStr);
+  const sched = scheduleForDate(dateStr, agent);
   const minutes = toMinutes(sched.end) - toMinutes(outEvt.time.slice(0,5));
   if(minutes <= 0) return null;
   return { minutes, depart: outEvt.time.slice(0,5), finPrevue: sched.end };
 }
 
-function evaluateDay(events, dateStr, freeBreakBonusMin){
-  const sched = scheduleForDate(dateStr || todayStr());
+function evaluateDay(events, dateStr, freeBreakBonusMin, agent){
+  const sched = scheduleForDate(dateStr || todayStr(), agent);
   const inEvt = events.find(e=>e.type==='in');
   const outEvt = [...events].reverse().find(e=>e.type==='out');
   const breakPairs = extractBreakPairs(events);
@@ -9903,7 +10227,7 @@ async function renderReport(){
         return { agent, arrivee: null, depart: null, lateMinutes: 0, breakIssues: [], infractions: [], lockouts: [], hasAnyEvent: false, realized, isIndep: true, isWorkingDay: isWorkingDay(dateStr) };
       }
       const [log, infractions] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
-      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log));
+      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log), agent);
       const lockouts = extractLockouts(log.events);
       return { agent, ...ev, infractions, lockouts, realized, justifiedAbsence: log.justifiedAbsence || null, absenceComment: log.absenceComment || null, attachmentData: log.attachmentData || null, attachmentType: log.attachmentType || null, attachmentName: log.attachmentName || null, isIndep: false, isWorkingDay: isWorkingDay(dateStr) };
     }));
@@ -10128,10 +10452,11 @@ async function monthlyStatsCompute(agent, year, month){
   }));
   const pauseThreshold = config.pauseOverrunRetardThresholdMin != null ? config.pauseOverrunRetardThresholdMin : 10;
   let retards = 0, pauseOver = 0, pauseOverSmall = 0, pauseOverBig = 0, absences = 0, phoneYoutube = 0, objectif = 0, justifiedAbsenceCount = 0;
-  let departsSansJustif = 0, departsAnticipes = 0;
+  let departsSansJustif = 0, departsAnticipes = 0, sortiesEntreprise = 0;
   dayData.forEach(({dateStr, log, infr, board})=>{
+    if(isWorkingDay(dateStr) && log.sortieHorsEntreprise) sortiesEntreprise++;   // 🌐 sortie de l'entreprise = 1 retard
     // 🏃 r226 — départ avant l'heure (info) et départ SANS justificatif coché par l'admin (prime perdue).
-    if(isWorkingDay(dateStr) && !log.justifiedAbsence && departAnticipe(log.events, dateStr)) departsAnticipes++;
+    if(isWorkingDay(dateStr) && !log.justifiedAbsence && departAnticipe(log.events, dateStr, agent)) departsAnticipes++;
     if(isWorkingDay(dateStr) && log.departSansJustif) departsSansJustif++;
     // Retard/pause/absence ne sont évalués QUE les jours ouvrés (règlement : horaires lundi-vendredi,
     // jours fériés français exclus) — un week-end ou un jour férié sans pointage n'est jamais une
@@ -10157,7 +10482,7 @@ async function monthlyStatsCompute(agent, year, month){
         // compté en "dépassement" et pénalisé sur sa prime d'assiduité pour une pause qu'il a gagnée.
         const dayRealizedForBonus = getAgentProd(board, agent).realized || 0;
         const effectiveBonus = (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(dayRealizedForBonus);
-        const ev = evaluateDay(log.events, dateStr, effectiveBonus);
+        const ev = evaluateDay(log.events, dateStr, effectiveBonus, agent);
         if(ev.lateMinutes > 0) retards++;
         // 🆕 Discipline dépassements de pause : la retenue en DH reste toujours au prorata exact des
         // minutes (voir monthlyDeductions, inchangé) — ce qui change ici, c'est SEULEMENT l'impact sur le
@@ -10172,7 +10497,7 @@ async function monthlyStatsCompute(agent, year, month){
           if(totalBreakOverMinToday >= pauseThreshold) pauseOverBig++;
           else pauseOverSmall++;
         }
-      } else if(isDayOverForMessage(dateStr)){
+      } else if(isDayOverForMessage(dateStr, agent)){
         // « Absent » = aucun pointage ET aucun contrat saisi ce jour-là (même définition que partout
         // ailleurs dans l'appli). Compte comme un retard pour l'escalade « 3e retard OU absence »
         // (Règlement interne — Prime d'assiduité & retards répétés). On ne juge ça QUE si la journée
@@ -10195,12 +10520,12 @@ async function monthlyStatsCompute(agent, year, month){
   // (déjà géré : la retenue pause reste toujours au prorata des minutes, jamais un forfait de 30min).
   const pauseOverSmallGroups = Math.floor(pauseOverSmall / 3);
   const pauseOverEquivalentRetards = pauseOverBig + pauseOverSmallGroups;
-  const retardsCumules = retards + absences + pauseOverEquivalentRetards;
-  const total = retards + pauseOver + absences + phoneYoutube + objectif;
+  const retardsCumules = retards + absences + pauseOverEquivalentRetards + sortiesEntreprise;
+  const total = retards + pauseOver + absences + phoneYoutube + objectif + sortiesEntreprise;
   return {
     agent, retards, pauseOver, pauseOverSmall, pauseOverBig, pauseOverSmallGroups, pauseOverEquivalentRetards,
     absences, justifiedAbsenceCount, retardsCumules, phoneYoutube, objectif, total,
-    departsSansJustif, departsAnticipes
+    departsSansJustif, departsAnticipes, sortiesEntreprise
   };
 }
 
@@ -10553,7 +10878,7 @@ async function renderExploDailyDetail(agents, dateList, force){
             rowCls = noActivity ? 'late' : 'warn';
           }
         } else {
-          const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realJour));
+          const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realJour), agent);
           if(ev.lateMinutes > 10){ statusHtml = `<span class="tag late">Retard ${ev.lateMinutes}min (non payé)</span>`; rowCls = 'late'; }
           else if(ev.lateMinutes > 0){ statusHtml = `<span class="tag warn">Retard ${ev.lateMinutes}min</span>`; rowCls = 'warn'; }
           else statusHtml = '<span class="tag ok">Présent à l\'heure</span>';
@@ -10865,12 +11190,13 @@ function pickTeamPctMessage(pct, seed, isBilan){
 
 // Une date déjà passée (ou aujourd'hui après l'heure de fin de journée réglée dans Réglages) donne le
 // ton "bilan" ; sinon (journée en cours, avant la fin des horaires), le ton "on pousse, on motive".
-function isDayOverForMessage(refDateStr){
+function isDayOverForMessage(refDateStr, agent){
   if(!refDateStr) return true; // pas de date précise (ex: période sur plusieurs jours) → ton bilan
   const today = todayStr();
   if(refDateStr < today) return true;
   if(refDateStr > today) return false;
-  return toMinutes(nowTimeStr()) >= toMinutes(config.end);
+  const spEnd = supScheduleFor(today, agent);
+  return toMinutes(nowTimeStr()) >= toMinutes(spEnd ? spEnd.end : config.end);
 }
 
 // ============================================================
@@ -12105,7 +12431,7 @@ async function renderPauseTotalsToday(force){
     else if(lastType === 'out') workState = 'left';
     // Retard/absence — seulement pertinents un jour ouvré, sinon jamais évalués (même règle que
     // monthlyStats/buildTodayProblemRow : ni retard ni absence un jour non travaillé).
-    const ev = (workingToday && log.events.length > 0) ? evaluateDay(log.events, dateStr, bonusInfo.totalBonus) : null;
+    const ev = (workingToday && log.events.length > 0) ? evaluateDay(log.events, dateStr, bonusInfo.totalBonus, agent) : null;
     return {
       agent,
       lunchMin: Math.round(lunchSec/60),
@@ -12315,7 +12641,7 @@ async function buildTodayProblemRow(agent, dateStr, board){
     return { agent, isIndep: false, problem: false, hasAnyEvent: false };
   }
   const [log, infr] = await Promise.all([getDayLog(agent, dateStr), getInfractions(agent, dateStr)]);
-  const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log));
+  const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log), agent);
   const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;   // ← remets cette ligne
   const lockoutMin = totalLockoutMinutes(log.events);
   const stillLockedOut = extractLockouts(log.events).some(l=>!l.end);
@@ -12331,7 +12657,7 @@ async function buildTodayProblemRow(agent, dateStr, board){
   // définition qu'ailleurs (monthlyStats, buildWeeklyBriefingHtml) : aucun pointage ET aucun contrat ET
   // journée vraiment terminée.
   let isAbsent = false;
-if(!justifiedAbsence && !hasAnyEvent && isDayOverForMessage(dateStr) && isWorkingDay(dateStr)){
+if(!justifiedAbsence && !hasAnyEvent && isDayOverForMessage(dateStr, agent) && isWorkingDay(dateStr)){
   const realizedToday = getAgentProd(board, agent).realized || 0;
   isAbsent = realizedToday === 0;
 }
@@ -12342,9 +12668,9 @@ if(!justifiedAbsence && !hasAnyEvent && isDayOverForMessage(dateStr) && isWorkin
 if(!justifiedAbsence && isWorkingDay(dateStr)){
   const openLunch = extractBreakPairs(log.events).find(p=>!p.end);
   if(openLunch){
-    if(isDayOverForMessage(dateStr)) missingBreakReturn = true;
+    if(isDayOverForMessage(dateStr, agent)) missingBreakReturn = true;
     else{
-      const sched = scheduleForDate(dateStr);
+      const sched = scheduleForDate(dateStr, agent);
       const lunchSched = sched.breaks.find(b=>isLunchBreakName(b.name));
       if(lunchSched && dateStr === todayStr()){
         const nowMin = nowMA().getHours()*60 + nowMA().getMinutes();
@@ -12355,11 +12681,12 @@ if(!justifiedAbsence && isWorkingDay(dateStr)){
 }
   // 🚨 Jamais pointé "Départ (fin de journée)" alors que la journée est terminée — a pointé une arrivée,
   // mais pas de départ.
-  const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr) && isWorkingDay(dateStr);
-  const departAvant = !justifiedAbsence ? departAnticipe(log.events, dateStr) : null;
+  const missingClockOut = !justifiedAbsence && hasAnyEvent && lastEventType(log.events) !== 'out' && isDayOverForMessage(dateStr, agent) && isWorkingDay(dateStr);
+  const departAvant = !justifiedAbsence ? departAnticipe(log.events, dateStr, agent) : null;
   const departSansJustif = !!log.departSansJustif;
-  const problem = ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut || !!departAvant || departSansJustif;
-  return { agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, attachmentData, attachmentType, attachmentName, isAbsent, missingBreakReturn, missingClockOut, departAvant, departSansJustif, problem, hasAnyEvent, isIndep: false };
+  const sortieEntreprise = log.sortieHorsEntreprise || null;
+  const problem = !!sortieEntreprise || ev.lateMinutes>0 || anyBreakOver || infr.length>0 || lockoutMin>0 || stillLockedOut || !!justifiedAbsence || isAbsent || missingBreakReturn || missingClockOut || !!departAvant || departSansJustif;
+  return { sortieEntreprise, agent, ev, infr, anyBreakOver, lockoutMin, stillLockedOut, justifiedAbsence, absenceComment, attachmentData, attachmentType, attachmentName, isAbsent, missingBreakReturn, missingClockOut, departAvant, departSansJustif, problem, hasAnyEvent, isIndep: false };
 }
 
 // Clic sur une ligne d'alerte (ou sur la notification correspondante) → ouvre directement Admin →
@@ -12437,6 +12764,7 @@ async function renderTodaySnapshot(){
       if(r.missingBreakReturn) tags += `<span class="tag late">🍽️ Pas de retour de pause pointé</span>`;
       if(r.missingClockOut) tags += `<span class="tag late">🚪 Pas de départ (fin de journée) pointé</span>`;
       if(r.departAvant) tags += `<span class="tag late">🏃 Parti à ${r.departAvant.depart} au lieu de ${r.departAvant.finPrevue} — ${r.departAvant.minutes} min non payées</span>`;
+      if(r.sortieEntreprise) tags += `<span class="tag late">🌐 Sorti de l'entreprise (${escapeHtml(r.sortieEntreprise.time||'')}) — compte comme 1 retard</span>`;
       if(r.departSansJustif) tags += `<span class="tag late">🚪 Sans justificatif — prime d'assiduité perdue</span>`;
       if(r.lockoutMin>0) tags += `<span class="tag warn">🔒 Inactivité ${r.lockoutMin}min (info)</span>`;
       if(r.stillLockedOut) tags += `<span class="tag late">🔒 Toujours délogué — pas reconnecté</span>`;
@@ -18709,7 +19037,7 @@ async function buildWeeklyBriefingHtml(mondayOverride){
       } else {
         daysPresent++;
         if(realized === 0 && dayOver && enerJour(agent, d) === 0){ zeroDays++; zeroDayDates.push(d); }
-        const ev = evaluateDay(log.events, d, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realized));
+        const ev = evaluateDay(log.events, d, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realized), agent);
         if(ev.lateMinutes > 0) lateCount++;
       }
     }));
@@ -19920,7 +20248,7 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
   const isIndep = isIndependant(agent);
   const daysMonth = workingDaysInMonth(year, month);
   const dailyFixedQuote = (payPlein.baseSalary + payPlein.primeFixeMensuelle) / daysMonth;
-  const workMinutes = Math.max(60, toMinutes(config.end) - toMinutes(config.start));
+  const workMinutes = workMinutesFor(agent);
   const minuteRate = dailyFixedQuote / workMinutes;
   const halfHourDeduction = minuteRate * 30;
 
@@ -20037,7 +20365,7 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
     // personne n'y est censé travailler. Les infractions manuelles ci-dessous, elles, s'appliquent
     // quel que soit le jour (un retour client peut arriver n'importe quand).
     if(!isIndep && log && isWorkingDay(dateStr) && log.events.length > 0){
-      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log));
+      const ev = evaluateDay(log.events, dateStr, await getEffectiveFreeBreakBonus(agent, dateStr, log), agent);
       if(ev.lateMinutes > 10){
         // Règlement interne : au-delà de 10 minutes de retard, « la paye du jour n'est pas due » — mais
         // « les contrats effectués durant la journée sont pris en compte ». Seule la quote-part fixe du
@@ -20072,14 +20400,20 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
         }
         // 🏃 r226 — Départ avant l'heure : le reste de la journée n'est pas payé (au prorata de la minute).
         // Pas appliqué quand le retard >10 min a déjà fait tomber toute la journée (branche au-dessus).
-        const depA = departAnticipe(log.events, dateStr);
+        const depA = departAnticipe(log.events, dateStr, agent);
         if(depA){
           const amt = depA.minutes * minuteRate;
           total += amt;
           items.push({ date: dateStr, label: `Départ avant l'heure (${depA.depart} au lieu de ${depA.finPrevue}) — ${depA.minutes}min non payées${log.departSansJustif ? ' · sans justificatif : prime d\'assiduité perdue' : ''}`, amount: Math.round(amt) });
         }
       }
-      if(log.departSansJustif && !departAnticipe(log.events, dateStr) || (log.departSansJustif && ev.lateMinutes > 10)){
+      if(log.sortieHorsEntreprise){
+        const minSortie = minutesSortieEntreprise(log, dateStr, agent);
+        const amtSortie = minSortie * minuteRate;
+        total += amtSortie;
+        items.push({ date: dateStr, label: `Sorti de l'entreprise (adresse non autorisée) — ${minSortie} min non travaillées retenues au prorata · compte aussi comme 1 retard pour la prime d'assiduité`, amount: Math.round(amtSortie) });
+      }
+      if(log.departSansJustif && !departAnticipe(log.events, dateStr, agent) || (log.departSansJustif && ev.lateMinutes > 10)){
         items.push({ date: dateStr, label: `Départ sans justificatif — prime d'assiduité perdue`, amount: 0 });
       }
 
@@ -20090,7 +20424,7 @@ async function monthlyDeductions(agent, year, month, dateRangeOverride){
       if(lockoutMinInfo > 0){
         items.push({ date: dateStr, label: `Inactivité ${lockoutMinInfo}min (délogué) — info, non déduit`, amount: 0 });
       }
-    } else if(!isIndep && log && isWorkingDay(dateStr) && log.events.length === 0 && isDayOverForMessage(dateStr)){
+    } else if(!isIndep && log && isWorkingDay(dateStr) && log.events.length === 0 && isDayOverForMessage(dateStr, agent)){
       // Absence non déclarée (aucun pointage, aucune justification saisie par l'admin) : « Absent » =
       // aucun pointage ET aucun contrat saisi ce jour-là (même définition que partout ailleurs dans
       // l'appli). La quote-part fixe du jour est perdue, comme un retard >10min ; s'il y a malgré tout
@@ -20185,7 +20519,7 @@ async function renderRetardsAbsencesPanel(containerId, agent, year, month, force
   const tier = tierForCount(count);
   const daysMonth = workingDaysInMonth(year, month);
   const dailyFixedQuote = daysMonth > 0 ? (pay.baseSalary + pay.primeFixeMensuelle) / daysMonth : 0;
-  const workMinutes = Math.max(60, toMinutes(config.end) - toMinutes(config.start));
+  const workMinutes = workMinutesFor(agent);
   const minuteRate = workMinutes > 0 ? dailyFixedQuote / workMinutes : 0;
   const halfHourDeduction = minuteRate * 30;
   // Le dépassement de pause reste toujours une retenue en argent au prorata de la minute (monthlyDeductions),
@@ -21886,7 +22220,7 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
   const hasEvent = log.events && log.events.length > 0;
   const realizedToday = getAgentProd(board, agent).realized || 0;
   if(!hasEvent) return realizedToday > 0; // aucun pointage : éligible seulement s'il a quand même saisi un contrat
-  const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realizedToday));
+  const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(realizedToday), agent);
   return ev.lateMinutes <= 10;
 }
 
@@ -22220,7 +22554,42 @@ async function supervisorMonthlyBonus(year, month){
     dh[sup] = monthDh[sup] || 0;
     contracts[sup] = monthContracts[sup] || 0;
   });
+  // r347 — Choix brut / net, superviseur par superviseur (Admin > Paie > Supervision). « Net » : les
+  // contrats retirés par les retours de facturation des agents de l'équipe sont aussi retirés de la prime
+  // du superviseur, au taux moyen de son mois. « Brut » (défaut) : rien ne change, comme avant.
+  if(supervisors.some(supervisorEstNet)){
+    let retoursEquipe = 0;
+    await Promise.all(allKnownAgents().map(async a=>{
+      if(isSupervisor(a) || isIndependant(a)) return;
+      try{ retoursEquipe += (await returnsContractDeduction(a, year, month)).deducted || 0; }catch(e){}
+    }));
+    supervisors.filter(supervisorEstNet).forEach(sup=>{
+      const c = contracts[sup] || 0;
+      if(c <= 0 || retoursEquipe <= 0) return;
+      const retire = Math.min(retoursEquipe, c);
+      dh[sup] = Math.max(0, dh[sup] - retire * (dh[sup] / c));
+      contracts[sup] = c - retire;
+    });
+  }
   return { dh, contracts };
+}
+
+function supervisorEstNet(sup){
+  try{ return !!((getProdConfig().agentPay || {})[sup] || {}).supervisorNet; }catch(e){ return false; }
+}
+
+async function saveSupervisorBase(agent, value){
+  const pc = getProdConfig();
+  pc.agentPay = pc.agentPay || {};
+  if(!pc.agentPay[agent]) pc.agentPay[agent] = {};
+  if(value === 'net') pc.agentPay[agent].supervisorNet = true;
+  else delete pc.agentPay[agent].supervisorNet;
+  if(Object.keys(pc.agentPay[agent]).length === 0) delete pc.agentPay[agent];
+  await saveConfigSilent();
+  logAudit('Admin', 'Base de calcul superviseur : ' + (value === 'net' ? 'net' : 'brut'), agent);
+  showToast('✅ Enregistré', 'ok', 2000);
+  try{ renderAgentPayTable(); }catch(e){}
+  try{ renderSupervision(); }catch(e){}
 }
 
 // Bandeau défilant "ticker" — partagé entre Cash et Objectifs (Arena), pour ne calculer/afficher
@@ -22917,7 +23286,7 @@ function cashIlekPaint(){
     : `${nets} énergie${nets>1?'s':''} × ${il.commission} DH`;
   if(d) d.innerHTML = `
     <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin:14px 0 4px;">⚡ Énergie — Ilek (à part de Prime)</div>
-    <div class="hit"><span>${detail}${il.estime ? ' · ⏳ estimation (−'+il.chute+' % de retours)' : ''}${il.retoursEnergies ? ' · '+il.retoursEnergies+' retour'+(il.retoursEnergies>1?'s':'')+' retiré'+(il.retoursEnergies>1?'s':'') : ''}</span><b>+${fmt(il.montant)} DH</b></div>
+    <div class="hit"><span>${detail}${il.estime ? ' · ⏳ estimation (−'+il.chute+' % de retours)' : ''}${il.retoursEnergies ? ' · '+il.retoursEnergies+' retour'+(il.retoursEnergies>1?'s':'')+' retiré'+(il.retoursEnergies>1?'s':'') + ((typeof window.ilekMotifsTexte === 'function' && window.ilekMotifsTexte(il.retours)) ? ' ('+window.ilekMotifsTexte(il.retours)+')' : '') : ''}</span><b>+${fmt(il.montant)} DH</b></div>
     <div style="border-top:2px solid #22c55e; margin-top:10px; padding-top:8px;"><span><b>Total Prime + Énergie</b></span><b style="color:#22c55e; font-size:16px;">${fmt(c.tot)} DH</b></div>`;
   if(sm) sm.innerHTML = `<div class="cp-sub" style="margin-top:8px;">🛡️ Cette simulation ne projette que <b>Prime</b>. ⚡ Énergie Ilek déjà acquise ce mois : <b style="color:#22c55e;">+${fmt(il.montant)} DH</b>${il.estime ? ' (estimation)' : ''}.</div>`;
 }
@@ -23458,7 +23827,7 @@ async function renderSupervisionReel(){
       const hasActivity = log.events.length > 0;
       if(hasActivity){
         const last = lastEventType(log.events);
-        const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(dayRealized));
+        const ev = evaluateDay(log.events, dateStr, (log.freeBreakBonusMin || 0) + earnedBreakBonusMinutes(dayRealized), agent);
         if(log.justifiedAbsence){
           statusLabel = '🗓️ ' + justifiedAbsenceLabel(log.justifiedAbsence, true);
           statusCls = 'independant';
@@ -23751,7 +24120,7 @@ async function renderSupervisionReel(){
     // jour — une absence non justifiée ou une mise à pied doit au contraire y rester visible.
     if(log.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence]?.justified) return { agent: r.agent, violation: false };
     const infr = await getInfractions(r.agent, todayDateStr);
-    const ev = evaluateDay(log.events, todayDateStr, await getEffectiveFreeBreakBonus(r.agent, todayDateStr, log));
+    const ev = evaluateDay(log.events, todayDateStr, await getEffectiveFreeBreakBonus(r.agent, todayDateStr, log), agent);
     const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;
     const violation = ev.lateMinutes > 0 || anyBreakOver || infr.length > 0;
     return { agent: r.agent, violation };
@@ -24165,7 +24534,11 @@ async function indepSupervisorCommissionForMonth(year, month){
     const sup = c.indepCommissionSupervisor;
     const rate = Number(c.indepCommissionRate) || 0;
     if(!sup || !rate) return;
-    const contracts = await monthlyRealizedContracts(agent, year, month);
+    let contracts = await monthlyRealizedContracts(agent, year, month);
+    // r347 — superviseur réglé sur « net » : on retire aussi les contrats enlevés par les retours de facturation.
+    if(supervisorEstNet(sup)){
+      try{ contracts = Math.max(0, contracts - ((await returnsContractDeduction(agent, year, month)).deducted || 0)); }catch(e){}
+    }
     if(contracts <= 0) return;
     const amount = Math.round(contracts * rate);
     if(!result[sup]) result[sup] = { amount: 0, detail: [] };
@@ -24223,7 +24596,7 @@ async function renderAgentPayTable(){
     const blocFixe = `<div class="rm-bloc"><h4>🏦 Salaire fixe <span style="font-weight:600;color:var(--muted);font-size:11.5px;">(pour assistance et énergie, payé une seule fois)</span></h4>${champ('baseSalary', p.baseSalary, 'DH / mois', 'Fixe par mois')}${champ('primeFixeMensuelle', p.primeFixeMensuelle, 'DH / mois', 'Prime fixe par mois')}${brutNote}</div>`;
     const blocAssid = `<div class="rm-bloc"><h4>✅ Assiduité</h4>${champ('primeAssiduite', p.primeAssiduite, 'DH', 'Prime si aucun retard ni absence')}</div>`;
     const blocComm = `<div class="rm-bloc"><h4>💵 Commission / bonus assistance (Prime)</h4>${champ('perContract', p.perContract, 'DH', lockObjectif ? 'Par contrat fait (dès le 1er)' : 'Par contrat (après l\'objectif)')}${lockObjectifRow ? '' : champ('perContractBeforeObjectif', p.perContractBeforeObjectif, 'DH', 'Par contrat (avant l\'objectif)')}${lockObjectif ? '<div class="rm-hint">Sans objectif : payé dès le 1er contrat.</div>' : ''}</div>`;
-    const blocSup = (isSup || p.supervisorPrimePerContract) ? `<div class="rm-bloc"><h4>📊 Supervision</h4>${champ('supervisorPrimePerContract', p.supervisorPrimePerContract, 'DH', 'Prime superviseur par contrat d\'équipe')}</div>` : '';
+    const blocSup = (isSup || p.supervisorPrimePerContract) ? `<div class="rm-bloc"><h4>📊 Supervision</h4>${champ('supervisorPrimePerContract', p.supervisorPrimePerContract, 'DH', 'Prime superviseur par contrat d\'équipe')}${isSup ? `<div class="rm-lig"><span class="t">Base de calcul (prime d'équipe + commission indépendants)</span><span class="rm-num"><select onchange="saveSupervisorBase('${agentKeySafe}', this.value)"><option value="brut" ${c.supervisorNet?'':'selected'}>Brut (retours de facturation non retirés)</option><option value="net" ${c.supervisorNet?'selected':''}>Net (retours de facturation retirés)</option></select></span></div>` : ''}</div>` : '';
     const objVise = `<div class="rm-lig"><span class="t">Objectif visé ce mois (choisi par l'agent)</span><span class="rm-num"><input type="number" min="0" step="1" value="${desiredObj || ''}" placeholder="—" title="Objectif visé par l'agent lui-même — tu peux aussi le régler ici à sa place" onchange="adminSetDesiredObjective('${agentKeySafe}', ${year}, ${month}, this.value)"><span>contrats</span></span></div>`;
     const blocObj = lockObjectifRow
       ? `<div class="rm-bloc"><h4>🎯 Objectif</h4><div class="rm-hint" style="margin:0 0 6px;">Pas d'objectif obligatoire (${esc2(profil.replace(/^[^ ]+ /,''))}). Ça se change dans l'onglet 👥 Statuts.</div>${objVise}</div>`
@@ -26448,7 +26821,7 @@ function billingEntreeSuspect(row, cmp, nc){
 }
 async function billingNoterDoublons(ignores, suspects){
   if(suspects && suspects.length){ const d = await billingLoad('billingSuspects', { items: [] }); d.items = (d.items || []).concat(suspects); await billingSave('billingSuspects', d); }
-  if(ignores && ignores.length){ const d = await billingLoad('billingDoublons', { items: [] }); d.items = (d.items || []).concat(ignores).slice(-300); await billingSave('billingDoublons', d); }
+  if(ignores && ignores.length){ const d = await billingLoad('billingDoublons', { items: [] }); d.items = (d.items || []).concat(ignores).slice(-1000); await billingSave('billingDoublons', d); }
 }
 // 📒 r284 — Journal des relevés de la boîte : à chaque relevé qui a quelque chose à dire, on note l'heure et le détail,
 // pour pouvoir retrouver à quel moment un contrat a disparu (ou a été mis à vérifier).
@@ -26619,6 +26992,74 @@ function billingMapRow(raw){
   if(audit.fixes.length) out._fixes = audit.fixes;
   if(audit.warnings.length) out._warnings = audit.warnings;
   return out;
+}
+
+// r347 — COLONNE « PRODUIT » : même affichage partout, et repérage des valeurs décalées.
+// La case Produit doit contenir « Contrat Prime ». Une ligne mal découpée peut y avoir mis autre chose (référence, mail, téléphone…) ou la laisser vide.
+// On ne devine jamais : seuls les cas évidents (référence, mail, téléphone) peuvent être déplacés, et seulement dans une case vide.
+function billingProduitClasse(r){
+  const v = String((r && r.produit) || '').trim().replace(/\s+/g, ' ');
+  if(!v) return { type: 'vide', label: '' };
+  if(/^(contrat )?prime$/i.test(v)) return { type: 'ok', label: 'Contrat Prime' };
+  if(/^contrat [a-zà-ÿ]/i.test(v)) return { type: 'ok', label: v };
+  const res = { type: 'decale', label: v, cible: null, libre: false };
+  if(/^[0-9a-f]{10,16}$/i.test(v) && /[a-f]/i.test(v)) res.cible = 'reference';
+  else if(/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v)) res.cible = 'email';
+  else if(/^(\+33|0033|0)[1-9]([\s.\-]?\d{2}){4}$/.test(v)) res.cible = 'telephone';
+  if(res.cible){ const actuel = String(r[res.cible] || '').trim().toLowerCase(); res.libre = !actuel || actuel === v.toLowerCase(); }
+  return res;
+}
+function billingProduitLibelle(r){ const c = billingProduitClasse(r); return c.type === 'ok' ? c.label : String((r && r.produit) || ''); }
+function billingProduitCellule(r, monthVal, key, avecBouton){
+  const c = billingProduitClasse(r);
+  if(c.type === 'ok') return escapeHtml(c.label);
+  const nomCible = { reference: 'la référence', email: "l'email", telephone: 'le téléphone' }[c.cible] || '';
+  let bouton = '', titre = '';
+  if(c.type === 'vide'){
+    titre = 'La case Produit est vide : elle devrait contenir « Contrat Prime ».';
+    bouton = 'Mettre « Contrat Prime »';
+  }else if(c.cible && c.libre){
+    titre = 'Cette valeur est ' + nomCible + ' du client, tombée dans la case Produit. On peut la remettre à sa place.';
+    bouton = 'Déplacer vers ' + nomCible;
+  }else if(c.cible){
+    titre = 'Cette valeur ressemble à ' + nomCible + ', mais cette case est déjà remplie avec autre chose : à vérifier à la main.';
+  }else{
+    titre = 'Cette case devrait contenir « Contrat Prime ». Elle contient autre chose : à vérifier à la main.';
+  }
+  const valeur = c.type === 'vide' ? '<span style="color:var(--muted);">—</span>' : escapeHtml(c.label);
+  const btn = (avecBouton && bouton) ? ` <button type="button" onclick="billingProduitCorriger('${escapeHtml(monthVal)}','${String(key).replace(/'/g, "\\'")}',this)" style="padding:2px 8px;border-radius:6px;border:1px solid var(--amber);background:rgba(232,168,56,0.12);color:var(--amber);font-size:11px;font-weight:700;cursor:pointer;">${escapeHtml(bouton)}</button>` : '';
+  return `<span title="${escapeHtml(titre)}" style="color:var(--amber);">⚠ ${valeur}</span>${btn}`;
+}
+function billingProduitCorrigerLigne(r){
+  const c = billingProduitClasse(r);
+  if(c.type === 'vide'){ r.produit = 'Contrat Prime'; return true; }
+  if(c.type === 'decale' && c.cible && c.libre){ r[c.cible] = c.label; r.produit = 'Contrat Prime'; return true; }
+  return false;
+}
+async function billingProduitCorriger(monthVal, key, btn){
+  const store = await getBillingProd(monthVal);
+  const r = (store.rows || []).find(x => String(x.numContrat || x.reference || '') === String(key));
+  if(!r){ uiAlert('Contrat introuvable : la liste va se rafraîchir.'); renderBillingAgentSheet(); return; }
+  const avant = String(r.produit || '');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳'; }
+  if(!billingProduitCorrigerLigne(r)){ if(btn){ btn.disabled = false; } uiAlert('Ce cas demande une vérification à la main : rien n\'a été changé.'); return; }
+  try{ await billingSave(billingProdKey(monthVal), store); }
+  catch(e){ uiAlert('Enregistrement impossible : ' + (e && e.message ? e.message : e)); return; }
+  logAudit('Admin', 'Colonne Produit corrigée', `${r.nom || key} (${monthVal}) : « ${avant || 'vide'} » → Contrat Prime`);
+  billingInvalidate(); try{ clearRenderCaches(); }catch(e){}
+  renderBillingAgentSheet();
+}
+async function billingProduitCorrigerTout(monthVal, agent){
+  const store = await getBillingProd(monthVal);
+  const cibles = (store.rows || []).filter(r => (!agent || r.agent === agent) && (() => { const c = billingProduitClasse(r); return c.type === 'vide' || (c.type === 'decale' && c.cible && c.libre); })());
+  if(!cibles.length){ uiAlert('Rien à corriger automatiquement.'); return; }
+  if(!await uiAsk(`Corriger ${cibles.length} ligne${cibles.length > 1 ? 's' : ''} ?\n\n• Une case Produit vide devient « Contrat Prime »\n• Une référence, un mail ou un téléphone tombé dans la case Produit retourne dans sa bonne colonne (seulement si elle est vide)\n\nLes autres cas ne sont pas touchés.`)) return;
+  cibles.forEach(r => billingProduitCorrigerLigne(r));
+  try{ await billingSave(billingProdKey(monthVal), store); }
+  catch(e){ uiAlert('Enregistrement impossible : ' + (e && e.message ? e.message : e)); return; }
+  logAudit('Admin', 'Colonne Produit corrigée (en bloc)', `${cibles.length} ligne(s) — ${agent || 'tous les agents'} — ${monthVal}`);
+  billingInvalidate(); try{ clearRenderCaches(); }catch(e){}
+  renderBillingAgentSheet();
 }
 
 // Rapprochement du nom d'agent du fichier avec la liste des agents du CRM.
@@ -28951,6 +29392,16 @@ function billingAgentSheetHTML(d, forImage){
     // 📄 DANS LE PDF ET L'IMAGE, le statut est ÉCRIT, pas seulement coloré. La couleur rouge et le
     // texte barré disparaissent à l'impression en noir et blanc, se voient mal sur un téléphone, et
     // ne disent rien à quelqu'un qui découvre le document. Le mot « RÉTRACTÉ » ne laisse aucun doute.
+    if(!forImage){
+      const nbProd = d.rows.filter(r => { const c = billingProduitClasse(r); return c.type !== 'ok'; }).length;
+      const nbAuto = d.rows.filter(r => { const c = billingProduitClasse(r); return c.type === 'vide' || (c.type === 'decale' && c.cible && c.libre); }).length;
+      if(nbProd){
+        html += `<div style="padding:10px 13px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.45); font-size:13px; margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+          <span>⚠ <b>${nbProd} ligne${nbProd>1?'s':''}</b> où la colonne « Produit » n'est pas « Contrat Prime » (vide, ou une autre information tombée dans cette case).${nbAuto ? ` ${nbAuto} peu${nbAuto>1?'vent':'t'} être corrigée${nbAuto>1?'s':''} automatiquement ; les autres sont à vérifier à la main.` : ' À vérifier à la main.'}</span>
+          ${nbAuto ? `<button type="button" onclick="billingProduitCorrigerTout('${escapeHtml(d.monthVal)}','${String(d.agent).replace(/'/g, "\\'")}')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--amber);background:rgba(232,168,56,0.12);color:var(--amber);font-weight:700;cursor:pointer;">Tout corriger (${nbAuto})</button>` : ''}
+        </div>`;
+      }
+    }
     html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th><th>Téléphone</th><th>N° contrat</th>' + (forImage ? '<th>Statut</th>' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
     const flagged = d.rows.filter(r => r._warnings && r._warnings.length);
     if(flagged.length && !forImage){
@@ -28968,7 +29419,7 @@ function billingAgentSheetHTML(d, forImage){
       html += `<tr${red} data-search="${hay}">
         <td>${i + 1}</td>
         <td>${escapeHtml(r.datePropre || r.date)}</td>
-        <td>${escapeHtml(r.produit)}</td>
+        <td>${forImage ? escapeHtml(billingProduitLibelle(r)) : billingProduitCellule(r, d.monthVal, key, true)}</td>
         <td>${escapeHtml(r.nom)}${flag}</td>
         <td>${escapeHtml(r.telephone)}</td>
         <td>${escapeHtml(key)}</td>
@@ -28995,7 +29446,7 @@ function billingAgentSheetHTML(d, forImage){
     // paie plus haut, l'ordre n'y change rien mais on ne touche jamais à une donnée qu'on affiche.
     // La numérotation suit l'ordre affiché : la ligne 1 est bien la première du tableau.
     [...ret.rows].reverse().forEach((r, i) => {
-      html += `<tr><td>${i + 1}</td><td>${escapeHtml(r.produit)}</td><td>${escapeHtml(r.nom)}${(!forImage && r.deuxiemePrelevement) ? ` <span style="color:var(--amber); font-weight:700; font-size:11px;" title="Déjà retenu un autre mois (1er prélèvement : ${escapeHtml(r.premierPrelevementMois || '?')})">💸 2e prélèvement</span>` : ''}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
+      html += `<tr><td>${i + 1}</td><td>${escapeHtml(billingProduitLibelle(r))}</td><td>${escapeHtml(r.nom)}${(!forImage && r.deuxiemePrelevement) ? ` <span style="color:var(--amber); font-weight:700; font-size:11px;" title="Déjà retenu un autre mois (1er prélèvement : ${escapeHtml(r.premierPrelevementMois || '?')})">💸 2e prélèvement</span>` : ''}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
     });
     html += '</tbody></table></div>';
 
@@ -29796,7 +30247,12 @@ let backofficeSyncGeneration = 0;
 // jamais d'erreur affichée, jamais rien dans la boîte qui bouge, jusqu'à un rechargement manuel de la
 // page. Au-delà de BACKOFFICE_STUCK_MS, on considère ce tour précédent comme mort et on retente quand
 // même, sans attendre que l'utilisateur recharge quoi que ce soit.
-const BACKOFFICE_STUCK_MS = 25000;
+// r347 — Avant : 25 s. Un relevé un peu long (beaucoup de contrats) était déclaré « bloqué » et DOUBLÉ par un
+// 2e relevé qui relisait les mêmes contrats encore dans la boîte → les « doublons le serveur » de chaque jour.
+// Maintenant : un relevé n'est déclaré bloqué qu'après 3 minutes SANS aucun signe de vie (voir backofficeSyncBeat).
+const BACKOFFICE_STUCK_MS = 180000;
+let backofficeSyncBeat = 0;     // dernier signe de vie du relevé en cours (mis à jour à chaque étape)
+function backofficeBattement(){ backofficeSyncBeat = Date.now(); }
 
 // ═══ VERROU PARTAGÉ DU RELEVÉ — un seul poste range la boîte à la fois ═══════════════════════════
 // Le relevé automatique ne dépendait QUE de l'onglet Admin : si personne ne le gardait ouvert et au
@@ -29841,6 +30297,22 @@ function withTimeout(promise, ms, valeurDeRepli){
   });
 }
 const BACKOFFICE_LOCK_TIMEOUT_MS = 8000;
+
+// r347 — Le verrou ne durait que 20 s, même si le relevé travaillait encore : un 2e poste Admin le reprenait et relisait
+// les mêmes contrats. Tant que le relevé travaille, il RENOUVELLE son verrou (toutes les 8 s). Si le poste plante, il arrête
+// de renouveler et le verrou expire tout seul après 20 s : un autre poste reprend, personne ne reste bloqué.
+async function renouvelerVerrouReleve(liberer){
+  if(!firebaseReady || !db) return;
+  try{
+    const ref = db.collection('vortexnova').doc(BACKOFFICE_LOCK_KEY);
+    await withTimeout(db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const current = (snap.exists && snap.data().value) ? JSON.parse(snap.data().value) : null;
+      if(!current || current.owner !== backofficeClientId) return;   // jamais toucher le verrou d'un autre poste
+      tx.set(ref, { value: JSON.stringify({ owner: backofficeClientId, at: liberer ? 0 : Date.now(), peutRanger: true }) });
+    }), BACKOFFICE_LOCK_TIMEOUT_MS, null);
+  }catch(e){ console.warn('renouvelerVerrouReleve:', e); }
+}
 
 async function acquireBackofficeSyncLock(){
   if(!firebaseReady || !db) return true; // pas de Firestore = pas de risque de concurrence, on laisse passer
@@ -29990,23 +30462,50 @@ async function syncBackofficeInbox(opts){
     }
     return backofficeLastResult;
   }
+  const resultatVide = (msg) => ({ imported: 0, duplicates: 0, unresolvedAgent: [], badDate: [], lateForFrozen: [],
+               datesSuspectes: [], byMonthCount: {}, fixes: [], warnings: [], rtdbError: null, error: msg });
+  // r347 — UN SEUL RELEVÉ À LA FOIS sur ce poste. Un relevé automatique en cours : on ne le double jamais.
+  // Un clic manuel (« Relever maintenant », « Ranger depuis le serveur »…) ATTEND la fin du relevé en cours, puis relève.
   if(backofficeSyncBusy){
-    if((Date.now() - backofficeSyncStartedAt) <= BACKOFFICE_STUCK_MS) return backofficeLastResult;
-    // Le tour précédent tourne depuis trop longtemps pour être normal : on ne reste plus jamais
-    // bloqué en silence, voir l'explication au-dessus de BACKOFFICE_STUCK_MS.
-    console.warn('syncBackofficeInbox: relevé précédent resté bloqué plus de', BACKOFFICE_STUCK_MS, 'ms — nouvelle tentative forcée, sans attendre de rechargement de page.');
+    if((Date.now() - backofficeSyncBeat) <= BACKOFFICE_STUCK_MS){
+      if(silent) return backofficeLastResult;
+      const attenteDebut = Date.now();
+      while(backofficeSyncBusy && (Date.now() - backofficeSyncBeat) <= BACKOFFICE_STUCK_MS && (Date.now() - attenteDebut) < 120000){
+        await new Promise(res => setTimeout(res, 500));
+      }
+      if(backofficeSyncBusy && (Date.now() - backofficeSyncBeat) <= BACKOFFICE_STUCK_MS){
+        return resultatVide("Un relevé est encore en cours. Réessaie dans quelques secondes.");
+      }
+    }else{
+      // Aucun signe de vie depuis 3 minutes : ce tour est mort, on ne reste jamais bloqué en silence.
+      console.warn('syncBackofficeInbox: relevé précédent sans signe de vie depuis plus de', BACKOFFICE_STUCK_MS, 'ms — nouvelle tentative forcée.');
+    }
   }
   if(!firebaseReady) return null;
-  if(silent){
-    const gagne = await acquireBackofficeSyncLock();
-    if(!gagne) return backofficeLastResult; // un autre poste s'en occupe déjà ce tour-ci
-  }
-  // Identifie CE relevé précis : si un relevé bloqué (voir ci-dessus) finit quand même par se terminer
-  // APRÈS qu'on ait forcé une nouvelle tentative, il ne doit surtout pas écraser le résultat plus
-  // récent ni retoucher backofficeSyncBusy à sa place — seul le relevé le plus récent compte.
+  // Aucun « await » entre le test ci-dessus et cette prise de place : deux appels ne passent jamais ensemble.
   const monRelevé = ++backofficeSyncGeneration;
   backofficeSyncBusy = true;
   backofficeSyncStartedAt = Date.now();
+  backofficeBattement();
+  // Le verrou partagé entre postes Admin vaut aussi pour le clic manuel : il attend (au plus 60 s) que l'autre poste ait fini.
+  let verrouPris = await acquireBackofficeSyncLock();
+  if(!verrouPris && !silent){
+    const debutVerrou = Date.now();
+    while(!verrouPris && (Date.now() - debutVerrou) < 60000){
+      await new Promise(res => setTimeout(res, 2000));
+      backofficeBattement();
+      verrouPris = await acquireBackofficeSyncLock();
+    }
+  }
+  if(!verrouPris){
+    if(monRelevé === backofficeSyncGeneration) backofficeSyncBusy = false;
+    return silent ? backofficeLastResult : resultatVide("Un autre poste Admin est en train de ranger les contrats. Réessaie dans quelques secondes.");
+  }
+  // Tant que CE relevé travaille, il renouvelle son verrou et donne signe de vie.
+  const minuteurVerrou = setInterval(() => {
+    if(monRelevé !== backofficeSyncGeneration){ clearInterval(minuteurVerrou); return; }
+    renouvelerVerrouReleve(false);
+  }, 8000);
 
   // `importedNC` / `byMonthCountNC` sont volontairement DISTINCTS de `imported` / `byMonthCount` :
   // tout ce qui lit `imported` parle de contrats payables a l'agent. Melanger les deux compteurs
@@ -30162,6 +30661,7 @@ async function syncBackofficeInbox(opts){
     const failedMonths = {};
 
     for(const monthVal of Object.keys(byMonth)){
+      backofficeBattement();
       // 🛡️ ISOLATION PAR MOIS (r214) — chaque mois est traité dans son propre try/catch. AVANT, tout le
       // relevé (documents ET clés de TOUS les mois) partageait un seul try/catch avec la suppression
       // finale : si UN SEUL mois plantait (ex : document de production trop volumineux après un gros
@@ -30237,6 +30737,7 @@ async function syncBackofficeInbox(opts){
     // contrats, et son echec par mois est isole exactement comme au-dessus.
     const failedMonthsNC = {};
     for(const monthVal of Object.keys(byMonthNC)){
+      backofficeBattement();
       try{
         const store = await getBillingNonConf(monthVal);
         store.rows = store.rows || [];
@@ -30299,16 +30800,19 @@ async function syncBackofficeInbox(opts){
     // source dans la boîte : rien n'est supprimé tant que le mois correspondant n'a pas été rangé avec
     // succès, pour qu'un contrat en échec ne soit jamais perdu silencieusement.
     for(const { ref, monthVal } of processedDocs){
+      backofficeBattement();
       if(failedMonths[monthVal]) continue;
       try{ await ref.delete(); }catch(e){ console.warn('backoffice delete', e); }
     }
     for(const { key, monthVal } of processedKeys){
+      backofficeBattement();
       if(failedMonths[monthVal]) continue;
       try{ await rtdb.ref(`${BACKOFFICE_RTDB_PATH}/${key}`).remove(); }catch(e){ console.warn('backoffice rtdb delete', e); }
     }
     // Meme regle pour la boite NON CONFORME : une cle n'est retiree que si SON mois a ete range avec
     // succes. Un mois NC en echec garde ses messages dans la boite et sera retente au prochain relevé.
     for(const { key, monthVal } of processedKeysNC){
+      backofficeBattement();
       if(failedMonthsNC[monthVal]) continue;
       try{ await rtdb.ref(`${BACKOFFICE_RTDB_PATH_NC}/${key}`).remove(); }catch(e){ console.warn('backoffice rtdb delete (non conforme)', e); }
     }
@@ -30336,7 +30840,8 @@ async function syncBackofficeInbox(opts){
     console.error('syncBackofficeInbox:', e);
     result.error = e && e.message ? e.message : String(e);
   }finally{
-    if(monRelevé === backofficeSyncGeneration) backofficeSyncBusy = false;
+    clearInterval(minuteurVerrou);
+    if(monRelevé === backofficeSyncGeneration){ backofficeSyncBusy = false; renouvelerVerrouReleve(true); }   // libère le verrou : un autre poste peut relever tout de suite
   }
   if(monRelevé === backofficeSyncGeneration){
     backofficeLastResult = result;
@@ -30979,6 +31484,81 @@ async function renderNonConfPanel(){
         <tbody>${lignes}</tbody>
       </table>
     </div>`;
+}
+
+// r347 — « Chercher dans tous les mois » : même contrôle que le bandeau rouge « présents dans les DEUX classeurs »,
+// mais sur les 18 derniers mois d'un coup. Rien ne bouge tout seul : chaque contrat se tranche avec les deux mêmes boutons.
+window.ncTousFiltre = window.ncTousFiltre || { agent:'', de:'', a:'', tri:'date' };
+window.ncTousData = null;
+async function ncChercherTousMois(){
+  const box = document.getElementById('ncTousMois'); if(!box) return;
+  box.innerHTML = '<div class="empty">⏳ Recherche dans les mois précédents…</div>';
+  const n = nowMA(), out = [], nbMois = 18;
+  for(let k = 0; k < nbMois; k++){
+    const d = new Date(n.getFullYear(), n.getMonth() - k, 1);
+    const mv = billingMonthVal(d.getFullYear(), d.getMonth() + 1);
+    try{ const cs = await conflitsNonConformes(mv); cs.forEach(c => out.push({ m: mv, c })); }
+    catch(e){ console.warn('recherche tous les mois', mv, e); }
+  }
+  window.ncTousData = out;
+  ncTousRendu();
+}
+function ncTousFiltrer(){
+  const g = (id) => { const e = document.getElementById(id); return e ? e.value : ''; };
+  window.ncTousFiltre = { agent: g('ncTousAgent'), de: g('ncTousDe'), a: g('ncTousA'), tri: g('ncTousTri') || 'date' };
+  ncTousRendu();
+}
+function ncTousRendu(){
+  const box = document.getElementById('ncTousMois'); if(!box) return;
+  const data = window.ncTousData;
+  if(!data){ box.innerHTML = ''; return; }
+  const f = window.ncTousFiltre || {};
+  const agentDe = x => x.c.nc.agent || x.c.prod.agent || '';
+  if(!data.length){
+    box.innerHTML = '<div style="padding:12px 15px;border-radius:11px;border:1px solid var(--green);background:rgba(61,214,140,0.08);font-size:13px;">✅ <b>Aucun contrat présent dans les deux classeurs</b> sur les 18 derniers mois. Rien à trancher.</div>';
+    return;
+  }
+  const agents = Array.from(new Set(data.map(agentDe).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  let liste = data.filter(x => { const d = dateIsoNC(x.c.nc); return (!f.agent || agentDe(x) === f.agent) && (!f.de || d >= f.de) && (!f.a || d <= f.a); });
+  liste.sort((x, y) => f.tri === 'agent' ? agentDe(x).localeCompare(agentDe(y)) || dateIsoNC(y.c.nc).localeCompare(dateIsoNC(x.c.nc))
+                      : f.tri === 'client' ? String(x.c.nc.nom || '').localeCompare(String(y.c.nc.nom || ''))
+                      : dateIsoNC(y.c.nc).localeCompare(dateIsoNC(x.c.nc)));
+  const sel = 'padding:6px 9px;border-radius:7px;border:1px solid var(--border);background:var(--panel2);color:var(--text);';
+  const lignes = liste.map(x => {
+    const c = x.c, d = dateIsoNC(c.nc).split('-').reverse().join('/'), num = c.nc.numContrat || c.nc.reference || c.cle;
+    return `<tr>
+      <td>${escapeHtml(d || '—')}</td>
+      <td><b>${escapeHtml(agentDe(x) || '—')}</b></td>
+      <td>${escapeHtml(c.nc.nom || c.prod.nom || '—')}</td>
+      <td style="font-family:monospace;font-size:11.5px;">${escapeHtml(num)}</td>
+      <td>${escapeHtml(billingMonthLabel(x.m))}</td>
+      <td style="white-space:nowrap;">
+        <button onclick="ncTousTrancher('${escapeHtml(x.m)}','${escapeHtml(c.cle)}','nonconforme',this)" title="Le contrat est bien NON CONFORME : il est retiré de la production, l'agent n'est plus payé dessus." style="padding:6px 12px;border-radius:7px;border:1px solid var(--amber);background:rgba(232,168,56,0.12);color:var(--amber);font-weight:700;cursor:pointer;">🚫 C'est un NON CONFORME</button>
+        <button onclick="ncTousTrancher('${escapeHtml(x.m)}','${escapeHtml(c.cle)}','conforme',this)" title="Le contrat est bien CONFORME : la ligne non conforme est retirée, la paie ne bouge pas." style="padding:6px 12px;border-radius:7px;border:1px solid var(--green);background:rgba(61,214,140,0.10);color:var(--green);font-weight:700;cursor:pointer;">✅ C'est un CONFORME</button>
+      </td></tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div style="padding:13px 15px;border-radius:11px;background:rgba(229,72,77,0.10);border:1px solid rgba(229,72,77,0.45);">
+      <div style="font-weight:800;color:var(--red);">⚠️ ${data.length} contrat${data.length > 1 ? 's' : ''} présent${data.length > 1 ? 's' : ''} dans les DEUX classeurs (18 derniers mois)</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.7;">Ces contrats sont dans ta production — donc <b>payés à l'agent</b> — et dans les non conformes. Rien ne bouge sans ton clic : tranche contrat par contrat.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;font-size:12.5px;">
+        <label>Agent <select id="ncTousAgent" onchange="ncTousFiltrer()" style="${sel}"><option value="">Tous</option>${agents.map(a => `<option value="${escapeHtml(a)}"${f.agent === a ? ' selected' : ''}>${escapeHtml(a)}</option>`).join('')}</select></label>
+        <label>Du <input type="date" id="ncTousDe" value="${escapeHtml(f.de || '')}" onchange="ncTousFiltrer()" style="${sel}"></label>
+        <label>au <input type="date" id="ncTousA" value="${escapeHtml(f.a || '')}" onchange="ncTousFiltrer()" style="${sel}"></label>
+        <label>Trier par <select id="ncTousTri" onchange="ncTousFiltrer()" style="${sel}"><option value="date"${f.tri === 'date' ? ' selected' : ''}>Date</option><option value="agent"${f.tri === 'agent' ? ' selected' : ''}>Nom de l'agent</option><option value="client"${f.tri === 'client' ? ' selected' : ''}>Client</option></select></label>
+        <span style="color:var(--muted);">${liste.length} affiché${liste.length > 1 ? 's' : ''}</span>
+      </div>
+      <div style="overflow-x:auto;margin-top:10px;">
+        <table class="salary-table">
+          <thead><tr><th>Date</th><th>Agent</th><th>Client</th><th>N° / Référence</th><th>Mois</th><th>Tranche</th></tr></thead>
+          <tbody>${lignes || '<tr><td colspan="6" style="color:var(--muted);">Aucun contrat avec ces filtres.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+async function ncTousTrancher(monthVal, cle, choix, btn){
+  await trancherConflitNC(monthVal, cle, choix, btn);
+  await ncChercherTousMois();
 }
 
 async function retirerNonConforme(monthVal, ident, btn){
@@ -38475,10 +39055,15 @@ async function renderAssistanceHistory(){
     var T = ilekMem.ret || { rows: [] };
     var duMois = T.rows.filter(function(r){ return r.mois === adIlek.mois; });
     h += '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);"><b>↩️ Retours Ilek du mois affiché</b>' +
-      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Colle ici les numéros de contrat Ilek revenus impayés (un par ligne, ou séparés par des espaces). Ils sont retirés sur le mois affiché ci-dessus. Un numéro déjà importé est ignoré.</div>' +
+      '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
+        '<div style="font-size:12.5px;"><b>📄 Importer le fichier Excel d\'Ilek</b></div>' +
+        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Le CRM ne lit que les lignes « Annulé » (rétractation, impayé, autre) : <b>1 ligne = 1 énergie retirée</b>, sans aucune division. Elles sont retirées sur le mois affiché ci-dessus ; tu vérifies la liste avant de confirmer.</div>' +
+        '<input type="file" id="ilekXlsx" accept=".xlsx" style="max-width:100%;"> ' +
+        '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekFichier()">📄 Lire le fichier</button></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Ou colle ici les numéros de contrat Ilek revenus impayés (un par ligne, ou séparés par des espaces). Ils sont retirés sur le mois affiché ci-dessus. Un numéro déjà importé est ignoré.</div>' +
       '<textarea id="ilekImportTxt" rows="3" placeholder="IL-5521&#10;IL-5530" style="width:100%;box-sizing:border-box;"></textarea>' +
       '<div style="margin-top:6px;"><button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekImporter()">↩️ Importer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
-      (duMois.length ? '<div style="margin-top:8px;font-size:13px;">' + duMois.map(function(r){ return '<div style="padding:4px 0;border-top:1px solid var(--border);">#' + esc(r.numero) + ' · ' + esc(r.nom || '') + ' — ' + esc(r.agent) + ' (' + (r.energies || 1) + ' énergie' + ((r.energies || 1) > 1 ? 's' : '') + ') <button type="button" class="ct-btn" style="padding:2px 8px;font-size:12px;" data-n="' + esc(r.numero) + '" onclick="adIlekRetirer(this.getAttribute(\'data-n\'))">✖ Retirer</button></div>'; }).join('') + '</div>' : '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Aucun retour importé pour ce mois.</div>') +
+      (duMois.length ? '<div style="margin-top:8px;font-size:13px;">' + duMois.map(function(r){ return '<div style="padding:4px 0;border-top:1px solid var(--border);">#' + esc(r.numero) + ' · ' + esc(r.nom || '') + ' — ' + esc(r.agent) + ' (' + (r.energies || 1) + ' énergie' + ((r.energies || 1) > 1 ? 's' : '') + ')' + (r.motif ? ' · <b style="color:var(--amber);">' + esc(ilekMotifLib(r.motif)) + '</b>' : '') + (r.energie ? ' <span style="color:var(--muted);">(' + esc(r.energie) + ')</span>' : '') + ' <button type="button" class="ct-btn" style="padding:2px 8px;font-size:12px;" data-n="' + esc(r.numero) + '" onclick="adIlekRetirer(this.getAttribute(\'data-n\'))">✖ Retirer</button></div>'; }).join('') + '</div>' : '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Aucun retour importé pour ce mois.</div>') +
       (adIlek.msg ? '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adIlek.msg) + '</div>' : '') + '</div></div>';
     h += adCarHtml();
     h += adDoublonsHtml();
@@ -38767,6 +39352,96 @@ async function renderAssistanceHistory(){
     }catch(e){ adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
     finally{ adIlek.occupe = false; adIlekRafraichir(); }
   };
+  // ───────── r347 — Import direct du fichier Excel Ilek ─────────
+  // Une ligne « Annulé » = une énergie retirée, 1 pour 1 (aucune division). Un Dual annulé en entier = 2 lignes (gaz + électricité) = 2 énergies.
+  function ilekMotifLib(m){ return m === 'impaye' ? 'impayé' : (m === 'retractation' ? 'rétractation' : (m === 'autre' ? 'autre' : '')); }
+  window.ilekMotifsTexte = function(rows){
+    var c = {}; (rows || []).forEach(function(r){ var l = ilekMotifLib(r.motif); if(l) c[l] = (c[l] || 0) + (Number(r.energies) || 1); });
+    return Object.keys(c).map(function(l){ return l + ' : ' + c[l]; }).join(', ');
+  };
+  function ilekNormNom(z){ return String(z == null ? '' : z).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, ''); }
+  function ilekNormNum(z){ return String(z == null ? '' : z).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^0+(?=[0-9A-Z])/, ''); }
+  function ilekColIdx(ref){ var l = String(ref || '').replace(/[0-9]/g, ''), n = 0; for(var i = 0; i < l.length; i++) n = n * 26 + (l.charCodeAt(i) - 64); return n - 1; }
+  // Lit un .xlsx (un zip) : renvoie les lignes de la 1re feuille qui contient la colonne « Subscription ID », sous forme d'objets {colonne normalisée: valeur}
+  async function ilekLireXlsx(fichier){
+    await ensureJSZip();
+    var zip = await window.JSZip.loadAsync(await fichier.arrayBuffer());
+    var ss = [], fss = zip.file('xl/sharedStrings.xml');
+    if(fss){
+      var dss = new DOMParser().parseFromString(await fss.async('string'), 'application/xml');
+      [].forEach.call(dss.getElementsByTagName('si'), function(si){ var t = ''; [].forEach.call(si.getElementsByTagName('t'), function(x){ t += x.textContent; }); ss.push(t); });
+    }
+    var feuilles = Object.keys(zip.files).filter(function(n){ return /^xl\/worksheets\/[^\/]+\.xml$/.test(n); }).sort();
+    for(var f = 0; f < feuilles.length; f++){
+      var d = new DOMParser().parseFromString(await zip.file(feuilles[f]).async('string'), 'application/xml'), lignes = [];
+      [].forEach.call(d.getElementsByTagName('row'), function(row){
+        var l = [];
+        [].forEach.call(row.getElementsByTagName('c'), function(c){
+          var t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0], val = '';
+          if(t === 'inlineStr'){ [].forEach.call(c.getElementsByTagName('t'), function(x){ val += x.textContent; }); }
+          else if(v){ val = (t === 's') ? (ss[Number(v.textContent)] || '') : v.textContent; }
+          l[ilekColIdx(c.getAttribute('r'))] = val;
+        });
+        lignes.push(l);
+      });
+      var h = -1;
+      for(var i = 0; i < Math.min(lignes.length, 10); i++){ if((lignes[i] || []).some(function(z){ return ilekNormNom(z) === 'subscriptionid'; })){ h = i; break; } }
+      if(h < 0) continue;
+      var cols = (lignes[h] || []).map(ilekNormNom);
+      return lignes.slice(h + 1).filter(function(l){ return l && l.some(function(z){ return z !== '' && z != null; }); }).map(function(l){
+        var o = {}; cols.forEach(function(c, i){ if(c) o[c] = l[i] == null ? '' : l[i]; }); return o;
+      });
+    }
+    throw new Error('Colonne « Subscription ID » introuvable : ce n\'est pas le fichier Ilek attendu.');
+  }
+  window.adIlekFichier = async function(){
+    if(adIlek.occupe) return;
+    var inp = document.getElementById('ilekXlsx'), fichier = inp && inp.files && inp.files[0];
+    if(!fichier){ adIlek.msg = '⚠️ Choisis d\'abord le fichier Excel d\'Ilek (.xlsx).'; adRendre(); return; }
+    adIlek.occupe = true; adIlek.msg = 'Lecture du fichier…'; adRendre();
+    try{
+      var lignes = await ilekLireXlsx(fichier);
+      var annules = lignes.filter(function(o){ return ilekNormNom(o.etatducontrat) === 'annule'; });
+      if(!annules.length){ adIlek.msg = 'Aucune ligne « Annulé » dans ce fichier (' + lignes.length + ' lignes lues). Rien à importer.'; return; }
+      window.ilekInvalider();
+      var tous = await ilekContratsTous(), T = await ilekRetoursLire();
+      var idx = {}; tous.forEach(function(v){ var c = v.champs || {}; [c.numero, c.numeroGaz].forEach(function(z){ var k = ilekNormNum(z); if(k && !idx[k]) idx[k] = v; }); });
+      var deja = {}; T.rows.forEach(function(r){ deja[ilekNormNum(r.numero)] = true; });
+      var nouveaux = [], dejaImportes = [], pasConformes = [], introuvables = [], vus = {};
+      annules.forEach(function(o){
+        var id = String(o.subscriptionid || '').trim(), k = ilekNormNum(id), raison = String(o.raisondannulation || '').trim(), rn = ilekNormNom(raison);
+        var motif = rn.indexOf('tract') >= 0 ? 'retractation' : (rn.indexOf('impay') >= 0 ? 'impaye' : 'autre');
+        var nomClient = [o.prenom, o.nom].filter(Boolean).join(' ');
+        if(!k) return;
+        if(vus[k]) return; vus[k] = true;
+        if(deja[k]){ dejaImportes.push(id); return; }
+        var v = idx[k];
+        if(!v){ introuvables.push('#' + id + ' ' + nomClient + ' (' + (raison || 'sans raison') + ')'); return; }
+        if(v.statut !== 'conforme'){ pasConformes.push('#' + id + ' ' + nomClient + ' (statut dans le CRM : ' + (v.statut || '?') + ')'); return; }
+        nouveaux.push({ numero: id.toUpperCase(), agent: v.agent, mois: adIlek.mois, energies: 1, nom: nomChamps(v.champs) || nomClient, motif: motif, motifTexte: raison, energie: String(o.typedenergie || ''), le: new Date().toISOString() });
+      });
+      var cpt = {}; nouveaux.forEach(function(r){ var l = ilekMotifLib(r.motif); cpt[l] = (cpt[l] || 0) + 1; });
+      var resume = Object.keys(cpt).map(function(l){ return cpt[l] + ' ' + l; }).join(', ');
+      var infos = [];
+      if(dejaImportes.length) infos.push('Déjà importés (ignorés) : ' + dejaImportes.join(', '));
+      if(pasConformes.length) infos.push('Pas « conformes » dans le CRM (ignorés) : ' + pasConformes.join(' · '));
+      if(introuvables.length) infos.push('Introuvables dans le CRM (ignorés) : ' + introuvables.join(' · '));
+      if(!nouveaux.length){ adIlek.msg = 'Rien à importer (' + annules.length + ' ligne(s) « Annulé » lue(s)).' + (infos.length ? '\n' + infos.join('\n') : ''); return; }
+      if(!(await uiConfirm({ titre:'Importer ces retours Ilek ?', icone:'↩️', ton:'warn',
+          texte: nouveaux.length + ' énergie(s) retirée(s) sur ' + adIlek.mois + ' (' + resume + '), 1 pour 1, sans division.',
+          liste: nouveaux.map(function(r){ return '#' + r.numero + ' — ' + r.agent + ' · ' + ilekMotifLib(r.motif) + (r.energie ? ' (' + r.energie + ')' : ''); }).concat(infos),
+          oui:'Importer', non:'Annuler' }))){ adIlek.msg = 'Annulé : rien n\'a été importé.'; return; }
+      window.ilekInvalider();
+      var T2 = await ilekRetoursLire(), rows = T2.rows.slice();
+      nouveaux.forEach(function(r){ if(!rows.some(function(x){ return ilekNormNum(x.numero) === ilekNormNum(r.numero); })) rows.push(r); });
+      var ok = await storageSet('ilekRetours', JSON.stringify({ rows: rows }));
+      if(!ok){ adIlek.msg = '❌ Enregistrement impossible.'; return; }
+      try{ logAudit('Admin', 'Retours Ilek importés depuis le fichier : ' + nouveaux.length + ' énergie(s) sur ' + adIlek.mois, resume); }catch(e){}
+      adIlek.msg = '✅ ' + nouveaux.length + ' énergie(s) retirée(s) sur ' + adIlek.mois + ' (' + resume + ').' + (infos.length ? '\n' + infos.join('\n') : '');
+      if(inp) inp.value = '';
+    }catch(e){ adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
+    finally{ adIlek.occupe = false; adIlekRafraichir(); }
+  };
   window.adIlekRetirer = async function(numero){
     if(!(await uiConfirm({ titre:'Retirer ce retour Ilek ?', icone:'✖', ton:'warn', texte:'Le contrat #' + numero + ' ne sera plus compté comme retour.', oui:'Retirer', non:'Annuler' }))) return;
     window.ilekInvalider();
@@ -38795,7 +39470,7 @@ async function renderAssistanceHistory(){
   }
 
   // ───────────────── 🔎 diagnostic « écart » : contrats validés aujourd'hui ↔ facturation (Prime) ─────────────────
-  var adEcart = { ts:0, sig:'', calc:false, occupe:false, lignes:[], extras:[], suspects:[], log:[], releves:[], nbDecides:0, nbNC:0, nbFact:0, jour:'', msg:'' };
+  var adEcart = { ts:0, sig:'', calc:false, occupe:false, lignes:[], ignoresNC:[], extras:[], suspects:[], log:[], releves:[], nbDecides:0, nbNC:0, nbFact:0, jour:'', msg:'' };
   var adNumDe = function(v){ return String(v == null ? '' : v).trim().toLowerCase(); };
   async function adEcartCalcul(sig){
     var e = adEcart; if(e.calc) return; e.calc = true; e.ts = Date.now(); e.sig = sig;
@@ -38805,10 +39480,10 @@ async function renderAssistanceHistory(){
       var semaine = adTous.filter(function(x){ var t = x.creeLe ? new Date(x.creeLe).getTime() : NaN; return !isNaN(t) && t >= limite7 && !adEstTest(x) && produitDe(x) === 'prime' && (x.statut === 'conforme' || x.statut === 'non_conforme'); });
       var decides = semaine.filter(function(x){ return adJourEnvoi(x.creeLe) === auj; });
       try{ e.releves = ((await billingLoad('billingReleves', { items: [] })).items) || []; }catch(err){ e.releves = []; }
-      var rows = [], rowsNC = [], mois = moisVoisins(auj.slice(0, 7));
+      var rows = [], rowsNC = [], rowsNCm = [], mois = moisVoisins(auj.slice(0, 7));
       for(var i = 0; i < mois.length; i++){
         try{ var d = await getBillingProd(mois[i]); rows = rows.concat((d && d.rows) || []); }catch(err){ console.warn('écart : classeur illisible', mois[i], err); }
-        try{ var d2 = await getBillingNonConf(mois[i]); rowsNC = rowsNC.concat((d2 && d2.rows) || []); }catch(err){ console.warn('écart : classeur NC illisible', mois[i], err); }
+        try{ var d2 = await getBillingNonConf(mois[i]); rowsNC = rowsNC.concat((d2 && d2.rows) || []); ((d2 && d2.rows) || []).forEach(function(rr){ rowsNCm.push({ r:rr, m:mois[i] }); }); }catch(err){ console.warn('écart : classeur NC illisible', mois[i], err); }
       }
       try{ e.suspects = ((await billingLoad('billingSuspects', { items: [] })).items) || []; }catch(err){ e.suspects = []; }
       try{ e.log = ((await billingLoad('billingDoublons', { items: [] })).items) || []; }catch(err){ e.log = []; }
@@ -38817,6 +39492,8 @@ async function renderAssistanceHistory(){
       var idx = Object.create(null), idxNC = Object.create(null);
       rows.forEach(function(r){ var n = r ? adNumDe(r.numContrat) : ''; if(n) (idx[n] = idx[n] || []).push(r); });
       rowsNC.forEach(function(r){ var n = r ? adNumDe(r.numContrat) : ''; if(n) idxNC[n] = true; });
+      var idxNCrow = Object.create(null), ignoresNC = [];   // r347 : où est le contrat en non conforme (pour ne plus le proposer au rangement)
+      rowsNCm.forEach(function(z){ var n = z.r ? adNumDe(z.r.numContrat) : ''; if(n && !idxNCrow[n]) idxNCrow[n] = z; });
       var fact = rows.filter(function(r){ return r && r.date === auj; });
       var nums = Object.create(null), lignes = [], nbConf = 0, nbNC = 0;
       semaine.forEach(function(x){
@@ -38825,12 +39502,12 @@ async function renderAssistanceHistory(){
         if(nc){ if(n && numsSuspects[n]) return; if(!n || !idxNC[n]) lignes.push({ type:'absent', nc:true, x:x }); return; }
         if(n && estAuj) nums[n] = true;
         var trouves = n ? (idx[n] || []) : [];
-        if(!trouves.length){ if(n && numsSuspects[n]) return; lignes.push({ type:'absent', nc:false, x:x }); return; }
+        if(!trouves.length){ if(n && numsSuspects[n]) return; if(n && idxNCrow[n]){ ignoresNC.push({ x:x, num:n, nc:idxNCrow[n] }); return; } lignes.push({ type:'absent', nc:false, x:x }); return; }
         if(!estAuj || trouves.some(function(r){ return r.date === auj; })) return;
         lignes.push({ type:'date', nc:false, x:x, row:trouves[0] });
       });
       e.extras = fact.filter(function(r){ return !nums[adNumDe(r.numContrat)]; });
-      e.lignes = lignes; e.nbDecides = nbConf; e.nbNC = nbNC; e.nbFact = fact.length; e.jour = auj;
+      e.lignes = lignes; e.ignoresNC = ignoresNC; e.nbDecides = nbConf; e.nbNC = nbNC; e.nbFact = fact.length; e.jour = auj;
     }catch(err){ console.warn('écart :', err); }
     e.calc = false;
     try{ adRendre(); }catch(err){}
@@ -38876,7 +39553,15 @@ async function renderAssistanceHistory(){
           : '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Dans la facturation, mais daté du <b style="color:var(--amber);">' + esc(adFrJour(l.row.date)) + '</b> au lieu d\'aujourd\'hui.</div>' +
             '<div style="margin-top:6px;"><button type="button" class="ct-btn ok" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adEcartRamener(\'' + k + '\')">Ramener au ' + esc(adFrJour(adEcart.jour || auj)) + '</button></div>') + '</div>';
     }).join('') + '</div>';
-    if(e.extras.length) h += '<div style="margin-top:10px;font-size:12.5px;"><b>Dans la facturation à la date d\'aujourd\'hui, mais pas validés aujourd\'hui :</b><ul style="margin:4px 0 0 18px;">' +
+    if((e.ignoresNC || []).length) h += '<details style="margin-top:10px;font-size:12.5px;"><summary style="cursor:pointer;color:var(--amber);font-weight:700;">🚫 ' + e.ignoresNC.length + ' contrat(s) ignoré(s) : déjà en non conforme</summary>' +
+      '<div style="color:var(--muted);margin-top:6px;">Ils sont validés côté serveur, mais tu les as mis en non conforme : le CRM ne te propose pas de les ranger dans la facturation.</div>' +
+      e.ignoresNC.map(function(z){
+        var r = z.nc.r, c = z.x.champs || {}, inv = r.source === SOURCE_INVERSION;
+        return '<div style="padding:8px 0;border-top:1px solid var(--border);"><b>#' + esc(c.numero) + ' · ' + esc(nomChamps(c)) + '</b> — ' + esc(z.x.agent || r.agent || '?') +
+          '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Contrat du ' + esc(adFrJour(c.date || adJourEnvoi(z.x.creeLe))) + ' · Motif : <b>' + (inv ? '🔀 Inversion nom prénom' : 'Non conforme (backoffice)') + '</b> · classé en ' + esc(billingMonthLabel(z.nc.m)) + '</div>' +
+          (inv ? '<div style="margin-top:6px;"><button type="button" class="ct-btn ok" ' + (e.occupe ? 'disabled ' : '') + 'onclick="adEcartRemettreConforme(\'' + esc(z.num) + '\')">↩️ Remettre en conforme</button></div>' : '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Pour le changer, utilise la liste des non conformes.</div>') + '</div>';
+      }).join('') + '</details>';
+    if(e.extras.length) h += '<div style=\"margin-top:10px;font-size:12.5px;\"><b>Dans la facturation à la date d\'aujourd\'hui, mais pas validés aujourd\'hui :</b><ul style="margin:4px 0 0 18px;">' +
       e.extras.slice(0, 20).map(function(r){ return '<li>#' + esc(r.numContrat || r.reference || '?') + ' · ' + esc(r.nom || r.client || '') + ' (' + esc(r.agent || '?') + ')</li>'; }).join('') + '</ul>' +
       '<div style="color:var(--muted);font-size:12px;margin-top:2px;">Ce sont des contrats validés un autre jour (ou importés à la main) qui portent la date d\'aujourd\'hui. Rien à faire si c\'est voulu.</div></div>';
     h += adRelevesCarte();
@@ -38942,6 +39627,24 @@ async function renderAssistanceHistory(){
       billingContractIndexCache = null; billingInvalidate(); try{ clearRenderCaches(); }catch(err){}
       logAudit('Admin', autre ? 'Doublon probable : gardé (autre contrat)' : 'Doublon probable : écarté', '#' + ((it.ligne || {}).numContrat || '?') + ' ' + ((it.ligne || {}).nom || '') + ' ↔ #' + ((it.avec || {}).numContrat || '?'));
       maj(autre ? '✅ Contrat #' + ((it.ligne || {}).numContrat || '?') + ' rangé dans la facturation.' : '✅ Contrat #' + ((it.ligne || {}).numContrat || '?') + ' écarté (doublon). Il reste noté dans la liste.');
+    }catch(err){ maj('❌ ' + (err && err.message ? err.message : err)); }
+    finally{ e.occupe = false; e.ts = 0; e.sig = ''; try{ adRendre(); }catch(err){} }
+  };
+
+  // r347 — « Remettre en conforme » depuis la liste des contrats ignorés : même action que « Remettre comme avant » de la liste des
+  // non conformes (le contrat revient dans la facturation, l'agent est payé, la ligne non conforme disparaît), avec sa confirmation.
+  window.adEcartRemettreConforme = async function(num){
+    var e = adEcart; if(e.occupe) return;
+    var it = (e.ignoresNC || []).filter(function(z){ return z.num === adNumDe(num); })[0]; if(!it) return;
+    function maj(t){ e.msg = t; try{ adRendre(); }catch(err){} }
+    try{
+      e.occupe = true;
+      var m = it.nc.m, r = it.nc.r;
+      var fige = await getBillingPayslips(m);
+      if(fige && fige.entries && fige.entries.length){ maj('⚠️ Le mois ' + billingMonthLabel(m) + ' est déjà figé (payé) : le contrat #' + num + ' n\'a pas été remis. À décider avec toi.'); return; }
+      var ident = billingDedupKeys(r)[0] || '';
+      await remettreInversion(m, ident, null);
+      maj('');
     }catch(err){ maj('❌ ' + (err && err.message ? err.message : err)); }
     finally{ e.occupe = false; e.ts = 0; e.sig = ''; try{ adRendre(); }catch(err){} }
   };
