@@ -29470,6 +29470,7 @@ async function renderBillingAgentSheet(){
 
   const d = await billingComputeAgent(agent, monthVal);
   BILLING_LAST_SHEET = d;
+  await billingCompleterRetours(d);
   el.innerHTML = billingAgentSheetHTML(d);
 }
 
@@ -29485,8 +29486,68 @@ function billingMonthLabel(monthVal){
 // Nom, prénom et n° de contrat restent visibles ; téléphone, e-mail, adresse et date de naissance ne sortent
 // jamais vers l'agent. L'écran admin (billingAgentSheetHTML sans forImage) n'est pas touché.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+// r353 — Ce que voit l'AGENT dans la case « Produit » : « Contrat Prime » quand elle est vide ou quand une autre
+// info (téléphone, e-mail, référence…) y est tombée par erreur. Affichage seulement : la base n'est pas modifiée,
+// et rien de confidentiel ne peut sortir par cette case.
+function billingProduitAgent(r){
+  const c = billingProduitClasse(r);
+  return c.type === 'ok' ? c.label : 'Contrat Prime';
+}
+// r353 — Motifs de retour écrits en anglais dans les fichiers : traduits pour l'agent (admin : texte d'origine).
+function billingMotifFr(m){
+  const t = String(m == null ? '' : m).trim();
+  const k = t.toLowerCase().replace(/[\s_\-]+/g, '');
+  if(k === 'unpaid') return 'Impayé';
+  if(k === 'retracted' || k === 'withdrawn') return 'Rétractation';
+  if(k === 'noncompliant') return 'Non conforme';
+  if(k === 'rejected' || k === 'rejet') return 'Rejet';
+  return t;
+}
+function billingNomCle(s){
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean).sort().join(' ');
+}
+// r353 — Un retour dont le n° de contrat, la référence ou le produit manquent (le fichier du client ne les donne pas) :
+// on cherche le même client (nom + prénom, dans n'importe quel ordre) parmi les contrats du MÊME agent sur 24 mois.
+// Complété seulement s'il n'y a qu'UN contrat correspondant ; sinon la case reste vide. Affichage seulement.
+async function billingCompleterRetours(d){
+  if(d._compl) return d;
+  d._compl = new Map();
+  try{
+    const manque = ((d.returns && d.returns.rows) || []).filter(r => r && r.nom && (!r.numContrat || !r.reference || !String(r.produit || '').trim()));
+    if(!manque.length) return d;
+    const now = nowMA();
+    const months = [];
+    for(let i = 0; i < 24; i++){ const x = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(billingMonthVal(x.getFullYear(), x.getMonth() + 1)); }
+    const datas = await Promise.all(months.map(mv => getBillingProd(mv)));
+    const ag = String(d.agent).trim().toLowerCase();
+    const parNom = {};
+    months.forEach((mv, mi) => ((datas[mi] && datas[mi].rows) || []).forEach(c => {
+      if(String(c.agent || '').trim().toLowerCase() !== ag) return;
+      const k = billingNomCle(c.nom);
+      if(!k) return;
+      (parNom[k] = parNom[k] || []).push({ numContrat: c.numContrat || '', reference: c.reference || '', produit: c.produit || '', month: mv });
+    }));
+    manque.forEach(r => {
+      const l = parNom[billingNomCle(r.nom)];
+      if(!l) return;
+      if(new Set(l.map(x => x.numContrat + '|' + x.reference)).size !== 1) return;
+      d._compl.set(r, l[0]);
+    });
+  }catch(e){ console.warn('compléter retours', e); }
+  return d;
+}
+function billingRetourVu(d, r){
+  const c = (d._compl && d._compl.get(r)) || null;
+  return {
+    numContrat: r.numContrat || (c && c.numContrat) || '',
+    reference: r.reference || (c && c.reference) || '',
+    produit: String(r.produit || '').trim() ? r.produit : ((c && c.produit) || ''),
+    originMonth: r.originMonth || (c && c.month) || ''
+  };
+}
 async function billingChargerExtras(d){
   if(d._extras) return d;
+  await billingCompleterRetours(d);
   try{ const nc = await getBillingNonConf(d.monthVal); d.ncRows = ((nc && nc.rows) || []).filter(r => r.agent === d.agent); }catch(e){ d.ncRows = []; }
   try{ d.energie = (typeof window.ilekDetailMois === 'function') ? await window.ilekDetailMois(d.agent, d.monthVal) : null; }catch(e){ console.warn('énergie (documents agent)', e); d.energie = null; }
   d._produits = billingProduitsDeLAgent(d);
@@ -29718,7 +29779,7 @@ function billingAgentSheetHTML(d, forImage){
         </div>`;
       }
     }
-    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th>' + (forImage ? '' : '<th>Téléphone</th>') + (forImage ? '<th>Référence</th><th>N° contrat</th>' : '<th>N° contrat</th>') + (forImage ? '<th>Statut</th>' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
+    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th>' + (forImage ? '' : '<th>Téléphone</th>') + '<th>Référence</th><th>N° contrat</th>' + (forImage ? '<th>Statut</th>' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
     const flagged = d.rows.filter(r => r._warnings && r._warnings.length);
     if(flagged.length && !forImage){
       html += `<div style="padding:11px 14px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.45); font-size:13px; margin-bottom:12px;">
@@ -29735,10 +29796,10 @@ function billingAgentSheetHTML(d, forImage){
       html += `<tr${red}${forImage ? '' : ` data-search="${hay}"`}>
         <td>${i + 1}</td>
         <td>${escapeHtml(r.datePropre || r.date)}</td>
-        <td>${forImage ? escapeHtml(billingProduitLibelle(r)) : billingProduitCellule(r, d.monthVal, key, true)}</td>
+        <td>${forImage ? escapeHtml(billingProduitAgent(r)) : billingProduitCellule(r, d.monthVal, key, true)}</td>
         <td>${escapeHtml(r.nom)}${flag}</td>
         ${forImage ? '' : `<td>${escapeHtml(r.telephone)}</td>`}
-        ${forImage ? `<td>${escapeHtml(r.reference || '')}</td><td>${escapeHtml(r.numContrat || '')}</td>` : `<td>${escapeHtml(key)}</td>`}
+        <td>${escapeHtml(r.reference || '')}</td><td>${escapeHtml(r.numContrat || '')}</td>
         ${forImage
           ? `<td style="white-space:nowrap; font-weight:800; ${r.retracted ? 'color:var(--red);' : 'color:var(--green); font-weight:600;'}">${r.retracted ? '🔻 RÉTRACTÉ' : 'Validé'}</td>`
           : `<td><button onclick="toggleBillingRetracted('${String(key).replace(/'/g, "\\'")}')" title="${r.retracted ? 'Ce contrat est marqué rétracté : le client s\'est rétracté dans son délai légal de 14 jours, l\'agent n\'est pas payé dessus. Clique pour annuler.' : 'Marquer ce contrat comme rétracté (le client s\'est rétracté dans les 14 jours). L\'agent ne sera pas payé dessus et son compteur de rétractations du mois augmente de 1.'}" style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>`}
@@ -29746,7 +29807,7 @@ function billingAgentSheetHTML(d, forImage){
     });
     if(forImage && d.ncRows && d.ncRows.length){
       d.ncRows.forEach((r, i) => {
-        html += `<tr style="background:rgba(235,150,50,0.12);"><td>${d.rows.length + i + 1}</td><td>${escapeHtml(r.datePropre || r.date)}</td><td>${escapeHtml(billingProduitLibelle(r))}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.reference || '')}</td><td>${escapeHtml(r.numContrat || '')}</td><td style="white-space:nowrap; font-weight:800; color:var(--amber);">NON CONFORME</td></tr>`;
+        html += `<tr style="background:rgba(235,150,50,0.12);"><td>${d.rows.length + i + 1}</td><td>${escapeHtml(r.datePropre || r.date)}</td><td>${escapeHtml(billingProduitAgent(r))}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.reference || '')}</td><td>${escapeHtml(r.numContrat || '')}</td><td style="white-space:nowrap; font-weight:800; color:var(--amber);">NON CONFORME</td></tr>`;
       });
     }
     html += '</tbody></table></div>';
@@ -29761,13 +29822,14 @@ function billingAgentSheetHTML(d, forImage){
     const scaleTxt = !ret.auto ? 'diviseur forcé manuellement'
       : (d.pay.isIndep ? `barème indépendant : ${d.counterRealized} contrats ce mois` : `${ret.lateCount} retard${ret.lateCount>1?'s':''}/absence${ret.lateCount>1?'s':''} ce mois-ci`);
     html += `<div class="section-sub">${ret.count} retour${ret.count>1?'s':''} ${ret.divisor === 1 ? 'en 1:1' : '÷ '+ret.divisor} = <b style="color:var(--red);">${dedContracts} contrat${dedContracts>1?'s':''} retiré${dedContracts>1?'s':''}</b> du compteur payé — ${scaleTxt}.</div>`;
-    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Produit</th><th>Client</th>' + (forImage ? '<th>Référence</th>' : '') + '<th>N° contrat</th><th>Mois d\'origine</th><th>Motif</th></tr></thead><tbody>';
+    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Produit</th><th>Client</th><th>Référence</th><th>N° contrat</th><th>Mois d\'origine</th><th>Motif</th></tr></thead><tbody>';
     // 🔄 ORDRE INVERSÉ (demande du patron) : les derniers retours de la liste passent en tête, et les
     // premiers passent à la fin. On travaille sur une COPIE — `ret.rows` sert aussi aux calculs de
     // paie plus haut, l'ordre n'y change rien mais on ne touche jamais à une donnée qu'on affiche.
     // La numérotation suit l'ordre affiché : la ligne 1 est bien la première du tableau.
     [...ret.rows].reverse().forEach((r, i) => {
-      html += `<tr><td>${i + 1}</td><td>${escapeHtml(billingProduitLibelle(r))}</td><td>${escapeHtml(r.nom)}${(!forImage && r.deuxiemePrelevement) ? ` <span style="color:var(--amber); font-weight:700; font-size:11px;" title="Déjà retenu un autre mois (1er prélèvement : ${escapeHtml(r.premierPrelevementMois || '?')})">💸 2e prélèvement</span>` : ''}</td>${forImage ? `<td>${escapeHtml(r.reference || '')}</td>` : ''}<td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
+      const vu = billingRetourVu(d, r);
+      html += `<tr><td>${i + 1}</td><td>${escapeHtml(forImage ? billingProduitAgent(vu) : (billingProduitLibelle(r) || vu.produit))}</td><td>${escapeHtml(r.nom)}${(!forImage && r.deuxiemePrelevement) ? ` <span style="color:var(--amber); font-weight:700; font-size:11px;" title="Déjà retenu un autre mois (1er prélèvement : ${escapeHtml(r.premierPrelevementMois || '?')})">💸 2e prélèvement</span>` : ''}</td><td>${escapeHtml(vu.reference)}</td><td>${escapeHtml(vu.numContrat)}</td><td>${escapeHtml(vu.originMonth || '—')}</td><td>${escapeHtml(forImage ? billingMotifFr(r.motif) : r.motif)}</td></tr>`;
     });
     html += '</tbody></table></div>';
 
@@ -29942,10 +30004,10 @@ function billingAgentCSV(d, produit){
     csv += 'PRODUCTION ASSISTANCE DU MOIS\n';
     csv += 'N;Date;Produit;Client;Reference;Numero de contrat;Statut\n';
     d.rows.forEach((r, i) => {
-      csv += [i + 1, cell(r.datePropre || r.date), cell(r.produit), cell(r.nom), cell(r.reference), cell(r.numContrat), r.retracted ? 'RETRACTE' : 'Valide'].join(';') + '\n';
+      csv += [i + 1, cell(r.datePropre || r.date), cell(billingProduitAgent(r)), cell(r.nom), cell(r.reference), cell(r.numContrat), r.retracted ? 'RETRACTE' : 'Valide'].join(';') + '\n';
     });
     (d.ncRows || []).forEach((r, i) => {
-      csv += [d.rows.length + i + 1, cell(r.datePropre || r.date), cell(r.produit), cell(r.nom), cell(r.reference), cell(r.numContrat), 'NON CONFORME'].join(';') + '\n';
+      csv += [d.rows.length + i + 1, cell(r.datePropre || r.date), cell(billingProduitAgent(r)), cell(r.nom), cell(r.reference), cell(r.numContrat), 'NON CONFORME'].join(';') + '\n';
     });
     csv += `\nContrats importes;${d.importedTotal}\nDont retractes;${d.retractedCount}\nContrats valides (backoffice);${d.importedValid}\nContrats comptes pour la paie (compteurs);${d.counterRealized}\n`;
     if((d.ncRows || []).length) csv += `Contrats non conformes (non payes);${d.ncRows.length}\n`;
@@ -29954,7 +30016,8 @@ function billingAgentCSV(d, produit){
     csv += `\nRETOURS DE FACTURATION${ret.periodLabel ? ' (' + ret.periodLabel + ')' : ''}\n`;
     csv += 'N;Produit;Client;Reference;Numero de contrat;Mois d origine;Motif\n';
     ret.rows.forEach((r, i) => {
-      csv += [i + 1, cell(r.produit), cell(r.nom), cell(r.reference), cell(r.numContrat), cell(r.originMonth), cell(r.motif)].join(';') + '\n';
+      const vu = billingRetourVu(d, r);
+      csv += [i + 1, cell(billingProduitAgent(vu)), cell(r.nom), cell(vu.reference), cell(vu.numContrat), cell(vu.originMonth), cell(billingMotifFr(r.motif))].join(';') + '\n';
     });
     csv += `\nNombre de retours;${ret.count}\nCout unitaire (DH);${fmt(ret.unitCost)}\nDiviseur;${ret.divisor === 1 ? '1:1' : '/' + ret.divisor}\nRetenue retours (DH);${fmt(ret.amount)}\n`;
   }
