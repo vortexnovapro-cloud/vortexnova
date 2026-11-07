@@ -3053,12 +3053,23 @@ async function tryDeviceGateAdmin(){
           </div>
         </div>
         <div id="billingAgentSheet" style="margin-top:16px;"></div>
-        <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="link-btn" onclick="downloadBillingAgentCSV()" title="Le tableau de cet agent pour ce mois : tous ses contrats nominatifs, ses retours, et le détail ligne par ligne de son salaire. Ouvrable dans Excel ou Google Sheets.">📥 Télécharger ce tableau (CSV)</button>
-          <button class="link-btn" onclick="exportBillingAgentImage()" title="Image du tableau, calibrée pour rester lisible une fois envoyée sur WhatsApp.">📸 Image WhatsApp de ce tableau</button>
-          <button class="link-btn" id="exportBillingAgentPdfBtn" onclick="exportBillingAgentPDF()" title="Le tableau de CET agent en PDF couleur — à envoyer par email ou en pièce jointe Document sur WhatsApp, net et zoomable.">🖨️ PDF (à envoyer)</button>
-          <button class="link-btn" id="exportAllBillingAgentsCsvBtn" onclick="downloadAllBillingAgentsCSV()" title="UN FICHIER CSV PAR AGENT, réunis dans une seule archive ZIP : tu décompresses, et chaque agent a son propre tableau prêt à ouvrir dans Excel ou à lui envoyer.">📦 Un CSV par agent</button>
-          <button class="link-btn" id="exportAllBillingAgentsPdfBtn" onclick="downloadAllBillingAgentsPDF()" title="UN FICHIER PDF PAR AGENT, réunis dans une seule archive ZIP : chaque agent a sa fiche de paie complète, prête à envoyer telle quelle.">📦 Un PDF par agent</button>
+        <div style="margin-top:16px;">
+          <div style="font-size:13px; color:var(--muted); margin-bottom:6px;"><b>Pour l'agent affiché ci-dessus</b> — un fichier séparé pour l'assistance et un pour l'énergie</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="link-btn" onclick="downloadBillingAgentCSV('assistance')" title="Le tableau ASSISTANCE de cet agent : ses contrats (nom, prénom, référence, n° de contrat), ses retours et son salaire. Sans téléphone ni e-mail. Ouvrable dans Excel.">📥 CSV assistance</button>
+            <button class="link-btn" onclick="downloadBillingAgentCSV('energie')" title="Le tableau ÉNERGIE de cet agent : ses contrats énergie, ses retours énergie et son salaire. Sans téléphone ni e-mail. Si l'agent n'a pas d'énergie ce mois-ci, rien n'est créé.">⚡ CSV énergie</button>
+            <button class="link-btn" onclick="exportBillingAgentImage('assistance')" title="Image du tableau ASSISTANCE, lisible une fois envoyée sur WhatsApp.">📸 Image assistance</button>
+            <button class="link-btn" onclick="exportBillingAgentImage('energie')" title="Image du tableau ÉNERGIE, lisible une fois envoyée sur WhatsApp.">⚡ Image énergie</button>
+            <button class="link-btn" id="exportBillingAgentPdfBtn" onclick="exportBillingAgentPDF('assistance')" title="Le PDF ASSISTANCE de cet agent, à envoyer par e-mail ou en document WhatsApp. Sans téléphone ni e-mail.">🖨️ PDF assistance</button>
+            <button class="link-btn" id="exportBillingAgentPdfEnergieBtn" onclick="exportBillingAgentPDF('energie')" title="Le PDF ÉNERGIE de cet agent, à envoyer par e-mail ou en document WhatsApp. Sans téléphone ni e-mail. Si l'agent n'a pas d'énergie ce mois-ci, rien n'est créé.">⚡ PDF énergie</button>
+          </div>
+          <div style="font-size:13px; color:var(--muted); margin:14px 0 6px;"><b>Pour tous les agents</b> — une archive ZIP avec un fichier par agent (seuls les agents concernés sont inclus)</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="link-btn" id="exportAllBillingAgentsCsvBtn" onclick="downloadAllBillingAgentsCSV('assistance')" title="UN CSV ASSISTANCE PAR AGENT, réunis dans une archive ZIP.">📦 Un CSV assistance par agent</button>
+            <button class="link-btn" id="exportAllBillingAgentsCsvEnergieBtn" onclick="downloadAllBillingAgentsCSV('energie')" title="UN CSV ÉNERGIE PAR AGENT (uniquement les agents qui ont fait de l'énergie), réunis dans une archive ZIP.">⚡ Un CSV énergie par agent</button>
+            <button class="link-btn" id="exportAllBillingAgentsPdfBtn" onclick="downloadAllBillingAgentsPDF('assistance')" title="UN PDF ASSISTANCE PAR AGENT, réunis dans une archive ZIP, prêts à envoyer.">📦 Un PDF assistance par agent</button>
+            <button class="link-btn" id="exportAllBillingAgentsPdfEnergieBtn" onclick="downloadAllBillingAgentsPDF('energie')" title="UN PDF ÉNERGIE PAR AGENT (uniquement les agents qui ont fait de l'énergie), réunis dans une archive ZIP, prêts à envoyer.">⚡ Un PDF énergie par agent</button>
+          </div>
         </div>
 
         <div class="section-title" style="margin-top:34px;">🕐 4. Historique des salaires nets</div>
@@ -29707,7 +29718,7 @@ function billingAgentSheetHTML(d, forImage){
         </div>`;
       }
     }
-    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th>' + (forImage ? '' : '<th>Téléphone</th>') + '<th>N° contrat</th>' + (forImage ? '<th>Statut</th>' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
+    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Date</th><th>Produit</th><th>Client</th>' + (forImage ? '' : '<th>Téléphone</th>') + (forImage ? '<th>Référence</th><th>N° contrat</th>' : '<th>N° contrat</th>') + (forImage ? '<th>Statut</th>' : '<th>Rétracté</th>') + '</tr></thead><tbody>';
     const flagged = d.rows.filter(r => r._warnings && r._warnings.length);
     if(flagged.length && !forImage){
       html += `<div style="padding:11px 14px; border-radius:9px; background:rgba(217,164,65,0.12); border:1px solid rgba(217,164,65,0.45); font-size:13px; margin-bottom:12px;">
@@ -29727,7 +29738,7 @@ function billingAgentSheetHTML(d, forImage){
         <td>${forImage ? escapeHtml(billingProduitLibelle(r)) : billingProduitCellule(r, d.monthVal, key, true)}</td>
         <td>${escapeHtml(r.nom)}${flag}</td>
         ${forImage ? '' : `<td>${escapeHtml(r.telephone)}</td>`}
-        <td>${escapeHtml(key)}</td>
+        ${forImage ? `<td>${escapeHtml(r.reference || '')}</td><td>${escapeHtml(r.numContrat || '')}</td>` : `<td>${escapeHtml(key)}</td>`}
         ${forImage
           ? `<td style="white-space:nowrap; font-weight:800; ${r.retracted ? 'color:var(--red);' : 'color:var(--green); font-weight:600;'}">${r.retracted ? '🔻 RÉTRACTÉ' : 'Validé'}</td>`
           : `<td><button onclick="toggleBillingRetracted('${String(key).replace(/'/g, "\\'")}')" title="${r.retracted ? 'Ce contrat est marqué rétracté : le client s\'est rétracté dans son délai légal de 14 jours, l\'agent n\'est pas payé dessus. Clique pour annuler.' : 'Marquer ce contrat comme rétracté (le client s\'est rétracté dans les 14 jours). L\'agent ne sera pas payé dessus et son compteur de rétractations du mois augmente de 1.'}" style="padding:5px 11px; border-radius:7px; border:1px solid ${r.retracted ? 'var(--red)' : 'var(--border)'}; background:${r.retracted ? 'rgba(229,90,90,0.18)' : 'transparent'}; color:${r.retracted ? 'var(--red)' : 'var(--muted)'}; font-weight:700; cursor:pointer; font-size:12px;">${r.retracted ? '🔻 Rétracté' : 'Marquer'}</button></td>`}
@@ -29735,7 +29746,7 @@ function billingAgentSheetHTML(d, forImage){
     });
     if(forImage && d.ncRows && d.ncRows.length){
       d.ncRows.forEach((r, i) => {
-        html += `<tr style="background:rgba(235,150,50,0.12);"><td>${d.rows.length + i + 1}</td><td>${escapeHtml(r.datePropre || r.date)}</td><td>${escapeHtml(billingProduitLibelle(r))}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.numContrat || r.reference || '')}</td><td style="white-space:nowrap; font-weight:800; color:var(--amber);">NON CONFORME</td></tr>`;
+        html += `<tr style="background:rgba(235,150,50,0.12);"><td>${d.rows.length + i + 1}</td><td>${escapeHtml(r.datePropre || r.date)}</td><td>${escapeHtml(billingProduitLibelle(r))}</td><td>${escapeHtml(r.nom)}</td><td>${escapeHtml(r.reference || '')}</td><td>${escapeHtml(r.numContrat || '')}</td><td style="white-space:nowrap; font-weight:800; color:var(--amber);">NON CONFORME</td></tr>`;
       });
     }
     html += '</tbody></table></div>';
@@ -29750,13 +29761,13 @@ function billingAgentSheetHTML(d, forImage){
     const scaleTxt = !ret.auto ? 'diviseur forcé manuellement'
       : (d.pay.isIndep ? `barème indépendant : ${d.counterRealized} contrats ce mois` : `${ret.lateCount} retard${ret.lateCount>1?'s':''}/absence${ret.lateCount>1?'s':''} ce mois-ci`);
     html += `<div class="section-sub">${ret.count} retour${ret.count>1?'s':''} ${ret.divisor === 1 ? 'en 1:1' : '÷ '+ret.divisor} = <b style="color:var(--red);">${dedContracts} contrat${dedContracts>1?'s':''} retiré${dedContracts>1?'s':''}</b> du compteur payé — ${scaleTxt}.</div>`;
-    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Produit</th><th>Client</th><th>N° contrat</th><th>Mois d\'origine</th><th>Motif</th></tr></thead><tbody>';
+    html += '<div style="overflow-x:auto;"><table class="salary-table"><thead><tr><th>#</th><th>Produit</th><th>Client</th>' + (forImage ? '<th>Référence</th>' : '') + '<th>N° contrat</th><th>Mois d\'origine</th><th>Motif</th></tr></thead><tbody>';
     // 🔄 ORDRE INVERSÉ (demande du patron) : les derniers retours de la liste passent en tête, et les
     // premiers passent à la fin. On travaille sur une COPIE — `ret.rows` sert aussi aux calculs de
     // paie plus haut, l'ordre n'y change rien mais on ne touche jamais à une donnée qu'on affiche.
     // La numérotation suit l'ordre affiché : la ligne 1 est bien la première du tableau.
     [...ret.rows].reverse().forEach((r, i) => {
-      html += `<tr><td>${i + 1}</td><td>${escapeHtml(billingProduitLibelle(r))}</td><td>${escapeHtml(r.nom)}${(!forImage && r.deuxiemePrelevement) ? ` <span style="color:var(--amber); font-weight:700; font-size:11px;" title="Déjà retenu un autre mois (1er prélèvement : ${escapeHtml(r.premierPrelevementMois || '?')})">💸 2e prélèvement</span>` : ''}</td><td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
+      html += `<tr><td>${i + 1}</td><td>${escapeHtml(billingProduitLibelle(r))}</td><td>${escapeHtml(r.nom)}${(!forImage && r.deuxiemePrelevement) ? ` <span style="color:var(--amber); font-weight:700; font-size:11px;" title="Déjà retenu un autre mois (1er prélèvement : ${escapeHtml(r.premierPrelevementMois || '?')})">💸 2e prélèvement</span>` : ''}</td>${forImage ? `<td>${escapeHtml(r.reference || '')}</td>` : ''}<td>${escapeHtml(r.numContrat)}</td><td>${escapeHtml(r.originMonth || '—')}</td><td>${escapeHtml(r.motif)}</td></tr>`;
     });
     html += '</tbody></table></div>';
 
@@ -29929,21 +29940,21 @@ function billingAgentCSV(d, produit){
     csv += `\nNombre de retours (energies);${x.retoursEnergies || 0}\nDiviseur;${(x.diviseur || 1) === 1 ? '1:1' : '/' + x.diviseur}\nEnergies payees;${String(Math.round((x.nets || 0) * 10) / 10).replace('.', ',')}\n`;
   } else {
     csv += 'PRODUCTION ASSISTANCE DU MOIS\n';
-    csv += 'N;Date;Produit;Client;Numero de contrat;Statut\n';
+    csv += 'N;Date;Produit;Client;Reference;Numero de contrat;Statut\n';
     d.rows.forEach((r, i) => {
-      csv += [i + 1, cell(r.datePropre || r.date), cell(r.produit), cell(r.nom), cell(r.numContrat || r.reference), r.retracted ? 'RETRACTE' : 'Valide'].join(';') + '\n';
+      csv += [i + 1, cell(r.datePropre || r.date), cell(r.produit), cell(r.nom), cell(r.reference), cell(r.numContrat), r.retracted ? 'RETRACTE' : 'Valide'].join(';') + '\n';
     });
     (d.ncRows || []).forEach((r, i) => {
-      csv += [d.rows.length + i + 1, cell(r.datePropre || r.date), cell(r.produit), cell(r.nom), cell(r.numContrat || r.reference), 'NON CONFORME'].join(';') + '\n';
+      csv += [d.rows.length + i + 1, cell(r.datePropre || r.date), cell(r.produit), cell(r.nom), cell(r.reference), cell(r.numContrat), 'NON CONFORME'].join(';') + '\n';
     });
     csv += `\nContrats importes;${d.importedTotal}\nDont retractes;${d.retractedCount}\nContrats valides (backoffice);${d.importedValid}\nContrats comptes pour la paie (compteurs);${d.counterRealized}\n`;
     if((d.ncRows || []).length) csv += `Contrats non conformes (non payes);${d.ncRows.length}\n`;
 
     const ret = d.returns;
     csv += `\nRETOURS DE FACTURATION${ret.periodLabel ? ' (' + ret.periodLabel + ')' : ''}\n`;
-    csv += 'N;Produit;Client;Numero de contrat;Mois d origine;Motif\n';
+    csv += 'N;Produit;Client;Reference;Numero de contrat;Mois d origine;Motif\n';
     ret.rows.forEach((r, i) => {
-      csv += [i + 1, cell(r.produit), cell(r.nom), cell(r.numContrat), cell(r.originMonth), cell(r.motif)].join(';') + '\n';
+      csv += [i + 1, cell(r.produit), cell(r.nom), cell(r.reference), cell(r.numContrat), cell(r.originMonth), cell(r.motif)].join(';') + '\n';
     });
     csv += `\nNombre de retours;${ret.count}\nCout unitaire (DH);${fmt(ret.unitCost)}\nDiviseur;${ret.divisor === 1 ? '1:1' : '/' + ret.divisor}\nRetenue retours (DH);${fmt(ret.amount)}\n`;
   }
@@ -29961,11 +29972,23 @@ function billingAgentCSV(d, produit){
   return csv;
 }
 
-async function downloadBillingAgentCSV(){
+// r353 — Quels produits générer pour cet agent : tous ceux qu'il a faits, ou seulement celui demandé par le bouton.
+// Vide si l'agent n'a pas fait ce produit ce mois-ci.
+function billingProduitsPour(d, produitDemande){
+  const tous = d._produits || [];
+  return produitDemande ? tous.filter(p => p === produitDemande) : tous;
+}
+function billingAlerteSansProduit(d, produitDemande){
+  uiAlert(`${d.agent} n'a pas de production ${produitDemande === 'energie' ? 'énergie' : 'assistance'} sur ${billingMonthLabel(d.monthVal)} : aucun fichier n'a été créé.`);
+}
+
+async function downloadBillingAgentCSV(produitDemande){
   const d0 = BILLING_LAST_SHEET;
   if(!d0){ uiAlert('Affiche d\'abord le tableau d\'un agent.'); return; }
   const d = await billingChargerExtras(d0);
-  for(const produit of d._produits){
+  const liste = billingProduitsPour(d, produitDemande);
+  if(!liste.length){ billingAlerteSansProduit(d, produitDemande); return; }
+  for(const produit of liste){
     billingDownload(billingAgentCSV(d, produit), `${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie_${billingSuffixeProduit(produit)}.csv`);
   }
 }
@@ -29973,12 +29996,12 @@ async function downloadBillingAgentCSV(){
 // 📥 UN CSV PAR AGENT. Avant : un seul gros fichier où tous les agents se suivaient, séparés par une
 // ligne de « = » — inexploitable dans Excel (une seule feuille, des en-têtes au milieu des données) et
 // impossible à envoyer à un agent sans le découper à la main.
-async function downloadAllBillingAgentsCSV(){
+async function downloadAllBillingAgentsCSV(produitDemande){
   const monthVal = document.getElementById('billingSheetMonth')?.value;
   if(!monthVal) return;
   const agents = agentsReels() || [];
   if(!agents.length){ uiAlert('Aucun agent.'); return; }
-  const btn = document.getElementById('exportAllBillingAgentsCsvBtn');
+  const btn = document.getElementById(produitDemande === 'energie' ? 'exportAllBillingAgentsCsvEnergieBtn' : 'exportAllBillingAgentsCsvBtn');
   const libelle = btn ? btn.textContent : '';
   const maj = txt => { if(btn) btn.textContent = txt; };
   if(btn) btn.disabled = true;
@@ -29988,12 +30011,13 @@ async function downloadAllBillingAgentsCSV(){
       maj(`⏳ ${agents[i]} (${i+1}/${agents.length})...`);
       const d = await billingChargerExtras(await billingComputeAgent(agents[i], monthVal));
       // r352 : un fichier par produit (assistance / énergie) ; un agent qui n'a fait qu'un produit n'en reçoit qu'un.
-      for(const produit of d._produits){
+      for(const produit of billingProduitsPour(d, produitDemande)){
         // Le BOM est indispensable pour qu'Excel affiche correctement les accents.
         const blob = new Blob(['\ufeff' + billingAgentCSV(d, produit)], { type: 'text/csv;charset=utf-8;' });
         fichiers.push({ nom: `${nomFichierAgent(agents[i])}_${monthVal}_paie_${billingSuffixeProduit(produit)}.csv`, blob });
       }
     }
+    if(!fichiers.length){ uiAlert(`Aucun agent n'a de production ${produitDemande === 'energie' ? 'énergie' : 'assistance'} sur ${billingMonthLabel(monthVal)} : rien à exporter.`); return; }
     const res = await livrerFichiersParAgent(fichiers, `tableaux_agents_${monthVal}`, maj);
     logAudit('Admin', 'Export CSV — un fichier par agent', `${monthVal} — ${fichiers.length} fichier(s), ${res.mode === 'zip' ? 'archive ZIP' : 'téléchargements séparés'}`);
     showToast(res.mode === 'zip'
@@ -30049,7 +30073,7 @@ function billingAgentSheetPdfPages(d, produit){
   if(produit === 'energie') return billingEnergiePdfPages(d);
   const full = billingAgentSheetHTML(d, true);
   const MARK_CONTRATS = '<div class="section-title" style="margin-top:10px; font-size:15px;">Production du mois';
-  const MARK_RETOURS = '<div class="section-title" style="margin-top:26px; font-size:15px; color:var(--red);">Retours de facturation';
+  const MARK_RETOURS = '<div id="billingRetoursSection" class="section-title" style="margin-top:26px; font-size:15px; color:var(--red);">Retours de facturation';
   const MARK_SALAIRE = '<div class="section-title" style="margin-top:26px; font-size:15px;">' + billingSalaireTitre(d);
   const iC = full.indexOf(MARK_CONTRATS), iR = full.indexOf(MARK_RETOURS), iS = full.indexOf(MARK_SALAIRE);
   // Reperes introuvables (texte du tableau modifie un jour) → une seule image plutot que de planter
@@ -30069,11 +30093,13 @@ function billingAgentSheetPdfPages(d, produit){
   ];
 }
 
-async function exportBillingAgentImage(){
+async function exportBillingAgentImage(produitDemande){
   const d0 = BILLING_LAST_SHEET;
   if(!d0){ uiAlert('Affiche d\'abord le tableau d\'un agent.'); return; }
   const d = await billingChargerExtras(d0);
-  for(const produit of d._produits){
+  const liste = billingProduitsPour(d, produitDemande);
+  if(!liste.length){ billingAlerteSansProduit(d, produitDemande); return; }
+  for(const produit of liste){
     const html = produit === 'energie' ? billingEnergieSheetHTML(d) : billingAgentSheetHTML(d, true);
     await captureBlockToImage({
       innerHTML: `<div style="font-size:0;"></div>` + html,
@@ -30121,23 +30147,26 @@ async function billingGenererPdf(d, produit, majTexte){
 // mais en PDF : un fichier propre à envoyer par email ou en pièce jointe « Document » sur WhatsApp (pas
 // recompressé comme une image), que l'agent peut zoomer sans perte. Même moteur PDF que le Bilan de la
 // journée et le Bilan complet du mois (capturerPageEnCanvas + jsPDF) — un seul moteur PDF dans toute l'appli.
-async function exportBillingAgentPDF(){
+async function exportBillingAgentPDF(produitDemande){
   const d0 = BILLING_LAST_SHEET;
   if(!d0){ uiAlert('Affiche d\'abord le tableau d\'un agent.'); return; }
-  const btn = document.getElementById('exportBillingAgentPdfBtn');
+  const btn = document.getElementById(produitDemande === 'energie' ? 'exportBillingAgentPdfEnergieBtn' : 'exportBillingAgentPdfBtn');
+  const libelleBtn = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Préparation...'; }
   try{
     // r352 : un PDF par produit fait par l'agent (assistance et/ou énergie), sans téléphone ni e-mail.
     const d = await billingChargerExtras(d0);
     const faits = [];
-    for(const produit of d._produits){
+    const liste = billingProduitsPour(d, produitDemande);
+    if(!liste.length){ billingAlerteSansProduit(d, produitDemande); return; }
+    for(const produit of liste){
       const r = await billingGenererPdf(d, produit, (p, n) => { if(btn) btn.textContent = `⏳ ${billingLibelleProduit(produit)}${n > 1 ? ` — page ${p+1}/${n}` : ''}...`; });
       r.pdf.save(`${d.agent.replace(/\s+/g, '_')}_${d.monthVal}_paie_${billingSuffixeProduit(produit)}.pdf`);
       faits.push(billingLibelleProduit(produit));
     }
     showToast(`✅ ${faits.length} PDF généré${faits.length>1?'s':''} pour ${d.agent} (${faits.join(' + ')}) — prêt${faits.length>1?'s':''} à envoyer.`, 'ok', 6000);
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = '🖨️ PDF (à envoyer)'; }
+    if(btn){ btn.disabled = false; btn.textContent = libelleBtn || '🖨️ PDF'; }
   }
 }
 
@@ -30148,12 +30177,12 @@ async function exportBillingAgentPDF(){
 // inutilisable pour envoyer sa fiche à un agent. Chaque agent a maintenant SON fichier, avec ses
 // propres pages s'il a beaucoup de contrats (même découpage que le PDF individuel, voir
 // billingAgentSheetPdfPages : plus rien ne peut être tronqué en silence).
-async function downloadAllBillingAgentsPDF(){
+async function downloadAllBillingAgentsPDF(produitDemande){
   const monthVal = document.getElementById('billingSheetMonth')?.value;
   if(!monthVal) return;
   const agents = agentsReels() || [];
   if(!agents.length){ uiAlert('Aucun agent.'); return; }
-  const btn = document.getElementById('exportAllBillingAgentsPdfBtn');
+  const btn = document.getElementById(produitDemande === 'energie' ? 'exportAllBillingAgentsPdfEnergieBtn' : 'exportAllBillingAgentsPdfBtn');
   const libelle = btn ? btn.textContent : '';
   const maj = txt => { if(btn) btn.textContent = txt; };
   if(btn) btn.disabled = true;
@@ -30163,11 +30192,12 @@ async function downloadAllBillingAgentsPDF(){
       const a = agents[i];
       const d = await billingChargerExtras(await billingComputeAgent(a, monthVal));
       // r352 : un PDF par produit (assistance / énergie) ; un agent qui n'a fait qu'un produit n'en reçoit qu'un.
-      for(const produit of d._produits){
+      for(const produit of billingProduitsPour(d, produitDemande)){
         const r = await billingGenererPdf(d, produit, (p, n) => maj(`⏳ ${a} (${i+1}/${agents.length}) — ${billingLibelleProduit(produit)}${n>1?` — page ${p+1}/${n}`:''}...`));
         if(r.pdf) fichiers.push({ nom: `${nomFichierAgent(a)}_${monthVal}_paie_${billingSuffixeProduit(produit)}.pdf`, blob: r.pdf.output('blob') });
       }
     }
+    if(!fichiers.length){ uiAlert(`Aucun agent n'a de production ${produitDemande === 'energie' ? 'énergie' : 'assistance'} sur ${billingMonthLabel(monthVal)} : rien à exporter.`); return; }
     const res = await livrerFichiersParAgent(fichiers, `tableaux_agents_${monthVal}`, maj);
     logAudit('Admin', 'Export PDF — un fichier par agent et par produit', `${monthVal} — ${fichiers.length} fichier(s), ${res.mode === 'zip' ? 'archive ZIP' : 'téléchargements séparés'}`);
     showToast(res.mode === 'zip'
