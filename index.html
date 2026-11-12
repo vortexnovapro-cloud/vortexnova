@@ -347,13 +347,38 @@
      étroit. Elle défile maintenant horizontalement d'un seul geste au lieu de passer à la ligne et
      de pousser toute la page vers le bas — comme les barres d'onglets d'un téléphone. L'onglet actif
      se place tout seul dans la vue (voir showAdminSub). */
+  /* r361 — Barre d'onglets : plus AUCUN ascenseur gris. On fait glisser au doigt ou à la
+     molette, l'onglet actif se replace tout seul, et les bords s'estompent pour montrer qu'il y
+     a d'autres onglets à côté (style Windows 11 / HarmonyOS : l'icône au-dessus du mot). */
   .admin-tabs{
     display:flex; gap:6px; margin-bottom:22px; flex-wrap:nowrap;
-    overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; -webkit-overflow-scrolling:touch;
-    padding-bottom:6px; scroll-snap-type:x proximity;
+    overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
+    scrollbar-width:none; -ms-overflow-style:none;
+    padding:2px 2px 4px; scroll-behavior:smooth; scroll-snap-type:x proximity;
   }
-  .admin-tabs::-webkit-scrollbar{ height:5px; }
-  .admin-tabs::-webkit-scrollbar-thumb{ background:var(--border); border-radius:9px; }
+  .admin-tabs::-webkit-scrollbar{ display:none; height:0; }
+  @media (max-width: 1100px){
+    .admin-tabs{
+      padding-left:14px; padding-right:14px;
+      -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+      mask-image:linear-gradient(90deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+    }
+  }
+  /* Portée limitée à la barre d'onglets : les autres boutons qui partagent cette classe
+     (listes d'agents, Explorateur) ne bougent pas d'un pixel. */
+  .admin-tabs .admin-tab-btn{
+    display:grid; justify-items:center; align-content:center; gap:4px;
+    min-width:78px; padding:8px 13px; border-radius:12px;
+    font-size:11.5px; line-height:1.15; text-align:center;
+    background:transparent; border:1px solid transparent; box-shadow:none;
+  }
+  .admin-tabs .admin-tab-btn i{ font-style:normal; font-size:19px; line-height:1; }
+  .admin-tabs .admin-tab-btn:hover{ background:var(--panel2); color:var(--text); border-color:transparent; }
+  .admin-tabs .admin-tab-btn.active{
+    background:var(--panel2); color:var(--text); border-color:var(--accent); box-shadow:none;
+  }
+  .admin-tabs .admin-tab-btn.active i{ filter:drop-shadow(0 0 7px rgba(61,139,253,.55)); }
+  @media (max-width: 760px){ .admin-tabs .admin-tab-btn{ min-width:70px; padding:7px 10px; font-size:11px; } }
   .admin-tab-btn{
     background: var(--panel); border: 1px solid var(--border); color: var(--muted);
     padding: 9px 16px; border-radius: 8px; cursor:pointer; font-size: 13px; font-weight: 600;
@@ -417,6 +442,12 @@
   #view-admin .mega-section.replie > .mega-section-title{ margin-bottom:0; }
   .repli-chevron{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; margin-left:8px; border-radius:6px; border:1px solid var(--border); font-size:11px; color:var(--muted); vertical-align:middle; transition:transform .15s; flex-shrink:0; }
   .mega-section.replie .repli-chevron{ transform:rotate(-90deg); }
+  /* r363 - Les blocs plus petits (settings-box) se replient aussi d'un clic sur leur titre,
+     exactement comme les grandes sections : meme chevron, meme memoire. */
+  #view-admin .settings-box > .section-title{ cursor:pointer; user-select:none; }
+  #view-admin .settings-box.replie > :not(.section-title){ display:none !important; }
+  #view-admin .settings-box.replie > .section-title{ margin-bottom:0; }
+  .settings-box.replie .repli-chevron{ transform:rotate(-90deg); }
   .aide-ico{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-left:8px; border-radius:50%; border:1px solid var(--border); background:transparent; font:700 11px/1 Georgia, serif; font-style:italic; color:var(--muted); cursor:pointer; vertical-align:middle; text-transform:none; letter-spacing:0; padding:0; flex-shrink:0; }
   .aide-ico:hover, .aide-ico.on{ color:var(--accent); border-color:var(--accent); }
   .aide-chip{ display:inline-flex; align-items:center; gap:6px; margin:2px 0 10px; padding:3px 10px 3px 4px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:11.5px; font-weight:600; cursor:pointer; }
@@ -1782,15 +1813,15 @@ async function tryDeviceGateAdmin(){
         <!-- 🧭 r357 — Onglets rangés par usage, du plus quotidien au plus rare : le quotidien
              (vue, journée, production) · l'argent (argent, barèmes) · ce qui entre (imports,
              contrats) · les gens (statuts) · le reste (réglages). -->
-        <button class="admin-tab-btn active" id="subtabOverview" onclick="showAdminSub('overview')">🏠 Vue d'ensemble</button>
-        <button class="admin-tab-btn" id="subtabDay" onclick="showAdminSub('day')">📅 Journée</button>
-        <button class="admin-tab-btn" id="subtabProd" onclick="showAdminSub('prod')">🏆 Production</button>
-        <button class="admin-tab-btn" id="subtabArgent" onclick="showAdminSub('argent')">💰 Argent &amp; paie</button>
-        <button class="admin-tab-btn" id="subtabRemu" onclick="showAdminSub('remu')">💵 Rémunération</button>
-        <button class="admin-tab-btn" id="subtabImports" onclick="showAdminSub('imports')">📥 Imports &amp; contrôles</button>
-        <button class="admin-tab-btn" id="subtabContrats" onclick="showAdminSub('contrats')">📨 Contrats</button>
-        <button class="admin-tab-btn" id="subtabStat" onclick="showAdminSub('stat')">👥 Statuts</button>
-        <button class="admin-tab-btn" id="subtabSettings" onclick="showAdminSub('settings')">⚙️ Réglages</button>
+        <button class="admin-tab-btn active" id="subtabOverview" onclick="showAdminSub('overview')"><i>🏠</i>Vue d'ensemble</button>
+        <button class="admin-tab-btn" id="subtabDay" onclick="showAdminSub('day')"><i>📅</i>Journée</button>
+        <button class="admin-tab-btn" id="subtabProd" onclick="showAdminSub('prod')"><i>🏆</i>Production</button>
+        <button class="admin-tab-btn" id="subtabArgent" onclick="showAdminSub('argent')"><i>💰</i>Argent &amp; paie</button>
+        <button class="admin-tab-btn" id="subtabRemu" onclick="showAdminSub('remu')"><i>💵</i>Rémunération</button>
+        <button class="admin-tab-btn" id="subtabImports" onclick="showAdminSub('imports')"><i>📥</i>Imports &amp; contrôles</button>
+        <button class="admin-tab-btn" id="subtabContrats" onclick="showAdminSub('contrats')"><i>📨</i>Contrats</button>
+        <button class="admin-tab-btn" id="subtabStat" onclick="showAdminSub('stat')"><i>👥</i>Statuts</button>
+        <button class="admin-tab-btn" id="subtabSettings" onclick="showAdminSub('settings')"><i>⚙️</i>Réglages</button>
       </div>
 
       <!-- Bannière d'anomalies — épinglée ici, donc visible quel que soit le sous-onglet Admin ouvert
@@ -3560,7 +3591,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-12-r357';
+const APP_VERSION = '2026-11-12-r364';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -3611,6 +3642,29 @@ function repliTraiter(racine){
     titre.addEventListener('click', ev=>{
       if(ev.target.closest('.aide-ico, button, a, input, select')) return;
       const r = section.classList.toggle('replie');
+      const liste = new Set(repliLire());
+      if(r) liste.add(cle); else liste.delete(cle);
+      repliEcrire([...liste]);
+    });
+  });
+  // r363 - Meme chose pour les blocs plus petits. Deux garde-fous :
+  //  - on ne replie JAMAIS un bloc exporte en image (il s'exporterait blanc) ;
+  //  - la cle commence par "box:" pour ne pas se melanger avec celle d'une grande section
+  //    qui porterait le meme titre.
+  racine.querySelectorAll('.settings-box > .section-title').forEach(titre=>{
+    if(titre.dataset.repliFait) return;
+    const boite = titre.parentElement;
+    try{ if(boite.matches(AIDE_EXCLUS) || boite.querySelector(AIDE_EXCLUS)) return; }catch(e){}
+    titre.dataset.repliFait = '1';
+    const cle = 'box:' + (titre.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const chev = document.createElement('span');
+    chev.className = 'repli-chevron'; chev.textContent = '\u25bc';
+    chev.title = 'Afficher / r\u00e9duire ce bloc';
+    titre.appendChild(chev);
+    if(replies.has(cle)) boite.classList.add('replie');
+    titre.addEventListener('click', ev=>{
+      if(ev.target.closest('.aide-ico, button, a, input, select')) return;
+      const r = boite.classList.toggle('replie');
       const liste = new Set(repliLire());
       if(r) liste.add(cle); else liste.delete(cle);
       repliEcrire([...liste]);
@@ -4855,7 +4909,14 @@ async function storageSet(key, value){
   if(!firebaseReady) return null;
   pendingWriteCount++; updateSyncIndicator();
   try{
-    await db.collection(collectionDeCle(key)).doc(key).set({ value });
+    // Un contrat nait avec sa date : l'etiquette << jour >> est ecrite A CHAQUE enregistrement.
+    // Indispensable car .set() remplace le document entier : sans cela, la moindre mise a jour
+    // (changement de statut par le backoffice) effacerait l'etiquette posee auparavant.
+    var _etiq = null;
+    if(String(key).indexOf('contratSoumis:') === 0 && typeof window.etiqJour === 'function'){
+      try{ var _j = window.etiqJour(JSON.parse(value)); if(_j) _etiq = _j; }catch(e){}
+    }
+    await db.collection(collectionDeCle(key)).doc(key).set(_etiq ? { value: value, jour: _etiq } : { value: value });
     storageForget(key); // la mémo de lecture ne doit jamais servir une valeur qu'on vient de remplacer
     try{ resumeMoisInvalider(key); }catch(e){}
     try{ figeSurveiller(key); }catch(e){}
@@ -9741,6 +9802,26 @@ function enerMois(agent, jour){
     return t;
   }catch(e){ return 0; }
 }
+// r364 - Objectif ENERGIE du mois, lisible sans attendre. Le vrai chiffre vient d'ilekDuMois
+// (asynchrone) ; on garde ici la derniere valeur connue et on la rafraichit en arriere-plan.
+// Sert aux messages d'encouragement de la carte du bilan, jamais a un calcul de paie.
+const OBJ_ENER_MOIS_CACHE = {};
+function objEnergieMois(agent, mois){
+  const k = agent + '|' + mois;
+  const c = OBJ_ENER_MOIS_CACHE[k];
+  if(!c || Date.now() - c.t > 120000){
+    OBJ_ENER_MOIS_CACHE[k] = { v: c ? c.v : 0, t: Date.now() };
+    (async function(){
+      try{
+        if(typeof window.ilekDuMois === 'function'){
+          const d = await window.ilekDuMois(agent, mois);
+          OBJ_ENER_MOIS_CACHE[k] = { v: (d && Number(d.objectif)) || 0, t: Date.now() };
+        }
+      }catch(e){}
+    })();
+  }
+  return OBJ_ENER_MOIS_CACHE[k].v;
+}
 function enerPhrase(n, pour){
   const lv = enerNiveau(n); if(!lv) return '';
   const e = `${n} énergie${n>1?'s':''}`;
@@ -12538,8 +12619,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
       const monthlyBlock = (mo.mini>0 || viseAffichable || mo.ilek || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
-          ${mo.mini>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>${mo.equivObj>0 ? `Objectif minimum du mois <small style="font-size:11px; opacity:.75;">(assistance + énergie)</small><br><small style="font-size:11px; color:${mo.objReal>=mo.mini?'#4f9d78':'var(--muted)'};">${isEnergieSeule(r.agent) ? '' : mo.monthlyRealized+' assistance'+(mo.monthlyRealized>1?'s':'')+' + '}${Math.round(mo.equivObj/2*10)/10} énergie${mo.equivObj/2>1?'s':''}</small><br><small style="font-size:11px; opacity:.75;">Pour l'objectif, 1 énergie = 2 assistances</small>` : `Objectif minimum du mois${(!isEnergieSeule(r.agent) && enerMois(r.agent, dateStr) > 0) ? ' <small style="font-size:11px; opacity:.75;">(assistance)</small>' : ''}${enerMois(r.agent, dateStr)>0 ? ' <small style="font-size:11px; opacity:.75;">(assistance)</small>' : ''}`}</span><b style="color:${mo.objReal>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
-          ${viseAffichable ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois${enerMois(r.agent, dateStr)>0 ? ' <small style="font-size:11px; opacity:.75;">(assistance)</small>' : ''}</span><b style="color:${(mo.objReal != null ? mo.objReal : mo.monthlyRealized)>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal != null ? mo.objReal : mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+          ${(mo.mini>0 && !isEnergieSeule(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>${mo.equivObj>0 ? `Objectif minimum du mois <small style="font-size:11px; opacity:.75;">(assistance + énergie)</small><br><small style="font-size:11px; color:${mo.objReal>=mo.mini?'#4f9d78':'var(--muted)'};">${isEnergieSeule(r.agent) ? '' : mo.monthlyRealized+' assistance'+(mo.monthlyRealized>1?'s':'')+' + '}${Math.round(mo.equivObj/2*10)/10} énergie${mo.equivObj/2>1?'s':''}</small><br><small style="font-size:11px; opacity:.75;">Pour l'objectif, 1 énergie = 2 assistances</small>` : `Objectif minimum du mois${(!isEnergieSeule(r.agent) && enerMois(r.agent, dateStr) > 0) ? ' <small style="font-size:11px; opacity:.75;">(assistance)</small>' : ''}`}</span><b style="color:${mo.objReal>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
+          ${(viseAffichable && !isEnergieSeule(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${(mo.objReal != null ? mo.objReal : mo.monthlyRealized)>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal != null ? mo.objReal : mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${mo.ilek ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-top:5px;" title="Énergies Ilek nettes (retours déduits) depuis le 1er du mois"><span>⚡ Énergie ce mois</span><b style="color:${(mo.ilek.objectif>0 && mo.ilek.atteint)?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${ilekNbG(mo.ilek.nets)}${mo.ilek.objectif>0?`<span style="opacity:0.55;"> / ${mo.ilek.objectif}</span>`:''}</b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
           ${dayRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.2); border:1px solid rgba(184,147,90,0.55); font-size:12.5px; font-weight:800; color:#d8b26e;\">${escapeHtml(dayRecordByAgent[r.agent])}</div>` : ''}
@@ -16291,7 +16372,51 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   const objRealTot = monthlyRealized + eqObj;
   const paceObjTot = daysElapsed > 0 ? objRealTot / daysElapsed : 0;
   ((monthlyRealized, currentPace)=>{
-  if(mini > 0 && enMoisN > 0 && monthlyRealized < mini){
+  // ⚡ r360 — Agent « énergie uniquement » : AUCUN message d'assistance.
+  if(isEnergieSeule(agentName)){
+    // Memes ressorts que l'assistance, transposes a l'energie : on encourage quand c'est acquis,
+    // on pousse quand ca se resserre, on dit les choses quand c'est mal engage. Jamais d'argent ici.
+    const _moisE = String(refDayForSeed || todayStr()).slice(0, 7);
+    const _objE = objEnergieMois(agentName, _moisE);
+    const _faitE = enMoisN;
+    const _resteE = Math.max(0, _objE - _faitE);
+    const _projE = daysElapsed > 0 ? Math.round((_faitE / daysElapsed) * (daysElapsed + remainingDays)) : _faitE;
+    const _nrj = n => n + ' énergie' + (n > 1 ? 's' : '');
+    if(_objE <= 0){
+      if(_faitE > 0) lines.push(mk('⚡', seedPick([
+        _nrj(_faitE) + ' ce mois. Chaque énergie compte dès la première.',
+        _nrj(_faitE) + ' au compteur. Pas d\'objectif fixé : tout ce que tu signes est pris.'
+      ], seed + '|enerLibre'), SLATE, SLATE_BG));
+    } else if(_faitE >= _objE){
+      lines.push(mk('⚡', moisTermine
+        ? 'Mois terminé : ' + _faitE + ' sur ' + _objE + ' énergies. Objectif tenu, bravo !'
+        : seedPick([
+            'Objectif énergie atteint (' + _faitE + '/' + _objE + '). Le plus dur est fait — chaque énergie en plus est du bonus.',
+            _faitE + '/' + _objE + ' énergies : c\'est plié. Maintenant on joue pour le haut du tableau.',
+            'Objectif énergie en poche (' + _faitE + '/' + _objE + '). Ne lâche pas, la dynamique est là.'
+          ], seed + '|enerOk'), SAGE, SAGE_BG));
+    } else if(moisTermine){
+      lines.push(mk('📌', 'Mois terminé : ' + _faitE + '/' + _objE + ' énergies — objectif manqué de ' + _resteE + '. Le nouveau mois repart de zéro.', TERRACOTTA, TERRACOTTA_BG));
+    } else if(remainingDays <= 0){
+      lines.push(mk('⏳', 'Dernier jour : ' + _faitE + '/' + _objE + ' énergies. Il en reste ' + _resteE + ' à aller chercher.', TERRACOTTA, TERRACOTTA_BG));
+    } else {
+      const _parJour = Math.ceil(_resteE / remainingDays);
+      if(_projE >= _objE){
+        lines.push(mk('⚡', seedPick([
+          _faitE + '/' + _objE + ' énergies. À ce rythme tu y es : tiens la cadence, environ ' + _parJour + ' par jour sur les ' + remainingDays + ' jours qui restent.',
+          'Tu es sur la bonne trajectoire : ' + _faitE + '/' + _objE + '. Encore ' + _resteE + ' en ' + remainingDays + ' jours, c\'est jouable sans forcer.'
+        ], seed + '|enerBon'), SLATE, SLATE_BG));
+      } else if(_resteE > 0 && remainingDays <= 3){
+        lines.push(mk('🔥', 'Ça se joue maintenant : ' + _resteE + ' énergies en ' + remainingDays + ' jour' + (remainingDays > 1 ? 's' : '') + ', soit ' + _parJour + ' par jour. Tout se décide sur cette fin de mois.', TERRACOTTA, TERRACOTTA_BG));
+      } else {
+        lines.push(mk('⚠️', seedPick([
+          'Au rythme actuel tu finirais à ' + _projE + ' pour un objectif de ' + _objE + '. Il faut passer à ' + _parJour + ' énergies par jour pour y arriver.',
+          'Retard sur l\'objectif énergie : ' + _faitE + '/' + _objE + '. Il reste ' + remainingDays + ' jours, donc ' + _parJour + ' par jour. Ça se rattrape, mais à partir d\'aujourd\'hui.'
+        ], seed + '|enerRetard'), TERRACOTTA, TERRACOTTA_BG));
+      }
+    }
+  }
+  else if(mini > 0 && enMoisN > 0 && monthlyRealized < mini){
     // ⚡ Agent qui fait aussi de l'énergie : ligne neutre, sans alerte rouge (affichage seulement).
     lines.push(eqObj > 0
       ? mk('ℹ️', `Objectif minimum : ${monthlyRealized} sur ${mini} (${assistReal} assistance${assistReal>1?'s':''} + ${Math.round(eqObj/2*10)/10} énergie${eqObj/2>1?'s':''}). Pour l'objectif, 1 énergie = 2 assistances. Les deux comptent, rien n'est perdu.`, SLATE, SLATE_BG)
@@ -20443,7 +20568,10 @@ function energieSepareeDeLAssistance(mois){
 function energiePayeParObjectif(agent, mois){
   try{
     if(String(mois) < ENERGIE_PAYE_PAR_OBJECTIF_DES) return false;
-    if(isEnergieSeule(agent)) return true;   // « énergie uniquement » : ses énergies SONT ses contrats (1 énergie = 1 contrat), payées comme Prime
+    // r359 — Règle du patron (12/11) : « énergie c'est énergie ». Un agent « énergie uniquement »
+    // n'est PLUS payé par le moteur Prime : sa prime d'objectif, sa commission et ses paliers viennent
+    // de sa grille ÉNERGIE (Rémunération → ILEK). Son montant Ilek n'est donc plus mis à 0.
+    if(isEnergieSeule(agent)) return false;
     // r355 — dès novembre, plus d'absorption : l'énergie d'un agent mixte lui est payée à part.
     if(energieSepareeDeLAssistance(mois)) return false;
     const [y, m] = String(mois).split('-').map(Number);
@@ -20476,6 +20604,9 @@ async function energieEquivalentObjectif(agent, year, month){
 // total de contrats ; tout le reste (objectif, prime d'objectif, prix par contrat au-delà, classements) suit alors les règles Prime.
 async function energieContratsSeule(agent, year, month){
   try{
+    // r359 — Plus aucun lien avec l'assistance : ses énergies ne sont plus transformées en
+    // « contrats Prime ». Son objectif, sa paie et ses compteurs vivent côté énergie.
+    return 0;
     if(!isEnergieSeule(agent)) return 0;
     const mois = year + '-' + String(month).padStart(2,'0');
     if(mois < ENERGIE_PAYE_PAR_OBJECTIF_DES || typeof window.ilekDuMois !== 'function') return 0;
@@ -21063,6 +21194,28 @@ async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise, pay
     brut += manualPrimesTotal;
     const total = brut - ded.total;
     return { total: Math.round(total), brut: Math.round(brut), status: { realized: br.payable, isIndep: true }, breakdown: br, deductions: ded, manualPrimes, manualPrimesTotal };
+  }
+
+  // ⚡ r359 — AGENT « ÉNERGIE UNIQUEMENT » : payé ENTIÈREMENT par sa grille énergie.
+  // Le salaire fixe et la prime d'assiduité restent communs (une seule valeur, versée une seule fois,
+  // exactement comme l'indique sa fiche). Tout le reste — objectif, prime d'objectif, commission par
+  // énergie et paliers — vient de Rémunération → ILEK. AUCUN dirham ne vient du moteur Prime.
+  if(isEnergieSeule(agent) && !pay.isIndep){
+    let ilk = null;
+    try{
+      if(typeof window.ilekDuMois === 'function'){
+        ilk = await window.ilekDuMois(agent, year + '-' + String(month).padStart(2, '0'));
+      }
+    }catch(e){ tracerArgent('salaire \u00e9nergie (grille Ilek)', e, agent); }
+    const stE = await monthlyObjectifStatus(agent, year, month, br.payable);
+    let brutE = pay.baseSalary + pay.primeFixeMensuelle;
+    if(assiduiteAcquise !== false) brutE += pay.primeAssiduite;
+    brutE += ilk ? Math.round(Number(ilk.montant) || 0) : 0;
+    const mpE = await getManualPrimes(agent, year, month);
+    const mptE = computeManualPrimesTotal(mpE, br.payable);
+    brutE += mptE;
+    return { total: Math.round(brutE - ded.total), brut: Math.round(brutE), status: stE, breakdown: br,
+             deductions: ded, manualPrimes: mpE, manualPrimesTotal: mptE, energieSeule: true, ilek: ilk };
   }
 
   // Statut d'objectif recalculé sur les contrats PAYÉS : un agent qui tombe sous son minimum à cause
@@ -21982,8 +22135,28 @@ async function saveArenaDesiredObjectif(){
   if(alreadySet > 0){ uiAlert(`Ton objectif du mois est déjà réglé à ${alreadySet} et verrouillé jusqu'au mois prochain. Demande à l'admin s'il faut le changer.`); await renderArena(); return; }
   const val = parseInt(document.getElementById('arenaDesiredObjInput').value);
   if(isNaN(val) || val < 0){ uiAlert('Entre un nombre valide.'); return; }
+  // r362 - Regle du patron (12/11) : un agent ne peut PAS viser moins que le minimum demande.
+  // Le minimum lu est celui de SON produit : l'objectif energie pour un agent << energie uniquement >>,
+  // l'objectif d'assistance pour tous les autres. Sans minimum regle, rien ne bloque.
+  const _seule = (typeof isEnergieSeule === 'function') && isEnergieSeule(currentArenaAgent);
+  let _mini = 0;
+  try{
+    if(_seule){
+      if(typeof window.ilekDuMois === 'function'){
+        const _dIl = await window.ilekDuMois(currentArenaAgent, now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+        _mini = (_dIl && Number(_dIl.objectif)) || 0;
+      }
+    } else {
+      _mini = Number(getAgentPay(currentArenaAgent, now.getFullYear(), now.getMonth() + 1).objectifMensuel) || 0;
+    }
+  }catch(e){ _mini = 0; }
+  const _mot = _seule ? 'énergies' : 'contrats';
+  if(_mini > 0 && val < _mini){
+    uiAlert('Le minimum demandé ce mois-ci est de ' + _mini + ' ' + _mot + '. Tu ne peux pas viser moins — choisis ' + _mini + ' ou plus.');
+    return;
+  }
   await saveMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1, val);
-  showToast(`🎯 Objectif du mois enregistré : ${val} contrats`, 'ok');
+  showToast(`🎯 Objectif du mois enregistré : ${val} ${_mot}`, 'ok');
   await renderArena();
   majRappelObjectif();
   if(document.getElementById('view-supervision')?.classList.contains('active')) renderSupervision();
@@ -38210,6 +38383,8 @@ async function renderAssistanceHistory(){
     }catch(e){}
     return null;
   }
+  // Rendu global : storageSet() s'en sert pour etiqueter CHAQUE contrat enregistre.
+  window.etiqJour = etiqJour;
   var etiqStop = false;
   window.etiquetterArreter = function(){ etiqStop = true; };
   // Passage à BLANC : lit TOUT, n'écrit RIEN, ne s'arrête JAMAIS, et rend le rapport complet.
