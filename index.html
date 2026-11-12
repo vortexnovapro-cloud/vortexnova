@@ -3594,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-12-r373';
+const APP_VERSION = '2026-11-12-r374';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -41370,7 +41370,11 @@ async function renderAssistanceHistory(){
   async function adAnCharger(){
     var nzn = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+(?=[0-9a-z])/, ''); };
     var out = [];
-    var cand = (adDb.l || []).filter(function(v){ return produitDe(v) !== 'ilek' && v.statut === 'refuse' && v.champs && v.champs.numero && v.champs.date; });
+    // r374 — Garde : si un AUTRE contrat « Conforme » porte le même numéro chez le même agent, la ligne de la facturation est la sienne
+    // (le doublon a été écarté à l'arrivée) : on n'y touche pas, sinon ce contrat valide serait perdu.
+    var valides = {};
+    (adDb.l || []).forEach(function(w){ if(produitDe(w) !== 'ilek' && w.statut === 'conforme' && w.champs && w.champs.numero) valides[String(w.agent || '').toLowerCase() + '|' + nzn(w.champs.numero)] = 1; });
+    var cand = (adDb.l || []).filter(function(v){ return produitDe(v) !== 'ilek' && v.statut === 'refuse' && v.champs && v.champs.numero && v.champs.date && !valides[String(v.agent || '').toLowerCase() + '|' + nzn(v.champs.numero)]; });
     var mois = {}; cand.forEach(function(v){ moisVoisins(String(v.champs.date).slice(0, 7)).forEach(function(m){ mois[m] = 1; }); });
     var stores = {}; for(var m in mois){ try{ stores[m] = await getBillingProd(m); }catch(e){ stores[m] = { rows: [] }; } }
     cand.forEach(function(v){
@@ -41386,7 +41390,7 @@ async function renderAssistanceHistory(){
   window.adAnCharger = adAnCharger;
   function adAnnulesHtml(){
     var h = '<div class="ct-item" style="margin-top:10px;border-color:#dc2626;"><div class="ct-item-head"><b>🚫 Contrats Prime annulés mais encore comptés</b></div>' +
-      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Un contrat « Pas valide » ne doit ni compter ni être payé. Ici : ceux qui sont pourtant encore dans la facturation d\'un mois. Rien n\'est retiré sans ton clic, et jamais dans un mois déjà figé (payé).</div>';
+      '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Un contrat « Pas valide » ne doit ni compter ni être payé. Ici : ceux qui sont pourtant encore dans la facturation d\'un mois. Ceux du mois en cours sont retirés tout seuls (et notés dans « Ce que le CRM a fait tout seul »). Les mois passés restent à ton clic, et jamais dans un mois déjà figé (payé).</div>';
     if(!adAn.l) h += '<div style="font-size:13px;">' + (adDb.l ? 'Calcul…' : 'Clique sur « Chercher les doublons » ci-dessus pour charger les contrats.') + '</div>';
     else if(!adAn.l.length) h += '<div style="font-size:13px;">✅ Aucun contrat annulé n\'est encore compté.</div>';
     else adAn.l.forEach(function(x, i){
@@ -41397,6 +41401,41 @@ async function renderAssistanceHistory(){
     if(adAn.msg) h += '<div style="margin-top:8px;font-size:12.5px;white-space:pre-line;">' + esc(adAn.msg) + '</div>';
     return h + '</div>';
   }
+  // r374 — Le geste de retrait, UNE seule fois (utilisé par le bouton et par le retrait automatique).
+  async function adAnRetirerUn(x, auto){
+    var fige = await getBillingPayslips(x.m);
+    if(fige && fige.entries && fige.entries.length) throw new Error('Le mois ' + billingMonthLabel(x.m) + ' est déjà figé (payé) : je ne touche à rien. À décider avec toi.');
+    var store = await getBillingProd(x.m), rows = (store && store.rows) || [];
+    var nzn = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+(?=[0-9a-z])/, ''); };
+    var idx = rows.findIndex(function(r){ return r && !r.retracted && nzn(r.numContrat) === x.num && String(r.agent || '').toLowerCase() === String(x.v.agent || '').toLowerCase(); });
+    if(idx < 0) throw new Error('Ce contrat n\'est plus dans la facturation (déjà retiré ?). Rien n\'a été changé.');
+    var r = rows[idx]; rows.splice(idx, 1); store.rows = rows;
+    await billingSave(billingProdKey(x.m), store);
+    try{ await syncProdBoardRealizedForDates([r.date || r.datePropre]); }catch(e){}
+    billingInvalidate(); try{ clearRenderCaches(); }catch(e){}
+    try{ logAudit(auto ? 'CRM (automatique)' : 'Admin', 'Contrat Prime annulé retiré de la facturation', (x.v.agent || '?') + ' — ' + (r.nom || '') + ' n° ' + (r.numContrat || '') + ' (' + x.m + ') : « Pas valide », il ne compte plus'); }catch(e){}
+    try{ autoLog(auto ? 'Contrat annulé retiré tout seul de la facturation' : 'Contrat annulé retiré de la facturation', (x.v.agent || '?') + ' — ' + (r.nom || '') + ' n° ' + (r.numContrat || '') + ' (mois ' + x.m + '). Il est « Pas valide » : il ne compte plus et n\'est pas payé. Si tu le remets « Conforme », il sera recompté. Ligne d\'origine : date ' + (r.date || '?') + ', agent ' + (r.agent || '?') + '.'); }catch(e){}
+    return r;
+  }
+  // r374 — Retrait AUTOMATIQUE : un contrat « Pas valide » ne compte pas. Seulement le mois en cours (ou suivant), jamais un mois figé,
+  // jamais un mois passé (déjà payé en général : là, c'est toi qui décides avec le bouton).
+  var adAnAutoOccupe = false;
+  async function adAnAuto(){
+    if(adAnAutoOccupe || !configPriveeChargee || !adAn.l || !adAn.l.length) return;
+    adAnAutoOccupe = true;
+    var fait = 0;
+    try{
+      var cur = String(todayStr()).slice(0, 7);
+      var liste = adAn.l.slice();
+      for(var i = 0; i < liste.length; i++){
+        var x = liste[i];
+        if(String(x.m) < cur) continue;
+        try{ await adAnRetirerUn(x, true); fait++; }catch(e){ console.warn('annulé auto', e && e.message ? e.message : e); }
+      }
+      if(fait){ await adAnCharger(); adAn.msg = '✅ ' + fait + ' contrat' + (fait > 1 ? 's' : '') + ' annulé' + (fait > 1 ? 's' : '') + ' retiré' + (fait > 1 ? 's' : '') + ' tout seul de la facturation du mois en cours.'; }
+    }catch(e){ console.warn('annulés auto', e); }
+    adAnAutoOccupe = false;
+  }
   window.adAnRetirer = async function(i){
     var x = (adAn.l || [])[i]; if(!x || adAn.occupe) return;
     var c = x.v.champs || {};
@@ -41406,18 +41445,7 @@ async function renderAssistanceHistory(){
     if(!ok) return;
     adAn.occupe = true; adAn.msg = 'Un instant…'; try{ adRendre(); }catch(e){}
     try{
-      var fige = await getBillingPayslips(x.m);
-      if(fige && fige.entries && fige.entries.length) throw new Error('Le mois ' + billingMonthLabel(x.m) + ' est déjà figé (payé) : je ne touche à rien. À décider avec toi.');
-      var store = await getBillingProd(x.m), rows = (store && store.rows) || [];
-      var nzn = function(z){ return String(z == null ? '' : z).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+(?=[0-9a-z])/, ''); };
-      var idx = rows.findIndex(function(r){ return r && !r.retracted && nzn(r.numContrat) === x.num && String(r.agent || '').toLowerCase() === String(x.v.agent || '').toLowerCase(); });
-      if(idx < 0) throw new Error('Ce contrat n\'est plus dans la facturation (déjà retiré ?). Rien n\'a été changé.');
-      var r = rows[idx]; rows.splice(idx, 1); store.rows = rows;
-      await billingSave(billingProdKey(x.m), store);
-      try{ await syncProdBoardRealizedForDates([r.date || r.datePropre]); }catch(e){}
-      billingInvalidate(); try{ clearRenderCaches(); }catch(e){}
-      try{ logAudit('Admin', 'Contrat Prime annulé retiré de la facturation', (x.v.agent || '?') + ' — ' + (r.nom || '') + ' n° ' + (r.numContrat || '') + ' (' + x.m + ') : « Pas valide », il ne compte plus'); }catch(e){}
-      try{ autoLog('Contrat annulé retiré de la facturation', (x.v.agent || '?') + ' — ' + (r.nom || '') + ' n° ' + (r.numContrat || '') + ' (mois ' + x.m + '). Ligne d\'origine : date ' + (r.date || '?') + ', agent ' + (r.agent || '?') + '.'); }catch(e){}
+      await adAnRetirerUn(x, false);
       adAn.msg = '✅ Retiré de la facturation de ' + billingMonthLabel(x.m) + '.';
       await adAnCharger();
     }catch(e){ adAn.msg = '⚠️ ' + (e && e.message ? e.message : e); }
@@ -41429,7 +41457,7 @@ async function renderAssistanceHistory(){
     try{
       var snap = await rangePrefix(CT_PREFIX).get(), l = [];
       snap.forEach(function(doc){ var v = lire(doc); if(v){ v._key = doc.id; l.push(v); } });
-      adDb.l = l; adDb.msg = ''; adDb.t = Date.now(); try{ await adAnCharger(); }catch(e){ console.warn('annulés', e); }
+      adDb.l = l; adDb.msg = ''; adDb.t = Date.now(); try{ await adAnCharger(); }catch(e){ console.warn('annulés', e); } try{ await adAnAuto(); }catch(e){ console.warn('annulés auto', e); }
     }catch(e){ adDb.msg = silencieux === true ? '' : ('❌ ' + (e && e.message ? e.message : e)); }
     adDb.occupe = false; try{ adRendre(); }catch(e){} try{ if(window.renderSheetModifs) window.renderSheetModifs(); }catch(e){}
   };
