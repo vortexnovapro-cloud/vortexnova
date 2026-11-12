@@ -3594,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-12-r374';
+const APP_VERSION = '2026-11-12-r375';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -6258,7 +6258,7 @@ function ilekTexteTranches(il){
 // Le mot à écrire à la place de « contrat » sur les écrans d'un agent « énergie uniquement ».
 function motProduit(agent, n){
   const pl = Math.abs(Number(n) || 0) > 1 ? 's' : '';
-  return isEnergieSeule(agent) ? ('énergie' + pl) : ('contrat' + pl);
+  return isEnergiePrincipal(agent) ? ('énergie' + pl) : ('contrat' + pl);
 }
 async function toggleEnergieAfficheAssist(name){
   if(!config.agentsEnergieAfficheAssist) config.agentsEnergieAfficheAssist = {};
@@ -12541,7 +12541,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     const dates = dayIsOver ? [dateStr, ...streakRecentDates.slice(0, 4)] : streakRecentDates.slice(0, 5);
     stripByAgent[r.agent] = await Promise.all(dates.map(async d=>{
       const prod = d === dateStr ? { realized: r.realized, objective: r.objective } : getAgentProd(streakBoardsByDate[d], r.agent);
-      const v = (prod && prod.realized) || 0, o = (prod && prod.objective) || 0;
+      // r375 — Agent énergie : la barre ET le chiffre sont ses énergies du jour (avant : un « 0 » d'assistance + ⚡ dessous).
+      const _prE = isEnergiePrincipal(r.agent);
+      const v = _prE ? (d === dateStr ? (r.realized || 0) : (Number(enerJour(r.agent, d)) || 0)) : ((prod && prod.realized) || 0);
+      const o = _prE ? (d === dateStr ? (r.objective || 0) : (Number(objEnergieJour(r.agent, d)) || 0)) : ((prod && prod.objective) || 0);
       const horsPeriode = !estSousContrat(r.agent, d, v > 0);
       let absentJour = false, absenceLabel = null;
       if(!horsPeriode && (v === 0 || (o > 0 && v < o))){
@@ -12552,7 +12555,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
           if(meta && meta.deduction === 'full'){ absentJour = true; absenceLabel = absenceLabelPourAgent(ja); }
         }catch(e){}
       }
-      return { realized: v, objective: o, horsPeriode, absentJour, absenceLabel, energie: enerJour(r.agent, d) };
+      return { realized: v, objective: o, horsPeriode, absentJour, absenceLabel, energie: _prE ? 0 : enerJour(r.agent, d) };
     }));
   }));
   // 🚫 Agent absent sans pointage (journée terminée, rien signé, aucun objectif, aucune absence déclarée) : le dire sur sa carte.
@@ -12571,6 +12574,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     const metric = r => dayIsOver ? r.realized : (isEnergiePrincipal(r.agent) ? (Number((monthlyByAgent[r.agent].ilek || {}).nets) || 0) : monthlyByAgent[r.agent].monthlyRealized);
     return rangParGroupe(list, metric);
   }
+  // r375 — Valeur « du mois » à écrire dans les phrases : pour un agent énergie, ses énergies NETTES (comme le classement et « Énergie ce mois »), jamais son compteur d'assistance.
+  const moisValeurAgent = (agent, mo)=> isEnergiePrincipal(agent) ? (Math.round((Number(((mo && mo.ilek) || {}).nets) || 0) * 10) / 10) : (mo ? mo.monthlyRealized : 0);
   const allRankByAgent = buildMonthlyRanking(rows.concat(indepRows));
   // Classement du MOIS, toujours calculé, même quand la journée est terminée. Une fois la journée
   // close, le classement du jour est un résultat acquis — plus rien ne peut le changer, donc lui
@@ -12743,7 +12748,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
       const daysElapsed = workingDaysElapsedForAgent(r.agent, referenceRythmeMois(dateStr));
-      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr,
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, mo.mini, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: moisValeurAgent(r.agent, mo) } : null, dateStr,
         { todayRealized: r.realized, recrue: recrueCtxByAgent[r.agent] || null });
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       // 📏 « Objectif visé » n'est affiché que s'il DIFFÈRE du minimum. Quand l'admin n'a pas fixé de
@@ -12753,8 +12758,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
       const monthlyBlock = (mo.mini>0 || viseAffichable || mo.ilek || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
-          ${(mo.mini>0 && !isEnergieSeule(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>${mo.equivObj>0 ? `Objectif minimum du mois <small style="font-size:11px; opacity:.75;">(assistance + énergie)</small><br><small style="font-size:11px; color:${mo.objReal>=mo.mini?'#4f9d78':'var(--muted)'};">${isEnergieSeule(r.agent) ? '' : mo.monthlyRealized+' assistance'+(mo.monthlyRealized>1?'s':'')+' + '}${Math.round(mo.equivObj/2*10)/10} énergie${mo.equivObj/2>1?'s':''}</small><br><small style="font-size:11px; opacity:.75;">Pour l'objectif, 1 énergie = 2 assistances</small>` : `Objectif minimum du mois${(!isEnergieSeule(r.agent) && enerMois(r.agent, dateStr) > 0) ? ' <small style="font-size:11px; opacity:.75;">(assistance)</small>' : ''}`}</span><b style="color:${mo.objReal>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
-          ${(viseAffichable && !isEnergieSeule(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${(mo.objReal != null ? mo.objReal : mo.monthlyRealized)>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal != null ? mo.objReal : mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
+          ${(mo.mini>0 && !isEnergiePrincipal(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>${mo.equivObj>0 ? `Objectif minimum du mois <small style="font-size:11px; opacity:.75;">(assistance + énergie)</small><br><small style="font-size:11px; color:${mo.objReal>=mo.mini?'#4f9d78':'var(--muted)'};">${isEnergieSeule(r.agent) ? '' : mo.monthlyRealized+' assistance'+(mo.monthlyRealized>1?'s':'')+' + '}${Math.round(mo.equivObj/2*10)/10} énergie${mo.equivObj/2>1?'s':''}</small><br><small style="font-size:11px; opacity:.75;">Pour l'objectif, 1 énergie = 2 assistances</small>` : `Objectif minimum du mois${(!isEnergieSeule(r.agent) && enerMois(r.agent, dateStr) > 0) ? ' <small style="font-size:11px; opacity:.75;">(assistance)</small>' : ''}`}</span><b style="color:${mo.objReal>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
+          ${(viseAffichable && !isEnergiePrincipal(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${(mo.objReal != null ? mo.objReal : mo.monthlyRealized)>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal != null ? mo.objReal : mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
           ${mo.ilek ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-top:5px;" title="Énergies Ilek nettes (retours déduits) depuis le 1er du mois"><span>⚡ Énergie ce mois</span><b style="color:${(mo.ilek.objectif>0 && mo.ilek.atteint)?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${ilekNbG(mo.ilek.nets)}${mo.ilek.objectif>0?`<span style="opacity:0.55;"> / ${mo.ilek.objectif}</span>`:''}</b></div>` : ''}
           ${commentLinesToHtml(commentLines)}
           ${dayRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.2); border:1px solid rgba(184,147,90,0.55); font-size:12.5px; font-weight:800; color:#d8b26e;\">${escapeHtml(dayRecordByAgent[r.agent])}</div>` : ''}
@@ -12811,7 +12816,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const streakDayCounts = dayIsOver && !absentJourComplet;
       const dayOverDay = dayOverDayMap[r.agent];
       const daysElapsed = workingDaysElapsedForAgent(r.agent, referenceRythmeMois(dateStr));
-      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: mo.monthlyRealized } : null, dateStr,
+      const monthlyLines = personalDailyComment(r.agent, mo.monthlyRealized, 0, mo.vise, daysElapsed, remainingDays, allRankByAgent[r.agent], dayIsOver ? { value: r.realized, periodLabel: "aujourd'hui", monthRank: monthRankByAgent[r.agent], monthValue: moisValeurAgent(r.agent, mo) } : null, dateStr,
         { todayRealized: r.realized, recrue: recrueCtxByAgent[r.agent] || null });
       const commentLines = [dayOverDay, ...(monthlyLines || [])].filter(Boolean);
       const monthlyBlock = (mo.vise>0 || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
@@ -16615,28 +16620,30 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
     // r365 - Un agent << energie uniquement >> n'a plus de contrats d'assistance : son compteur du
     // mois, son classement et leurs messages parlent de SES energies. Sans ca il lisait
     // << 0 contrat ce mois-ci >> alors qu'il en avait 7.
-    const _seuleR = (typeof isEnergieSeule === 'function') && isEnergieSeule(agentName);
+    const _seuleR = (typeof isEnergiePrincipal === 'function') && isEnergiePrincipal(agentName);
     const _enerMoisR = _seuleR ? enerMois(agentName, refDayForSeed || todayStr()) : 0;
     const rankValue = dayClosed ? rankOverride.value : (_seuleR ? _enerMoisR : monthlyRealized);
     const _ctrP = (n)=> _seuleR
       ? (n + ' ' + ((typeof motProduit === 'function') ? motProduit(agentName, n) : ('énergie' + (n > 1 ? 's' : ''))))
       : ctr(n);
+    // r375 — « contrat » / « énergie » selon le produit de l'agent, dans TOUTES les phrases ci-dessous.
+    const _uC = (n)=> _seuleR ? ((typeof motProduit === 'function') ? motProduit(agentName, n) : ('énergie' + (n > 1 ? 's' : ''))) : ('contrat' + (n > 1 ? 's' : ''));
     const periodLabel = dayClosed ? (rankOverride.periodLabel || "aujourd'hui") : 'ce mois-ci';
     const rankTxt = rankInfo.rank === 1 ? '1er' : `${rankInfo.rank}e`;
     const rival = rankInfo.prevGap > 0 ? firstName(rankInfo.prevAgent) : null;
-    const gapTxt = `${rankInfo.prevGap} contrat${rankInfo.prevGap>1?'s':''}`;
+    const gapTxt = `${rankInfo.prevGap} ${_uC(rankInfo.prevGap)}`;
 
     if(dayClosed){
       // --- Journée terminée : on RACONTE, on ne demande plus rien pour aujourd'hui ---
       if(rankInfo.rank === 1){
         lines.push(mk('🏆', seedPick([
-          `Meilleure journée de l'équipe : ${rankValue} contrat${rankValue>1?'s':''}. Tu finis la journée en tête, c'est mérité.`,
-          `Tu termines 1er de la journée avec ${rankValue} contrat${rankValue>1?'s':''}. Belle journée de travail.`,
+          `Meilleure journée de l'équipe : ${rankValue} ${_uC(rankValue)}. Tu finis la journée en tête, c'est mérité.`,
+          `Tu termines 1er de la journée avec ${rankValue} ${_uC(rankValue)}. Belle journée de travail.`,
           genderPick(agentName,
             `Personne n'a fait mieux que toi aujourd'hui (${rankValue}). Rentre chez toi content, tu l'as gagné.`,
             `Personne n'a fait mieux que toi aujourd'hui (${rankValue}). Rentre chez toi contente, tu l'as gagné.`
           ),
-          `${rankValue} contrat${rankValue>1?'s':''}, meilleur score du jour. Journée bouclée en beauté.`
+          `${rankValue} ${_uC(rankValue)}, meilleur score du jour. Journée bouclée en beauté.`
         ], seed+'|rangJour'), GOLD, GOLD_BG));
       } else if(rankValue === 0 && enerJour(agentName, refDayForSeed) > 0){
         // ⚡ 0 en assistance mais de l'énergie faite : pas de « journée blanche », on le reconnaît.
@@ -16655,9 +16662,9 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         ], seed+'|jourZero'), SLATE, SLATE_BG));
       } else {
         lines.push(mk('🥈', seedPick([
-          `Tu finis ${rankTxt} de la journée avec ${rankValue} contrat${rankValue>1?'s':''}${rival ? `, à ${gapTxt} de ${rival}` : ''}. Journée honnête.`,
-          `${rankValue} contrat${rankValue>1?'s':''} aujourd'hui, ${rankTxt} de l'équipe${rival ? ` derrière ${rival}` : ''}. C'est dans la boîte.`,
-          `Bilan du jour : ${rankValue} contrat${rankValue>1?'s':''}, ${rankTxt}${rival ? ` à ${gapTxt} de ${rival}` : ''}. À refaire demain, en mieux.`
+          `Tu finis ${rankTxt} de la journée avec ${rankValue} ${_uC(rankValue)}${rival ? `, à ${gapTxt} de ${rival}` : ''}. Journée honnête.`,
+          `${rankValue} ${_uC(rankValue)} aujourd'hui, ${rankTxt} de l'équipe${rival ? ` derrière ${rival}` : ''}. C'est dans la boîte.`,
+          `Bilan du jour : ${rankValue} ${_uC(rankValue)}, ${rankTxt}${rival ? ` à ${gapTxt} de ${rival}` : ''}. À refaire demain, en mieux.`
         ], seed+'|rangJour'), SLATE, SLATE_BG));
       }
 
@@ -16668,18 +16675,18 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         const mValueF = rankOverride.monthValue != null ? rankOverride.monthValue : monthlyRealized;
         if(mr.rank === 1){
           lines.push(mk('👑', seedPick([
-            `Tu termines le mois 1er avec ${ctr(mValueF)}. Mois remporté, bravo !`,
-            `Fin du mois : tu es 1er de l'équipe avec ${ctr(mValueF)}. Personne n'a fait mieux, c'est mérité.`
+            `Tu termines le mois 1er avec ${_ctrP(mValueF)}. Mois remporté, bravo !`,
+            `Fin du mois : tu es 1er de l'équipe avec ${_ctrP(mValueF)}. Personne n'a fait mieux, c'est mérité.`
           ], seed+'|rangMoisFin'), GOLD, GOLD_BG));
         } else if(mr.prevGap > 0){
           const mRivalF = firstName(mr.prevAgent);
-          const mGapF = `${mr.prevGap} contrat${mr.prevGap>1?'s':''}`;
+          const mGapF = `${mr.prevGap} ${_uC(mr.prevGap)}`;
           lines.push(mk('👑', seedPick([
-            `Tu termines le mois ${mRankTxtF} avec ${ctr(mValueF)}, à ${mGapF} de ${mRivalF}. Nouveau mois, compteurs à zéro : tout est à refaire.`,
-            `Classement final du mois : ${mRankTxtF}, ${ctr(mValueF)}, ${mGapF} derrière ${mRivalF}. Le nouveau mois repart de zéro pour tout le monde.`
+            `Tu termines le mois ${mRankTxtF} avec ${_ctrP(mValueF)}, à ${mGapF} de ${mRivalF}. Nouveau mois, compteurs à zéro : tout est à refaire.`,
+            `Classement final du mois : ${mRankTxtF}, ${_ctrP(mValueF)}, ${mGapF} derrière ${mRivalF}. Le nouveau mois repart de zéro pour tout le monde.`
           ], seed+'|rangMoisFin'), SLATE, SLATE_BG));
         } else {
-          lines.push(mk('👑', `Tu termines le mois ${mRankTxtF} avec ${ctr(mValueF)}. Nouveau mois, nouveau classement.`, SLATE, SLATE_BG));
+          lines.push(mk('👑', `Tu termines le mois ${mRankTxtF} avec ${_ctrP(mValueF)}. Nouveau mois, nouveau classement.`, SLATE, SLATE_BG));
         }
       } else if(mr && mr.total > 1){
         const mRankTxt = mr.rank === 1 ? '1er' : `${mr.rank}e`;
@@ -16691,7 +16698,7 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
           ], seed+'|rangMois'), GOLD, GOLD_BG));
         } else if(mr.prevGap > 0){
           const mRival = firstName(mr.prevAgent);
-          const mGap = `${mr.prevGap} contrat${mr.prevGap>1?'s':''}`;
+          const mGap = `${mr.prevGap} ${_uC(mr.prevGap)}`;
           lines.push(mk('👑', seedPick([
             `Sur le mois tu es ${mRankTxt}, à ${mGap} de ${mRival}. C'est là que tout se joue — demain, va le chercher.`,
             `Classement du mois : ${mRankTxt}, ${_ctrP(mValue)}, ${mGap} derrière ${mRival}. Il reste des jours pour renverser ça.`,
@@ -16786,8 +16793,8 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
   const objRealTot = monthlyRealized + eqObj;
   const paceObjTot = daysElapsed > 0 ? objRealTot / daysElapsed : 0;
   ((monthlyRealized, currentPace)=>{
-  // ⚡ r360 — Agent « énergie uniquement » : AUCUN message d'assistance.
-  if(isEnergieSeule(agentName)){
+  // ⚡ r360 — Agent « énergie uniquement » : AUCUN message d'assistance. (r375 : idem pour « énergie principale + assistance en bonus »)
+  if(isEnergiePrincipal(agentName)){
     // Memes ressorts que l'assistance, transposes a l'energie : on encourage quand c'est acquis,
     // on pousse quand ca se resserre, on dit les choses quand c'est mal engage. Jamais d'argent ici.
     const _moisE = String(refDayForSeed || todayStr()).slice(0, 7);
