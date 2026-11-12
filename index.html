@@ -1898,6 +1898,8 @@ async function tryDeviceGateAdmin(){
           <div class="section-title" style="margin-top:0;">En un coup d'œil</div>
           <div id="todaySnapshot"></div>
 
+          <div id="cooptAlertes"></div>
+
           <div class="section-title">⏱️ Temps de pause — en direct</div>
           <div class="section-sub">Déjeuner (horaire fixe) et pause libre (35 min par défaut + bonus mérité, réglable), suivis séparément pour chaque agent. Se met à jour tout seul. Un dépassement (⚠️) affiche directement de combien de minutes — retenu sur le salaire au prorata de la minute, et peut aussi compter comme un retard équivalent dans le compteur prime d'assiduité (3 petits dépassements sous le seuil réglé dans Réglages, ou 1 seul au-delà — voir Réglages → Horaires).</div>
           <div id="pauseTotalsToday"></div>
@@ -2392,6 +2394,7 @@ async function tryDeviceGateAdmin(){
           <div class="section-sub">Chaque agent peut avoir un fixe, des primes et un objectif différents — c'est toi qui gardes la main sur chaque montant.</div>
           <div class="section-sub" style="margin-top:-6px;">🎯 Le bouton « sans objectif » (à côté du nom de chaque agent dans Réglages → Agents) retire l'objectif mensuel obligatoire pour cet agent tout en gardant pointage, retards et prime d'assiduité normaux : il est payé dès le 1er contrat, avec le fixe et les primes que tu règles ici — un hybride salarié / indépendant, sans les côtés « indépendant » (pas de pointage, pas de suivi des retards) que tu ne veux pas forcément.</div>
           <div id="agentPayTable" style="overflow-x:auto; margin-top:12px;"></div>
+          <div id="cooptSuiviPrime" style="margin-top:18px; padding:12px 14px; border:1px solid var(--border); border-radius:11px;"></div>
           <div class="section-sub" style="margin-top:10px;">📦 Les <b>anciens agents</b> apparaissent en fin de tableau, grisés. Renseigne-y les conditions qu'ils avaient <b>à l'époque</b> (fixe, primes, DH/contrat) : c'est ce qui rend justes les salaires historiques calculés dans Facturation → Historique. Ils ne sont jamais payés sur le mois en cours.</div>
           <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
             <button onclick="saveProdConfig()" style="padding:10px 18px;border-radius:8px;border:none;background:var(--accent);color:white;font-weight:700;cursor:pointer;">Enregistrer tout</button>
@@ -2480,30 +2483,30 @@ async function tryDeviceGateAdmin(){
           <div class="settings-grid" style="margin-top:14px;">
             <div>
               <label>📞 Les lignes</label>
-              <input type="number" id="cfgChargeLignes" min="0" step="10">
+              <input type="number" id="cfgChargeLignes" min="0" step="10" oninput="chargesAutoSave()">
             </div>
             <div>
               <label>🏢 Loyer bureau</label>
-              <input type="number" id="cfgChargeLoyerBureau" min="0" step="10">
+              <input type="number" id="cfgChargeLoyerBureau" min="0" step="10" oninput="chargesAutoSave()">
             </div>
             <div>
               <label>🏠 Loyer appart</label>
-              <input type="number" id="cfgChargeLoyerAppart" min="0" step="10">
+              <input type="number" id="cfgChargeLoyerAppart" min="0" step="10" oninput="chargesAutoSave()">
             </div>
             <div>
               <label>🧾 Syndic</label>
-              <input type="number" id="cfgChargeSyndic" min="0" step="10">
+              <input type="number" id="cfgChargeSyndic" min="0" step="10" oninput="chargesAutoSave()">
             </div>
             <div>
               <label>🌐 Internet</label>
-              <input type="number" id="cfgChargeInternet" min="0" step="10">
+              <input type="number" id="cfgChargeInternet" min="0" step="10" oninput="chargesAutoSave()">
             </div>
           </div>
 
           <label style="margin:20px 0 10px;">Autres charges (libres)</label>
           <div id="customChargesList"></div>
           <button class="add-break-btn" onclick="addCustomChargeRow()">+ Ajouter une charge</button>
-          <div class="section-sub" style="margin-top:12px; padding:9px 12px; border-radius:8px; background:rgba(229,168,61,0.10); border:1px solid rgba(229,168,61,0.35);">💾 <b>Ces montants ne sont pas enregistrés automatiquement.</b> Après les avoir modifiés, descends en bas de ce panneau et clique sur <b>« Enregistrer tout »</b>. Si tu quittes l'onglet avant, tes modifications sont perdues.</div>
+          <div class="section-sub" style="margin-top:12px; padding:9px 12px; border-radius:8px; background:rgba(229,168,61,0.10); border:1px solid rgba(229,168,61,0.35);">💾 <b>Ces montants s'enregistrent tout seuls</b> : une petite notification « ✅ Charges enregistrées » apparaît juste après ta saisie.</div>
         </div><div class="settings-box">
           <label>🎁 Primes manuelles (ou commissions superviseur, ou retenue)</label>
           <div class="section-sub">👉 <b>C'est ICI</b> que tu ajoutes ou retires une commission à un superviseur (choisis son nom dans « Agent » ci-dessous, montant positif pour ajouter, <b>négatif pour retirer</b> — ex: -300 pour enlever 300 DH). Sert aussi pour toute prime OU retenue libre sur n'importe quel agent : cooptation, challenge gagné, prime exceptionnelle... Elle s'applique automatiquement au salaire du <b>mois que tu choisis</b> — y compris un mois passé — et apparaît partout où le salaire est affiché : Mon argent côté agent, tableau des objectifs, masse salariale et fiche de paie.</div>
@@ -2559,9 +2562,9 @@ async function tryDeviceGateAdmin(){
           <div class="admin-toolbar" style="margin-top:14px; align-items:flex-end;">
             <div>
               <label style="margin-bottom:4px;">Date</label>
-              <input type="date" id="supOverrideDate" onchange="renderSupervisorDayOverridePanel()">
+              <input type="date" id="supOverrideDate" onchange="renderSupervisorDayOverridePanel('prime')">
             </div>
-            <button type="button" onclick="supOverrideToday()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📅 Aujourd'hui</button>
+            <button type="button" onclick="supOverrideToday('prime')" style="padding:9px 14px; border-radius:8px; border:1px solid var(--gold); background:rgba(255,215,0,0.08); color:var(--gold); font-weight:700; font-size:12.5px; cursor:pointer;">📅 Aujourd'hui</button>
             <button type="button" onclick="renderSupervisorDayOverridePanel()" style="padding:9px 14px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); font-weight:700; font-size:12.5px; cursor:pointer;">🔄 Actualiser</button>
           </div>
           <div id="supervisorDayOverridePanel" style="margin-top:12px;"></div>
@@ -3591,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-12-r372';
+const APP_VERSION = '2026-11-12-r373';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -3892,6 +3895,8 @@ let config = {
   //   beneficiaire    : qui récupère sa part retirée. Vide = partage égal entre les superviseurs qui
   //                     touchent ce jour-là, exactement comme la règle automatique.
   supervisorDayOverrides: {},
+  // r373 — même chose pour la prime de supervision ÉNERGIE (ILEK) : une correction de journée à part, pour ne jamais mélanger les deux produits.
+  supervisorDayOverridesEnergie: {},
   // 📅 HISTORIQUE DES HORAIRES — voir scheduleBaseForDate.
   // [{ until:"2026-09-19", start:"09:30", end:"18:30", breaks:[{name,start,end}] }]
   // « jusqu'au 19/09 inclus, la journée commençait à 09:30 ». Les horaires de Réglages restent les
@@ -5316,7 +5321,7 @@ async function loadConfig(){
 // DIRECTEMENT sur la paie : une découverte terminée sur un poste (agentsDecouverte /
 // agentsDecouverteEndDate) était réactivée par la première sauvegarde d'un onglet resté ouvert
 // ailleurs — et la découverte retire tout le fixe. Les mots de passe agents subissaient le même sort.
-const CONFIG_MERGE_DICT_FIELDS = ['agentsTest','agentsTerminated','agentsIndep','agentsSupervisor','agentsNoObjectif','agentsEnergieSeule','agentsEnergieAfficheAssist',
+const CONFIG_MERGE_DICT_FIELDS = ['agentsTest','agentsTerminated','agentsIndep','agentsSupervisor','agentsNoObjectif','agentsEnergieSeule','agentsEnergieAfficheAssist','agentsEnergieBonus','ilekSalaire',
   'agentsStatusLabel','agentsBackoffice','agentsADFTrainer','agentsEcoutesAutorisees','agentsStartDate',
   'assistanceMaxParAgent','agentsGaps',
   'agentsDecouverte','agentsDecouverteEndDate','agentsTraining','agentsProbation',
@@ -6085,6 +6090,7 @@ function renderAgentChips(){
     const pills = [];
     if(indep) pills.push(pill('🧑‍💼','Indépendant','#c084fc','Indépendant : pas de pointage, payé au contrat'));
     if(!indep && noObj) pills.push(pill('🎯', esc3(getNoObjectifLabel(name)), '#e5a83d', 'Sans objectif : payé dès le 1er contrat'));
+    if(isEnergieBonusAssist(name)) pills.push(pill('⚡','Énergie + assistance en bonus','#34b774','Produit principal : énergie. Chaque assistance lui rapporte en plus X DH'));
     if(isEnergieSeule(name)) pills.push(pill('⚡','Énergie uniquement','#34b774','Pas d\'assistance : son objectif est compté en énergies (1 énergie = 1 contrat)'));
     if(isSup) pills.push(pill('📊','Superviseur','#e5c24a','Accès à la Supervision'));
     if(isBackoffice(name)) pills.push(pill('📥','Backoffice','#e8a33d','Accès à l\'onglet Backoffice'));
@@ -6107,7 +6113,8 @@ function renderAgentChips(){
       const bouton = (cle, txt, titre)=> `<button type="button" class="st-ch${cur===cle?' on':''}" onclick="setProduitAgentChoix('${nom.replace(/'/g,"\\'")}','${cle}')" title="${esc3(titre)}">${txt}</button>`;
       return `<div class="st-ch-grp">`
         + bouton('assistance', '📋 Assistance', 'Il ne vend que de l\'assistance (Prime). Il ne voit pas le formulaire énergie.')
-        + bouton('mixte', '🔀 Mixte', 'Assistance ET énergie. Son objectif est en assistances ; ses énergies lui sont payées en plus, dès la 1re, sans palier.')
+        + bouton('mixte', '🔀 Mixte', 'Produit principal : assistance. Son objectif est en assistances ; ses énergies lui sont payées en plus, tant par énergie, dès la 1re, sans palier.')
+        + bouton('energie_bonus', '⚡ Énergie + assist.', 'Son produit principal est l\'énergie (salaire, objectif, paliers dans Énergies). Chaque assistance qu\'il fait lui rapporte en plus X DH, dès la 1re.')
         + bouton('energie', '⚡ Énergie', 'Il ne vend que de l\'énergie. Ses énergies sont ses contrats (1 pour 1) et on ne lui parle plus jamais d\'assistance.')
         + `</div>`;
     };
@@ -6160,6 +6167,39 @@ function hasNoObjectif(agent){
 function isEnergieSeule(agent){
   return !!(config.agentsEnergieSeule && config.agentsEnergieSeule[agent] === true);
 }
+// ⚡ r373 — 4e statut : « Énergie principale + assistance en bonus ». Son produit principal est l'énergie
+// (salaire, objectif, paliers = grille Énergie), et chaque assistance faite lui rapporte en plus X DH
+// (le « DH par contrat » de SA fiche Prime), dès la 1re, sans objectif ni palier. Il voit toujours ses blocs assistance.
+function isEnergieBonusAssist(agent){
+  return !!(config.agentsEnergieBonus && config.agentsEnergieBonus[agent] === true);
+}
+// Produit principal = énergie (« énergie uniquement » OU « énergie + assistance en bonus »).
+function isEnergiePrincipal(agent){
+  return isEnergieSeule(agent) || isEnergieBonusAssist(agent);
+}
+// Salaire propre à l'Énergie (réglage privé, dans config) : { baseSalary, primeAssiduite, primeFixeMensuelle }.
+function ilekSalaireDe(agent){
+  return (config.ilekSalaire && config.ilekSalaire[agent]) || {};
+}
+// Migration unique (r373) : on COPIE le salaire fixe / l'assiduité / la prime fixe qu'avait déjà chaque agent
+// « énergie uniquement » dans son salaire Prime, vers son salaire Énergie. Aucune paie ne change le jour de l'installation.
+// Après la migration, une case vide = 0 (jamais de retombée sur les valeurs par défaut de Prime).
+function migrerSalairesEnergie(){
+  if(config.migEnergieSalaire === 'r373') return;
+  try{
+    const pc = getProdConfig(), d = (pc && pc.defaults) || {}, ap = (pc && pc.agentPay) || {};
+    const num = (v, def)=> (v !== '' && v != null && !isNaN(v)) ? Number(v) : def;
+    if(!config.ilekSalaire) config.ilekSalaire = {};
+    Object.keys(config.agentsEnergieSeule || {}).forEach(a=>{
+      if(config.agentsEnergieSeule[a] !== true || config.ilekSalaire[a]) return;
+      if(isIndependant(a)) return;
+      const c = ap[a] || {};
+      config.ilekSalaire[a] = { baseSalary: num(c.baseSalary, d.baseSalary ?? 0), primeAssiduite: num(c.primeAssiduite, d.primeAssiduite ?? 0), primeFixeMensuelle: num(c.primeFixeMensuelle, d.primeFixeMensuelle ?? 0) };
+    });
+    if(!config.ilekSalaireDefaut) config.ilekSalaireDefaut = { primeFixeMensuelle: 0 };
+    config.migEnergieSalaire = 'r373';
+  }catch(e){ console.warn('migration salaires énergie', e); }
+}
 // 👁️ r322 — Un agent « énergie uniquement » ne voit plus ses blocs assistance dans son Arena (compteur de
 // contrats/rétractations, validation backoffice, barème des retours), sauf si l'admin active l'interrupteur
 // « Afficher l'assistance » sur sa fiche. Rien n'est supprimé : c'est un simple affichage.
@@ -6200,7 +6240,7 @@ function objEnergieJour(agent, jour){
 // l'assistance (tableau de production) pour tout le monde d'autre. Un seul endroit à lire, pour que le
 // classement, la carte du bilan et son écran disent tous les trois la même chose.
 function jourAgentProduit(agent, prod, jour){
-  if(isEnergieSeule(agent)){
+  if(isEnergiePrincipal(agent)){
     return { realized: enerJour(agent, jour), objective: objEnergieJour(agent, jour), energie: true };
   }
   return { realized: (prod && prod.realized) || 0, objective: (prod && prod.objective) || 0, energie: false };
@@ -6236,15 +6276,16 @@ async function toggleEnergieAfficheAssist(name){
 // reste donc toujours d'accord avec la fiche. Vaut pour tout le monde, indépendants compris.
 function produitAgentChoix(name){
   if(isEnergieSeule(name)) return 'energie';
+  if(isEnergieBonusAssist(name)) return 'energie_bonus';
   let autorise = false;
   try{ autorise = (typeof window.ilekAgentsAutorises === 'function') && window.ilekAgentsAutorises().indexOf(name) >= 0; }catch(e){}
   return autorise ? 'mixte' : 'assistance';
 }
-const PRODUIT_CHOIX_LABEL = { assistance: '📋 Assistance uniquement', mixte: '🔀 Mixte', energie: '⚡ Énergie uniquement' };
+const PRODUIT_CHOIX_LABEL = { assistance: '📋 Assistance uniquement', mixte: '🔀 Mixte (assistance principale)', energie_bonus: '⚡ Énergie principale + assistance en bonus', energie: '⚡ Énergie uniquement' };
 async function setProduitAgentChoix(name, choix){
-  if(['assistance', 'mixte', 'energie'].indexOf(choix) < 0) return;
+  if(['assistance', 'mixte', 'energie_bonus', 'energie'].indexOf(choix) < 0) return;
   if(produitAgentChoix(name) === choix) return;                      // déjà sur ce choix : on ne réécrit rien
-  const veutEnergie = (choix === 'mixte' || choix === 'energie');
+  const veutEnergie = (choix === 'mixte' || choix === 'energie' || choix === 'energie_bonus');
   if(choix === 'assistance'){
     const ok = await window.uiConfirm({
       titre: name + ' ne vendra plus que de l\'assistance ?', icone: '\u{1F4CB}', ton: 'warn',
@@ -6255,10 +6296,25 @@ async function setProduitAgentChoix(name, choix){
       oui: 'Oui, assistance uniquement', non: 'Annuler' });
     if(!ok) return;
   }
-  // 1) le drapeau « énergie uniquement » (réglage local, dans config)
+  // r373 — un agent qui DEVIENT « énergie principal » garde son salaire : on copie son salaire Prime actuel vers Énergie
+  // (sinon il passerait à 0 DH, puisqu'une case vide vaut 0 côté Énergie).
+  if((choix === 'energie' || choix === 'energie_bonus') && !isEnergiePrincipal(name)){
+    try{
+      migrerSalairesEnergie();
+      if(!config.ilekSalaire) config.ilekSalaire = {};
+      if(!config.ilekSalaire[name]){
+        const pp = getAgentPay(name);
+        config.ilekSalaire[name] = { baseSalary: Math.round(pp.baseSalary || 0), primeAssiduite: Math.round(pp.primeAssiduite || 0), primeFixeMensuelle: Math.round(pp.primeFixeMensuelle || 0) };
+      }
+    }catch(e){ console.warn('copie salaire énergie', e); }
+  }
+  // 1) le drapeau « énergie uniquement » (réglage local, dans config) + le drapeau « énergie + assistance en bonus »
   if(!config.agentsEnergieSeule) config.agentsEnergieSeule = {};
+  if(!config.agentsEnergieBonus) config.agentsEnergieBonus = {};
   if(choix === 'energie') config.agentsEnergieSeule[name] = true;
   else delete config.agentsEnergieSeule[name];
+  if(choix === 'energie_bonus') config.agentsEnergieBonus[name] = true;
+  else delete config.agentsEnergieBonus[name];
   await saveConfigSilent();
   // 2) l'autorisation Ilek (réglage partagé, dans contratReglages) — même fonction que l'écran Produits
   try{
@@ -6273,6 +6329,40 @@ async function setProduitAgentChoix(name, choix){
   renderAgentChips();
   try{ renderAgentPayTable(); }catch(e){}
 }
+
+// r373 — GARDE-FOU « double salaire » : vide les montants du produit qui ne compte pas pour cet agent.
+//  • produit principal énergie  → on vide les montants PRIME qui ne comptent plus (salaire, assiduité, prime fixe, objectif…) ;
+//    son « Par contrat » est gardé s'il est « énergie + assistance en bonus » (c'est son bonus par assistance).
+//  • produit principal assistance → on vide ce qui est réglé en ÉNERGIE (salaire, objectif, paliers…) sauf le tarif par énergie.
+async function toutMettreAZero(agent){
+  try{
+    if(isEnergiePrincipal(agent)){
+      const champs = ['baseSalary','primeFixeMensuelle','primeAssiduite','objectifMensuel','primeObjectifJour','primeExtraContrat','perContractBeforeObjectif'].concat(isEnergieSeule(agent) ? ['perContract'] : []);
+      const pc = getProdConfig(); pc.agentPay = pc.agentPay || {};
+      const c = pc.agentPay[agent] || {};
+      const liste = champs.filter(f=> c[f] !== undefined && c[f] !== '');
+      if(!liste.length){ showToast('Rien à mettre à zéro', 'ok', 2500); return; }
+      const ok = await window.uiConfirm({ titre: 'Mettre à zéro les montants Prime de ' + agent + ' ?', icone: '\u{1F9F9}', ton: 'warn',
+        details: [['Agent', agent], ['Produit principal', '⚡ Énergie']],
+        liste: ['Sont vidés : ' + liste.length + ' montant(s) Prime qui ne comptent plus dans sa paie.',
+                'Son salaire Énergie ne change pas.' + (isEnergieBonusAssist(agent) ? ' Son « Par contrat » (bonus par assistance) est conservé.' : ''),
+                'Aucune paie ne change : ces montants n\'étaient déjà pas pris en compte.'],
+        oui: 'Oui, tout mettre à zéro', non: 'Annuler' });
+      if(!ok) return;
+      liste.forEach(f=>{ delete c[f]; });
+      if(Object.keys(c).length) pc.agentPay[agent] = c; else delete pc.agentPay[agent];
+      await saveConfigSilent();
+      showToast('✅ Montants Prime remis à zéro pour ' + agent, 'ok', 3500);
+      try{ logAudit('Admin', 'Prime : tout mis à zéro (produit principal énergie) — ' + agent, ''); }catch(e){}
+      try{ renderAgentPayTable(); renderProdAdmin(); renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
+      try{ if(typeof window.ilekInvalider === 'function') window.ilekInvalider(); }catch(e){}
+    } else if(typeof window.adIlekZero === 'function'){
+      await window.adIlekZero(agent);
+      try{ renderAgentPayTable(); }catch(e){}
+    }
+  }catch(e){ showToast('⚠️ Rien n\'a été modifié : ' + (e && e.message ? e.message : e), 'warn', 5000); }
+}
+window.toutMettreAZero = toutMettreAZero;
 
 async function toggleEnergieSeule(name){
   if(!config.agentsEnergieSeule) config.agentsEnergieSeule = {};
@@ -7546,6 +7636,7 @@ async function removeAgent(name){
   if(config.agentsNoObjectif) delete config.agentsNoObjectif[name];
   if(config.agentsEnergieSeule) delete config.agentsEnergieSeule[name];
   if(config.agentsEnergieAfficheAssist) delete config.agentsEnergieAfficheAssist[name];
+  if(config.agentsEnergieBonus) delete config.agentsEnergieBonus[name];
   if(config.agentsADFTrainer) delete config.agentsADFTrainer[name];
   if(config.agentsEcoutesAutorisees) delete config.agentsEcoutesAutorisees[name];
   if(config.prodConfig && config.prodConfig.agentPay) delete config.prodConfig.agentPay[name];
@@ -8568,8 +8659,8 @@ function renderCustomChargesEditor(){
   }
   container.innerHTML = customChargeRows.map((c,i)=>`
     <div class="break-row" style="grid-template-columns:1fr 130px 40px;">
-      <input type="text" value="${(c.name||'').replace(/"/g,'&quot;')}" placeholder="Nom de la charge" oninput="customChargeRows[${i}].name = this.value">
-      <input type="number" min="0" step="10" value="${c.amount||0}" oninput="customChargeRows[${i}].amount = parseFloat(this.value)||0">
+      <input type="text" value="${(c.name||'').replace(/"/g,'&quot;')}" placeholder="Nom de la charge" oninput="customChargeRows[${i}].name = this.value; chargesAutoSave()">
+      <input type="number" min="0" step="10" value="${c.amount||0}" oninput="customChargeRows[${i}].amount = parseFloat(this.value)||0; chargesAutoSave()">
       <button onclick="removeCustomChargeRow(${i})" title="Supprimer" style="color:var(--red);">×</button>
     </div>`).join('');
 }
@@ -8580,6 +8671,21 @@ function addCustomChargeRow(){
 function removeCustomChargeRow(i){
   customChargeRows.splice(i,1);
   renderCustomChargesEditor();
+  chargesAutoSave();
+}
+// r373 — les charges de l'entreprise s'enregistrent toutes seules (0,9 s après la dernière frappe) avec la petite notification « enregistré ».
+let chargesAutoTimer = null;
+function chargesAutoSave(){
+  clearTimeout(chargesAutoTimer);
+  chargesAutoTimer = setTimeout(async ()=>{
+    try{
+      if(!configPriveeChargee){ showToast('⚠️ Charges non enregistrées : réglages complets non chargés sur ce poste', 'warn', 5000); return; }
+      collectChargesFromUI();
+      await saveConfigSilent();
+      showToast('✅ Charges enregistrées', 'ok', 2000);
+      try{ renderNetBalance(true); }catch(e){}
+    }catch(e){ showToast('⚠️ Charges non enregistrées : ' + (e && e.message ? e.message : e), 'warn', 5000); }
+  }, 900);
 }
 
 // Lit les 5 champs fixes + les charges libres et les écrit dans config — appelée par les deux boutons
@@ -9018,12 +9124,24 @@ let freeBreakCache = { events: [], dateStr: null, agent: null };
 
 function extractFreeBreakPairs(events){
   const pairs = [];
-  let openStart = null;
+  let openStart = null, openDej = false;
   events.forEach(e=>{
-    if(e.type === 'free_break_start'){ openStart = e.time; }
-    else if(e.type === 'free_break_end' && openStart){ pairs.push({ start: openStart, end: e.time }); openStart = null; }
+    if(e.type === 'free_break_start'){ openStart = e.time; openDej = !!e.dejeuner; }
+    else if(e.type === 'free_break_end' && openStart){ if(!openDej) pairs.push({ start: openStart, end: e.time }); openStart = null; openDej = false; }
   });
-  if(openStart){ pairs.push({ start: openStart, end: null }); }
+  // r373 — une pause que l'admin a marquée « c'est son déjeuner » ne compte plus dans la pause libre (voir extractBreakPairs).
+  if(openStart && !openDej){ pairs.push({ start: openStart, end: null }); }
+  return pairs;
+}
+// r373 — TOUTES les pauses libres du jour, y compris celles marquées « déjeuner » (pour l'affichage admin et la simulation).
+function extractFreeBreakPairsToutes(events){
+  const pairs = [];
+  let openStart = null, openDej = false;
+  events.forEach(e=>{
+    if(e.type === 'free_break_start'){ openStart = e.time; openDej = !!e.dejeuner; }
+    else if(e.type === 'free_break_end' && openStart){ pairs.push({ start: openStart, end: e.time, dejeuner: openDej }); openStart = null; openDej = false; }
+  });
+  if(openStart){ pairs.push({ start: openStart, end: null, dejeuner: openDej }); }
   return pairs;
 }
 
@@ -10188,6 +10306,10 @@ function extractBreakPairs(events){
     else if(e.type === 'break_end' && openStart){ pairs.push({ start: openStart, end: e.time }); openStart = null; }
   });
   if(openStart){ pairs.push({ start: openStart, end: null }); }
+  // r373 — les pauses libres que l'admin a marquées « c'est son déjeuner » comptent comme le déjeuner du planning :
+  // elles sont jugées contre la durée du déjeuner prévu (60 min), plus contre les 35 min de pause libre.
+  extractFreeBreakPairsToutes(events).filter(p=>p.dejeuner).forEach(p=> pairs.push({ start: p.start, end: p.end, dejeuner: true }));
+  pairs.sort((a,b)=> String(a.start) < String(b.start) ? -1 : (String(a.start) > String(b.start) ? 1 : 0));
   return pairs;
 }
 
@@ -10453,24 +10575,36 @@ function toleranceForBreak(schedBreak){
 
 function matchBreaksToSchedule(breakPairs, schedBreaks){
   const usedSched = new Set();
-  return breakPairs.map((pair, idx)=>{
+  // r373 — le déjeuner du planning = la pause dont le nom dit « déjeuner » (sinon la plus longue).
+  let lunchIdx = schedBreaks.findIndex(b=> /d.jeuner|dejeuner|lunch/i.test(b.name || ''));
+  if(lunchIdx < 0 && schedBreaks.length){
+    let best = -1; schedBreaks.forEach((b, i)=>{ const d = toMinutes(b.end) - toMinutes(b.start); if(d > best){ best = d; lunchIdx = i; } });
+  }
+  // On traite d'abord les déjeuners marqués, pour qu'ils prennent le déjeuner du planning avant les autres pauses.
+  const ordre = breakPairs.map((p, i)=> i).sort((a, b)=> (breakPairs[b].dejeuner ? 1 : 0) - (breakPairs[a].dejeuner ? 1 : 0) || a - b);
+  const resultat = new Array(breakPairs.length);
+  ordre.forEach(idx=>{
+    const pair = breakPairs[idx];
     const startMin = toMinutes(pair.start.slice(0,5));
     let bestIdx = -1, bestDiff = Infinity;
-    schedBreaks.forEach((s, i)=>{
+    if(pair.dejeuner && lunchIdx >= 0 && !usedSched.has(lunchIdx)){
+      bestIdx = lunchIdx; bestDiff = Math.abs(startMin - toMinutes(schedBreaks[lunchIdx].start));
+    } else schedBreaks.forEach((s, i)=>{
       if(usedSched.has(i)) return;
       const diff = Math.abs(startMin - toMinutes(s.start));
       if(diff < bestDiff){ bestDiff = diff; bestIdx = i; }
     });
-    if(bestIdx === -1) return { pair, sched: null, startDiffMin: null, withinTolerance: false };
+    if(bestIdx === -1){ resultat[idx] = { pair, sched: null, startDiffMin: null, withinTolerance: false }; return; }
     usedSched.add(bestIdx);
     const sched = schedBreaks[bestIdx];
-    return {
+    resultat[idx] = {
       pair,
       sched,
       startDiffMin: bestDiff,
       withinTolerance: bestDiff <= toleranceForBreak(sched)
     };
   });
+  return resultat;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -12313,7 +12447,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // demande pas. Une seule conversion ici, et tout ce qui suit (total, objectif d'équipe, classement,
   // cartes) lit le même chiffre — impossible qu'un écran dise autre chose qu'un autre.
   const auProduitDuJour = (r)=>{
-    if(!isEnergieSeule(r.agent)) return r;
+    if(!isEnergiePrincipal(r.agent)) return r;
     const pj = jourAgentProduit(r.agent, r, dateStr);
     return Object.assign({}, r, { realized: pj.realized, objective: pj.objective, energieSeule: true });
   };
@@ -12433,21 +12567,9 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     }catch(e){}
   }));
   function buildMonthlyRanking(list){
-    const metric = r => dayIsOver ? r.realized : monthlyByAgent[r.agent].monthlyRealized;
-    const sorted = [...list].sort((a,b)=>{
-      const ra = metric(a), rb = metric(b);
-      return rb !== ra ? rb - ra : a.agent.localeCompare(b.agent);
-    });
-    const byAgent = {};
-    sorted.forEach((r,i)=>{
-      byAgent[r.agent] = {
-        rank: i+1,
-        total: sorted.length,
-        prevAgent: i>0 ? sorted[i-1].agent : null,
-        prevGap: i>0 ? Math.max(0, metric(sorted[i-1]) - metric(r)) : 0
-      };
-    });
-    return byAgent;
+    // r373 — chacun est classé parmi les agents de son produit principal (assistance / énergie).
+    const metric = r => dayIsOver ? r.realized : (isEnergiePrincipal(r.agent) ? (Number((monthlyByAgent[r.agent].ilek || {}).nets) || 0) : monthlyByAgent[r.agent].monthlyRealized);
+    return rangParGroupe(list, metric);
   }
   const allRankByAgent = buildMonthlyRanking(rows.concat(indepRows));
   // Classement du MOIS, toujours calculé, même quand la journée est terminée. Une fois la journée
@@ -12455,21 +12577,8 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // associer un conseil du type « un bon coup et le classement change » n'a aucun sens. C'est le
   // classement du mois, lui toujours ouvert, qui porte alors la motivation.
   const monthRankByAgent = (function(){
-    const list = rows.concat(indepRows);
-    const metric = r => monthlyByAgent[r.agent].monthlyRealized;
-    const sorted = [...list].sort((a,b)=>{
-      const ra = metric(a), rb = metric(b);
-      return rb !== ra ? rb - ra : a.agent.localeCompare(b.agent);
-    });
-    const byAgent = {};
-    sorted.forEach((r,i)=>{
-      byAgent[r.agent] = {
-        rank: i+1, total: sorted.length,
-        prevAgent: i>0 ? sorted[i-1].agent : null,
-        prevGap: i>0 ? Math.max(0, metric(sorted[i-1]) - metric(r)) : 0
-      };
-    });
-    return byAgent;
+    const metric = r => isEnergiePrincipal(r.agent) ? (Number((monthlyByAgent[r.agent].ilek || {}).nets) || 0) : monthlyByAgent[r.agent].monthlyRealized;
+    return rangParGroupe(rows.concat(indepRows), metric);
   })();
   rows = [...rows].sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
   indepRows = [...indepRows].sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
@@ -12751,6 +12860,242 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
 }
 
 let pauseTotalsLastComputed = 0;
+// ═══ 🤝 r373 — COOPTATION (parrainage) ═══════════════════════════════════════════════════
+// Un agent (le PARRAIN) fait entrer un autre agent (la RECRUE) : il touche une prime dont TU choisis le montant, si la recrue
+// atteint son objectif mensuel NET (retours et rétractations déduits) EN UN SEUL MOIS, dans le produit pour lequel elle est
+// entrée (assistance = Prime, ou énergie = Ilek). Chaque produit a sa propre prime et son propre suivi.
+// Mois qui comptent : le mois d'arrivée (seulement si la recrue arrive au plus tard au « jour limite » réglé ici ; son objectif
+// est alors au prorata), puis le mois plein qui suit — jamais plus. C'est TOI qui décides : le CRM prévient, rien n'est versé sans ton clic.
+function cooptList(){ if(!Array.isArray(config.cooptations)) config.cooptations = []; return config.cooptations; }
+function moisSuivant(ym){ let [y, m] = ym.split('-').map(Number); m++; if(m > 12){ m = 1; y++; } return y + '-' + String(m).padStart(2, '0'); }
+function moisLisibleYM(ym){ const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }); }
+async function cooptEtat(c){
+  const out = { c, mois: [], sansDate: false, statut: 'suivi', message: '' };
+  const debut = getAgentStartDate(c.recrue);
+  if(!debut){ out.sansDate = true; out.statut = 'sans_date'; out.message = '⚠️ ' + c.recrue + ' n\'a pas de date d\'arrivée : impossible de savoir quels mois comptent. Renseigne-la dans 👥 Statuts.'; return out; }
+  const m0 = debut.slice(0, 7), jour0 = Number(debut.slice(8, 10));
+  const limite = (config.cooptationJourLimite != null && config.cooptationJourLimite !== '') ? Number(config.cooptationJourLimite) : null;
+  const compte0 = (limite == null) || jour0 <= limite;
+  const liste = [];
+  if(compte0) liste.push(m0);
+  liste.push(moisSuivant(m0));
+  const mCourant = todayStr().slice(0, 7);
+  for(const ym of liste){
+    const [y, mo] = ym.split('-').map(Number);
+    let fait = 0, objectif = 0;
+    try{
+      if(c.produit === 'energie'){
+        const ik = (typeof window.ilekDuMois === 'function') ? await window.ilekDuMois(c.recrue, ym) : null;
+        fait = ik ? (Number(ik.nets) || 0) : 0; objectif = ik ? (Number(ik.objectif) || 0) : 0;
+      } else {
+        const br = await payableContractsBreakdown(c.recrue, y, mo);
+        fait = br ? (Number(br.payable) || 0) : 0; objectif = Number(getAgentPay(c.recrue, y, mo).objectifMensuel) || 0;
+      }
+    }catch(e){ tracerArgent('cooptation', e, c.recrue); }
+    const termine = ym < mCourant;
+    out.mois.push({ ym, fait: Math.round(fait * 10) / 10, objectif, atteint: objectif > 0 && fait >= objectif, termine, enCours: ym === mCourant });
+  }
+  out.compte0 = compte0; out.m0 = m0; out.jour0 = jour0; out.limite = limite;
+  const nb = x => String(x).replace('.', ',');
+  const prime = (Number(c.prime) || 0).toLocaleString('fr-FR') + ' DH';
+  if(c.etat === 'versee'){ out.statut = 'versee'; out.message = '✅ Prime versée' + (c.verseeMois ? ' (' + moisLisibleYM(c.verseeMois) + ')' : '') + '.'; return out; }
+  if(c.etat === 'close'){ out.statut = 'close'; out.message = '⛔ Clôturée sans prime.'; return out; }
+  const bon = out.mois.find(x=> x.termine && x.atteint);
+  const encours = out.mois.find(x=> x.enCours);
+  const dernier = out.mois[out.mois.length - 1];
+  if(bon){ out.statut = 'a_verser'; out.moisBon = bon; out.message = '🎁 Objectif atteint en ' + moisLisibleYM(bon.ym) + ' (' + nb(bon.fait) + '/' + bon.objectif + ') — on verse la prime de ' + prime + ' à ' + c.sponsor + ' ?'; return out; }
+  if(!compte0 && todayStr().slice(0, 7) === m0){ out.statut = 'suivi'; out.message = '⏳ ' + c.recrue + ' est arrivé(e) le ' + jour0 + ' (après le jour limite ' + limite + ') : ce mois ne compte pas, on attend ' + moisLisibleYM(moisSuivant(m0)) + ' complet.'; return out; }
+  if(encours && !encours.termine){ out.statut = 'suivi'; out.message = '⏳ ' + moisLisibleYM(encours.ym) + ' en cours : ' + nb(encours.fait) + (encours.objectif > 0 ? '/' + encours.objectif : '') + ' net' + (encours.objectif > 0 ? '' : ' (objectif non réglé pour ce produit)') + '.'; return out; }
+  // Tous les mois comptés sont terminés, sans objectif atteint.
+  const derniersMois = out.mois.filter(x=>x.termine);
+  if(derniersMois.length && derniersMois.length < out.mois.length && !c.attente){
+    const prem = derniersMois[derniersMois.length - 1];
+    out.statut = 'decider'; out.message = '❓ Objectif non atteint en ' + moisLisibleYM(prem.ym) + ' (' + nb(prem.fait) + '/' + prem.objectif + '). On verse quand même la prime de ' + prime + ' à ' + c.sponsor + ', ou on attend ' + moisLisibleYM(dernier.ym) + ' (dernier délai) ?'; return out;
+  }
+  if(derniersMois.length === out.mois.length){
+    out.statut = 'perdue'; out.message = '❌ Objectif non atteint dans le délai (' + out.mois.map(x=> moisLisibleYM(x.ym) + ' ' + nb(x.fait) + '/' + x.objectif).join(' ; ') + '). Pas de prime, sauf si tu décides de la verser quand même.'; return out;
+  }
+  out.statut = 'suivi'; out.message = '⏳ On attend ' + moisLisibleYM(dernier.ym) + ' (dernier délai).';
+  return out;
+}
+function cooptBoutons(e){
+  const id = escapeHtml(e.c.id);
+  const b = (txt, act, ok)=> `<button type="button" class="ct-btn nc" style="${ok ? 'border-color:var(--green);' : ''}" onclick="cooptAction('${id}','${act}')">${txt}</button>`;
+  if(e.statut === 'a_verser') return b('🎁 Verser la prime', 'verser', true) + ' ' + b('⛔ Pas de prime', 'close');
+  if(e.statut === 'decider') return b('🎁 Verser quand même', 'verser') + ' ' + b('⏳ Attendre le mois suivant', 'attendre', true) + ' ' + b('⛔ Pas de prime', 'close');
+  if(e.statut === 'perdue') return b('🎁 Verser quand même', 'verser') + ' ' + b('⛔ Clôturer', 'close', true);
+  if(e.statut === 'suivi' || e.statut === 'sans_date') return b('🗑️ Supprimer', 'supprimer');
+  if(e.statut === 'versee' || e.statut === 'close') return b('↩️ Rouvrir', 'rouvrir');
+  return '';
+}
+async function cooptAction(id, act){
+  const c = cooptList().find(x=>x.id === id);
+  if(!c) return;
+  try{
+    if(act === 'verser'){
+      const mois = todayStr().slice(0, 7), [y, m] = mois.split('-').map(Number);
+      const ok = await window.uiConfirm({ titre: 'Verser la prime de cooptation à ' + c.sponsor + ' ?', icone: '\u{1F91D}', ton: 'warn',
+        details: [['Parrain', c.sponsor], ['Recrue', c.recrue], ['Produit', c.produit === 'energie' ? '⚡ Énergie (Ilek)' : '\u{1F535} Assistance (Prime)'], ['Montant', (Number(c.prime) || 0).toLocaleString('fr-FR') + ' DH'], ['Ajoutée sur la paie de', moisLisibleYM(mois)]],
+        liste: ['Elle est ajoutée comme prime manuelle sur la paie de ' + c.sponsor + ' pour ' + moisLisibleYM(mois) + '. Tu peux la retirer dans la liste des primes manuelles.'],
+        oui: 'Oui, verser', non: 'Annuler' });
+      if(!ok) return;
+      const list = await getManualPrimes(c.sponsor, y, m);
+      list.push({ id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), label: '\u{1F91D} Cooptation ' + c.recrue + ' (' + (c.produit === 'energie' ? 'énergie' : 'assistance') + ')', amount: Number(c.prime) || 0, type: 'unique', addedDate: todayStr(), cooptationId: c.id });
+      await saveManualPrimes(c.sponsor, y, m, list);
+      c.etat = 'versee'; c.verseeMois = mois; c.verseeLe = todayStr();
+      try{ logAudit('Admin', 'Prime de cooptation versée ' + (Number(c.prime) || 0) + ' DH', c.sponsor + ' ← ' + c.recrue); }catch(e){}
+      try{ if(typeof invalidatePayrollMonthCache === 'function') invalidatePayrollMonthCache(); }catch(e){}
+    } else if(act === 'attendre'){ c.attente = true; }
+    else if(act === 'close'){ c.etat = 'close'; }
+    else if(act === 'rouvrir'){ delete c.etat; delete c.attente; }
+    else if(act === 'supprimer'){
+      if(!await window.uiConfirm({ titre: 'Supprimer ce suivi de cooptation ?', icone: '\u{1F5D1}️', ton: 'warn', details: [['Parrain', c.sponsor], ['Recrue', c.recrue]], liste: ['Seul le suivi disparaît. Aucune paie ne change.'], oui: 'Oui, supprimer', non: 'Annuler' })) return;
+      config.cooptations = cooptList().filter(x=> x.id !== id);
+    }
+    await saveConfigSilent();
+    showToast('✅ Enregistré', 'ok', 2000);
+    await renderCooptations();
+    try{ renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
+  }catch(e){ showToast('⚠️ Rien n\'a été modifié : ' + (e && e.message ? e.message : e), 'warn', 5000); }
+}
+window.cooptAction = cooptAction;
+async function cooptAjouter(produit){
+  const g = id => document.getElementById(id + (produit === 'energie' ? 'Ilek' : 'Prime'));
+  const sponsor = g('cooptSponsor') && g('cooptSponsor').value, recrue = g('cooptRecrue') && g('cooptRecrue').value, prime = parseFloat(g('cooptPrime') && g('cooptPrime').value);
+  if(!sponsor || !recrue){ uiAlert('Choisis le parrain et la recrue.'); return; }
+  if(sponsor === recrue){ uiAlert('Le parrain et la recrue doivent être deux personnes différentes.'); return; }
+  if(!(prime > 0)){ uiAlert('Indique le montant de la prime (en DH).'); return; }
+  if(cooptList().some(x=> x.recrue === recrue && x.produit === produit && x.etat !== 'close')){ uiAlert(recrue + ' a déjà un suivi de cooptation pour ce produit.'); return; }
+  cooptList().push({ id: 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), sponsor, recrue, produit, prime, creeLe: todayStr() });
+  await saveConfigSilent();
+  try{ logAudit('Admin', 'Cooptation ajoutée (' + produit + ') ' + prime + ' DH', sponsor + ' → ' + recrue); }catch(e){}
+  showToast('✅ Cooptation enregistrée', 'ok', 2500);
+  await renderCooptations();
+}
+window.cooptAjouter = cooptAjouter;
+async function cooptJourLimite(v){
+  const n = String(v).trim() === '' ? null : Math.max(1, Math.min(31, parseInt(v, 10) || 0));
+  config.cooptationJourLimite = n;
+  await saveConfigSilent(); showToast('✅ Jour limite enregistré', 'ok', 2000);
+  await renderCooptations();
+}
+window.cooptJourLimite = cooptJourLimite;
+function cooptCarte(e, avecProduit){
+  const c = e.c, couleur = e.statut === 'a_verser' ? 'rgba(79,157,120,.12)' : (e.statut === 'decider' || e.statut === 'perdue' || e.statut === 'sans_date' ? 'rgba(229,168,61,.12)' : 'var(--panel2)');
+  const bord = e.statut === 'a_verser' ? 'rgba(79,157,120,.5)' : (e.statut === 'decider' || e.statut === 'perdue' || e.statut === 'sans_date' ? 'rgba(229,168,61,.5)' : 'var(--border)');
+  return `<div style="padding:9px 12px; margin-bottom:6px; border-radius:9px; background:${couleur}; border:1px solid ${bord}; font-size:13px; line-height:1.65;">
+    <b>${escapeHtml(c.sponsor)}</b> a fait entrer <b>${escapeHtml(c.recrue)}</b>${avecProduit ? (c.produit === 'energie' ? ' · ⚡ Énergie' : ' · 🔵 Assistance') : ''} · prime <b>${(Number(c.prime) || 0).toLocaleString('fr-FR')} DH</b><br>${e.message}<br>${cooptBoutons(e)}</div>`;
+}
+async function renderCooptations(){
+  try{
+    const etats = await Promise.all(cooptList().map(cooptEtat));
+    // 1) Vue d'ensemble : seulement ce qui demande une décision
+    const alerte = document.getElementById('cooptAlertes');
+    if(alerte){
+      const a = etats.filter(e=> ['a_verser', 'decider', 'perdue', 'sans_date'].indexOf(e.statut) >= 0);
+      alerte.innerHTML = a.length ? ('<div class="section-title">🤝 Cooptations — ta décision</div>' + a.map(e=> cooptCarte(e, true)).join('')) : '';
+    }
+    // 2) un bloc de suivi par produit (PRIME et ILEK), avec le formulaire d'ajout
+    for(const produit of ['assistance', 'energie']){
+      const el = document.getElementById(produit === 'energie' ? 'cooptSuiviIlek' : 'cooptSuiviPrime');
+      if(!el) continue;
+      const suf = produit === 'energie' ? 'Ilek' : 'Prime';
+      const agents = agentsReels().filter(a=> !isIndependant(a));
+      const opt = agents.map(a=> `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+      const ses = etats.filter(e=> e.c.produit === produit);
+      el.innerHTML = `<div style="font-weight:800; margin-bottom:4px;">🤝 Cooptation — ${produit === 'energie' ? '⚡ Énergie (Ilek)' : '🔵 Assistance (Prime)'}</div>
+        <div class="section-sub" style="margin:0 0 8px;">Un agent fait entrer un collègue : il touche la prime que tu choisis si la recrue atteint son objectif <b>net</b> (retours et rétractations déduits) <b>en un seul mois</b>, dans ce produit. Mois qui comptent : le mois d'arrivée (si elle arrive au plus tard au jour limite ci-dessous, objectif au prorata) puis le mois plein qui suit. Rien n'est versé sans ton clic.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px;">
+          <div><label style="margin:0 0 3px;display:block;">Parrain</label><select id="cooptSponsor${suf}">${opt}</select></div>
+          <div><label style="margin:0 0 3px;display:block;">Recrue</label><select id="cooptRecrue${suf}">${opt}</select></div>
+          <div><label style="margin:0 0 3px;display:block;">Prime (DH)</label><input type="number" min="0" step="50" id="cooptPrime${suf}" style="width:110px;"></div>
+          <button type="button" class="ct-btn nc" onclick="cooptAjouter('${produit}')">➕ Ajouter</button>
+          <div><label style="margin:0 0 3px;display:block;">Jour limite d'arrivée dans le mois</label><input type="number" min="1" max="31" step="1" value="${config.cooptationJourLimite != null ? config.cooptationJourLimite : ''}" placeholder="non réglé" style="width:110px;" onchange="cooptJourLimite(this.value)"></div>
+        </div>
+        ${config.cooptationJourLimite == null ? '<div class="rm-hint" style="margin-bottom:6px;">⚠️ Jour limite non réglé : en attendant, le mois d\'arrivée compte quelle que soit la date d\'arrivée.</div>' : ''}
+        ${ses.length ? ses.map(e=> cooptCarte(e, false)).join('') : '<div class="rm-hint">Aucune cooptation suivie pour ce produit.</div>'}`;
+    }
+  }catch(e){ console.warn('cooptations', e); }
+}
+window.renderCooptations = renderCooptations;
+
+// ───────── r373 — ALERTE DÉJEUNER (Vue d'ensemble → « Temps de pause — en direct ») ─────────
+const hmPause = t => { const m = String(t || '').match(/^(\d{1,2}):(\d{2})/); return m ? (m[1].padStart(2, '0') + 'h' + m[2]) : '—'; };
+function dureePauseMin(p){ return (p && p.end) ? Math.max(0, toMinutes(String(p.end).slice(0,5)) - toMinutes(String(p.start).slice(0,5))) : null; }
+function dejeunerPlanning(dateStr, agent){
+  const sched = scheduleForDate(dateStr, agent);
+  return (sched.breaks || []).find(b=> /d.jeuner|dejeuner|lunch/i.test(b.name || '')) || null;
+}
+// Un jour « sans déjeuner à l'heure prévue » : l'agent a travaillé au-delà du déjeuner et aucune pause du déjeuner
+// n'a commencé dans la fenêtre prévue (tolérance comprise).
+function jourSansDejeunerHoraire(events, dateStr, agent){
+  const ls = dejeunerPlanning(dateStr, agent);
+  if(!ls || !events || !events.length) return false;
+  if(!events.some(e=>e.type === 'in')) return false;
+  const finMin = toMinutes(ls.end);
+  const sortie = [...events].reverse().find(e=>e.type === 'out');
+  const passe = sortie ? (toMinutes(String(sortie.time).slice(0,5)) > finMin) : (dateStr === todayStr() ? (toMinutes(nowTimeStr().slice(0,5)) >= finMin) : true);
+  if(!passe) return false;
+  const pairs = extractBreakPairs(events).filter(p=> !p.dejeuner);
+  const m = matchBreaksToSchedule(pairs, [ls]);
+  return !m.some(x=> x.sched && x.withinTolerance);
+}
+const dejCompteurCache = {};
+async function dejeunersHorsHoraireMois(agent, dateStr){
+  const [y, mo] = dateStr.split('-').map(Number);
+  const cle = agent + '|' + dateStr;
+  if(dejCompteurCache[cle] && (Date.now() - dejCompteurCache[cle].t) < 120000) return dejCompteurCache[cle].n;
+  let n = 0;
+  const dernier = Number(dateStr.slice(8, 10));
+  const jours = [];
+  for(let d = 1; d < dernier; d++){
+    const ds = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if(isWorkingDay(ds)) jours.push(ds);
+  }
+  await Promise.all(jours.map(async ds=>{
+    try{
+      const lg = await getDayLog(agent, ds);
+      if(lg && !lg.justifiedAbsence && jourSansDejeunerHoraire(lg.events || [], ds, agent)) n++;
+    }catch(e){}
+  }));
+  dejCompteurCache[cle] = { n, t: Date.now() };
+  return n;
+}
+async function marquerDejeuner(agent, startTime, oui){
+  try{
+    const dateStr = todayStr();
+    const log = await getDayLog(agent, dateStr);
+    const ev = (log.events || []).find(e=> e.type === 'free_break_start' && e.time === startTime);
+    if(!ev){ showToast('⚠️ Pause introuvable', 'warn', 3000); return; }
+    const bonus = await getEffectiveFreeBreakBonus(agent, dateStr, log);
+    const totalOver = (e)=> { const x = evaluateDay(e, dateStr, bonus, agent); return x.breakIssues.reduce((s,b)=> s + (b.over ? Math.max(0, (b.duration||0) - (b.expectedDuration||0)) : 0), 0) + (x.freeBreakOverMin || 0); };
+    const avant = totalOver(log.events);
+    ev.dejeuner = !!oui;
+    const apres = totalOver(log.events);
+    ev.dejeuner = !oui;                                   // on remet l'état d'origine tant que l'admin n'a pas confirmé
+    const paire = extractFreeBreakPairsToutes(log.events).find(p=> p.start === startTime);
+    const dur = dureePauseMin(paire);
+    const ls = dejeunerPlanning(dateStr, agent);
+    const prevu = ls ? (toMinutes(ls.end) - toMinutes(ls.start)) : 60;
+    const ok = await window.uiConfirm({
+      titre: oui ? ('Marquer cette pause comme le déjeuner de ' + agent + ' ?') : ('Remettre cette pause en pause libre (' + agent + ') ?'),
+      icone: '\u{1F37D}️', ton: 'warn',
+      details: [['Agent', agent], ['Pause', hmPause(startTime) + ' – ' + (paire && paire.end ? hmPause(paire.end) : 'en cours') + (dur != null ? ' (' + dur + ' min)' : '')],
+                ['Déjeuner prévu', prevu + ' min'], ['Pause libre', ((config.freeBreakMinutes != null ? config.freeBreakMinutes : 35) + (bonus || 0)) + ' min']],
+      liste: [oui ? ('Elle est jugée comme un déjeuner : au-delà de ' + prevu + ' min, le dépassement reste retenu comme aujourd\'hui.') : 'Elle redevient une pause libre, jugée sur le budget de pause libre.',
+              'Dépassement retenu sur le salaire du jour : ' + (oui ? avant : apres) + ' min avant → ' + (oui ? apres : avant) + ' min après.'],
+      oui: oui ? 'Oui, c\'est son déjeuner' : 'Oui, remettre en pause libre', non: 'Annuler' });
+    if(!ok) return;
+    ev.dejeuner = !!oui; if(!oui) delete ev.dejeuner;
+    await saveDayLog(agent, dateStr, log);
+    try{ logAudit('Admin', oui ? 'Pause marquée comme déjeuner' : 'Pause remise en pause libre', agent + ' — ' + dateStr + ' ' + hmPause(startTime)); }catch(e){}
+    try{ if(typeof invalidatePayrollMonthCache === 'function') invalidatePayrollMonthCache(); }catch(e){}
+    showToast(oui ? '✅ Pause marquée comme déjeuner' : '✅ Pause remise en pause libre', 'ok', 3000);
+    await renderPauseTotalsToday(true);
+  }catch(e){ showToast('⚠️ Rien n\'a été modifié : ' + (e && e.message ? e.message : e), 'warn', 5000); }
+}
+window.marquerDejeuner = marquerDejeuner;
+
 async function renderPauseTotalsToday(force){
   const container = document.getElementById('pauseTotalsToday');
   if(!container) return;
@@ -12797,8 +13142,22 @@ async function renderPauseTotalsToday(force){
     // Retard/absence — seulement pertinents un jour ouvré, sinon jamais évalués (même règle que
     // monthlyStats/buildTodayProblemRow : ni retard ni absence un jour non travaillé).
     const ev = (workingToday && log.events.length > 0) ? evaluateDay(log.events, dateStr, bonusInfo.totalBonus, agent) : null;
+    // r373 — alerte déjeuner : pauses réellement prises (avec leurs heures) + déjeuner prévu.
+    let alerteDej = null;
+    if(workingToday && log.events.length > 0 && !log.justifiedAbsence){
+      const ls = dejeunerPlanning(dateStr, agent);
+      const toutes = extractFreeBreakPairsToutes(log.events);
+      const sansHoraire = jourSansDejeunerHoraire(log.events, dateStr, agent);
+      const marquees = toutes.filter(p=>p.dejeuner);
+      if(ls && (sansHoraire || marquees.length)){
+        alerteDej = { fenetre: hmPause(ls.start) + '–' + hmPause(ls.end), prevu: toMinutes(ls.end) - toMinutes(ls.start), sansHoraire,
+          pauses: [].concat(extractBreakPairs(log.events).filter(p=>!p.dejeuner).map(p=>({ ...p, genre: 'planning' })), toutes.map(p=>({ ...p, genre: 'libre' }))).sort((a,b)=> String(a.start) < String(b.start) ? -1 : 1) };
+        alerteDej.nbMois = sansHoraire ? (await dejeunersHorsHoraireMois(agent, dateStr)) + 1 : 0;
+      }
+    }
     return {
       agent,
+      alerteDej,
       lunchMin: Math.round(lunchSec/60),
       freeMin: Math.round(freeSec/60),
       freeBudget: freeBudget + bonusInfo.totalBonus,
@@ -12863,6 +13222,27 @@ async function renderPauseTotalsToday(force){
     <td>TOTAL équipe</td><td></td><td>${totalLunch} min</td><td>${totalFree} min</td><td>${totalLunch+totalFree} min</td>
   </tr>`;
   html += '</tbody></table></div>';
+  // r373 — 🍽️ DÉJEUNERS À VÉRIFIER : qui n'a pas déjeuné à l'heure prévue, ce qu'il a pris à la place (avec les heures), et le bouton.
+  const alertes = rows.filter(r=> r.alerteDej);
+  if(alertes.length){
+    html += '<div style="margin-top:16px;"><div style="font-weight:800; margin-bottom:6px;">🍽️ Déjeuners à vérifier</div>';
+    alertes.forEach(r=>{
+      const a = r.alerteDej;
+      const ligne = a.pauses.length
+        ? a.pauses.map(p=>{
+            const dur = dureePauseMin(p);
+            const txt = `${hmPause(p.start)}–${p.end ? hmPause(p.end) : 'en cours'}${dur != null ? ' (' + dur + ' min)' : ''}`;
+            if(p.genre === 'planning') return `<span style="margin-right:10px;">🍽️ ${txt} <span style="color:var(--muted);">(bouton déjeuner)</span></span>`;
+            if(p.dejeuner) return `<span style="margin-right:10px;">🍽️ ${txt} <b style="color:var(--green);">marquée déjeuner</b> <button type="button" class="ct-btn nc" data-a="${escapeHtml(r.agent)}" data-t="${escapeHtml(p.start)}" onclick="marquerDejeuner(this.dataset.a, this.dataset.t, false)">↩️ Annuler</button></span>`;
+            return `<span style="margin-right:10px;">☕ ${txt} <span style="color:var(--muted);">(pause libre)</span> ${p.end ? `<button type="button" class="ct-btn nc" data-a="${escapeHtml(r.agent)}" data-t="${escapeHtml(p.start)}" onclick="marquerDejeuner(this.dataset.a, this.dataset.t, true)">🍽️ C'est son déjeuner</button>` : ''}</span>`;
+          }).join('')
+        : '<span style="color:var(--muted);">aucune pause enregistrée</span>';
+      const fois = a.nbMois > 0 ? ` · <b>${a.nbMois}${a.nbMois === 1 ? 're' : 'e'} fois ce mois-ci</b>` : '';
+      html += `<div style="padding:9px 12px; margin-bottom:6px; border-radius:9px; background:${a.sansHoraire ? 'rgba(229,168,61,.12)' : 'rgba(79,157,120,.10)'}; border:1px solid ${a.sansHoraire ? 'rgba(229,168,61,.5)' : 'rgba(79,157,120,.4)'}; font-size:13px; line-height:1.7;">
+        ${a.sansHoraire ? '⚠️' : '✅'} <b>${escapeHtml(r.agent)}</b> — ${a.sansHoraire ? `aucun déjeuner à l'heure prévue (${a.fenetre}, ${a.prevu} min)` : 'déjeuner enregistré par toi'}${fois}<br>Pauses prises aujourd'hui : ${ligne}</div>`;
+    });
+    html += '</div>';
+  }
   container.innerHTML = html;
 }
 
@@ -15365,6 +15745,7 @@ async function renderAllMonthly(){
     renderTodaySnapshot(),
     renderObjectifSnapshot(),
     renderPauseTotalsToday(),
+    renderCooptations(),
     renderBossRevenue(),
     renderPayrollSummary(),
     renderNetBalance(),
@@ -20088,6 +20469,7 @@ function proratedMonthFactorForRange(agent, year, month, fromDateStr, toDateStr)
 // renvoie la version PRORATÉE pour ce mois précis si l'agent a été embauché en cours de route — c'est
 // cette version qu'utilisent tous les calculs de salaire/objectif/commission d'un mois donné.
 function getAgentPay(agent, year, month){
+  migrerSalairesEnergie();
   const pc = getProdConfig();
   const d = pc.defaults;
   const c = pc.agentPay[agent] || {};
@@ -20137,6 +20519,19 @@ function getAgentPay(agent, year, month){
       noObjectif: effectiveNoObjectif(agent),
       isSupervisor: isSupervisor(agent)
     };
+    // ⚡ r373 — PRODUIT PRINCIPAL = ÉNERGIE : son salaire fixe, son assiduité et sa prime fixe mensuelle viennent de SA fiche Énergie
+    // (case vide = 0). Rien du moteur Prime (objectif, primes d'objectif, tarif avant objectif) ne joue pour lui.
+    // Seul reste le « DH par contrat » de sa propre fiche Prime, qui devient son BONUS par assistance (dès la 1re) —
+    // pas de valeur par défaut, et pas du tout pour « énergie uniquement ».
+    if(isEnergiePrincipal(agent) && config.migEnergieSalaire === 'r373'){
+      const sE = ilekSalaireDe(agent), dE = config.ilekSalaireDefaut || {};
+      pay.baseSalary = num(sE.baseSalary, 0);
+      pay.primeAssiduite = num(sE.primeAssiduite, 0);
+      pay.primeFixeMensuelle = num(sE.primeFixeMensuelle, num(dE.primeFixeMensuelle, 0));
+      pay.objectifMensuel = 0; pay.primeObjectifJour = 0; pay.primeExtraContrat = 0; pay.perContractBeforeObjectif = 0;
+      pay.perContract = isEnergieSeule(agent) ? 0 : num(c.perContract, 0);
+      pay.energiePrincipal = true;
+    }
   }
 
   // 💸 r250 — COÛT D'UN RETOUR = CE QUE LE CONTRAT AVAIT RAPPORTÉ (décision du patron).
@@ -21246,7 +21641,7 @@ async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise, pay
   // Le salaire fixe et la prime d'assiduité restent communs (une seule valeur, versée une seule fois,
   // exactement comme l'indique sa fiche). Tout le reste — objectif, prime d'objectif, commission par
   // énergie et paliers — vient de Rémunération → ILEK. AUCUN dirham ne vient du moteur Prime.
-  if(isEnergieSeule(agent) && !pay.isIndep){
+  if(isEnergiePrincipal(agent) && !pay.isIndep){
     let ilk = null;
     try{
       if(typeof window.ilekDuMois === 'function'){
@@ -21257,11 +21652,16 @@ async function estimateSalaryMonthReal(agent, year, month, assiduiteAcquise, pay
     let brutE = pay.baseSalary + pay.primeFixeMensuelle;
     if(assiduiteAcquise !== false) brutE += pay.primeAssiduite;
     brutE += ilk ? Math.round(Number(ilk.montant) || 0) : 0;
+    // r373 — ASSISTANCES EN BONUS : chaque assistance payable (rétractations et retours déjà retirés, comme en assistance)
+    // rapporte X DH (« DH par contrat » de sa fiche Prime), dès la 1re. Pas pour « énergie uniquement ».
+    let bonusAssistE = 0;
+    if(!isEnergieSeule(agent) && Number(pay.perContract) > 0) bonusAssistE = Math.round((Number(br.payable) || 0) * Number(pay.perContract));
+    brutE += bonusAssistE;
     const mpE = await getManualPrimes(agent, year, month);
     const mptE = computeManualPrimesTotal(mpE, br.payable);
     brutE += mptE;
     return { total: Math.round(brutE - ded.total), brut: Math.round(brutE), status: stE, breakdown: br,
-             deductions: ded, manualPrimes: mpE, manualPrimesTotal: mptE, energieSeule: true, ilek: ilk };
+             deductions: ded, manualPrimes: mpE, manualPrimesTotal: mptE, energieSeule: isEnergieSeule(agent), energiePrincipal: true, bonusAssist: bonusAssistE, bonusAssistN: (bonusAssistE > 0 ? (Number(br.payable) || 0) : 0), ilek: ilk };
   }
 
   // Statut d'objectif recalculé sur les contrats PAYÉS : un agent qui tombe sous son minimum à cause
@@ -21534,6 +21934,39 @@ function unsubscribeProdBoard(){
 function weekObjective(daily){ return daily * (getProdConfig().daysPerWeek || 5); }
 function monthObjective(daily){ return daily * (getProdConfig().daysPerMonth || 22); }
 
+// r373 — CLASSEMENTS SÉPARÉS : un agent est classé dans son PRODUIT PRINCIPAL (assistance ou énergie). Un agent « mixte »
+// est classé en assistance ; un agent « énergie + assistance en bonus » est classé en énergie ; le produit en bonus ne compte pas.
+// Le rang repart de 1 dans chaque classement.
+function groupeClassement(agent){ return isEnergiePrincipal(agent) ? 'energie' : 'assistance'; }
+function classerParGroupe(rows){
+  const out = [];
+  ['assistance', 'energie'].forEach(g=>{
+    const sub = rows.filter(r=> groupeClassement(r.agent) === g);
+    sub.sort((a,b)=>{
+      if(b.realized !== a.realized) return b.realized - a.realized;
+      if(b.pct !== a.pct) return b.pct - a.pct;
+      return a.agent.localeCompare(b.agent);
+    });
+    sub.forEach((r,i)=>{ r.rank = i + 1; r.groupe = g; r.groupSize = sub.length; out.push(r); });
+  });
+  return out;
+}
+// Même principe pour le classement « du mois » du bilan de fin de journée : on compare chacun aux agents de SON produit.
+function rangParGroupe(list, metric){
+  const byAgent = {};
+  ['assistance', 'energie'].forEach(g=>{
+    const sorted = list.filter(r=> groupeClassement(r.agent) === g).sort((a,b)=>{
+      const ra = metric(a), rb = metric(b);
+      return rb !== ra ? rb - ra : a.agent.localeCompare(b.agent);
+    });
+    sorted.forEach((r,i)=>{
+      byAgent[r.agent] = { rank: i + 1, total: sorted.length, groupe: g,
+        prevAgent: i > 0 ? sorted[i-1].agent : null,
+        prevGap: i > 0 ? Math.max(0, metric(sorted[i-1]) - metric(r)) : 0 };
+    });
+  });
+  return byAgent;
+}
 function buildRankings(board, jour){
   const jBR = jour || todayStr();
   const agents = agentsReels().length ? agentsReels() : Object.keys(board.agents || {});
@@ -21559,13 +21992,7 @@ function buildRankings(board, jour){
     }
     return { agent, objective: obj, realized: real, pct, gap: real - obj, isIndep, noObjectif: getAgentPay(agent).noObjectif, energie: pj.energie };
   });
-  rows.sort((a,b)=>{
-    if(b.realized !== a.realized) return b.realized - a.realized;
-    if(b.pct !== a.pct) return b.pct - a.pct;
-    return a.agent.localeCompare(b.agent);
-  });
-  rows.forEach((r,i)=> r.rank = i + 1);
-  return rows;
+  return classerParGroupe(rows);
 }
 
 const DEFAULT_ARENA_MSGS = {
@@ -22314,7 +22741,7 @@ async function renderArena(){
     // classer : sans ça un agent « énergie uniquement » serait classé sur un 0 d'assistance.
     await preparerEnergieJour(dateStr);
     rankings = buildRankings(board, dateStr);
-    unitLabel = (currentArenaAgent && isEnergieSeule(currentArenaAgent)) ? "énergies signées aujourd'hui" : "contrats signés aujourd'hui";
+    unitLabel = (currentArenaAgent && isEnergiePrincipal(currentArenaAgent)) ? "énergies signées aujourd'hui" : "contrats signés aujourd'hui";
   } else {
     const d = new Date(now.getFullYear(), now.getMonth(), 1);
     dateLabelText = 'Ton objectif du mois et le classement mensuel — ' + d.toLocaleDateString('fr-FR', { month:'long', year:'numeric' });
@@ -22325,15 +22752,22 @@ async function renderArena(){
       ]);
       return { agent, objective: st.objectif, realized: st.realized, pct: st.pct, gap: st.realized - st.objectif, isIndep: st.isIndep, noObjectif: getAgentPay(agent).noObjectif, desiredObjective, equivEnergie: st.equivEnergie || 0, realizedAssistance: st.realizedAssistance, energieSeule: !!st.energieSeule };
     }));
-    rows.sort((a,b)=>{
-      if(b.realized !== a.realized) return b.realized - a.realized;
-      if(b.pct !== a.pct) return b.pct - a.pct;
-      return a.agent.localeCompare(b.agent);
-    });
-    rows.forEach((r,i)=> r.rank = i+1);
-    rankings = rows;
-    unitLabel = (currentArenaAgent && isEnergieSeule(currentArenaAgent)) ? 'énergies ce mois' : 'contrats ce mois';
+    // r373 — produit principal énergie : chiffre = énergies NETTES du mois (retours déduits), objectif = objectif énergie du mois.
+    const moisArena = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    await Promise.all(rows.filter(r=> isEnergiePrincipal(r.agent)).map(async r=>{
+      let ik = null;
+      try{ if(typeof window.ilekDuMois === 'function') ik = await window.ilekDuMois(r.agent, moisArena); }catch(e){}
+      const nets = ik ? Math.round((Number(ik.nets) || 0) * 10) / 10 : 0, ob = ik ? (Number(ik.objectif) || 0) : 0;
+      r.realized = nets; r.objective = ob; r.pct = ob > 0 ? Math.round((nets / ob) * 100) : (nets > 0 ? 100 : 0); r.gap = nets - ob;
+      r.realizedAssistance = 0; r.equivEnergie = 0;
+    }));
+    rankings = classerParGroupe(rows);
+    unitLabel = (currentArenaAgent && isEnergiePrincipal(currentArenaAgent)) ? 'énergies ce mois' : 'contrats ce mois';
   }
+  // r373 — un agent ne voit QUE le classement de son produit principal ; l'admin voit les deux, l'un sous l'autre.
+  const groupeVu = currentArenaAgent ? groupeClassement(currentArenaAgent) : null;
+  if(groupeVu) rankings = rankings.filter(r=> r.groupe === groupeVu);
+  const tailleG = {}; rankings.forEach(x=>{ tailleG[x.groupe] = (tailleG[x.groupe] || 0) + 1; });
 
   document.getElementById('arenaDateLabel').textContent = dateLabelText;
   const myRow = currentArenaAgent ? rankings.find(r=>r.agent === currentArenaAgent) : null;
@@ -22503,7 +22937,7 @@ async function renderArena(){
   }
 
   const podium = document.getElementById('arenaPodium');
-  const top3 = rankings.filter(r=>r.realized > 0).slice(0,3);
+  const top3 = rankings.filter(r=> r.groupe === (groupeVu || 'assistance') && r.realized > 0).slice(0,3);
   if(top3.length === 0){
     podium.innerHTML = '<div class="empty" style="width:100%; padding:20px;">Personne n\'a encore signé — sois le premier ! 🏁</div>';
   } else {
@@ -22529,10 +22963,11 @@ async function renderArena(){
     lb.innerHTML = '<div class="empty">Ajoute des agents dans Admin → Réglages.</div>';
     return;
   }
-  lb.innerHTML = rankings.map(r=>{
+  lb.innerHTML = rankings.map((r, iR)=>{
     const isMe = r.agent === currentArenaAgent;
-    const rowCls = isMe ? 'me' : (r.rank === 1 ? 'rank-1' : (r.rank === rankings.length && rankings.length > 3 ? 'rank-last' : ''));
-    const taunt = getArenaMessage(r, rankings);
+    const rowCls = isMe ? 'me' : (r.rank === 1 ? 'rank-1' : (r.rank === tailleG[r.groupe] && tailleG[r.groupe] > 3 ? 'rank-last' : ''));
+    const taunt = getArenaMessage(r, rankings.filter(x=> x.groupe === r.groupe));
+    const enteteG = (iR === 0 || rankings[iR-1].groupe !== r.groupe) ? `<div style="margin:12px 0 6px; font-weight:800; font-size:13px; color:var(--muted);">${r.groupe === 'energie' ? '⚡ Classement Énergie' : '📋 Classement Assistance'}</div>` : '';
     const indepTag = r.isIndep ? ' <span class="indep-tag">Indé</span>' : (r.noObjectif ? ` <span class="indep-tag" style="background:var(--amber);color:#3a2a05;">${raisonSansObjectif(r.agent)}</span>` : '');
     // En vue "jour", il n'existe pas de minimum imposé par l'admin séparé — la seule valeur disponible
     // (r.objective) est celle que l'agent s'est fixée lui-même le matin dans "Ton objectif du jour" :
@@ -22555,8 +22990,8 @@ async function renderArena(){
 
     const dayBadge = !isMonthScope && !r.isIndep ? dailyProgressBadge(r.realized, r.agent) : null;
 
-    return `<div class="lb-row ${rowCls}">
-      <div class="lb-rank">${rankEmoji(r.rank, rankings.length)}</div>
+    return `${enteteG}<div class="lb-row ${rowCls}">
+      <div class="lb-rank">${rankEmoji(r.rank, tailleG[r.groupe])}</div>
       <div class="lb-name">${r.agent}${isMe ? ' (toi)' : ''}${indepTag}${dayBadge ? ` <span class="tag ${dayBadge.cls}" title="${dayBadge.title}" style="cursor:help; ${dayBadge.pulse?'animation: pulseWarn 1s infinite;':''}">${dayBadge.txt}</span>` : ''}<small>${taunt.text}</small></div>
       <div class="lb-stat"><b>${isMonthScope ? (miniVal > 0 ? miniVal : (isFreeRow ? '∞' : '—')) : '—'}</b>${isMonthScope ? 'mini' : ''}</div>
       <div class="lb-stat lb-stat-desired"><b>${desiredVal != null ? desiredVal : '—'}</b>visé</div>
@@ -22788,17 +23223,20 @@ async function isSupervisorEligibleOnDay(agent, dateStr, board){
 // Le CRM décide seul qui touche sa prime (isSupervisorEligibleOnDay : présent et ≤ 10 min de retard).
 // Ces réglages permettent de le contredire sur une journée précise, dans les deux sens, et surtout de
 // DIRIGER la part retirée vers un superviseur nommé au lieu du partage égal automatique.
-function getSupervisorDayOverrides(dateStr){
-  return (config.supervisorDayOverrides && config.supervisorDayOverrides[dateStr]) || {};
+// r373 — deux corrections de journée SÉPARÉES : « prime » (assistance, Prime) et « energie » (ILEK).
+function champOverrideSup(produit){ return produit === 'energie' ? 'supervisorDayOverridesEnergie' : 'supervisorDayOverrides'; }
+function getSupervisorDayOverrides(dateStr, produit){
+  const c = config[champOverrideSup(produit)];
+  return (c && c[dateStr]) || {};
 }
 
 // Source UNIQUE de vérité pour une journée : qui touche, qui ne touche pas, et le supplément de taux de
 // chacun. Utilisée par le calcul de la prime (supervisorBonusForDates), par l'affichage du taux du jour
 // côté superviseur (supervisorRateBoostToday) ET par l'écran de réglage lui-même — impossible que l'un
 // des trois applique une règle que les deux autres ignorent.
-async function resolveSupervisorDay(dateStr, board, supervisors, rates){
+async function resolveSupervisorDay(dateStr, board, supervisors, rates, produit){
   const auto = await Promise.all(supervisors.map(async sup=> ({ sup, ok: await isSupervisorEligibleOnDay(sup, dateStr, board) })));
-  const ov = getSupervisorDayOverrides(dateStr);
+  const ov = getSupervisorDayOverrides(dateStr, produit);
   const statut = auto.map(a=>{
     const o = ov[a.sup] || null;
     let ok = a.ok;
@@ -22839,17 +23277,22 @@ async function resolveSupervisorDay(dateStr, board, supervisors, rates){
 // dans les attributs onchange : un nom contenant une apostrophe (O'Brien) casserait le HTML généré.
 let supOverrideRenderedSups = [];
 
-async function supOverrideToday(){
-  const el = document.getElementById('supOverrideDate');
+function supIds(produit){ return produit === 'energie' ? { date: 'supOverrideDateEnergie', panel: 'supervisorDayOverridePanelEnergie' } : { date: 'supOverrideDate', panel: 'supervisorDayOverridePanel' }; }
+const supOverrideSupsParProduit = { prime: [], energie: [] };
+async function supOverrideToday(produit){
+  const el = document.getElementById(supIds(produit).date);
   if(el) el.value = todayStr();
-  await renderSupervisorDayOverridePanel();
+  if(produit === 'energie') window._supDateEnergie = todayStr();
+  await renderSupervisorDayOverridePanel(produit);
 }
 
-async function renderSupervisorDayOverridePanel(){
-  const container = document.getElementById('supervisorDayOverridePanel');
+async function renderSupervisorDayOverridePanel(produit){
+  produit = (produit === 'energie') ? 'energie' : 'prime';
+  const container = document.getElementById(supIds(produit).panel);
   if(!container) return;
-  const input = document.getElementById('supOverrideDate');
-  if(input && !input.value) input.value = todayStr();
+  const input = document.getElementById(supIds(produit).date);
+  if(input && produit === 'energie' && input.value) window._supDateEnergie = input.value;
+  if(input && !input.value) input.value = (produit === 'energie' && window._supDateEnergie) || todayStr();
   const dateStr = (input && input.value) || todayStr();
 
   const supervisors = listSupervisors();
@@ -22862,8 +23305,9 @@ async function renderSupervisorDayOverridePanel(){
   prodBoardCache[dateStr] = board;
   const rates = {};
   supervisors.forEach(s=>{ rates[s] = getAgentPay(s).supervisorPrimePerContract || 0; });
-  const { statut, eligible, bonusRateBySup } = await resolveSupervisorDay(dateStr, board, supervisors, rates);
+  const { statut, eligible, bonusRateBySup } = await resolveSupervisorDay(dateStr, board, supervisors, rates, produit);
   supOverrideRenderedSups = statut.map(s=>s.sup);
+  supOverrideSupsParProduit[produit] = supOverrideRenderedSups.slice();
 
   // Assiette de la prime : les contrats de l'équipe de base ce jour-là (ni superviseurs, ni indépendants),
   // exactement la même que dans supervisorBonusForDates.
@@ -22901,7 +23345,7 @@ async function renderSupervisorDayOverridePanel(){
       : '<span style="color:var(--muted);">Aucune prime</span>';
     const autres = supervisors.filter(x=> x !== s.sup);
     const benefCell = prime === 'retiree'
-      ? `<select onchange="setSupervisorDayOverride(${i},'beneficiaire',this.value)" style="${sel}">
+      ? `<select onchange="setSupervisorDayOverride(${i},'beneficiaire',this.value,'${produit}')" style="${sel}">
            <option value="" ${benef===''?'selected':''}>— À partager entre les présents —</option>
            ${autres.map(a=>`<option value="${escapeHtml(a)}" ${benef===a?'selected':''}>${escapeHtml(a)}</option>`).join('')}
          </select>${(benef && eligible.indexOf(benef) === -1) ? '<div style="font-size:11px;color:var(--amber);margin-top:3px;">⚠️ Il ne touche pas non plus ce jour-là : la part repart au partage.</div>' : ''}`
@@ -22909,7 +23353,7 @@ async function renderSupervisorDayOverridePanel(){
     html += `<tr>
       <td><b>${escapeHtml(s.sup)}</b><div style="font-size:11px;color:var(--muted);">${rates[s.sup]} DH/contrat de base</div></td>
       <td>${autoTxt}${forceTxt}</td>
-      <td><select onchange="setSupervisorDayOverride(${i},'prime',this.value)" style="${sel}">
+      <td><select onchange="setSupervisorDayOverride(${i},'prime',this.value,'${produit}')" style="${sel}">
         <option value="" ${prime===''?'selected':''}>Auto (suit le pointage)</option>
         <option value="retiree" ${prime==='retiree'?'selected':''}>🚫 Retirer sa prime</option>
         <option value="donnee" ${prime==='donnee'?'selected':''}>✅ Lui donner sa prime</option>
@@ -22922,14 +23366,16 @@ async function renderSupervisorDayOverridePanel(){
   container.innerHTML = html;
 }
 
-async function setSupervisorDayOverride(idx, field, value){
-  const sup = supOverrideRenderedSups[idx];
+async function setSupervisorDayOverride(idx, field, value, produit){
+  produit = (produit === 'energie') ? 'energie' : 'prime';
+  const champ = champOverrideSup(produit);
+  const sup = (supOverrideSupsParProduit[produit] || [])[idx];
   if(!sup) return;
-  const input = document.getElementById('supOverrideDate');
+  const input = document.getElementById(supIds(produit).date);
   const dateStr = (input && input.value) || todayStr();
-  if(!config.supervisorDayOverrides) config.supervisorDayOverrides = {};
-  if(!config.supervisorDayOverrides[dateStr]) config.supervisorDayOverrides[dateStr] = {};
-  const jour = config.supervisorDayOverrides[dateStr];
+  if(!config[champ]) config[champ] = {};
+  if(!config[champ][dateStr]) config[champ][dateStr] = {};
+  const jour = config[champ][dateStr];
   if(!jour[sup]) jour[sup] = {};
 
   if(field === 'prime'){
@@ -22942,13 +23388,14 @@ async function setSupervisorDayOverride(idx, field, value){
   }
   // On ne laisse jamais de coquille vide en base : un jour sans réglage disparaît complètement.
   if(Object.keys(jour[sup]).length === 0) delete jour[sup];
-  if(Object.keys(jour).length === 0) delete config.supervisorDayOverrides[dateStr];
+  if(Object.keys(jour).length === 0) delete config[champ][dateStr];
 
   await saveConfigSilent();
-  logAudit('Admin', 'Prime de supervision ajustée', `${sup} — ${dateStr} — ${field} = ${value || 'auto'}`);
+  logAudit('Admin', 'Prime de supervision ajustée' + (produit === 'energie' ? ' (Énergie)' : ' (Prime)'), `${sup} — ${dateStr} — ${field} = ${value || 'auto'}`);
   if(typeof invalidatePayrollMonthCache === 'function') invalidatePayrollMonthCache();
+  try{ if(typeof window.ilekInvalider === 'function') window.ilekInvalider(); }catch(e){}
   showToast('✅ Enregistré', 'ok', 2000);
-  await renderSupervisorDayOverridePanel();
+  await renderSupervisorDayOverridePanel(produit);
 }
 
 async function supervisorRateBoostToday(supervisor){
@@ -23429,7 +23876,7 @@ async function supervisorEnergieMonthlyBonus(year, month){
     supervisors.forEach(s=>{
       tauxJour[s] = supervisorMontantTranche(cumulSup[s], j.pool, taux[s], supervisorPaliers(s, 'energie')) / j.pool;
     });
-    const { eligible, bonusRateBySup } = await resolveSupervisorDay(j.ds, board, supervisors, tauxJour);
+    const { eligible, bonusRateBySup } = await resolveSupervisorDay(j.ds, board, supervisors, tauxJour, 'energie');
     eligible.forEach(sup=>{
       dh[sup] += j.pool * (tauxJour[sup] + (bonusRateBySup[sup] || 0));
       energies[sup] += j.pool;
@@ -25745,14 +26192,18 @@ async function renderAgentPayTable(){
     const noObj = p.noObjectif;
     const lockObjectif = isIndep || noObj;
     const isSup = isSupervisor(agent);
+    // r373 — produit principal énergie : les montants Prime qui ne comptent plus sont grisés et signalés.
+    const princ = isEnergiePrincipal(agent), seule = isEnergieSeule(agent);
+    const CH_PRIME_ENER = ['baseSalary','primeFixeMensuelle','primeAssiduite','objectifMensuel','primeObjectifJour','primeExtraContrat','perContractBeforeObjectif'];
     const decActive = !archived && isInDecouverte(agent) && !decouverteEndDateOf(agent);
     const lockObjectifRow = lockObjectif || decActive;
     const nom = esc2(agent);
     // même règle qu'avant : placeholder = valeur appliquée aujourd'hui, case vide = valeur par défaut
     const champ = (field, val, unite, titre, ph)=>{
       const verrou = lockObjectifRow && (field==='objectifMensuel' || field==='primeObjectifJour' || field==='primeExtraContrat' || field==='perContractBeforeObjectif');
+      const verrouE = princ && (CH_PRIME_ENER.indexOf(field) >= 0 || (seule && field === 'perContract'));
       const v = (c[field] !== undefined && c[field] !== '') ? c[field] : '';
-      return `<div class="rm-lig"><span class="t">${titre}</span><span class="rm-num"><input data-agent="${nom}" data-field="${field}" type="number" value="${v}" placeholder="${ph!==undefined?ph:val}" ${verrou ? 'disabled style="opacity:0.5;" title="Pas d\'objectif pour cet agent"' : ''}><span>${unite}</span></span></div>`;
+      return `<div class="rm-lig"><span class="t">${titre}</span><span class="rm-num"><input data-agent="${nom}" data-field="${field}" type="number" value="${v}" placeholder="${ph!==undefined?ph:val}" ${(verrou || verrouE) ? ('disabled style="opacity:0.5;" title="' + (verrouE ? 'Produit principal : énergie. Ça se règle dans l\'onglet Énergies.' : 'Pas d\'objectif pour cet agent') + '"') : ''}><span>${unite}</span></span></div>`;
     };
     const desiredObj = i < desiredObjs.length ? desiredObjs[i] : 0;
     const agentKeySafe = agent.replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -25762,7 +26213,7 @@ async function renderAgentPayTable(){
     const fixedToDate = totalWorkingDays>0 ? Math.round(fixedFullMonth * (elapsedWorkingDays/totalWorkingDays)) : 0;
     const brutNote = (!isIndep && fixedFullMonth>0)
       ? `<div class="rm-hint">Brut fixe mois complet : <b style="color:var(--text);">${fixedFullMonth.toLocaleString('fr-FR')} DH</b> — à ce jour (${elapsedWorkingDays}/${totalWorkingDays}j) : <b style="color:var(--green);">${fixedToDate.toLocaleString('fr-FR')} DH</b></div>` : '';
-    const blocFixe = `<div class="rm-bloc"><h4>🏦 Salaire fixe <span style="font-weight:600;color:var(--muted);font-size:11.5px;">(pour assistance et énergie, payé une seule fois)</span></h4>${champ('baseSalary', p.baseSalary, 'DH / mois', 'Fixe par mois')}${champ('primeFixeMensuelle', p.primeFixeMensuelle, 'DH / mois', 'Prime fixe par mois')}${brutNote}</div>`;
+    const blocFixe = `<div class="rm-bloc"><h4>🏦 Salaire fixe <span style="font-weight:600;color:var(--muted);font-size:11.5px;">(${princ ? 'son salaire se règle dans Énergies' : 'salaire de son produit principal : Prime'})</span></h4>${champ('baseSalary', p.baseSalary, 'DH / mois', 'Fixe par mois')}${champ('primeFixeMensuelle', p.primeFixeMensuelle, 'DH / mois', 'Prime fixe par mois')}${brutNote}</div>`;
     const blocAssid = `<div class="rm-bloc"><h4>✅ Assiduité</h4>${champ('primeAssiduite', p.primeAssiduite, 'DH', 'Prime si aucun retard ni absence')}</div>`;
     const blocComm = `<div class="rm-bloc"><h4>💵 Commission / bonus assistance (Prime)</h4>${champ('perContract', p.perContract, 'DH', lockObjectif ? 'Par contrat fait (dès le 1er)' : 'Par contrat (après l\'objectif)')}${lockObjectifRow ? '' : champ('perContractBeforeObjectif', p.perContractBeforeObjectif, 'DH', 'Par contrat (avant l\'objectif)')}${lockObjectif ? '<div class="rm-hint">Sans objectif : payé dès le 1er contrat.</div>' : ''}</div>`;
     const blocSup = (isSup || p.supervisorPrimePerContract) ? `<div class="rm-bloc"><h4>📊 Supervision — assistance (Prime)</h4>${champ('supervisorPrimePerContract', p.supervisorPrimePerContract, 'DH', 'Prime superviseur par contrat d\'équipe')}${isSup ? `<div class="rm-lig"><span class="t">Base de calcul (prime d'équipe + commission indépendants)</span><span class="rm-num"><select onchange="saveSupervisorBase('${agentKeySafe}', this.value)"><option value="brut" ${c.supervisorNet?'':'selected'}>Brut (retours de facturation non retirés)</option><option value="net" ${c.supervisorNet?'selected':''}>Net (retours de facturation retirés)</option></select></span></div>` : ''}${supervisorPaliersHtml(agent, agentKeySafe, 'assistance', 'contrats équipe')}</div>`
@@ -25788,8 +26239,15 @@ async function renderAgentPayTable(){
       const etatObj = (faitO == null) ? '' : (faitO >= mini ? ' — <span style="color:var(--green);">✔ objectif atteint</span>' : ` — <span style="color:var(--muted);">objectif non atteint (${faitO}/${mini})</span>`);
       actuel = `🎯 Objectif : <b>${mini} contrats</b>${etatObj}<br>🏆 Prime d'objectif : <b>${primeObj} DH</b>${primeObj > 0 ? ' (versée une fois, si atteint)' : ''}<br>💵 Par contrat : <b>${avantT} DH</b> avant l'objectif · <b>${apresT} DH</b> au-delà${extraT > 0 ? ` · bonus <b>${extraT} DH</b> par contrat au-delà` : ''}`;
     }
-    actuel += `<br>🏦 ${fixeEff > 0 ? `Salaire fixe : <b>${fixeEff.toLocaleString('fr-FR')} DH / mois</b>` : 'Pas de salaire fixe'}${assidEff > 0 ? ` · assiduité : <b>${assidEff} DH</b>` : ''} <span style="color:var(--muted);">(commun assistance + énergie)</span>`;
-    const encadre = archived ? '' : `<div style="margin-top:10px;font-size:13px;line-height:1.55;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.35);border-radius:10px;padding:8px 10px;"><b>Actuellement</b> <span style="color:var(--muted);font-size:11.5px;">— assistance (Prime)</span><br>${actuel}</div>`;
+    actuel += `<br>🏦 ${fixeEff > 0 ? `Salaire fixe : <b>${fixeEff.toLocaleString('fr-FR')} DH / mois</b>` : 'Pas de salaire fixe'}${assidEff > 0 ? ` · assiduité : <b>${assidEff} DH</b>` : ''} <span style="color:var(--muted);">(salaire Prime)</span>`;
+    if(princ){
+      actuel = seule ? '⚡ <b>Énergie uniquement</b> : aucun montant Prime ne compte, tout se règle dans l\'onglet Énergies.' : `⚡ Produit principal : <b>énergie</b> (salaire et objectif dans l'onglet Énergies)<br>🔵 Assistances en bonus : <b>${Math.round(apresT)} DH par assistance</b>, dès la 1re, sans objectif ni palier`;
+    }
+    const dirtyP = princ ? CH_PRIME_ENER.concat(seule ? ['perContract'] : []).filter(f=> c[f] !== undefined && c[f] !== '') : [];
+    const sEn = ilekSalaireDe(agent);
+    const dirtyI = !princ ? Object.keys(sEn).filter(f=> Number(sEn[f]) > 0) : [];
+    const warnP = (dirtyP.length || dirtyI.length) ? `<div style="margin-top:8px;font-size:12.5px;background:rgba(229,168,61,.12);border:1px solid rgba(229,168,61,.5);border-radius:10px;padding:8px 10px;">⚠️ <b>Attention :</b> il y a ${princ ? 'des montants dans PRIME' : 'un salaire dans ILEK'}, <b>non pris en compte</b> dans sa paie (son produit principal est ${princ ? "l'énergie" : "l'assistance"}). <button type="button" class="ct-btn nc" onclick="toutMettreAZero('${agentKeySafe}')">🧹 Tout mettre à zéro</button></div>` : '';
+    const encadre = archived ? '' : `<div style="margin-top:10px;font-size:13px;line-height:1.55;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.35);border-radius:10px;padding:8px 10px;"><b>Actuellement</b> <span style="color:var(--muted);font-size:11.5px;">— ${princ ? 'énergie' : 'assistance (Prime)'}</span><br>${actuel}</div>${warnP}`;
     const carte = `<div class="rm-card ${type==='old'?'old':''} ${type==='ind'?'ind':''} ${type==='bo'?'bo':''}">
       <div class="rm-nom"><span>${nom}</span><span class="rm-chip">${esc2(profil)}</span></div>
       <div class="rm-amt" data-amt="${nom}" data-arch="${archived?1:0}">${archived ? '' : '<div class="rm-mut rm-wait" style="margin-top:8px;">⏳ calcul du mois…</div>'}</div>${encadre}
@@ -26526,7 +26984,7 @@ async function renderProdAdmin(){
         <td>${hasObj ? r.objective : (r.isIndep ? '∞' : r.objective)}</td>
         <td class="lb-pct ${pctCls}">${(r.isIndep && !hasObj) ? '🧑‍💼' : (r.pct+'%')}</td>
         <td>${hasObj ? (r.gap >= 0 ? '+'+r.gap : r.gap) : '—'}</td>
-        <td>${rankEmoji(r.rank, rankings.length)}</td>
+        <td>${rankEmoji(r.rank, r.groupSize)}${r.groupe === 'energie' ? ' <span title="Classé en énergie (produit principal)">⚡</span>' : ''}</td>
         <td>${r.isIndep ? `🧑‍💼${hasObj ? (r.realized>=r.objective ? ' Défi réussi ✅' : ' Défi en cours ⏳') : ' Indépendant'}` : (r.realized >= r.objective && r.objective > 0 ? '✅ Atteint' : (r.objective > 0 ? '⏳ En cours' : '—'))}</td>
       </tr>`;
     });
@@ -30869,14 +31327,16 @@ function billingAgentSheetHTML(d, forImage){
     // cacher.
     const commissionContrats = d.salary.brut - d.pay.baseSalary - d.pay.primeFixeMensuelle - (d.assiduiteAcquise ? d.pay.primeAssiduite : 0) - (st.primeObjectif || 0) - (st.primeExtra || 0) - (d.salary.manualPrimesTotal || 0) - supBonus - indepComm - ilekMt;
     if(Math.round(commissionContrats) !== 0){
-      line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, commissionContrats, { plus: true });
+      // r373 — énergie principale : cette ligne EST le bonus par assistance (X DH × assistances payées, retours et rétractations déjà retirés).
+      if(d.salary.energiePrincipal && d.salary.bonusAssist > 0) line(`🔵 Assistances en bonus (${d.salary.bonusAssistN} assistance${d.salary.bonusAssistN > 1 ? 's' : ''} payée${d.salary.bonusAssistN > 1 ? 's' : ''} × ${Math.round(d.pay.perContract)} DH)`, commissionContrats, { plus: true, color: 'var(--green)' });
+      else line(`Commission sur ${br ? br.payable : (st.realized || 0)} contrats payés${st.objectif ? ` (objectif ${st.objectif})` : ''}`, commissionContrats, { plus: true });
     }
     if(st.objectif > 0){
       const faitObjFeuille = (st.equivEnergie > 0) ? st.realized : (br ? br.payable : st.realized);   // r329 : inclut les énergies comptées
       const manquantObj = Math.max(0, st.objectif - faitObjFeuille);
       const tipObj = `Calculé sur les contrats PAYÉS (après rétractations et retours), pas sur les contrats signés — un agent qui tombe sous son minimum à cause de ses retours perd cette prime, même s'il a signé plus que l'objectif.`;
       line(`Prime objectif (${st.objectif} contrats payés) <span title="${tipObj}" style="cursor:help; opacity:0.65; font-weight:400;">ⓘ</span>${st.atteint ? ' — atteint' : ` — pas encore atteint (${faitObjFeuille}/${st.objectif}, ${manquantObj} manquant${manquantObj>1?'s':''})`}`, st.atteint ? st.primeObjectif : 0, { plus: true, color: st.atteint ? 'var(--green)' : 'var(--muted)' });
-    } else {
+    } else if(!d.salary.energiePrincipal){
       line('Prime objectif — non réglé pour cet agent', 0, { color: 'var(--muted)' });
     }
     if(st.primeExtra) line(`Bonus ${st.extraCount} contrat${st.extraCount>1?'s':''} au-delà de l'objectif`, st.primeExtra, { plus: true, color: 'var(--green)' });
@@ -40202,7 +40662,7 @@ async function renderAssistanceHistory(){
     // « énergie uniquement ». Les mois d'avant novembre ne bougent pas.
     var mixteSepare = false;
     try{
-      if(typeof energieSepareeDeLAssistance === 'function' && energieSepareeDeLAssistance(mois) && !isEnergieSeule(agent)){
+      if(typeof energieSepareeDeLAssistance === 'function' && energieSepareeDeLAssistance(mois) && !isEnergiePrincipal(agent)){
         var payMx = getAgentPay(agent, Number(String(mois).slice(0, 4)), Number(String(mois).slice(5, 7)));
         mixteSepare = !payMx.isIndep && !payMx.noObjectif && (payMx.objectifMensuel || 0) > 0;
       }
@@ -40237,7 +40697,7 @@ async function renderAssistanceHistory(){
     // r356 — Règle du patron : les paliers sont RÉSERVÉS aux agents « énergie uniquement ».
     // Ni les mixtes, ni les indépendants, ni les « sans objectif » n'en ont : eux touchent
     // simplement leur tarif par énergie.
-    var palAg = isEnergieSeule(agent) ? ilekPaliersAgent(R, agent) : [];
+    var palAg = isEnergiePrincipal(agent) ? ilekPaliersAgent(R, agent) : [];
     // Les seuils de paliers suivent le meme prorata que l'objectif : sans cela, un agent arrive en
     // cours de mois n'atteindrait jamais le 1er palier et resterait au tarif de base tout le mois.
     if(_factE < 1 && palAg.length){
@@ -40567,25 +41027,50 @@ async function renderAssistanceHistory(){
   }
   function adIlekRafraichir(){ window.ilekInvalider(); adIlek.data = null; adIlek.charge = false; try{ adRendre(); }catch(e){} }
   window.adIlekMois = function(v){ if(!/^\d{4}-\d{2}$/.test(v || '')) return; adIlek.mois = v; adIlek.msg = ''; adIlekRafraichir(); };
-  // Salaire fixe et prime d'assiduité : les MÊMES champs que Rémunération → Prime (un seul réglage par personne, payé une seule fois).
-  function adIlekPayCells(n){
-    var pay = {}, pc = {}; try{ pay = getAgentPay(n) || {}; pc = ((getProdConfig().agentPay || {})[n]) || {}; }catch(e){}
-    var cell = function(champ, ph, step){ return '<td><input type="number" min="0" step="' + step + '" style="width:90px;" value="' + ((pc[champ] !== undefined && pc[champ] !== '') ? pc[champ] : '') + '" placeholder="' + Math.round(ph || 0) + '" onchange="adIlekPay(\'' + champ + '\', this.value, this.getAttribute(\'data-n\'))" data-n="' + esc(n) + '" title="Vide = valeur appliquée aujourd\'hui (' + Math.round(ph || 0) + ' DH). Réglage commun Prime + Énergie."></td>'; };
-    return cell('baseSalary', pay.baseSalary, 100) + cell('primeAssiduite', pay.primeAssiduite, 50);
-  }
+  // r373 — Salaire fixe, prime d'assiduité et prime fixe mensuelle PROPRES À L'ÉNERGIE (plus aucun lien avec Prime).
+  // Case vide = 0. Ces montants ne comptent que pour un agent dont le produit principal est l'énergie.
   window.adIlekPay = async function(champ, valeur, agent){
     try{
-      var pc = getProdConfig(); pc.agentPay = pc.agentPay || {};
-      pc.agentPay[agent] = pc.agentPay[agent] || {};
+      if(['baseSalary', 'primeAssiduite', 'primeFixeMensuelle'].indexOf(champ) < 0) return;
+      migrerSalairesEnergie();
+      config.ilekSalaire = config.ilekSalaire || {};
+      config.ilekSalaire[agent] = config.ilekSalaire[agent] || {};
       var v = String(valeur).trim();
-      if(v === '') delete pc.agentPay[agent][champ]; else pc.agentPay[agent][champ] = parseFloat(v) || 0;
-      if(!Object.keys(pc.agentPay[agent]).length) delete pc.agentPay[agent];
+      if(v === '') delete config.ilekSalaire[agent][champ]; else config.ilekSalaire[agent][champ] = Math.max(0, parseFloat(v.replace(',', '.')) || 0);
       await saveConfigSilent();
-      toast('✅ Réglage enregistré (commun Prime + Énergie)', 'ok');
-      try{ logAudit('Admin', 'Rémunération ' + agent + ' (depuis Énergie) : ' + champ + ' = ' + valeur, ''); }catch(e){}
-      try{ renderProdAdmin(); renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
+      toast('✅ Réglage Énergie enregistré', 'ok');
+      try{ logAudit('Admin', 'Salaire Énergie ' + agent + ' : ' + champ + ' = ' + valeur, ''); }catch(e){}
+      try{ ilekInvalider(); renderProdAdmin(); renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
       adIlekRafraichir();
     }catch(e){ toast('⚠️ Réglage non enregistré : ' + (e && e.message ? e.message : e), 'warn'); }
+  };
+  // r373 — « Tout mettre à zéro » côté Énergie : pour un agent dont le produit principal est l'assistance, vide ce qui est
+  // réglé en Énergie et ne compte pas (objectif, prime d'objectif, tarif avant objectif, paliers, salaire, assiduité, prime fixe).
+  // Le tarif PAR ÉNERGIE, lui, est gardé : c'est le seul montant Énergie qui compte pour lui.
+  window.adIlekZero = async function(agent){
+    var cur = {};
+    try{ var sn = await db.collection('vortexnova').doc(REGL_KEY).get(); if(sn.exists) cur = JSON.parse(sn.data().value) || {}; }catch(e){}
+    var p = (cur.produits && typeof cur.produits === 'object') ? JSON.parse(JSON.stringify(cur.produits)) : {};
+    p.ilek = p.ilek || {};
+    var a = p.ilek, sal = (config.ilekSalaire && config.ilekSalaire[agent]) || {};
+    var nb = (a.objectifs && a.objectifs[agent] ? 1 : 0) + (a.fixes && a.fixes[agent] ? 1 : 0) + (a.avants && a.avants[agent] ? 1 : 0) + (a.paliers && a.paliers[agent] ? 1 : 0) + Object.keys(sal).length;
+    if(!nb){ toast('Rien à mettre à zéro', 'ok'); return; }
+    var ok = await window.uiConfirm({ titre: 'Mettre à zéro les montants Énergie de ' + agent + ' ?', icone: '🧹', ton: 'warn',
+      details: [['Agent', agent], ['Produit principal', '📋 Assistance']],
+      liste: ['Sont vidés : objectif, prime d\'objectif, tarif « avant objectif », paliers, salaire fixe, assiduité, prime fixe mensuelle (côté Énergie).',
+              'Son tarif par énergie est conservé : c\'est le seul montant Énergie qui compte pour lui.',
+              'Aucune paie ne change : ces montants n\'étaient déjà pas pris en compte.'],
+      oui: 'Oui, tout mettre à zéro', non: 'Annuler' });
+    if(!ok) return;
+    ['objectifs', 'fixes', 'avants', 'paliers'].forEach(function(k){ if(a[k]) delete a[k][agent]; });
+    var ok2 = await reglEcrire({ produits: p });
+    if(!ok2) return;
+    if(config.ilekSalaire) delete config.ilekSalaire[agent];
+    await saveConfigSilent();
+    toast('✅ Montants Énergie remis à zéro pour ' + agent, 'ok');
+    try{ logAudit('Admin', 'Énergie : tout mis à zéro (hors tarif par énergie) — ' + agent, ''); }catch(e){}
+    try{ ilekInvalider(); renderProdAdmin(); renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
+    adIlekRafraichir();
   };
   window.adIlekReglage = async function(champ, valeur, agent){
     var cur = {};
@@ -40594,6 +41079,14 @@ async function renderAssistanceHistory(){
     p.ilek = p.ilek || {};
     if(champ === 'commission'){ var n = parseFloat(String(valeur).replace(',', '.')); if(!(n >= 0)){ toast('⚠️ Montant invalide', 'warn'); return; } p.ilek.commission = n; }
     else if(champ === 'chute'){ var ch = parseFloat(String(valeur).replace(',', '.')); if(!(ch > 0)) ch = 0; p.ilek.chute = Math.min(100, ch); }
+    else if(champ === 'primeFixeDefaut'){
+      var pf = parseFloat(String(valeur).replace(',', '.')); if(!(pf >= 0)) pf = 0;
+      migrerSalairesEnergie();
+      config.ilekSalaireDefaut = config.ilekSalaireDefaut || {}; config.ilekSalaireDefaut.primeFixeMensuelle = pf; await saveConfigSilent();
+      ilekInvalider(); toast('✅ Réglage Énergie enregistré', 'ok');
+      try{ renderProdAdmin(); renderPayrollSummary(true); renderNetBalance(true); }catch(e){}
+      adIlekRafraichir(); return;
+    }
     else if(champ === 'caPatron'){
       var cp = parseFloat(String(valeur).replace(',', '.')); if(!(cp >= 0)) cp = 0;
       config.ilekCaPatron = cp; await saveConfigSilent();           // réglage PRIVÉ : jamais dans le document lu par les agents
@@ -40670,6 +41163,21 @@ async function renderAssistanceHistory(){
     return h;
   }
 
+  // r373 — avertissement « il y a un salaire dans ILEK » pour un agent dont le produit principal est l'assistance.
+  function pay0(n){ try{ return getAgentPay(n) || {}; }catch(e){ return {}; } }
+  function adIlekAvert(n, ob, fx, avant, nbPal, sal){
+    var l = [];
+    if(ob > 0) l.push('un objectif (' + ob + ' énergies)');
+    if(fx > 0) l.push('une prime d\'objectif (' + fx + ' DH)');
+    if(avant > 0) l.push('un tarif « avant objectif » (' + avant + ' DH)');
+    if(nbPal > 0) l.push('des paliers');
+    if(Number(sal.baseSalary) > 0) l.push('un salaire fixe (' + sal.baseSalary + ' DH)');
+    if(Number(sal.primeAssiduite) > 0) l.push('une prime d\'assiduité (' + sal.primeAssiduite + ' DH)');
+    if(Number(sal.primeFixeMensuelle) > 0) l.push('une prime fixe mensuelle (' + sal.primeFixeMensuelle + ' DH)');
+    if(!l.length) return '<div class="rm-hint">Son produit principal est l\'assistance : ici, seul le tarif par énergie compte (pas de salaire, pas d\'objectif, pas de palier).</div>';
+    return '<div style="margin-top:8px;font-size:12.5px;background:rgba(229,168,61,.12);border:1px solid rgba(229,168,61,.5);border-radius:10px;padding:8px 10px;">⚠️ <b>Attention :</b> il y a un salaire dans ILEK (' + l.join(', ') + '), <b>non pris en compte</b> dans sa paie, car son produit principal est l\'assistance. ' +
+      '<button type="button" class="ct-btn nc" data-n="' + esc(n) + '" onclick="toutMettreAZero(this.getAttribute(\'data-n\'))">🧹 Tout mettre à zéro</button></div>';
+  }
   function adIlekCarte(){
     var R = ilekMem.reg || { agents: (((regl.produits || {}).ilek || {}).agents) || [], commission: 200, diviseur: 1, objectifs: {} };
     var p = ilekMem.reg ? { commission: ilekMem.reg.commission, diviseur: ilekMem.reg.diviseur, objectifs: ilekMem.reg.objectifs, fixes: ilekMem.reg.fixes, avants: ilekMem.reg.avants, commissions: ilekMem.reg.commissions, agents: ilekMem.reg.agents, caPatron: ilekMem.reg.caPatron, chute: ilekMem.reg.chute } : (((regl.produits || {}).ilek) || {});
@@ -40686,6 +41194,7 @@ async function renderAssistanceHistory(){
       '<div title="Tant que les retours du mois ne sont pas importés, on retire ce pourcentage des énergies pour estimer ce qui restera. Dès que tu importes les retours du mois, les vrais retours remplacent l\'estimation."><label style="margin:0 0 4px;display:block;">⏳ Chute estimée des retours (%)</label><input type="number" min="0" max="100" step="1" value="' + (Number(p.chute) > 0 ? Number(p.chute) : '') + '" placeholder="ex : 10" style="width:150px;" onchange="adIlekReglage(\'chute\', this.value)"><div style="font-size:11px;color:var(--muted);margin-top:3px;max-width:230px;">Sert uniquement à estimer ce que TU touches. Les agents ne sont jamais touchés avant l\'import des vrais retours (1 pour 1).</div></div>' +
       '<div><label style="margin:0 0 4px;display:block;">Diviseur des retours</label><select onchange="adIlekReglage(\'diviseur\', this.value)" style="width:230px;">' +
         [[1,'÷1 — pas de division (retour en entier)'],[2,'÷2 — la moitié'],[3,'÷3 — le tiers']].map(function(o){ return '<option value="' + o[0] + '"' + (div === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>' +
+      '<div title="Montant fixe ajouté chaque mois au salaire des agents dont le produit principal est l\'énergie (primes exceptionnelles, challenges). Chaque agent peut avoir son propre montant dans sa carte. Sans lien avec Prime."><label style="margin:0 0 4px;display:block;">🎁 Prime fixe mensuelle extra par défaut (DH)</label><input type="number" min="0" step="50" value="' + ((config.ilekSalaireDefaut && Number(config.ilekSalaireDefaut.primeFixeMensuelle)) || 0) + '" style="width:120px;" onchange="adIlekReglage(\'primeFixeDefaut\', this.value)"></div>' +
       '<div><label style="margin:0 0 4px;display:block;">Mois affiché</label><input type="month" value="' + esc(adIlek.mois) + '" onchange="adIlekMois(this.value)"></div></div>';
     if(!autor.length) h += '<div style="font-size:12.5px;margin-top:10px;">⚪ Aucun agent n\'est autorisé pour Ilek (Admin → 📨 Contrats → carte « Produits »).</div>';
     else {
@@ -40695,16 +41204,23 @@ async function renderAssistanceHistory(){
       h += '<div class="rm-grid">';
       autor.forEach(function(n){
         var d = lignes.filter(function(x){ return x.agent === n; })[0];
-        var ob = Number(obj[n]) || 0, fx = Number(fix[n]) || 0;
-        var avant = (R.avants && Number(R.avants[n])) || 0;
+        var princ = isEnergiePrincipal(n), seule = isEnergieSeule(n), sal = ilekSalaireDe(n);
+        var obS = Number(obj[n]) || 0, fxS = Number(fix[n]) || 0, avantS = (R.avants && Number(R.avants[n])) || 0;
+        var nbPal = (R.paliers && Array.isArray(R.paliers[n])) ? R.paliers[n].length : 0;
+        // Produit principal assistance : objectif, prime d'objectif, avant-objectif et paliers ne comptent pas (seul le tarif par énergie compte).
+        var ob = princ ? obS : 0, fx = princ ? fxS : 0;
+        var avant = princ ? avantS : 0;
+        var prFx = Math.round((pay0(n)).primeFixeMensuelle || 0);
         var apres = (R.commissions && R.commissions[n] !== undefined && R.commissions[n] !== '') ? Number(R.commissions[n]) : comm;
         var pay = {}, pc = {}; try{ pay = getAgentPay(n) || {}; pc = ((getProdConfig().agentPay || {})[n]) || {}; }catch(e){}
         var fixeEff = Math.round(pay.baseSalary || 0), assidEff = Math.round(pay.primeAssiduite || 0);
         var vise = ((adIlek.vises || {})[n]) || 0;
         var etat = d && ob > 0 ? (d.atteint ? ' — <span style="color:var(--green);">✔ objectif atteint</span>' : ' — <span style="color:var(--muted);">objectif non atteint (' + ilekNb(d.nets) + '/' + ob + ')</span>') : '';
-        var situation = (ob > 0 ? '🎯 Objectif : <b>' + ob + ' énergies</b>' + etat + '<br>🏆 Prime d\'objectif : <b>' + fx + ' DH</b>' + (fx > 0 ? ' (versée une fois, si atteint)' : '') + '<br>💵 Par énergie : <b>' + avant + ' DH</b> avant l\'objectif · <b>' + apres + ' DH</b> au-delà' : '💵 Sans objectif : <b>' + apres + ' DH par énergie</b>, dès la 1re') +
-          '<br>🏦 ' + (fixeEff > 0 ? 'Salaire fixe : <b>' + fixeEff.toLocaleString('fr-FR') + ' DH / mois</b>' : 'Pas de salaire fixe') + (assidEff > 0 ? ' · assiduité : <b>' + assidEff + ' DH</b>' : '') + ' <span style="color:var(--muted);">(commun assistance + énergie, payé une seule fois)</span>' +
-          ((Number(pay.perContract) > 0) ? '<br>🔵 Bonus assistance (Prime) : <b>' + Math.round(pay.perContract) + ' DH par contrat</b>' + (pay.noObjectif ? ', dès le 1er' : ' au-delà de l\'objectif Prime') : '');
+        var situationP = (ob > 0 ? '🎯 Objectif : <b>' + ob + ' énergies</b>' + etat + '<br>🏆 Prime d\'objectif : <b>' + fx + ' DH</b>' + (fx > 0 ? ' (versée une fois, si atteint)' : '') + '<br>💵 Par énergie : <b>' + avant + ' DH</b> avant l\'objectif · <b>' + apres + ' DH</b> au-delà' : '💵 Sans objectif : <b>' + apres + ' DH par énergie</b>, dès la 1re') +
+          '<br>🏦 ' + (fixeEff > 0 ? 'Salaire fixe : <b>' + fixeEff.toLocaleString('fr-FR') + ' DH / mois</b>' : 'Pas de salaire fixe') + (assidEff > 0 ? ' · assiduité : <b>' + assidEff + ' DH</b>' : '') + ' <span style="color:var(--muted);">(propre à Énergie)</span>' + (prFx > 0 ? ' · prime fixe mensuelle : <b>' + prFx + ' DH</b>' : '') +
+          ((!seule && Number(pay.perContract) > 0) ? '<br>🔵 Assistances en bonus : <b>' + Math.round(pay.perContract) + ' DH par assistance</b>, dès la 1re (retours et rétractations déduits)' : '');
+        var situation = princ ? situationP : ('💵 <b>' + apres + ' DH par énergie</b>, dès la 1re <span style="color:var(--muted);">(produit principal : assistance — ici seul le tarif par énergie compte)</span>');
+        var warn = princ ? '' : adIlekAvert(n, obS, fxS, avantS, nbPal, sal);
         var atteint = d && ob > 0 ? (d.atteint ? '<span style="color:var(--green);">✔ objectif atteint</span>' : '<span style="color:var(--muted);">' + ilekNb(d.nets) + ' / ' + ob + '</span>') : '';
         h += '<div class="rm-card" style="border-top-color:#16a34a;">' +
           '<div class="rm-nom"><span>' + esc(n) + '</span><span class="rm-chip">' + (ob > 0 ? '🎯 Avec objectif' : '💵 ' + apres + ' DH / énergie') + '</span></div>' +
@@ -40719,7 +41235,7 @@ async function renderAssistanceHistory(){
             '<div class="rm-hint">Vide = tarif général (' + comm + ' DH).</div></div>' +
           // ⚡ r354 — PALIERS : 4 lignes « au-delà de X énergies → Y DH ». Chaque tranche garde SON tarif,
           // jamais de tarif rétroactif. Tableau vide = tarif unique ci-dessus, comme avant.
-          '<div class="rm-bloc"><h4>⚡ Paliers de commission</h4>' +
+          (princ ? ('<div class="rm-bloc"><h4>⚡ Paliers de commission</h4>' +
             (function(){
               var pl = (R.paliers && Array.isArray(R.paliers[n])) ? R.paliers[n] : [];
               var h2 = '', dep = ob > 0 ? ob : 0;
@@ -40751,14 +41267,26 @@ async function renderAssistanceHistory(){
             lig('Objectif visé (choisi par l\'agent)', nombre('adIlekVise(this.getAttribute(\'data-n\'), this.value)', n, vise || '', '—', 80, 1, 'énergies')) +
             lig('Prime si l\'objectif est atteint', nombre('adIlekReglage(\'fixe\', this.value, this.getAttribute(\'data-n\'))', n, fx || '', 'aucune', 90, 50, 'DH')) +
             '<div class="rm-hint">' + (ob > 0 ? 'Prime versée une fois, puis la commission pour chaque énergie au-delà.' : 'Pas d\'objectif : l\'agent touche la commission dès sa 1re énergie. Mets un nombre ici pour activer un objectif.') + '</div></div>' +
-          '<div class="rm-bloc"><h4>🏦 Fixe et assiduité <span style="font-weight:600;color:var(--muted);font-size:11.5px;">(communs avec Prime, payés une seule fois)</span></h4>' +
-            lig('Salaire fixe par mois', nombre('adIlekPay(\'baseSalary\', this.value, this.getAttribute(\'data-n\'))', n, (pc.baseSalary !== undefined && pc.baseSalary !== '') ? pc.baseSalary : '', fixeEff, 90, 50, 'DH')) +
-            lig('Prime d\'assiduité', nombre('adIlekPay(\'primeAssiduite\', this.value, this.getAttribute(\'data-n\'))', n, (pc.primeAssiduite !== undefined && pc.primeAssiduite !== '') ? pc.primeAssiduite : '', assidEff, 80, 10, 'DH')) +
-            '<div class="rm-hint">' + ((pc.baseSalary !== undefined && pc.baseSalary !== '') ? 'Fixe réglé pour cet agent.' : (fixeEff > 0 ? '⚠️ Case vide : l\'agent reçoit la valeur par défaut de Prime (' + fixeEff.toLocaleString('fr-FR') + ' DH). <b>Écris 0</b> s\'il ne doit pas avoir de fixe.' : 'Pas de fixe.')) + '</div></div>' +
+          '<div class="rm-bloc"><h4>🏦 Salaire et assiduité <span style="font-weight:600;color:var(--muted);font-size:11.5px;">(propres à Énergie, payés une seule fois)</span></h4>' +
+            lig('Salaire fixe par mois', nombre('adIlekPay(\'baseSalary\', this.value, this.getAttribute(\'data-n\'))', n, (sal.baseSalary !== undefined && sal.baseSalary !== '') ? sal.baseSalary : '', 0, 90, 50, 'DH')) +
+            lig('Prime d\'assiduité', nombre('adIlekPay(\'primeAssiduite\', this.value, this.getAttribute(\'data-n\'))', n, (sal.primeAssiduite !== undefined && sal.primeAssiduite !== '') ? sal.primeAssiduite : '', 0, 80, 10, 'DH')) +
+            lig('Prime fixe mensuelle extra (exceptionnelle)', nombre('adIlekPay(\'primeFixeMensuelle\', this.value, this.getAttribute(\'data-n\'))', n, (sal.primeFixeMensuelle !== undefined && sal.primeFixeMensuelle !== '') ? sal.primeFixeMensuelle : '', Math.round((config.ilekSalaireDefaut && config.ilekSalaireDefaut.primeFixeMensuelle) || 0), 90, 50, 'DH')) +
+            '<div class="rm-hint">Case vide = 0 DH (jamais la valeur de Prime). Ces montants n\'ont plus aucun lien avec Prime. La prime fixe extra vide reprend le montant par défaut réglé plus haut.</div></div>' +
+            (seule ? '' : '<div class="rm-bloc"><h4>🔵 Assistances en bonus</h4><div class="rm-hint">Chaque assistance faite lui rapporte <b>' + Math.round(pay.perContract || 0) + ' DH</b>, dès la 1re, sans objectif ni palier. Ce montant se règle dans Rémunération → Prime → sa carte → « Par contrat ». Retours et rétractations sont déduits comme pour un agent assistance.</div></div>')
+          ) : warn) +
           '</details></div>';
       });
       h += '</div>';
     }
+    // r373 — Supervision : ajuster une journée, pour l'ÉNERGIE seulement (celle de Prime est dans la page Prime).
+    h += '<div class="ct-item" style="margin-top:10px;border-color:#16a34a;"><div class="ct-item-head"><b>📊 Supervision Énergie — ajuster une journée</b></div>' +
+      '<div style="font-size:12.5px;color:var(--muted);margin:6px 0;">Même principe que pour Prime, mais ça ne touche QUE la prime de supervision énergie : retirer ou donner la prime d\'un superviseur pour une journée, et choisir qui récupère sa part.</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><input type="date" id="supOverrideDateEnergie" value="' + esc(window._supDateEnergie || '') + '" onchange="renderSupervisorDayOverridePanel(\'energie\')">' +
+      '<button type="button" class="ct-btn nc" onclick="supOverrideToday(\'energie\')">📅 Aujourd\'hui</button></div>' +
+      '<div id="supervisorDayOverridePanelEnergie" style="margin-top:12px;"></div></div>';
+    setTimeout(function(){ try{ renderSupervisorDayOverridePanel('energie'); }catch(e){} }, 0);
+    h += '<div class="ct-item" style="margin-top:10px;border-color:#16a34a;"><div id="cooptSuiviIlek"></div></div>';
+    setTimeout(function(){ try{ renderCooptations(); }catch(e){} }, 0);
     h += adCarHtml();
     h += adDoublonsHtml();
     h += adAnnulesHtml();
