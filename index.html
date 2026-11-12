@@ -3591,7 +3591,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-12-r364';
+const APP_VERSION = '2026-11-12-r367';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -8444,6 +8444,24 @@ async function getMonthlyDesiredObjective(agent, year, month){
     const res = await storageGet(key);
     if(res && res.value != null) result = parseInt(res.value) || 0;
   }catch(e){}
+  // r366 - Regle du patron : un objectif VISE ne peut jamais etre sous le minimum demande.
+  // Le garde-fou de la saisie (r362) ne protege que les nouvelles entrees ; les valeurs
+  // enregistrees AVANT (ex. 40 vise pour un minimum de 50) sont remontees ici, a la lecture.
+  // Rien n'est reecrit dans la base : c'est un plancher applique partout a la fois.
+  if(result > 0){
+    try{
+      let mini = 0;
+      if((typeof isEnergieSeule === 'function') && isEnergieSeule(agent)){
+        if(typeof window.ilekDuMois === 'function'){
+          const dIl = await window.ilekDuMois(agent, year + '-' + String(month).padStart(2, '0'));
+          mini = (dIl && Number(dIl.objectif)) || 0;
+        }
+      } else {
+        mini = Number(getAgentPay(agent, year, month).objectifMensuel) || 0;
+      }
+      if(mini > 0 && result < mini) result = mini;
+    }catch(e){}
+  }
   desiredObjCache[cacheKey] = result;
   return result;
 }
@@ -9887,6 +9905,8 @@ function supervisorActionComment(count, agentName, justifiedAbsence, jour){
 // (emoji + nombre + couleur) reste strictement identique pour rester lisible d'un coup d'œil.
 const DAILY_BADGE_WORDS = {
   zero:  ['0 contrat', '0 contrat', 'rien signé', 'compteur vide'],
+  // r367 - Meme badge pour un agent << energie uniquement >>, mais dans SON mot a lui.
+  zeroEner: ['0 énergie', '0 énergie', 'rien signé', 'compteur vide'],
   low:   ['à pousser', 'ça démarre', 'encore un effort', 'trop lent'],
   mid:   ['motivé', 'bon rythme', 'ça tourne', 'dans le bon sens'],
   good:  ['lancé', 'en feu', 'grosse journée', 'au-dessus du lot']
@@ -9921,7 +9941,7 @@ function dailyProgressBadge(count, agentName, justifiedAbsence, jour){
   if(count > 0 && count <= 2 && agentName && (estRecrue(agentName) || estEnDecouverteLe(agentName, todayStr()))){
     return { txt: `🌱 ${count} — bon début`, cls: 'ok', pulse: false, title: `${count} ${uni(count)} aujourd'hui — un vrai bon début pour un nouvel arrivant` };
   }
-  if(count <= 0) return { txt: `🚨 ${mot('zero')}`, cls: 'late', pulse: true, title: `Aucun${estEnerB ? 'e' : ''} ${uni(1)} réalisé${estEnerB ? 'e' : ''} aujourd'hui` };
+  if(count <= 0) return { txt: `🚨 ${mot(estEnerB ? 'zeroEner' : 'zero')}`, cls: 'late', pulse: true, title: `Aucun${estEnerB ? 'e' : ''} ${uni(1)} réalisé${estEnerB ? 'e' : ''} aujourd'hui` };
   if(count <= 2) return { txt: `⚡ ${count} — ${mot('low')}`, cls: 'warn', pulse: false, title: `${count} ${uni(count)} aujourd'hui — encore un effort` };
   if(count <= 4) return { txt: `🔥 ${count} — ${mot('mid')}`, cls: 'ok', pulse: false, title: `${count} ${uni(count)} aujourd'hui — bon rythme` };
   return { txt: `🏆 ${count} — ${mot('good')}`, cls: 'ok', pulse: false, title: `${count} ${uni(count)} aujourd'hui — excellente journée` };
@@ -16206,7 +16226,15 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
     // passé sur la journée, PUIS une seconde ligne sur le classement du MOIS, lui toujours ouvert :
     // c'est là que le « va le chercher » a encore un sens, et c'est ce qui compte pour la paie.
     const dayClosed = !!rankOverride;
-    const rankValue = dayClosed ? rankOverride.value : monthlyRealized;
+    // r365 - Un agent << energie uniquement >> n'a plus de contrats d'assistance : son compteur du
+    // mois, son classement et leurs messages parlent de SES energies. Sans ca il lisait
+    // << 0 contrat ce mois-ci >> alors qu'il en avait 7.
+    const _seuleR = (typeof isEnergieSeule === 'function') && isEnergieSeule(agentName);
+    const _enerMoisR = _seuleR ? enerMois(agentName, refDayForSeed || todayStr()) : 0;
+    const rankValue = dayClosed ? rankOverride.value : (_seuleR ? _enerMoisR : monthlyRealized);
+    const _ctrP = (n)=> _seuleR
+      ? (n + ' ' + ((typeof motProduit === 'function') ? motProduit(agentName, n) : ('énergie' + (n > 1 ? 's' : ''))))
+      : ctr(n);
     const periodLabel = dayClosed ? (rankOverride.periodLabel || "aujourd'hui") : 'ce mois-ci';
     const rankTxt = rankInfo.rank === 1 ? '1er' : `${rankInfo.rank}e`;
     const rival = rankInfo.prevGap > 0 ? firstName(rankInfo.prevAgent) : null;
@@ -16269,26 +16297,26 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
         }
       } else if(mr && mr.total > 1){
         const mRankTxt = mr.rank === 1 ? '1er' : `${mr.rank}e`;
-        const mValue = rankOverride.monthValue != null ? rankOverride.monthValue : monthlyRealized;
+        const mValue = rankOverride.monthValue != null ? rankOverride.monthValue : (_seuleR ? _enerMoisR : monthlyRealized);
         if(mr.rank === 1){
           lines.push(mk('👑', seedPick([
-            `Et tu es toujours 1er du mois (${ctr(mValue)}). Garde cette place, elle se défend chaque jour.`,
-            `Au classement du mois, tu restes en tête avec ${ctr(mValue)}. Ne relâche pas demain.`
+            `Et tu es toujours 1er du mois (${_ctrP(mValue)}). Garde cette place, elle se défend chaque jour.`,
+            `Au classement du mois, tu restes en tête avec ${_ctrP(mValue)}. Ne relâche pas demain.`
           ], seed+'|rangMois'), GOLD, GOLD_BG));
         } else if(mr.prevGap > 0){
           const mRival = firstName(mr.prevAgent);
           const mGap = `${mr.prevGap} contrat${mr.prevGap>1?'s':''}`;
           lines.push(mk('👑', seedPick([
             `Sur le mois tu es ${mRankTxt}, à ${mGap} de ${mRival}. C'est là que tout se joue — demain, va le chercher.`,
-            `Classement du mois : ${mRankTxt}, ${ctr(mValue)}, ${mGap} derrière ${mRival}. Il reste des jours pour renverser ça.`,
+            `Classement du mois : ${mRankTxt}, ${_ctrP(mValue)}, ${mGap} derrière ${mRival}. Il reste des jours pour renverser ça.`,
             `${mGap} te sépare${mr.prevGap>1?'nt':''} de ${mRival} sur le mois. Rien n'est joué, et c'est le mois qui compte pour ta paie.`
           ], seed+'|rangMois'), SLATE, SLATE_BG));
         } else {
           lines.push(mk('👑', seedPick([
-            `Sur le mois tu es ${mRankTxt} avec ${ctr(mValue)}. La place se joue sur les jours qui restent.`,
-            `Classement du mois : ${mRankTxt}, ${ctr(mValue)}. Rien n'est figé tant que le mois n'est pas fini.`,
-            `${mRankTxt} du mois avec ${ctr(mValue)} — c'est ce chiffre-là qui décidera de ta paie.`,
-            `Au mois, tu es ${mRankTxt} (${ctr(mValue)}). Une bonne journée demain et tu changes de ligne.`
+            `Sur le mois tu es ${mRankTxt} avec ${_ctrP(mValue)}. La place se joue sur les jours qui restent.`,
+            `Classement du mois : ${mRankTxt}, ${_ctrP(mValue)}. Rien n'est figé tant que le mois n'est pas fini.`,
+            `${mRankTxt} du mois avec ${_ctrP(mValue)} — c'est ce chiffre-là qui décidera de ta paie.`,
+            `Au mois, tu es ${mRankTxt} (${_ctrP(mValue)}). Une bonne journée demain et tu changes de ligne.`
           ], seed+'|rangMoisEx'), SLATE, SLATE_BG));
         }
       }
@@ -16309,18 +16337,18 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
     } else if(rankInfo.rank === 1){
       // --- Journée en cours, 1er du mois : la course est ouverte, on félicite et on entretient ---
       lines.push(mk('🏆', seedPick([
-        `Tu domines le classement ${periodLabel} avec ${ctr(rankValue)}. Continue comme ça, la place se mérite chaque jour !`,
-        `1er de l'équipe, ${ctr(rankValue)} ${periodLabel} : tu montres l'exemple à tout le monde. Beau travail !`,
+        `Tu domines le classement ${periodLabel} avec ${_ctrP(rankValue)}. Continue comme ça, la place se mérite chaque jour !`,
+        `1er de l'équipe, ${_ctrP(rankValue)} ${periodLabel} : tu montres l'exemple à tout le monde. Beau travail !`,
         genderPick(agentName,
-          `Personne devant toi ${periodLabel} (${ctr(rankValue)}) — champion pour l'instant. Reste affamé, ne relâche rien !`,
-          `Personne devant toi ${periodLabel} (${ctr(rankValue)}) — championne pour l'instant. Reste affamée, ne relâche rien !`
+          `Personne devant toi ${periodLabel} (${_ctrP(rankValue)}) — champion pour l'instant. Reste affamé, ne relâche rien !`,
+          `Personne devant toi ${periodLabel} (${_ctrP(rankValue)}) — championne pour l'instant. Reste affamée, ne relâche rien !`
         ),
         genderPick(agentName,
-          `Tu écrases le classement avec ${ctr(rankValue)} ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieux !`,
-          `Tu écrases le classement avec ${ctr(rankValue)} ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieuse !`
+          `Tu écrases le classement avec ${_ctrP(rankValue)} ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieux !`,
+          `Tu écrases le classement avec ${_ctrP(rankValue)} ${periodLabel}. La concurrence est loin derrière — savoure, mais reste sérieuse !`
         ),
-        `1er, ${ctr(rankValue)} ${periodLabel}. Tout le monde te court après — à toi de rester injoignable.`,
-        `${ctr(rankValue)} ${periodLabel} et personne devant. C'est ça, la vie de rêve dont on parle — continue à la construire.`
+        `1er, ${_ctrP(rankValue)} ${periodLabel}. Tout le monde te court après — à toi de rester injoignable.`,
+        `${_ctrP(rankValue)} ${periodLabel} et personne devant. C'est ça, la vie de rêve dont on parle — continue à la construire.`
       ], seed+'|rang'), GOLD, GOLD_BG));
     } else if(rankInfo.prevGap > 0){
       // --- Journée en cours, quelqu'un devant ---
@@ -16330,30 +16358,30 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
       let pool;
       if(gap <= 2){
         pool = [
-          `Tu es ${rankTxt} avec ${ctr(rankValue)} ${periodLabel} — encore ${gapTxt} et tu doubles ${rival} !`,
+          `Tu es ${rankTxt} avec ${_ctrP(rankValue)} ${periodLabel} — encore ${gapTxt} et tu doubles ${rival} !`,
           `${rival} est juste devant toi (${gapTxt} d'écart). Va ${rivalObj} chercher, c'est largement jouable !`,
           `Tu talonnes ${rival} (${gapTxt} d'écart). Un bon coup et le classement change !`,
           `${gapTxt} seulement entre toi et ${rival}. Un client de plus et la place est à toi.`
         ];
       } else if(gap <= 6 || remainingDays >= gap){
         pool = [
-          `${rankTxt} avec ${ctr(rankValue)} ${periodLabel}, ${gapTxt} derrière ${rival}. À portée : un contrat de plus que ${rival} chaque jour et tu passes devant.`,
+          `${rankTxt} avec ${_ctrP(rankValue)} ${periodLabel}, ${gapTxt} derrière ${rival}. À portée : un contrat de plus que ${rival} chaque jour et tu passes devant.`,
           `${gapTxt} d'écart avec ${rival}. Ça ne se rattrape pas en un appel, mais en quelques bonnes journées, oui.`,
-          `Tu es ${rankTxt} (${ctr(rankValue)}). Pour passer ${rival}, il te faut ${gapTxt} de plus — vise une journée au-dessus de ta moyenne.`
+          `Tu es ${rankTxt} (${_ctrP(rankValue)}). Pour passer ${rival}, il te faut ${gapTxt} de plus — vise une journée au-dessus de ta moyenne.`
         ];
       } else {
         pool = [
-          `${rankTxt} avec ${ctr(rankValue)} ${periodLabel}. ${rival} a pris ${gapTxt} d'avance : la place se jouera sur la durée, ton objectif à toi passe en premier.`,
+          `${rankTxt} avec ${_ctrP(rankValue)} ${periodLabel}. ${rival} a pris ${gapTxt} d'avance : la place se jouera sur la durée, ton objectif à toi passe en premier.`,
           `${gapTxt} te séparent de ${rival}. Ne cours pas après le classement aujourd'hui : fais ta meilleure journée, l'écart se réduira tout seul.`
         ];
       }
       lines.push(mk('🥈', seedPick(pool, seed+'|rang'), SLATE, SLATE_BG));
     } else {
       lines.push(mk('🥈', seedPick([
-        `Tu es ${rankTxt} de l'équipe avec ${ctr(rankValue)} ${periodLabel}. À toi de creuser l'écart.`,
-        `${rankTxt} avec ${ctr(rankValue)} ${periodLabel} — personne juste devant, donc rien à rattraper : tout à construire.`,
-        `${ctr(rankValue)} ${periodLabel}, ${rankTxt} de l'équipe. Le prochain contrat te met devant.`,
-        `Tu es ${rankTxt} (${ctr(rankValue)} ${periodLabel}). Ceux qui montent sont ceux qui ne s'arrêtent pas là.`
+        `Tu es ${rankTxt} de l'équipe avec ${_ctrP(rankValue)} ${periodLabel}. À toi de creuser l'écart.`,
+        `${rankTxt} avec ${_ctrP(rankValue)} ${periodLabel} — personne juste devant, donc rien à rattraper : tout à construire.`,
+        `${_ctrP(rankValue)} ${periodLabel}, ${rankTxt} de l'équipe. Le prochain contrat te met devant.`,
+        `Tu es ${rankTxt} (${_ctrP(rankValue)} ${periodLabel}). Ceux qui montent sont ceux qui ne s'arrêtent pas là.`
       ], seed+'|rangEx'), SLATE, SLATE_BG));
     }
   }
@@ -16400,18 +16428,31 @@ function personalDailyCommentRaw(agentName, monthlyRealized, mini, vise, daysEla
     } else if(remainingDays <= 0){
       lines.push(mk('⏳', 'Dernier jour : ' + _faitE + '/' + _objE + ' énergies. Il en reste ' + _resteE + ' à aller chercher.', TERRACOTTA, TERRACOTTA_BG));
     } else {
-      const _parJour = Math.ceil(_resteE / remainingDays);
-      if(_projE >= _objE){
+      // Ce qu'il faut tenir par jour, SANS arrondir vers le haut : arrondir 1,15 a 2 donnait
+      // l'impression d'un gros retard alors qu'il n'y en a aucun. On compare aussi au rythme
+      // qu'il tient deja : tant qu'il est dans les clous, aucune alerte rouge.
+      const _besoin = _resteE / remainingDays;
+      const _rythmeE = daysElapsed > 0 ? _faitE / daysElapsed : 0;
+      const _txtJour = _besoin <= 1 ? 'environ 1 par jour'
+                     : (_besoin < 2 ? 'un peu plus d\'une par jour'
+                     : (Math.round(_besoin * 10) / 10) + ' par jour');
+      if(_besoin <= 1.3 || _besoin <= _rythmeE * 1.15){
         lines.push(mk('⚡', seedPick([
-          _faitE + '/' + _objE + ' énergies. À ce rythme tu y es : tiens la cadence, environ ' + _parJour + ' par jour sur les ' + remainingDays + ' jours qui restent.',
-          'Tu es sur la bonne trajectoire : ' + _faitE + '/' + _objE + '. Encore ' + _resteE + ' en ' + remainingDays + ' jours, c\'est jouable sans forcer.'
+          _faitE + '/' + _objE + ' énergies, et il reste ' + remainingDays + ' jours. Tu es dans les temps : ' + _txtJour + ' et c\'est fait.',
+          'Bonne trajectoire : ' + _faitE + '/' + _objE + '. Encore ' + _resteE + ' énergies en ' + remainingDays + ' jours, ' + _txtJour + '. Tiens la cadence.',
+          _faitE + '/' + _objE + ' énergies. Au rythme où tu vas, l\'objectif est à portée — ne relâche rien.'
         ], seed + '|enerBon'), SLATE, SLATE_BG));
-      } else if(_resteE > 0 && remainingDays <= 3){
-        lines.push(mk('🔥', 'Ça se joue maintenant : ' + _resteE + ' énergies en ' + remainingDays + ' jour' + (remainingDays > 1 ? 's' : '') + ', soit ' + _parJour + ' par jour. Tout se décide sur cette fin de mois.', TERRACOTTA, TERRACOTTA_BG));
+      } else if(remainingDays <= 3){
+        lines.push(mk('🔥', 'Ça se joue maintenant : ' + _resteE + ' énergies en ' + remainingDays + ' jour' + (remainingDays > 1 ? 's' : '') + ', ' + _txtJour + '. Tout se décide sur cette fin de mois.', TERRACOTTA, TERRACOTTA_BG));
+      } else if(_besoin <= 2.5){
+        lines.push(mk('⚡', seedPick([
+          _faitE + '/' + _objE + ' énergies. Pour finir à l\'objectif il faut ' + _txtJour + ' sur les ' + remainingDays + ' jours qui restent. C\'est à ta portée.',
+          'Il te reste ' + _resteE + ' énergies en ' + remainingDays + ' jours, soit ' + _txtJour + '. Un cran au-dessus et c\'est plié.'
+        ], seed + '|enerPousse'), SLATE, SLATE_BG));
       } else {
         lines.push(mk('⚠️', seedPick([
-          'Au rythme actuel tu finirais à ' + _projE + ' pour un objectif de ' + _objE + '. Il faut passer à ' + _parJour + ' énergies par jour pour y arriver.',
-          'Retard sur l\'objectif énergie : ' + _faitE + '/' + _objE + '. Il reste ' + remainingDays + ' jours, donc ' + _parJour + ' par jour. Ça se rattrape, mais à partir d\'aujourd\'hui.'
+          'Il reste ' + _resteE + ' énergies à faire en ' + remainingDays + ' jours, soit ' + _txtJour + '. Ça demande un vrai coup de collier à partir d\'aujourd\'hui.',
+          _faitE + '/' + _objE + ' énergies : le rythme actuel ne suffira pas. Il faut monter à ' + _txtJour + ' pour aller chercher l\'objectif.'
         ], seed + '|enerRetard'), TERRACOTTA, TERRACOTTA_BG));
       }
     }
