@@ -3591,7 +3591,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-12-r367';
+const APP_VERSION = '2026-11-12-r372';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -8459,7 +8459,12 @@ async function getMonthlyDesiredObjective(agent, year, month){
       } else {
         mini = Number(getAgentPay(agent, year, month).objectifMensuel) || 0;
       }
-      if(mini > 0 && result < mini) result = mini;
+      // r368 - Choix du patron (12/11), option B : un objectif vise SOUS le minimum n'est pas
+      // remonte en silence, il est traite comme NON FIXE. Resultat : le bandeau << fixe ton
+      // objectif du mois >> revient pour cet agent, le verrou << deja regle >> saute, et la
+      // saisie r362 l'oblige a entrer un chiffre >= au minimum. Rien n'est efface dans la base :
+      // si le patron abaisse son minimum plus tard, l'ancien chiffre vise redevient valable.
+      if(mini > 0 && result < mini) result = 0;
     }catch(e){}
   }
   desiredObjCache[cacheKey] = result;
@@ -22752,6 +22757,15 @@ async function contractsUnderAllSupervisors(year, month){
 // (congé, etc.) n'est jamais pénalisante, comme partout ailleurs dans l'appli. « Absent » = aucun
 // pointage ET aucun contrat saisi ce jour-là par ce superviseur (même définition que pour les agents).
 async function isSupervisorEligibleOnDay(agent, dateStr, board){
+  // r370 - Regle du patron (12/11) : un superviseur ne touche RIEN sur ce qui a ete signe avant son
+  // arrivee, ni apres son depart. << S'il n'etait pas la, ce n'est pas grace a lui. >> Ce test passe
+  // avant tous les autres, y compris avant le cas << jour non travaille >>.
+  try{
+    const _st = (typeof getAgentStartDate === 'function') ? getAgentStartDate(agent) : null;
+    if(_st && /^\d{4}-\d{2}-\d{2}$/.test(String(_st)) && String(dateStr) < String(_st)) return false;
+    const _tm = (typeof getAgentTermination === 'function') ? getAgentTermination(agent) : null;
+    if(_tm && _tm.lastDay && String(dateStr) > String(_tm.lastDay)) return false;
+  }catch(e){}
   // Jour non travaillé (week-end, jour férié) : jamais pénalisant, comme pour tous les retards/absences
   // ailleurs dans l'appli — même si un contrat a été saisi par erreur ce jour-là par un autre agent.
   if(!isWorkingDay(dateStr)) return true;
@@ -23399,6 +23413,11 @@ async function supervisorEnergieMonthlyBonus(year, month){
     }
   }
 
+  // r370 - Chaque superviseur avance dans SES paliers avec les energies des seuls jours ou il etait
+  // la. Avant, un superviseur arrive le 15 heritait du cumul de l'equipe depuis le 1er et demarrait
+  // dans une tranche haute, pour des ventes faites sans lui. Meme regle qu'en assistance.
+  const cumulSup = {};
+  supervisors.forEach(s=>{ cumulSup[s] = 0; });
   let cumul = 0;
   for(const j of jours){
     if(j.pool <= 0) continue;
@@ -23408,12 +23427,13 @@ async function supervisorEnergieMonthlyBonus(year, month){
     // ramené à l'énergie. Ainsi la redistribution d'une part absente s'ajoute comme pour l'assistance.
     const tauxJour = {};
     supervisors.forEach(s=>{
-      tauxJour[s] = supervisorMontantTranche(cumul, j.pool, taux[s], supervisorPaliers(s, 'energie')) / j.pool;
+      tauxJour[s] = supervisorMontantTranche(cumulSup[s], j.pool, taux[s], supervisorPaliers(s, 'energie')) / j.pool;
     });
     const { eligible, bonusRateBySup } = await resolveSupervisorDay(j.ds, board, supervisors, tauxJour);
     eligible.forEach(sup=>{
       dh[sup] += j.pool * (tauxJour[sup] + (bonusRateBySup[sup] || 0));
       energies[sup] += j.pool;
+      cumulSup[sup] += j.pool;   // n'avance QUE pour ceux qui etaient la ce jour-la
     });
     cumul += j.pool;
   }
@@ -25580,12 +25600,22 @@ async function renderIndepSupervisorCommissionTable(){
   const rows = await Promise.all(indepAgents.map(async agent=>{
     const c = pc.agentPay[agent] || {};
     const contracts = await monthlyRealizedContracts(agent, y, m);
-    return { agent, sup: c.indepCommissionSupervisor || '', rate: c.indepCommissionRate || 0, contracts };
+    // r371 - Energie reglee SEPAREMENT : son superviseur et son montant a elle.
+    let energies = 0;
+    try{
+      if(typeof window.ilekDuMois === 'function'){
+        const dIl = await window.ilekDuMois(agent, y + '-' + String(m).padStart(2, '0'));
+        energies = dIl ? Math.round(Number(dIl.nets) || 0) : 0;
+      }
+    }catch(e){ energies = 0; }
+    return { agent, sup: c.indepCommissionSupervisor || '', rate: c.indepCommissionRate || 0, contracts,
+             supE: c.indepCommissionSupervisorEnergie || '', rateE: c.indepCommissionRateEnergie || 0, energies };
   }));
-  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent indépendant</th><th>Superviseur qui touche la commission</th><th>DH / contrat</th><th>Ce mois-ci</th></tr></thead><tbody>';
+  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Agent indépendant</th><th>📋 Superviseur — assistance</th><th>DH / contrat</th><th>Assistance ce mois-ci</th><th>⚡ Superviseur — énergie</th><th>DH / énergie</th><th>Énergie ce mois-ci</th></tr></thead><tbody>';
   rows.forEach(r=>{
     const agentSafe = r.agent.replace(/'/g,"\\'").replace(/"/g,'&quot;');
     const amount = Math.round((r.rate||0) * r.contracts);
+    const amountE = Math.round((r.rateE||0) * r.energies);
     html += `<tr>
       <td><b>${escapeHtml(r.agent)}</b></td>
       <td>
@@ -25596,6 +25626,14 @@ async function renderIndepSupervisorCommissionTable(){
       </td>
       <td><input type="number" min="0" step="5" value="${r.rate || ''}" placeholder="0" style="width:90px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--panel2); color:var(--text);" onchange="saveIndepSupervisorCommission('${agentSafe}','indepCommissionRate', this.value)"></td>
       <td>${(r.sup && r.rate) ? `<b style="color:#b8935a;">${amount.toLocaleString('fr-FR')} DH</b> <span style="color:var(--muted); font-size:11px;">(${r.contracts} contrat${r.contracts>1?'s':''} × ${r.rate} DH)</span>` : '<span style="color:var(--muted);">0 DH — pas de commission réglée</span>'}</td>
+      <td>
+        <select onchange="saveIndepSupervisorCommission('${agentSafe}','indepCommissionSupervisorEnergie', this.value)" style="min-width:170px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--panel2); color:var(--text);">
+          <option value="">— Aucun (0 DH) —</option>
+          ${supervisors.map(s=>`<option value="${escapeHtml(s)}" ${r.supE===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="number" min="0" step="5" value="${r.rateE || ''}" placeholder="0" style="width:90px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--panel2); color:var(--text);" onchange="saveIndepSupervisorCommission('${agentSafe}','indepCommissionRateEnergie', this.value)"></td>
+      <td>${(r.supE && r.rateE) ? `<b style="color:#34b774;">${amountE.toLocaleString('fr-FR')} DH</b> <span style="color:var(--muted); font-size:11px;">(${r.energies} énergie${r.energies>1?'s':''} nette${r.energies>1?'s':''} × ${r.rateE} DH)</span>` : '<span style="color:var(--muted);">0 DH — pas de commission réglée</span>'}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
@@ -25613,6 +25651,13 @@ async function saveIndepSupervisorCommission(agent, field, value){
     const n = parseFloat(value);
     if(!isNaN(n) && n > 0) pc.agentPay[agent].indepCommissionRate = n;
     else delete pc.agentPay[agent].indepCommissionRate;
+  } else if(field === 'indepCommissionSupervisorEnergie'){
+    if(value) pc.agentPay[agent].indepCommissionSupervisorEnergie = value;
+    else delete pc.agentPay[agent].indepCommissionSupervisorEnergie;
+  } else if(field === 'indepCommissionRateEnergie'){
+    const nE = parseFloat(value);
+    if(!isNaN(nE) && nE > 0) pc.agentPay[agent].indepCommissionRateEnergie = nE;
+    else delete pc.agentPay[agent].indepCommissionRateEnergie;
   }
   if(Object.keys(pc.agentPay[agent]).length === 0) delete pc.agentPay[agent];
   await saveConfigSilent();
@@ -25635,6 +25680,26 @@ async function indepSupervisorCommissionForMonth(year, month){
   const indepAgents = agentsReels().filter(a => isIndependant(a));
   await Promise.all(indepAgents.map(async agent=>{
     const c = pc.agentPay[agent] || {};
+    // r371 - ENERGIE, reglee a part : son propre superviseur et son propre montant. Vide = 0 DH,
+    // donc rien ne change tant que le patron n'a pas rempli les deux cases.
+    // Les energies comptees sont les NETTES (retours, retractations et annules deja deduits).
+    const supE = c.indepCommissionSupervisorEnergie;
+    const rateE = Number(c.indepCommissionRateEnergie) || 0;
+    if(supE && rateE){
+      let energies = 0;
+      try{
+        if(typeof window.ilekDuMois === 'function'){
+          const dIl = await window.ilekDuMois(agent, year + '-' + String(month).padStart(2, '0'));
+          energies = dIl ? Math.round(Number(dIl.nets) || 0) : 0;
+        }
+      }catch(e){ energies = 0; tracerArgent('commission energie (independant)', e, agent); }
+      if(energies > 0){
+        const amountE = Math.round(energies * rateE);
+        if(!result[supE]) result[supE] = { amount: 0, detail: [] };
+        result[supE].amount += amountE;
+        result[supE].detail.push({ agent, rate: rateE, contracts: energies, amount: amountE, energie: true });
+      }
+    }
     const sup = c.indepCommissionSupervisor;
     const rate = Number(c.indepCommissionRate) || 0;
     if(!sup || !rate) return;
@@ -40143,6 +40208,24 @@ async function renderAssistanceHistory(){
       }
     }catch(e){ mixteSepare = false; }
     var ob = mixteSepare ? 0 : (Number(R.objectifs[agent]) || 0), fx = mixteSepare ? 0 : (Number(R.fixes[agent]) || 0);
+    // r369 - PRORATA (decision du patron, 12/11 : << on proratise tout >>). Jusqu'ici l'objectif
+    // energie et sa prime restaient PLEINS quelle que soit la date d'arrivee ou de depart : un agent
+    // arrive le 20 devait faire le mois entier et perdait sa prime d'objectif, alors que son collegue
+    // en assistance voyait son seuil reduit. On applique exactement le meme facteur que Prime
+    // (proratedMonthFactor : jours ouvres reellement sous contrat, arrivee ET depart, periodes hors
+    // contrat comprises). La commission par energie, elle, n'est JAMAIS proratisee : elle se paie a
+    // l'unite, chaque energie vaut son tarif quel que soit le nombre de jours travailles.
+    var _factE = 1;
+    try{
+      if(typeof proratedMonthFactor === 'function'){
+        _factE = proratedMonthFactor(agent, Number(String(mois).slice(0, 4)), Number(String(mois).slice(5, 7)));
+      }
+    }catch(e){ _factE = 1; }
+    if(!(_factE > 0) || _factE > 1) _factE = 1;
+    if(_factE < 1){
+      if(ob > 0) ob = Math.max(1, Math.round(ob * _factE));
+      if(fx > 0) fx = Math.round(fx * _factE);
+    }
     var atteint = ob > 0 && nets >= ob, fixeVerse = atteint ? fx : 0;
     var auTarif = ob > 0 ? Math.max(0, nets - ob) : nets;
     // Comme Prime : un tarif « avant l'objectif » (0 par défaut) et un tarif « au-delà » (le tarif général par défaut), réglables agent par agent.
@@ -40155,11 +40238,16 @@ async function renderAssistanceHistory(){
     // Ni les mixtes, ni les indépendants, ni les « sans objectif » n'en ont : eux touchent
     // simplement leur tarif par énergie.
     var palAg = isEnergieSeule(agent) ? ilekPaliersAgent(R, agent) : [];
+    // Les seuils de paliers suivent le meme prorata que l'objectif : sans cela, un agent arrive en
+    // cours de mois n'atteindrait jamais le 1er palier et resterait au tarif de base tout le mois.
+    if(_factE < 1 && palAg.length){
+      palAg = palAg.map(function(x){ return { seuil: Math.max(1, Math.round(x.seuil * _factE)), dh: x.dh }; });
+    }
     var tranches = ilekCommissionParTranches(nets, ob, cAvant, cApres, palAg);
     var integre = (typeof energiePayeParObjectif === 'function') && energiePayeParObjectif(agent, mois);   // r327 : payé par l'objectif, plus « à part »
     return { agent: agent, mois: mois, integre: integre, contrats: val.length, energies: en, retours: mes, retoursEnergies: retEn, diviseur: R.diviseur, retires: retires,
              nets: nets, netsEstimes: netsEstimes, estimeBoss: estime, estime: false, chute: R.chute, commission: cApres, commissionAvant: cAvant, avantQte: avantQte, objectif: ob, fixe: fx, fixeVerse: fixeVerse, atteint: atteint, auTarif: auTarif,
-             paliers: palAg, paliersDetail: tranches.detail,
+             paliers: palAg, paliersDetail: tranches.detail, prorata: _factE,
              montant: integre ? 0 : Math.round(fixeVerse + tranches.montant), montantAncienCalcul: Math.round(fixeVerse + avantQte * cAvant + auTarif * cApres) };
   };
   // ═══ ⚡ r354 — PALIERS DE COMMISSION ÉNERGIE ═══════════════════════════════════
