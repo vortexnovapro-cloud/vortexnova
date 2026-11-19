@@ -3594,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-20-r378';
+const APP_VERSION = '2026-11-20-r379';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12500,6 +12500,35 @@ async function renderObjectifSnapshot(){
   container.innerHTML = html;
 }
 
+// ⚡ r379 — Encouragement « énergie » dans la carte d'un agent dont le produit principal est l'ASSISTANCE
+// (« assistance » ou « mixte » : énergie en prime). Dès qu'il a fait au moins une énergie ce jour-là, on le
+// met en avant, avec mesure. La phrase varie selon le nombre d'énergies, et d'un agent / d'un jour à l'autre,
+// mais ne change JAMAIS au rafraîchissement (graine fixe agent + jour). Aucune mention d'argent, aucun « il / elle / tu ».
+// Les agents « énergie » (produit principal) n'ont pas ce bloc : leur énergie est déjà suivie par leur barre.
+function blocEnergieBonusHtml(agent, jour){
+  if(isEnergiePrincipal(agent)) return '';
+  const n = enerJour(agent, jour);
+  if(!(n > 0)) return '';
+  const phrases = n === 1 ? [
+    "Bravo pour l'énergie : 1 de faite, continue !",
+    "1 énergie de décrochée, bien joué, on continue !",
+    "Une énergie au compteur : belle initiative, bravo !",
+    "Bravo, 1 énergie de signée : c'est un bon réflexe !"
+  ] : (n === 2 ? [
+    "Bravo pour l'énergie : 2 de faites, continue comme ça !",
+    "2 énergies de décrochées, belle initiative, bravo !",
+    "Deux énergies au compteur : très bien joué !",
+    "Bravo, 2 énergies de signées : c'est une belle journée !"
+  ] : [
+    `Bravo pour l'énergie : ${n} de faites, très belle journée !`,
+    `${n} énergies de décrochées : belle performance, félicitations !`,
+    `${n} énergies au compteur : quelle belle journée côté énergie !`,
+    `Félicitations, ${n} énergies de signées : excellent travail !`
+  ]);
+  const phrase = phrases[simpleSeedHash(`${agent}|${jour}|energie-prime|${n}`) % phrases.length];
+  return `<div style="margin-top:12px; padding:9px 11px; border-radius:11px; background:rgba(52,183,116,0.12); border:1px solid rgba(52,183,116,0.38); font-size:12.5px; font-weight:700; color:#4f9d78; line-height:1.4;">⚡ ${phrase}</div>`;
+}
+
 async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // Un jour non ouvré (week-end, jour férié) n'a pas de bilan à établir : personne n'est censé avoir
   // pointé ni signé de contrat, donc afficher les cartes "0 contrat / pas d'objectif fixé" serait faux et
@@ -12878,10 +12907,11 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
             ${podiumColor ? `<span title="${allRankByAgent[r.agent].rank}${allRankByAgent[r.agent].rank===1?'er':'e'} du classement" style="cursor:help; flex-shrink:0;">${rankEmoji(allRankByAgent[r.agent].rank, allRankByAgent[r.agent].total)}</span>` : ''}
             <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; line-height:1.25;">${r.agent}</b>
           </div>
-          ${hit
-            ? '<span class="tag ok" title="Objectif du jour atteint" style="white-space:nowrap; flex-shrink:0; cursor:help;">✅ Atteint</span>'
-            : `<span class="tag ${badge.cls}" title="${badge.title}" style="white-space:nowrap; flex-shrink:0; cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
-          ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
+          ${hit ? '<span class="tag ok" title="Objectif du jour atteint" style="white-space:nowrap; flex-shrink:0; cursor:help;">✅ Atteint</span>' : ''}
+        </div>
+        <div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:28px; margin:-4px 0 12px;">
+          ${hit ? '' : `<span class="tag ${badge.cls}" title="${badge.title}" style="white-space:nowrap; flex-shrink:0; cursor:help; ${badge.pulse?'animation: pulseWarn 1s infinite;':''}">${badge.txt}</span>`}
+          ${streakBadge}${objectiveStreakBadge}
         </div>
         ${noObj
           ? (absentSansPointage[r.agent]
@@ -12893,11 +12923,12 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
                 : `<div style="font-size:13.5px; color:var(--muted);">Objectif pas encore fixé ce matin</div><div style="margin-top:4px; font-size:13px;">Réalisé : <b style="color:var(--text); font-weight:700;">${realC}</b> ${motProduit(r.agent, realC)}</div>`))
           : `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">${estEnerC ? '\u00c9nergies' : (enerJ > 0 ? 'Assistance' : 'Contrats')} ${dayIsOver ? 'de la journée' : "d'aujourd'hui"}</div>
              <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
-             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
+             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px; min-height:34px;">
                <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${(!estEnerC && r.realized<=0 && enerJ>0) ? 'var(--muted)' : barColor};" title="${estEnerC ? '\u00c9nergies' : 'Contrats'} signées ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / objectif du jour — le cumul du mois est juste en dessous.">${(!estEnerC && r.realized<=0 && enerJ>0) ? `<span style="font-size:22px; color:#34b774; white-space:nowrap;">⚡ ${enerJour(r.agent, dateStr)} énergie${enerJour(r.agent, dateStr)>1?'s':''}</span><span style="display:block; font-size:12px; color:var(--muted); font-weight:500; letter-spacing:0; margin-top:2px;">aujourd'hui · assistance : aucune</span>` : `${realC}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${objC || '\u2014'}</span>`}${(!estEnerC && enerJ>0 && !(r.realized<=0)) ? `<span title="${enerPhrase(enerJour(r.agent, dateStr), 'chef') || ''}" style="display:inline-block; margin-left:9px; padding:3px 9px; border-radius:9px; font-size:13px; font-weight:800; letter-spacing:0; vertical-align:middle; color:#34b774; background:rgba(52,183,116,.14); border:1px solid rgba(52,183,116,.45);">⚡ ${enerJour(r.agent, dateStr)} énergie${enerJour(r.agent, dateStr)>1?'s':''}</span>` : ''}</span>
                ${(!estEnerC && r.realized<=0 && enerJ>0) ? '' : `<span style="font-size:14.5px; font-weight:700; color:${barColor};">${objC ? pct+'%' : ''}</span>`}
              </div>`}
-        ${historyStripHtml(stripByAgent[r.agent])}
+        ${historyStripHtml(stripByAgent[r.agent], true)}
+        ${blocEnergieBonusHtml(r.agent, dateStr)}
         ${monthlyBlock}
       </div>`;
     } else {
@@ -12940,18 +12971,19 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
             <b style="font-size:16.5px; font-weight:700; letter-spacing:-0.1px; flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; line-height:1.25;">${r.agent}</b>
           </div>
           <span class="tag independant" style="white-space:nowrap; flex-shrink:0;">Indé</span>
-          ${(streakBadge || objectiveStreakBadge) ? `<div style="display:flex; gap:6px; width:100%;">${streakBadge}${objectiveStreakBadge}</div>` : ''}
         </div>
+        <div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:28px; margin:-4px 0 12px;">${streakBadge}${objectiveStreakBadge}</div>
         ${hasObj
-          ? `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">Contrats ${dayIsOver ? 'de la journée' : "d'aujourd'hui"}</div>
+          ? `<div style="font-size:10px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--muted); margin-bottom:6px;">Contrats ${dayIsOver ? 'de la journée' : "d'aujourd'hui"} · défi perso</div>
              <div class="arena-prog-bar" style="height:8px; border-radius:5px;"><div class="arena-prog-fill" style="width:${pct}%; background:${barColor}; border-radius:5px;"></div></div>
-             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px;">
+             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:11px; min-height:34px;">
                <span style="font-size:25px; font-weight:800; letter-spacing:-0.5px; color:${barColor};" title="Contrats signés ${dayIsOver ? 'ce jour-là' : "aujourd'hui"} / défi du jour — le cumul du mois est juste en dessous.">${r.realized}<span style="font-size:14px; color:var(--muted); font-weight:500;"> / ${r.objective}</span></span>
                <span style="font-size:14.5px; font-weight:700; color:${barColor};">${pct}%${hit?' ✅':''}</span>
              </div>
-             <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">Défi perso du jour</div>`
+             `
           : `<div style="font-size:13.5px; color:var(--muted);">Pas de défi fixé ce matin</div><div style="margin-top:4px; font-size:13px;"><b style="color:var(--text); font-size:21px; font-weight:800;">${r.realized}</b> contrat${r.realized>1?'s':''} aujourd'hui</div>`}
-        ${historyStripHtml(stripByAgent[r.agent])}
+        ${historyStripHtml(stripByAgent[r.agent], true)}
+        ${blocEnergieBonusHtml(r.agent, dateStr)}
         ${monthlyBlock}
       </div>`;
     }
@@ -17535,7 +17567,7 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
 
 // Petit historique visuel des derniers jours ouvrés (barres + chiffres), lu de gauche (le plus ancien) à
 // droite (le plus récent, juste avant aujourd'hui) — pour voir la tendance d'un coup d'œil.
-function historyStripHtml(historyFull){
+function historyStripHtml(historyFull, reserverLigneEnergie){
   // ⚠️ Un jour non travaille (absence sur la journee entiere, jour anterieur a l'arrivee de l'agent,
   // periode hors contrat) n'est PLUS affiche comme une barre rouge « 0 contrat » : c'est un tiret gris,
   // neutre, et il ne sert pas non plus a calculer la hauteur des autres barres. Voir jourNeutrePourSerie.
@@ -17554,6 +17586,7 @@ function historyStripHtml(historyFull){
           <div style="width:100%; height:3px; background:var(--muted); border-radius:3px;"></div>
         </div>
         <div style="font-size:9.5px; color:var(--muted); font-weight:600;">—</div>
+        ${reserverLigneEnergie ? '<div style="font-size:9.5px; visibility:hidden;">⚡0</div>' : ''}
       </div>`;
     }
     const v = (day && day.realized) || 0;
@@ -17580,7 +17613,7 @@ function historyStripHtml(historyFull){
         <div style="width:100%; height:${h}px; background:${barColor}; border-radius:3px; ${glow}"></div>
       </div>
       <div style="font-size:9.5px; color:${numColor}; font-weight:${(v===0||missed)?'700':'500'};">${v}</div>
-      ${enJ > 0 ? `<div title="${enJ} énergie${enJ>1?'s':''} ce jour-là" style="font-size:9.5px; color:#34b774; font-weight:800;">⚡${enJ}</div>` : ''}
+      ${enJ > 0 ? `<div title="${enJ} énergie${enJ>1?'s':''} ce jour-là" style="font-size:9.5px; color:#34b774; font-weight:800;">⚡${enJ}</div>` : (reserverLigneEnergie ? '<div style="font-size:9.5px; visibility:hidden;">⚡0</div>' : '')}
     </div>`;
   }).join('');
   return `<div style="margin-top:10px;" title="Vert = objectif atteint · orange = objectif manqué · rouge = 0 contrat${aDesJoursNeutres ? ' · gris = jour non travaillé' : ''}"><div style="font-size:10px; color:var(--muted); margin-bottom:4px; letter-spacing:0.3px;">5 derniers jours</div><div style="display:flex; gap:4px; align-items:flex-end;">${bars}</div></div>`;
