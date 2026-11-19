@@ -3594,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-12-r375';
+const APP_VERSION = '2026-11-19-r376';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -11657,10 +11657,64 @@ const TEAM_PCT_MESSAGES_BILAN = [
     "📛 L'objectif n'a pas été approché. Un débriefing s'impose avant la fin de la journée."
   ]}
 ];
-function pickTeamPctMessage(pct, seed, isBilan){
-  const bank = isBilan ? TEAM_PCT_MESSAGES_BILAN : TEAM_PCT_MESSAGES_PUSH;
+// ⚡ r376 — Phrases du cercle « Énergie » du Bilan : mêmes paliers que l'assistance (130 / 100 / 70 / 40),
+// mais on parle d'énergies. Aucun montant d'argent, et jamais un mot sur les horaires d'appel.
+const TEAM_PCT_MESSAGES_ENERGIE_BILAN = [
+  { min: 130, msgs: [
+    "🏆 Bilan énergie : objectif largement dépassé, journée exceptionnelle.",
+    "👑 Les énergies ont explosé l'objectif aujourd'hui. Bravo à toute l'équipe énergie.",
+    "🚀 Journée énergie hors norme : objectif pulvérisé."
+  ]},
+  { min: 100, msgs: [
+    "✅ Bilan énergie : objectif atteint, mission accomplie.",
+    "🥇 Journée énergie réussie, l'objectif est coché.",
+    "💯 Les énergies ont tenu l'objectif du début à la fin. Bien joué."
+  ]},
+  { min: 70, msgs: [
+    "📋 Bilan énergie : journée honorable, il manquait juste quelques énergies pour l'objectif.",
+    "🔎 Presque là côté énergie. Regardez à quel moment le rythme est retombé.",
+    "📌 Objectif énergie frôlé : une énergie de plus par personne et c'était plié."
+  ]},
+  { min: 40, msgs: [
+    "⚠️ Bilan énergie mitigé : à mi-chemin de l'objectif, il faut comprendre ce qui a ralenti.",
+    "🔧 Journée énergie en dessous du rythme attendu. À corriger dès la prochaine.",
+    "📉 L'objectif énergie est loin d'être atteint aujourd'hui."
+  ]},
+  { min: -1, msgs: [
+    "🚨 Bilan énergie alarmant : l'objectif n'a presque pas été approché.",
+    "🛑 Journée énergie quasiment blanche. Cherchez une cause commune : outil, fichier, absence.",
+    "📛 Objectif énergie très loin du compte : un débriefing s'impose."
+  ]}
+];
+const TEAM_PCT_MESSAGES_ENERGIE_PUSH = [
+  { min: 130, msgs: [
+    "🤯 Objectif énergie pulvérisé, on ne motive plus, on applaudit.",
+    "🚀 Les énergies dépassent l'objectif… et ça continue de monter."
+  ]},
+  { min: 100, msgs: [
+    "🏆 Objectif énergie atteint, du travail propre.",
+    "🥇 Objectif énergie du jour : coché. La suite maintenant."
+  ]},
+  { min: 70, msgs: [
+    "💪 Presque au bout côté énergie, ne lâchez rien.",
+    "⏳ Encore quelques énergies et c'est plié pour la journée."
+  ]},
+  { min: 40, msgs: [
+    "⚙️ Les énergies avancent, mais il va falloir appuyer un peu plus fort.",
+    "🎯 Milieu de parcours côté énergie : rien n'est perdu, tout reste à jouer."
+  ]},
+  { min: -1, msgs: [
+    "🐢 Les énergies démarrent doucement. Très doucement.",
+    "🌱 Pas encore ça côté énergie, mais la journée est loin d'être finie."
+  ]}
+];
+function pickTeamPctMessage(pct, seed, isBilan, produit){
+  const energie = produit === 'energie';
+  const bank = energie
+    ? (isBilan ? TEAM_PCT_MESSAGES_ENERGIE_BILAN : TEAM_PCT_MESSAGES_ENERGIE_PUSH)
+    : (isBilan ? TEAM_PCT_MESSAGES_BILAN : TEAM_PCT_MESSAGES_PUSH);
   const tier = bank.find(t=>pct>=t.min);
-  const idx = simpleSeedHash(`${seed}|${tier.min}|${isBilan?'bilan':'push'}`) % tier.msgs.length;
+  const idx = simpleSeedHash(`${seed}|${tier.min}|${isBilan?'bilan':'push'}${energie?'|energie':''}`) % tier.msgs.length;
   return tier.msgs[idx];
 }
 
@@ -11787,7 +11841,7 @@ function bandeauRecordEquipeJour(r, dateStr){
   </div>`;
 }
 
-function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRealized, seed, refDateStr, recordEquipe){
+function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRealized, seed, refDateStr, recordEquipe, produit){
   if(totalTarget <= 0) return '';
   const pct = Math.round((totalRealized/totalTarget)*100);
   // ⚠️ COHÉRENCE CORRIGÉE — la couleur de l'anneau utilisait 100/50 alors que le texte juste en dessous
@@ -11809,13 +11863,13 @@ function renderVisReelSquareCard(totalRealized, totalTarget, agentCount, indepRe
     ? (isBilan
         ? `👑 Record historique de l'équipe : jamais autant de contrats en une seule journée. Félicitations à toutes et à tous !`
         : `👑 Record de l'équipe en train de tomber : jamais autant de contrats en une journée. Continuez comme ça !`)
-    : calendarizeRelativeDays(pickTeamPctMessage(pct, seed || 'default', isBilan), refDateStr);
+    : calendarizeRelativeDays(pickTeamPctMessage(pct, seed || 'default', isBilan, produit), refDateStr);
   const recordBadge = recordEquipe
     ? `<div style="display:inline-block; margin-top:8px; padding:3px 10px; border-radius:20px; background:rgba(255,215,0,0.16); border:1px solid rgba(255,215,0,0.5); color:var(--gold); font-size:10.5px; font-weight:900; letter-spacing:0.6px;">🏆 RECORD · ancien ${recordEquipe.ancien} le ${recordEquipe.ancienDate}</div>`
     : '';
   const bordure = recordEquipe ? 'rgba(255,215,0,0.7)' : (pct>=100?'rgba(52,183,116,0.45)':'var(--border)');
   return `<div style="width:246px; margin:0 auto 20px; padding:22px 18px 18px; border-radius:22px; background:linear-gradient(165deg, var(--panel2), rgba(255,255,255,0.015)); border:1px solid ${bordure}; box-shadow:0 10px 28px rgba(0,0,0,0.35); text-align:center;">
-    <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px; font-weight:700;">🎯 Total équipe${isBilan ? ' · Bilan' : ''}</div>
+    <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px; font-weight:700;">${produit === 'energie' ? '🟢 Énergie' : (produit === 'assistance' ? '🔵 Assistance' : '🎯 Total équipe')}${isBilan ? ' · Bilan' : ''}</div>
     ${recordBadge}
     <div style="position:relative; width:152px; height:152px; margin:16px auto 10px; border-radius:50%; background:conic-gradient(${color} ${ringPct}%, rgba(255,255,255,0.07) 0);">
       <div style="position:absolute; inset:9px; border-radius:50%; background:var(--panel2); display:flex; flex-direction:column; align-items:center; justify-content:center;">
@@ -12458,6 +12512,15 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   const totalTargetDay = rowsWithObj.reduce((s,r)=>s+r.objective, 0);
   const totalRealizedDay = allDayRows.reduce((s,r)=>s+r.realized, 0);
   const indepRealizedDay = indepRows.reduce((s,r)=>s+r.realized, 0);
+  // ⚡ r376 — Deux cercles : chaque agent compte dans le cercle de SON produit principal (assistance, ou
+  // énergie pour « énergie uniquement » / « énergie + assistance en bonus » — même règle que les classements).
+  // Un agent mixte compte en assistance seulement. Réalisé = tout le monde de ce produit ; visé = ceux qui ont fixé un objectif.
+  const rowsAssistDay = allDayRows.filter(r=>!r.energieSeule);
+  const rowsEnerDay = allDayRows.filter(r=>r.energieSeule);
+  const sumReal = (l)=> l.reduce((s,r)=>s+r.realized, 0);
+  const avecObj = (l)=> l.filter(r=>r.objective > 0);
+  const sumObj = (l)=> avecObj(l).reduce((s,r)=>s+r.objective, 0);
+  const indepReal = (l)=> l.filter(r=>r.isIndep).reduce((s,r)=>s+r.realized, 0);
 
   // Contexte MENSUEL par agent (mini obligatoire, visé, réalisé du mois) — en plus du jour, pour situer
   // chacun par rapport à ses objectifs du mois entier, avec un rythme/jour nécessaire sur les jours ouvrés
@@ -12666,7 +12729,17 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   try{ recordEquipeJour = await evaluerRecordEquipeJour(dateStr, totalRealizedDay); }
   catch(e){ console.warn('record équipe du jour', e); }
   const recordEquipeJourHtml = recordEquipeJour ? bandeauRecordEquipeJour(recordEquipeJour, dateStr) : '';
-  let html = recordEquipeJourHtml + teamRecordBannerHtml + renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr, recordEquipeJour);
+  // Sans aucun agent énergie, on garde l'ancienne carte « Total équipe » telle quelle.
+  const deuxProduits = rowsEnerDay.length > 0;
+  const carteAssist = deuxProduits
+    ? renderVisReelSquareCard(sumReal(rowsAssistDay), sumObj(rowsAssistDay), avecObj(rowsAssistDay).length, indepReal(rowsAssistDay), dateStr, dateStr, recordEquipeJour, 'assistance')
+    : renderVisReelSquareCard(totalRealizedDay, totalTargetDay, rowsWithObj.length, indepRealizedDay, dateStr, dateStr, recordEquipeJour);
+  const carteEner = deuxProduits
+    ? renderVisReelSquareCard(sumReal(rowsEnerDay), sumObj(rowsEnerDay), avecObj(rowsEnerDay).length, indepReal(rowsEnerDay), dateStr, dateStr, null, 'energie')
+    : '';
+  let html = recordEquipeJourHtml + teamRecordBannerHtml + ((carteAssist || carteEner)
+    ? `<div style="display:flex; flex-wrap:wrap; justify-content:center; gap:16px;">${carteAssist}${carteEner}</div>`
+    : '');
   html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">';
 
   // Une seule liste, un seul ordre d'affichage : classement combiné équipe + indépendants, du plus
