@@ -3594,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-20-r379';
+const APP_VERSION = '2026-11-20-r380';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12825,7 +12825,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
     // alors qu'il n'était tout simplement pas encore là).
     const agentStart = disciplineFrom(r.agent);
     const yesterdayCountsForAgent = !agentStart || (yesterdayDate && yesterdayDate >= agentStart);
-    const yesterdayRealized = (yesterdayBoard && yesterdayCountsForAgent) ? (getAgentProd(yesterdayBoard, r.agent).realized || 0) : null;
+    const yesterdayRealized = (yesterdayBoard && yesterdayCountsForAgent) ? (isEnergiePrincipal(r.agent) ? (enerJour(r.agent, yesterdayDate) || 0) : (getAgentProd(yesterdayBoard, r.agent).realized || 0)) : null;
     const mo = monthlyByAgent[r.agent] || {};
     dayOverDayMap[r.agent] = await dayOverDayComment(r.agent, r.realized, yesterdayRealized, hourForComparison, dateStr, {
       rank: (allRankByAgent[r.agent] || {}).rank,
@@ -12834,6 +12834,10 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       monthlyRealized: mo.monthlyRealized || 0,
       objReal: mo.objReal,
       mini: mo.mini || 0,
+      avanceMois: isEnergiePrincipal(r.agent) ? (Number((mo.ilek || {}).nets) || 0) : (mo.objReal != null ? mo.objReal : (mo.monthlyRealized || 0)),
+      objMois: isEnergiePrincipal(r.agent) ? (Number((mo.ilek || {}).objectif) || 0) : (mo.mini || 0),
+      uniteMois: isEnergiePrincipal(r.agent) ? 'énergies' : 'contrats',
+      moisPct: avancementJoursOuvresMois(dateStr),
       justifiedAbsence: mo.justifiedAbsence || null
     });
   }));
@@ -17311,6 +17315,21 @@ function isNewAgent(agentName, refDateStr){
 // Combien de fois cet agent a déjà fini une journée à 0 contrat CE MOIS-CI, jusqu'à et y compris
 // refDateStr (jours ouvrés terminés uniquement) — sert à graduer le ton : 1er 0 = indulgent avec
 // conseil, 2e = plus ferme, 3e et au-delà = sérieux, mais toujours avec un conseil constructif.
+// Part des jours ouvrés du mois déjà écoulés à la date donnée (0 à 1) — sert à juger si un agent est
+// dans le rythme de son objectif avant de choisir le ton d'un message sur ses journées à 0.
+function avancementJoursOuvresMois(refDateStr){
+  const [y, m] = refDateStr.split('-').map(Number);
+  const nb = new Date(y, m, 0).getDate();
+  let ecoules = 0, total = 0;
+  for(let d=1; d<=nb; d++){
+    const ds = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if(!isWorkingDay(ds)) continue;
+    total++;
+    if(ds <= refDateStr) ecoules++;
+  }
+  return total ? ecoules / total : 0;
+}
+
 async function countZeroDaysThisMonthSoFar(agentName, refDateStr){
   await enerCharger();
   const [y, m] = refDateStr.split('-').map(Number);
@@ -17417,6 +17436,26 @@ async function dayOverDayCommentRaw(agentName, todayRealized, yesterdayRealized,
         `0 contrat aujourd'hui, ton premier ce mois-ci. Pas de drame, mais prends 5 minutes ce soir pour identifier ce qui a bloqué, et attaque demain avec un plan clair.`,
         `Un premier 0 ce mois — ça peut arriver à tout le monde une fois. Le conseil : rappelle 2-3 prospects tièdes dès demain matin pour relancer la machine.`
       ], `${agentName}|zero|1|${refDateStr || todayStr()}`), color: AMBER2, bg: AMBER2_BG, critical: false };
+    }
+    // Dosage : plus l'agent est dans le rythme de son objectif du mois, plus le ton reste bienveillant.
+    // Le ton dur (« inacceptable », « c'est sérieux ») n'est réservé qu'aux vrais retards.
+    const objM = Number(c.objMois) || 0, avM = Number(c.avanceMois) || 0, moisP = Number(c.moisPct) || 0;
+    const rythme = (objM > 0 && moisP > 0) ? (avM / objM) / moisP : null;
+    if(zeroCount >= 2 && rythme != null && rythme >= 0.5){
+      const fmtM = n => String(Math.round(n * 10) / 10).replace('.', ',');
+      const av = fmtM(avM), ob = fmtM(objM), u = c.uniteMois || 'contrats';
+      if(rythme >= 0.7){
+        return { text: seedPick([
+          `${zeroCount} journées à 0 ce mois, mais tu es à ${av} sur ${ob} ${u} : tu tiens ton rythme. Reviens demain avec la même envie.`,
+          `Tu es à ${av} sur ${ob} ${u} ce mois : c'est solide malgré ${zeroCount} journées à 0. Un bon jour demain et tu reprends de l'avance.`,
+          `Bon rythme sur le mois (${av}/${ob} ${u}). Les ${zeroCount} journées à 0 se rattrapent : vise un premier résultat tôt demain pour lancer la journée.`
+        ], `${agentName}|zero|doux|${refDateStr || todayStr()}`), color: AMBER2, bg: AMBER2_BG, critical: false };
+      }
+      return { text: seedPick([
+        `${zeroCount} journées à 0 ce mois, et tu es à ${av} sur ${ob} ${u} : il y a de quoi rattraper. Un bon début demain te remet dans le rythme.`,
+        `Tu es à ${av} sur ${ob} ${u} ce mois, avec ${zeroCount} journées à 0. Rien d'irrattrapable : fixe-toi un premier résultat avant la pause et lance-toi.`,
+        `Les ${zeroCount} journées à 0 pèsent un peu (${av}/${ob} ${u}). Si quelque chose te bloque, parles-en ${escalationWith(agentName)} : on t'aide à repartir.`
+      ], `${agentName}|zero|ferme|${refDateStr || todayStr()}`), color: TERRACOTTA, bg: TERRACOTTA_BG, critical: false };
     }
     if(zeroCount === 2){
       return { text: seedPick([
