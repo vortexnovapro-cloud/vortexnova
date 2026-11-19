@@ -3594,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-19-r376';
+const APP_VERSION = '2026-11-20-r377';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12516,7 +12516,13 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   // énergie pour « énergie uniquement » / « énergie + assistance en bonus » — même règle que les classements).
   // Un agent mixte compte en assistance seulement. Réalisé = tout le monde de ce produit ; visé = ceux qui ont fixé un objectif.
   const rowsAssistDay = allDayRows.filter(r=>!r.energieSeule);
-  const rowsEnerDay = allDayRows.filter(r=>r.energieSeule);
+  // Cercle Énergie : TOUTES les énergies faites ce jour-là comptent, y compris celles d'un agent « mixte »
+  // (assistance principale + énergie en plus), qui reste dans le cercle Assistance pour son assistance.
+  // Pour lui, le visé énergie du jour n'existe que s'il en a fixé un (même règle que l'assistance :
+  // réalisé = tout le monde, visé = ceux qui ont un objectif).
+  const rowsEnerDay = allDayRows
+    .map(r=> r.energieSeule ? r : Object.assign({}, r, { realized: enerJour(r.agent, dateStr), objective: objEnergieJour(r.agent, dateStr) }))
+    .filter(r=> r.energieSeule || r.realized > 0 || r.objective > 0);
   const sumReal = (l)=> l.reduce((s,r)=>s+r.realized, 0);
   const avecObj = (l)=> l.filter(r=>r.objective > 0);
   const sumObj = (l)=> avecObj(l).reduce((s,r)=>s+r.objective, 0);
