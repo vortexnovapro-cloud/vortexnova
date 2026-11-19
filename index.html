@@ -3594,7 +3594,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-20-r377';
+const APP_VERSION = '2026-11-20-r378';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12260,6 +12260,8 @@ async function renderBilanIlek(force){
     const b = await Promise.race([window.ilekBilanJour(jour, (t)=>{ etape = t; }), new Promise((_,ko)=> setTimeout(()=> ko(new Error('trop long (bloqué à l\'étape : '+etape+')')), 90000))]);
     clearInterval(tic);
     BILAN_ILEK_DERNIER = b;
+    // r378 — Bilan de la JOURNÉE : on lit les objectifs ÉNERGIE du jour (jamais ceux de l'assistance).
+    await chargerObjEnergieJour(jour);
     const lignes = b.agents;
     const LIA = {};
     await Promise.all(lignes.map(async a=>{ try{ LIA[a.agent] = await liaisonPrime(a.agent, jour); }catch(e){} }));
@@ -12274,7 +12276,7 @@ async function renderBilanIlek(force){
     // ── Même principe que le bilan Prime : carte « Total équipe » avec anneau, puis une carte par agent ──
     const objSomme = actifs.concat(inactifs).reduce((t,a)=> t + ((a.mois && a.mois.objectif>0) ? a.mois.objectif : 0), 0);
     const netsObj = actifs.concat(inactifs).reduce((t,a)=> t + ((a.mois && a.mois.objectif>0) ? Math.min(a.mois.nets, a.mois.objectif) : 0), 0);
-    const avecObj = objSomme > 0;
+    const avecObj = false;   // r378 — le cercle de la journée ne montre plus le cumul du mois (voir anneauJour plus bas)
     const pctEq = avecObj ? Math.min(100, Math.round(100*netsObj/objSomme)) : (tot.h>0 ? Math.min(100, Math.round(100*tot.e/tot.h)) : (tot.e>0?100:0));
     const couleurEq = avecObj ? (pctEq>=100 ? '#4f9d78' : (pctEq>=50 ? '#b98a42' : '#b5595c')) : (tot.e>=tot.h && tot.e>0 ? '#4f9d78' : '#b98a42');
     const msgEq = tot.e === 0 ? 'Aucune énergie vendue ce jour-là.' : (tot.e > tot.h ? '🔥 Mieux qu\'hier : +'+(tot.e-tot.h)+' énergie'+((tot.e-tot.h)>1?'s':'')+'.' : (tot.e === tot.h ? 'Même résultat qu\'hier.' : 'En retrait de '+(tot.h-tot.e)+' énergie'+((tot.h-tot.e)>1?'s':'')+' par rapport à hier.'));
@@ -12290,13 +12292,26 @@ async function renderBilanIlek(force){
       <div style="font-size:13px;font-weight:700;color:${couleurEq};line-height:1.4;">${msgEq}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:6px;">⚡ ${tot.el} élec · 🔥 ${tot.g} gaz · ⚡🔥 ${tot.d} dual${tot.nc?` · <span style="color:#e55a5a;"><span class="clk-amount" onclick="adminAllerNonConformes()" title="Cliquer pour voir la liste">${tot.nc} non conforme${tot.nc>1?'s':''}</span>${adminInfoBtn('adminAllerNonConformes()', 'Voir la liste des contrats non conformes')}</span>`:''}</div>
     </div>`;
-    let h = `<div style="font-family:'Inter',sans-serif;">${anneau}`;
+    // r378 — Même principe que le Bilan de la journée assistance : réalisé du jour / objectif du jour, mêmes paliers et mêmes couleurs.
+    // Réalisé = toutes les énergies du jour ; visé = somme des objectifs ÉNERGIE du jour de ceux qui en ont fixé un.
+    const avecObjJour = lignes.filter(a => objEnergieJour(a.agent, jour) > 0);
+    const objJourSomme = avecObjJour.reduce((t,a)=> t + objEnergieJour(a.agent, jour), 0);
+    const anneauJour = objJourSomme > 0
+      ? renderVisReelSquareCard(tot.e, objJourSomme, avecObjJour.length, 0, jour, jour, null, 'energie')
+      : anneau;
+    let h = `<div style="font-family:'Inter',sans-serif;">${anneauJour}`;
     const cartes = actifs.concat(inactifs);   // une carte pour CHAQUE agent Ilek, comme le bilan Prime (ceux sans contrat ce jour-là en dernier)
     if(!cartes.length) h += `<div style="padding:18px;border-radius:14px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);text-align:center;">Aucun agent Ilek.</div>`;
     else {
       h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;">`;
       cartes.forEach((a,i)=>{
         const m = a.mois, ob = m ? (m.objectif||0) : 0, nets = m ? m.nets : 0;
+        // r378 — Objectif ÉNERGIE du jour (fixé le matin) : c'est lui qui pilote la barre, le badge et la bordure. Le mois reste en dessous.
+        const obJ = objEnergieJour(a.agent, jour);
+        const hitJ = obJ > 0 && a.energies >= obJ;
+        const pcJ = obJ > 0 ? Math.min(100, Math.round(100*a.energies/obJ)) : 0;
+        const barColJ = hitJ ? '#4f9d78' : (pcJ >= 50 ? '#b98a42' : '#b5595c');
+        const libJour = isDayOverForMessage(jour) ? 'de la journée' : "d'aujourd'hui";
         const det = [a.elec?`⚡ ${a.elec} élec`:'', a.gaz?`🔥 ${a.gaz} gaz`:'', a.dual?`⚡🔥 ${a.dual} dual`:''].filter(Boolean).join(' · ') || '—';
         const hit = ob > 0 && m && m.atteint;
         const pc = ob > 0 ? Math.min(100, Math.round(100*nets/ob)) : 0;
@@ -12306,11 +12321,13 @@ async function renderBilanIlek(force){
           if(ob > 0) comm = hit ? (nets > ob ? `🎉 Objectif atteint : ${ilekNbG(nets-ob)} énergie${(nets-ob)>1?'s':''} au-dessus.` : '🎉 Objectif du mois atteint.') : `Plus que ${ilekNbG(ob-nets)} énergie${(ob-nets)>1?'s':''} pour atteindre l'objectif du mois.`;
           else comm = '';
         }
-        h += `<div class="ilk-card objsnap-card" style="font-family:'Inter',sans-serif;padding:19px;border-radius:18px;background:var(--panel2);border:1px solid ${hit?'rgba(52,183,116,0.45)':'var(--border)'};border-top:4px solid #22c55e;">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div style="font-weight:800;font-size:17px;">${i<3&&a.energies>0?medals[i]+' ':''}${esc3(a.agent)}</div><div style="font-size:12px;font-weight:700;color:${dc(a.energies,a.hier)};">${delta(a.energies,a.hier)}</div></div>
+        h += `<div class="ilk-card objsnap-card" style="font-family:'Inter',sans-serif;padding:19px;border-radius:18px;background:var(--panel2);border:1px solid ${hitJ?'rgba(52,183,116,0.45)':'var(--border)'};border-top:4px solid #22c55e;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div style="font-weight:800;font-size:17px;">${i<3&&a.energies>0?medals[i]+' ':''}${esc3(a.agent)}</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">${hitJ ? '<span class="tag ok" title="Objectif du jour atteint" style="white-space:nowrap;">✅ Atteint</span>' : ''}<div style="font-size:12px;font-weight:700;color:${dc(a.energies,a.hier)};">${delta(a.energies,a.hier)}</div></div></div>
           <div style="font-size:36px;font-weight:900;line-height:1.15;margin-top:8px;">${a.energies} <span style="font-size:14px;color:var(--muted);font-weight:700;">${a.energies>1?'énergies':'énergie'} aujourd'hui</span>${LIA[a.agent] ? `<span title="Assistance (Prime) du même jour" style="display:inline-block;margin-left:9px;padding:3px 9px;border-radius:9px;font-size:12.5px;font-weight:700;letter-spacing:0;vertical-align:middle;color:var(--muted);background:rgba(255,255,255,.06);border:1px solid var(--border);">🛡️ ${LIA[a.agent].today} assistance</span>` : ''}</div>
           <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${a.contrats} contrat${a.contrats>1?'s':''} · ${det}</div>${a.nc?`<div style="font-size:12px;color:#e55a5a;margin-top:4px;"><span class="clk-amount" onclick="adminAllerNonConformes()" title="Cliquer pour voir la liste">${a.nc} non conforme${a.nc>1?'s':''} (non compté${a.nc>1?'s':''})</span>${adminInfoBtn('adminAllerNonConformes()', 'Voir la liste des contrats non conformes')}</div>`:''}
-          ${ob>0 ? `<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:12px 0 4px;"><div style="width:${pc}%;height:100%;background:${barCol};"></div></div><div style="text-align:right;font-size:12px;font-weight:800;color:${barCol};">${pc}%</div>` : ''}
+          ${obJ>0
+            ? `<div style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin:12px 0 6px;">Énergies ${libJour}</div><div style="height:8px;background:rgba(0,0,0,.35);border-radius:5px;overflow:hidden;"><div style="width:${pcJ}%;height:100%;background:${barColJ};border-radius:5px;"></div></div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:9px;"><span style="font-size:22px;font-weight:800;color:${barColJ};" title="Énergies faites / objectif énergie du jour">${ilekNbG(a.energies)}<span style="font-size:14px;color:var(--muted);font-weight:500;"> / ${obJ}</span></span><span style="font-size:14.5px;font-weight:700;color:${barColJ};">${pcJ}%${hitJ?' ✅':''}</span></div><div style="font-size:11.5px;color:var(--muted);margin-top:3px;">Objectif énergie du jour</div>`
+            : `<div style="font-size:13.5px;color:var(--muted);margin-top:12px;">Objectif énergie du jour pas encore fixé ce matin</div>`}
           ${m ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:13px;">
             ${ob>0 ? `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>Objectif du mois</span><b style="color:${hit?'#4f9d78':'var(--text)'};font-size:14px;">${ilekNbG(nets)}<span style="opacity:.55;"> / ${ob}</span></b></div>` : `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>⚡ Énergies ce mois</span><b style="color:var(--text);font-size:14px;">${ilekNbG(nets)}</b></div>`}
             ${m.retoursEnergies ? `<div style="display:flex;justify-content:space-between;align-items:baseline;color:var(--muted);margin-bottom:5px;"><span>Retours du mois</span><b style="color:#e55a5a;font-size:14px;">-${ilekNbG(m.retires)}</b></div>` : ''}
@@ -12347,14 +12364,15 @@ async function exportBilanIlekImage(){
 async function copierBilanIlek(){
   const b = BILAN_ILEK_DERNIER; if(!b){ uiAlert('Rien à copier pour le moment.'); return; }
   const lg = b.agents.filter(a=>a.energies>0);
+  const visJ = b.agents.reduce((s,a)=> s + (objEnergieJour(a.agent, b.jour) || 0), 0);
   const tot = lg.reduce((t,a)=>({c:t.c+a.contrats,e:t.e+a.energies}),{c:0,e:0});
   const dateTxt = new Date(b.jour+'T00:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
   const medals = ['🥇','🥈','🥉'];
-  let t = '⚡ BILAN ÉNERGIE (ILEK) — '+dateTxt+'\n\nTotal : '+tot.e+' énergie'+(tot.e>1?'s':'')+' ('+tot.c+' contrat'+(tot.c>1?'s':'')+')\n\n';
+  let t = '⚡ BILAN ÉNERGIE (ILEK) — '+dateTxt+'\n\nTotal : '+tot.e+' énergie'+(tot.e>1?'s':'')+' ('+tot.c+' contrat'+(tot.c>1?'s':'')+')'+(visJ>0 ? ' · objectif du jour : '+tot.e+'/'+visJ : '')+'\n\n';
   lg.forEach((a,i)=>{
     const det = [a.elec?a.elec+' élec':'', a.gaz?a.gaz+' gaz':'', a.dual?a.dual+' dual':''].filter(Boolean).join(', ');
     const m = a.mois, ob = m ? (m.objectif||0) : 0;
-    t += (i<3?medals[i]:'▫️')+' '+a.agent+' : '+a.energies+' énergie'+(a.energies>1?'s':'')+' ('+det+')'+(m ? ' — mois : '+ilekNbG(m.nets)+(ob>0?'/'+ob:'') : '')+'\n';
+    t += (i<3?medals[i]:'▫️')+' '+a.agent+' : '+a.energies+' énergie'+(a.energies>1?'s':'')+' ('+det+')'+(objEnergieJour(a.agent, b.jour) > 0 ? ' — objectif du jour : '+a.energies+'/'+objEnergieJour(a.agent, b.jour) : '')+'\n';
   });
   if(!lg.length) t += 'Aucun contrat Ilek conforme ce jour-là.\n';
   try{ await navigator.clipboard.writeText(t); showToast ? showToast('Bilan Ilek copié ✓') : uiAlert('Copié ✓'); }
