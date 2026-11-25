@@ -235,6 +235,11 @@
     transition: all 0.2s;
   }
   .tab-btn:hover{ background: var(--panel2); color: var(--text); }
+  /* r382 — Objectif obligatoire : tant que l'agent n'a pas fixé son objectif, tous les onglets sauf
+     « Pointage » et « Mes Objectifs » sont verrouillés (voir majRappelObjectif / showView). */
+  body.objectif-bloque .tab-btn:not(#tabAgentBtn):not(#tabArenaBtn){ opacity:0.3; filter:grayscale(1); cursor:not-allowed; }
+  @keyframes objPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(229,72,77,0.65); } 50%{ box-shadow:0 0 0 12px rgba(229,72,77,0); } }
+  @keyframes objSecoue{ 0%,100%{ transform:translateX(0); } 20%,60%{ transform:translateX(-9px); } 40%,80%{ transform:translateX(9px); } }
   .tab-btn.active{ background: var(--panel2); color: var(--text); border-color: var(--accent-dim); }
   /* 📅 Rendez-vous (énergie) */
   .rdv-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
@@ -3594,7 +3599,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-24-r381';
+const APP_VERSION = '2026-11-25-r385';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -5782,6 +5787,11 @@ function renderScheduleHint(){
 }
 
 function showView(view){
+  // r382 — objectif obligatoire non fixé : seuls « Pointage » et « Mes Objectifs » restent ouverts.
+  if(typeof _objectifBloque !== 'undefined' && _objectifBloque && view !== 'agent' && view !== 'arena'){
+    try{ secouerBandeauObjectif(); }catch(e){}
+    return;
+  }
   document.getElementById('view-agent').classList.toggle('active', view==='agent');
   document.getElementById('view-arena').classList.toggle('active', view==='arena');
   document.getElementById('view-cash').classList.toggle('active', view==='cash');
@@ -14173,7 +14183,7 @@ async function renderBossRevenue(force){
     const objRegle = (payD.objectifMensuel || 0) > 0;
     // Un agent SALARIÉ sans objectif mensuel réglé n'a pas de palier : il touche le plein tarif dès son
     // 1er contrat. C'est rarement voulu, et ça coûte cher sans prévenir — on le signale en clair.
-    const objManquant = !d.isIndep && !d.noObjectif && !objRegle;
+    const objManquant = !d.isIndep && !d.noObjectif && !objRegle && !(isEnergiePrincipal(d.agent) && (d.energieObjectif || 0) > 0);
     // Ce que les contrats de la période rapportent VRAIMENT : la commission au contrat (perContract,
     // règle du palier) PLUS le bonus par contrat au-delà de l'objectif (primeExtraContrat). Ce sont
     // deux réglages distincts dans « Rémunération par agent » ; beaucoup n'en remplissent qu'un des
@@ -14203,7 +14213,15 @@ async function renderBossRevenue(force){
 
     return `<tr>
       <td><b>${d.agent}</b>${catTag}${objManquant ? ' <span class="tag warn" style="background:rgba(229,72,77,0.18); color:var(--red); border-color:rgba(229,72,77,0.45);" title="Cet agent est salarié mais aucun objectif mensuel n\'est réglé pour lui. Il touche donc le plein tarif par contrat dès le premier, sans minimum à atteindre. À corriger dans Réglages → Rémunération par agent.">⚠️ objectif non réglé</span>' : ''}</td>
-      <td>${d.contractsRealized}</td>
+      <td>${(()=>{
+        const nbE = Math.round((d.energiesNets || 0) * 100) / 100;
+        const fait = (isEnergiePrincipal(d.agent) || nbE > 0);
+        if(!fait) return d.contractsRealized;
+        // Assistance et énergie ne se mélangent pas (règles de paie différentes) : deux lignes, sans total.
+        const lA = (d.contractsRealized > 0 || !isEnergieSeule(d.agent)) ? `<div title="Contrats d'assistance payés sur la période">🛡️ ${d.contractsRealized} assistance</div>` : '';
+        const lE = `<div title="Énergies nettes du mois (retours retirés) — comptées à part de l'assistance" style="color:var(--gold);">⚡ ${String(nbE).replace('.', ',')} énergie${nbE>1?'s':''}</div>`;
+        return lA + lE;
+      })()}</td>
       <td title="${fixedTip}" style="cursor:help;">${d.fixedProrated.toLocaleString('fr-FR')} DH</td>
       <td title="${commTip}" style="cursor:help;">${gainContrats>0 ? `<b style="color:${objManquant?'var(--red)':'var(--text)'};">${gainContrats.toLocaleString('fr-FR')} DH</b>` : '<span style="color:var(--muted);">0 DH</span>'}${(d.contractPart>0 && d.extraPart>0) ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">dont ${d.contractPart.toLocaleString('fr-FR')} DH commission + ${d.extraPart.toLocaleString('fr-FR')} DH bonus/contrat</div>` : (d.extraPart>0 ? `<div style="font-size:10.5px; color:var(--muted); margin-top:1px;">bonus par contrat au-delà de l'objectif</div>` : '')}${objRegle ? `<div style="font-size:11px; margin-top:2px; color:${d.resteAvantCommission>0 ? 'var(--amber)' : 'var(--green)'};">${d.payableMonth}/${payD.objectifMensuel} ce mois${d.resteAvantCommission>0 ? ` · encore ${d.resteAvantCommission}` : ' · objectif dépassé'}</div>${objReduit ? `<div style="font-size:10.5px; margin-top:1px; color:var(--accent);" title="Cet agent n'a pas travaillé le mois entier (embauche ou départ en cours de mois). Son objectif minimum est réduit dans la même proportion que son salaire fixe : ${objBrut} × ${Math.round(payD.prorationFactor*100)}% = ${payD.objectifMensuel}. On ne lui demande pas les contrats d'un mois complet pour une partie de mois.">objectif réduit ${objBrut} → ${payD.objectifMensuel} (${Math.round(payD.prorationFactor*100)}% du mois)</div>` : ''}` : ''}</td>
       <td>${d.objectifPrimes>0 ? `<span style="color:var(--green);">+${d.objectifPrimes.toLocaleString('fr-FR')} DH</span>` : '<span style="color:var(--muted);">—</span>'}</td>
@@ -14810,8 +14828,19 @@ async function computeAgentRealTimeSalary(agent, year, month, prorata, dateRange
   const indepCommissionAmt = isSupervisor(agent) ? Math.round((indepCommMap[agent] || {}).amount || 0) : 0;
 
   const total = fixedProrated + contractPart + extraPart + objectifPrimes + manualPrimesTotal + supervisorBonusAmt + indepCommissionAmt - (ded.total||0);
+  // r382 — ÉNERGIES du mois de l'agent (module Ilek), à côté de ses contrats d'assistance. Affichage
+  // seulement : aucun montant n'est modifié. Sans ça, un agent « énergie uniquement » (Allan, Modou)
+  // apparaissait à 0 contrat parce que la colonne ne lisait que l'assistance.
+  let energieMois = { nets: 0, objectif: 0 };
+  try{
+    if(typeof window.ilekDuMois === 'function'){
+      const imE = await window.ilekDuMois(agent, `${year}-${String(month).padStart(2,'0')}`);
+      if(imE) energieMois = { nets: Number(imE.nets) || 0, objectif: Number(imE.objectif) || 0 };
+    }
+  }catch(e){ console.warn('Énergie du mois (dépenses temps réel)', agent, e); }
   return {
     agent, isIndep: !!pay.isIndep, noObjectif: !!pay.noObjectif,
+    energiesNets: energieMois.nets, energieObjectif: energieMois.objectif,
     total: Math.round(total),
     fixedProrated: Math.round(fixedProrated), fixedFull: Math.round(fixedFull),
     baseFixedProrated: Math.round(baseFixedProrated), assiduiteProrated: Math.round(assiduiteProrated),
@@ -18122,7 +18151,7 @@ async function buildDailyBriefingHtml(baseRows){
   await chargerObjEnergieJour(dateStr);
   const missingObjectiveAgents = rows
     .filter(r => !r.isIndep && !r.absentToday && !r.enDecouverte
-      && (isEnergieSeule(r.agent) ? objEnergieJour(r.agent, dateStr) === 0 : r.todayObjective === 0))
+      && (isEnergiePrincipal(r.agent) ? objEnergieJour(r.agent, dateStr) === 0 : r.todayObjective === 0))
     .map(r => r.agent);
   // Ceux qu'on a volontairement écartés — nommés en petit sous l'alerte, pour que le boss sache que
   // l'appli ne les a pas simplement oubliés.
@@ -22659,7 +22688,7 @@ async function etatRappelObjectif(){
   // ⚡ r354 — Agent « énergie uniquement » : on lui réclame son objectif ÉNERGIE du jour, jamais un
   // objectif d'assistance qu'il n'a pas à faire. Avant, le bandeau rouge ne partait jamais : le seul
   // moyen de le faire disparaître était de fixer un objectif d'assistance, qui restait ensuite à 0.
-  if(isEnergieSeule(currentAgent)){
+  if(isEnergiePrincipal(currentAgent)){   // r383 — objectif du produit PRINCIPAL seulement ; l'autre produit = bonus sans objectif
     await chargerObjEnergieJour(d);
     if(!objEnergieJour(currentAgent, d)) return { type: 'jour', energie: true };
     if(workingDaysElapsedForAgent(currentAgent, d) <= 5){
@@ -22693,7 +22722,20 @@ async function majRappelObjectif(){
   catch(e){ console.warn('rappel objectif', e); }
   finally{ _rappelObjEnCours = false; }
 
-  if(!etat){ el.style.display = 'none'; el.dataset.type = ''; return; }
+  // r382 — VERROU. Objectif du JOUR : réclamé chaque jour, dès le pointage. Objectif du MOIS : obligatoire
+  // le 1er jour travaillé du mois seulement (les jours suivants le bandeau reste, sans verrou).
+  // Les indépendants ne sont jamais verrouillés. L'admin connecté non plus (il ne doit pas se bloquer
+  // lui-même en regardant la fiche d'un agent).
+  let bloque = false;
+  try{
+    const adminOuvert = (document.getElementById('adminPanel') || {}).style && document.getElementById('adminPanel').style.display === 'block';
+    bloque = !!etat && !adminOuvert && !isIndependant(currentAgent)
+      && (etat.type === 'jour' || workingDaysElapsedForAgent(currentAgent, todayStr()) <= 1);
+  }catch(e){ bloque = false; }
+  _objectifBloque = bloque;
+  document.body.classList.toggle('objectif-bloque', bloque);
+
+  if(!etat){ el.style.display = 'none'; el.dataset.type = ''; el.style.position = ''; el.style.animation = ''; return; }
   const jour = etat.type === 'jour';
   el.dataset.type = etat.type;
   el.dataset.energie = etat.energie ? '1' : '';
@@ -22705,7 +22747,28 @@ async function majRappelObjectif(){
     ? `<span>${etat.energie ? '⚡' : '🎯'} Tu viens de pointer — fixe ton objectif ${motObj} du jour maintenant.</span><span style="padding:6px 16px; border-radius:20px; background:#e5484d; color:#fff; font-weight:900; white-space:nowrap;">Le fixer →</span>`
     : `<span>🚀 Fixe ton objectif ${motObj} perso du mois — vise ce que tu veux, personne ne t'y oblige.</span><span style="padding:6px 16px; border-radius:20px; background:var(--accent); color:#fff; font-weight:900; white-space:nowrap;">Le fixer →</span>`;
   el.style.display = 'flex';
+  if(bloque){
+    // Bandeau collé en haut, plus grand, qui pulse : impossible à ignorer.
+    const mot = etat.energie ? 'énergie ' : '';
+    const quoi = jour ? `ton objectif ${mot}du jour` : `ton objectif ${mot}du mois (obligatoire le 1er jour travaillé du mois)`;
+    el.style.position = 'sticky'; el.style.top = '0'; el.style.zIndex = '9999';
+    el.style.fontSize = '19px'; el.style.padding = '20px 18px';
+    el.style.background = 'rgba(229,72,77,0.97)'; el.style.color = '#fff';
+    el.style.borderBottom = '3px solid #fff';
+    el.style.animation = 'objPulse 1.2s infinite';
+    el.innerHTML = `<span>🚫 STOP — fixe ${quoi}. Les autres onglets sont verrouillés tant que ce n'est pas fait.</span><span style="padding:9px 22px; border-radius:24px; background:#fff; color:#e5484d; font-weight:900; white-space:nowrap;">Le fixer maintenant →</span>`;
+  } else {
+    el.style.position = ''; el.style.top = ''; el.style.zIndex = ''; el.style.fontSize = ''; el.style.padding = ''; el.style.animation = ''; el.style.borderBottom = '';
+  }
   if(jour) notifierObjectifManquant();
+}
+var _objectifBloque = false;
+function secouerBandeauObjectif(){
+  const el = document.getElementById('objectifRappelBanner');
+  if(!el) return;
+  el.style.animation = 'objSecoue 0.5s, objPulse 1.2s infinite';
+  try{ el.scrollIntoView({ behavior:'smooth', block:'start' }); }catch(e){}
+  try{ showToast('🚫 Fixe d\'abord ton objectif : les autres onglets sont verrouillés.', 'warn'); }catch(e){}
 }
 
 // Un clic n'importe où sur le bandeau : on bascule sur l'Arena, on amène le cadre concerné au centre
@@ -22716,7 +22779,7 @@ function allerFixerObjectif(type){
   // ⚡ r354 — pour un agent « énergie uniquement », le bandeau l'emmène sur son cadre ÉNERGIE, pas sur
   // le cadre d'assistance qu'il ne voit plus. L'objectif énergie du mois vit dans la vue « mois » du
   // même cadre : on bascule donc la vue avant de l'y amener.
-  const estEner = !!(el && el.dataset.energie === '1') || (currentAgent && isEnergieSeule(currentAgent));
+  const estEner = !!(el && el.dataset.energie === '1') || (currentAgent && isEnergiePrincipal(currentAgent));
   try{ showView('arena'); }catch(e){}
   if(estEner){
     try{ if(typeof setArenaScope === 'function') setArenaScope(t === 'mois' ? 'month' : 'day'); }catch(e){}
@@ -22744,7 +22807,7 @@ function notifierObjectifManquant(){
   try{ if(localStorage.getItem(cle)) return; }catch(e){}
   if(!('Notification' in window) || Notification.permission !== 'granted') return;
   try{
-    const estEnerN = isEnergieSeule(currentAgent);
+    const estEnerN = isEnergiePrincipal(currentAgent);
     const n = new Notification(estEnerN ? '⚡ Objectif énergie du jour' : '🎯 Objectif du jour', {
       body: `${firstName(currentAgent)}, tu as pointé ton arrivée mais tu n'as pas encore fixé ton objectif ${estEnerN ? 'énergie ' : ''}du jour. Ça prend 5 secondes.`,
       tag: 'vortexnova-objectif-' + todayStr(),
@@ -22787,7 +22850,7 @@ async function saveArenaDesiredObjectif(){
   // r362 - Regle du patron (12/11) : un agent ne peut PAS viser moins que le minimum demande.
   // Le minimum lu est celui de SON produit : l'objectif energie pour un agent << energie uniquement >>,
   // l'objectif d'assistance pour tous les autres. Sans minimum regle, rien ne bloque.
-  const _seule = (typeof isEnergieSeule === 'function') && isEnergieSeule(currentArenaAgent);
+  const _seule = (typeof isEnergiePrincipal === 'function') && isEnergiePrincipal(currentArenaAgent);
   let _mini = 0;
   try{
     if(_seule){
@@ -22978,7 +23041,7 @@ async function renderArena(){
   const desiredObjBoxEl = document.getElementById('arenaDesiredObjBox');
   // ⚡ r354 — même raison que le cadre du jour : l'agent « énergie uniquement » a son propre cadre
   // « Ton objectif énergie du mois », celui-ci faisait doublon en contrats d'assistance.
-  const peutVoirObjAssist = currentArenaAgent && !isEnergieSeule(currentArenaAgent);
+  const peutVoirObjAssist = currentArenaAgent && !isEnergiePrincipal(currentArenaAgent);
   desiredObjBoxEl.style.display = (peutVoirObjAssist && isMonthScope) ? 'block' : 'none';
   if(peutVoirObjAssist && isMonthScope){
     const desiredVal = await getMonthlyDesiredObjective(currentArenaAgent, now.getFullYear(), now.getMonth()+1);
@@ -23014,7 +23077,7 @@ async function renderArena(){
   }
   // ⚡ r354 — un agent « énergie uniquement » ne voit plus ce cadre : il règle son objectif dans le cadre
   // « Ton objectif énergie du jour » juste en dessous. Avant, il en voyait DEUX, dont un qui restait vide.
-  if(currentArenaAgent && !isMonthScope && !isEnergieSeule(currentArenaAgent)){
+  if(currentArenaAgent && !isMonthScope && !isEnergiePrincipal(currentArenaAgent)){
     // Un indépendant peut lui aussi fixer un objectif du jour (défi facultatif) : on affiche toujours le
     // champ tant qu'il n'a rien réglé. Le "réalisé" n'est plus saisi ici : il vient du backoffice.
     const p = getAgentProd(board, currentArenaAgent);
@@ -25557,6 +25620,14 @@ async function renderSupervisionReel(){
       isIndep ? Promise.resolve(null) : getDayLog(agent, dateStr),
       getMonthlyDesiredObjective(agent, now.getFullYear(), now.getMonth()+1)
     ]);
+    // r384 — ÉNERGIES du mois de l'agent (module Ilek), comptées À PART de l'assistance : on ne mélange pas.
+    let enerNets = 0, enerMini = 0;
+    try{
+      if(typeof window.ilekDuMois === 'function'){
+        const imE = await window.ilekDuMois(agent, `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`);
+        if(imE){ enerNets = Number(imE.nets) || 0; enerMini = Number(imE.objectif) || 0; }
+      }
+    }catch(e){ /* pas d'énergie : on laisse 0 */ }
     const assiduiteAcquise = isAssiduiteAcquise(monthStats);
     const monthRes = await estimateSalaryMonthReal(agent, now.getFullYear(), now.getMonth()+1, assiduiteAcquise);
     const tier = isIndep ? null
@@ -25615,7 +25686,7 @@ async function renderSupervisionReel(){
       agent, isIndep, dayRealized, dayObjective, weekReal: weekData.total,
       weekObjective: isIndep ? 0 : dayObjective * Math.min(weekData.daysElapsed || 0, (pc.daysPerWeek || 5)),
       weekObjectiveComplet: semaineComplete,
-      monthReal, monthObj: monthObj_, pctMonth: pctMonth_, atteint, salaryMonth: monthRes.total,
+      monthReal, monthObj: monthObj_, pctMonth: pctMonth_, atteint, salaryMonth: monthRes.total, enerNets, enerMini,
       statusLabel, statusCls, tier, retardsCumules: monthStats ? monthStats.retardsCumules : 0,
       desiredObj, desiredPct,
       pauseTodayMin, pauseTodayBudget, pauseTodayOver,
@@ -25714,6 +25785,14 @@ async function renderSupervisionReel(){
   const allIndepContracts = rows
     .filter(r => r.isIndep)
     .reduce((somme, r) => somme + (r.monthReal || 0), 0);
+  // r384 — Énergies (nettes des retours), à part de l'assistance. Le « minimum » énergie n'existe que pour
+  // les agents dont l'énergie est le produit PRINCIPAL ; pour les autres l'énergie est un bonus sans objectif.
+  const allEnerNets = rows.reduce((somme, r) => somme + (r.enerNets || 0), 0);
+  const supEnerNets = rows.filter(r => !r.isIndep && isSupervisor(r.agent)).reduce((somme, r) => somme + (r.enerNets || 0), 0);
+  const princRows = rows.filter(r => !r.isIndep && isEnergiePrincipal(r.agent));
+  const princEnerNets = princRows.reduce((somme, r) => somme + (r.enerNets || 0), 0);
+  const princEnerMini = princRows.reduce((somme, r) => somme + (r.enerMini || 0), 0);
+  const nbE = x => String(Math.round(x * 100) / 100).replace('.', ',');
 
   // ── Nommer les agents concernés, avec le détail chiffré en survol ────────────────────────────────
   // Les infobulles utilisent &#10; (retour à la ligne en attribut HTML) : un \n brut casserait
@@ -25782,6 +25861,11 @@ async function renderSupervisionReel(){
       <div class="sub" style="margin-top:4px;font-size:11px;">Hors tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''} et ceux des autres superviseurs. Semaine = lundi à aujourd'hui.</div>
       ${myIneligibilityReason ? `<div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚫 Aujourd'hui, à cause du non-respect du règlement — ${myIneligibilityReason} — tu es à <b>0 DH/contrat</b> des agents de base. Ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}
     </div>`;
+  const energieBloc = (allEnerNets > 0 || princEnerMini > 0) ? `<div class="sv-row2"><div class="sv-pt" style="background:#34b774"></div><div>
+              <div class="sv-lab" style="cursor:help;" title="Les énergies de l'équipe ce mois-ci, retours retirés. Elles sont comptées à part de l'assistance : 1 énergie n'est pas 1 contrat d'assistance.&#10;Le minimum ne concerne que les agents dont l'énergie est le produit principal.">⚡ Énergie — à part de l'assistance <span style="opacity:.7;">ⓘ</span></div>
+              ${princEnerMini > 0 ? `<div class="sv-pct" style="color:#34b774">${Math.round(100 * princEnerNets / princEnerMini)} %</div>
+              <div class="sv-sm">${nbE(princEnerNets)} sur ${princEnerMini} · minimum des agents « énergie principale » · ${nbE(allEnerNets)} énergie${allEnerNets>1?'s':''} au total dans l'équipe</div>`
+              : `<div class="sv-pct" style="color:#34b774">${nbE(allEnerNets)}</div><div class="sv-sm">énergie${allEnerNets>1?'s':''} nette${allEnerNets>1?'s':''} ce mois (sans minimum : produit en bonus)</div>`}</div></div>` : '';
   dashboard.innerHTML = `
     ${myIneligibilityReason ? `<div class="sv-banner sv-perso"><div><b>🚫 Règlement : tu es à 0 DH par contrat aujourd'hui</b>${myIneligibilityReason}. Ta part est reversée au(x) superviseur(s) présent(s).</div></div>` : ''}
     <div class="sv-hero">
@@ -25801,10 +25885,11 @@ async function renderSupervisionReel(){
               <div class="sv-lab" style="cursor:help;" title="Somme de ce que chaque agent s'est promis lui-même dans l'Arena.&#10;Le minimum est ce que TU imposes ; celui-ci est ce que l'ÉQUIPE s'engage à faire.&#10;Un agent qui n'a rien fixé compte pour son minimum.">Objectif fixé par les agents <span style="opacity:.7;">ⓘ</span></div>
               <div class="sv-pct" style="color:#5aa7ff">${visePct} %</div>
               <div class="sv-sm">${totalMonthReal} sur ${totalMonthDesired} · ${resteVise > 0 ? `<b style="color:var(--text);" title="Ce qu'il reste à signer, tous agents confondus, pour que l'équipe tienne sa propre promesse. C'est le chiffre à annoncer en briefing.">encore ${resteVise}</b> à signer (chiffre à annoncer au briefing)` : `<b style="color:var(--gold);">objectif fixé atteint 🎉</b>`} · <span title="Les agents qui n'ont pas fixé d'objectif dans l'Arena comptent pour leur minimum obligatoire dans ce total." style="cursor:help;">${nbDesiredSet} agent${nbDesiredSet>1?'s':''} sur ${svNbSousContrat} ${nbDesiredSet>1?'ont':'a'} fixé le leur ⓘ</span></div></div></div>` : ''}
+            ${energieBloc}
           </div>
         </div>
         <div class="sv-alerts">${alerteHtml ? `<div class="sub">${alerteHtml}</div>` : ''}${presqueHtml}${sousViseHtml}</div>
-        <div class="sv-xs"><div class="sub" style="margin-top:8px;font-size:11px;" title="Les ${totalBasePool} contrats des agents de base sont les seuls qui alimentent ta prime de supervision.&#10;Les ${allSupervisorsPersonal} contrats personnels des superviseurs (les tiens compris) comptent pour l'équipe, mais JAMAIS dans la prime — personne ne se paie une prime sur ses propres ventes." style="cursor:help;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}${allIndepContracts>0 ? ` + ${allIndepContracts} indépendant${allIndepContracts>1?'s':''}` : ''}. <span style="opacity:0.7;">ⓘ</span></div></div>
+        <div class="sv-xs"><div class="sub" style="margin-top:8px;font-size:11px;" title="Les ${totalBasePool} contrats des agents de base sont les seuls qui alimentent ta prime de supervision.&#10;Les ${allSupervisorsPersonal} contrats personnels des superviseurs (les tiens compris) comptent pour l'équipe, mais JAMAIS dans la prime — personne ne se paie une prime sur ses propres ventes." style="cursor:help;">Dont ${totalBasePool} agents de base + ${allSupervisorsPersonal} perso superviseur${allSupervisorsPersonal>1?'s':''}${myOwnRow && myOwnRow.monthReal>0 ? ` (dont ${myOwnRow.monthReal} les tiens)` : ''}${allIndepContracts>0 ? ` + ${allIndepContracts} indépendant${allIndepContracts>1?'s':''}` : ''}.${allEnerNets>0 ? ` <b style="color:#34b774;" title="Les énergies sont comptées à part de l'assistance (retours retirés). Elles ne sont pas dans le grand chiffre ci-dessus.">⚡ À part : ${nbE(allEnerNets)} énergie${allEnerNets>1?'s':''}${supEnerNets>0 ? ` (dont ${nbE(supEnerNets)} des superviseurs)` : ''}</b>.` : ''} <span style="opacity:0.7;">ⓘ</span></div></div>
       </div>
       <div>
         ${svMyRow ? `<div class="sv-box pay sv-perso">
@@ -25867,7 +25952,7 @@ async function renderSupervisionReel(){
     // jour — une absence non justifiée ou une mise à pied doit au contraire y rester visible.
     if(log.justifiedAbsence && JUSTIFIED_ABSENCE_TYPES[log.justifiedAbsence]?.justified) return { agent: r.agent, violation: false };
     const infr = await getInfractions(r.agent, todayDateStr);
-    const ev = evaluateDay(log.events, todayDateStr, await getEffectiveFreeBreakBonus(r.agent, todayDateStr, log), agent);
+    const ev = evaluateDay(log.events, todayDateStr, await getEffectiveFreeBreakBonus(r.agent, todayDateStr, log), r.agent);
     const anyBreakOver = ev.breakIssues.some(b=>b.over) || ev.freeBreakOverMin > 0;
     const violation = ev.lateMinutes > 0 || anyBreakOver || infr.length > 0;
     return { agent: r.agent, violation };
@@ -41063,15 +41148,16 @@ async function renderAssistanceHistory(){
       var barre = function(p){ return '<div style="height:9px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;margin:8px 0 4px;"><div style="width:' + p + '%;height:100%;background:' + vert + ';"></div></div>'; };
       // Comme Prime : la vue « jour » ne montre que l'énergie du jour, la vue « mois » que celle du mois.
       var moisVue = (typeof arenaScope !== 'undefined' && arenaScope === 'month');
-      var titre = moisVue ? 'Ton objectif énergie du mois' : 'Ton objectif énergie du jour';
+      var bonusSansObj = !isEnergiePrincipal(ag);   // r383 — l'énergie est son produit en BONUS : aucun objectif à fixer
+      var titre = bonusSansObj ? 'Tes énergies (en bonus, sans objectif)' : (moisVue ? 'Ton objectif énergie du mois' : 'Ton objectif énergie du jour');
       var blocJour =
         '<div style="margin-top:14px;"><div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">Énergies aujourd\'hui</div>' +
         '<div style="font-size:30px;font-weight:900;color:' + vert + ';">' + n + (dj > 0 ? '<span style="font-size:15px;color:var(--muted);font-weight:600;"> / ' + dj + '</span>' : '') + '</div>' + (dj > 0 ? barre(pj) : '') +
-        '<div class="arena-objectif-form" style="margin-top:8px;"><input type="number" id="arenaEnerJourInput" min="0" max="99" placeholder="Ex: 4" value="' + (dj || '') + '" style="width:100px;font-size:20px;padding:10px;border:2px solid rgba(52,183,116,.45);"> <button class="arena-btn" onclick="energieSaveObjJour()" style="background:' + vert + ';color:#04210f;">✅ ' + (dj > 0 ? 'Modifier' : 'Valider') + ' mon objectif énergie du jour</button></div><div id="arenaEnerConseil" style="display:none;"></div></div>';
+        (bonusSansObj ? '' : '<div class="arena-objectif-form" style="margin-top:8px;"><input type="number" id="arenaEnerJourInput" min="0" max="99" placeholder="Ex: 4" value="' + (dj || '') + '" style="width:100px;font-size:20px;padding:10px;border:2px solid rgba(52,183,116,.45);"> <button class="arena-btn" onclick="energieSaveObjJour()" style="background:' + vert + ';color:#04210f;">✅ ' + (dj > 0 ? 'Modifier' : 'Valider') + ' mon objectif énergie du jour</button></div><div id="arenaEnerConseil" style="display:none;"></div>') + '</div>';
       var blocMois =
         '<div style="margin-top:14px;"><div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);">Énergies ce mois (nettes des retours)</div>' +
         '<div style="font-size:26px;font-weight:900;">' + ilekNb(m.nets) + (mini > 0 ? '<span style="font-size:15px;color:var(--muted);font-weight:600;"> / ' + mini + ' (minimum)</span>' : '') + (vise > 0 ? '<span style="font-size:13px;color:var(--muted);font-weight:600;"> · visé ' + vise + '</span>' : '') + '</div>' + (cible > 0 ? barre(pm) : '') +
-        (vise > 0 ? '<div style="font-size:12.5px;color:var(--muted);">🔒 Objectif visé réglé à ' + vise + ' pour ce mois : seul l\'admin peut le changer.</div>' :
+        (bonusSansObj ? '' : vise > 0 ? '<div style="font-size:12.5px;color:var(--muted);">🔒 Objectif visé réglé à ' + vise + ' pour ce mois : seul l\'admin peut le changer.</div>' :
           '<div class="arena-objectif-form" style="margin-top:8px;"><input type="number" id="arenaEnerMoisInput" min="0" max="999" placeholder="Ex: 30" style="width:110px;font-size:20px;padding:10px;border:2px solid rgba(52,183,116,.45);"> <button class="arena-btn" onclick="energieSaveObjMois()" style="background:' + vert + ';color:#04210f;">✅ Valider mon objectif énergie du mois</button></div>') + '</div>';
       var conseil = moisVue ? conseilM : conseilJ;
       box.style.display = 'block';
@@ -41079,7 +41165,7 @@ async function renderAssistanceHistory(){
         '<div style="display:flex;align-items:center;gap:10px;"><div style="font-size:30px;line-height:1;">⚡</div><div><div style="font-size:16px;font-weight:900;">' + titre + '</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">Séparé de ton assistance : ses propres objectifs et ses propres chiffres.</div></div></div>' +
         (moisVue ? blocMois : blocJour) + conseilBloc +
         (conseil ? '<div style="margin-top:12px;font-size:13.5px;font-weight:600;line-height:1.45;">' + esc(conseil) + '</div>' : '') + '</div>';
-      if(!moisVue) window.brancherConseilSaisie('energie', oE, 'arenaEnerJourInput', 'arenaEnerConseil');
+      if(!moisVue && !bonusSansObj) window.brancherConseilSaisie('energie', oE, 'arenaEnerJourInput', 'arenaEnerConseil');
       // Classement énergie : même présentation que celui de Prime (mini / visé / fait), séparé, jour ou mois selon la vue.
       try{
         var rk = document.getElementById('arenaEnerRank');
@@ -41338,10 +41424,11 @@ async function renderAssistanceHistory(){
     var duMois = T.rows.filter(function(r){ return r.mois === adIlek.mois; });
     h += '<div><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;"><b>↩️ Retours Ilek du mois</b><input type="month" value="' + esc(adIlek.mois) + '" onchange="adIlekMois(this.value)"></div>' +
       '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
-        '<div style="font-size:12.5px;"><b>📄 Importer le fichier Excel d\'Ilek</b></div>' +
-        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Le CRM ne lit que les lignes « Annulé » (rétractation, impayé, autre) : <b>1 ligne = 1 énergie retirée</b>, sans aucune division. Elles sont retirées sur le mois affiché ci-dessus ; tu vérifies la liste avant de confirmer.</div>' +
-        '<input type="file" id="ilekXlsx" accept=".xlsx" style="max-width:100%;"> ' +
-        '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekFichier()">📄 Lire le fichier</button></div>' +
+        '<div style="font-size:12.5px;"><b>📄 Fichier d\'Ilek (un par semaine) — Excel ou CSV</b></div>' +
+        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Le CRM garde le <b>statut de chaque contrat</b> et se met à jour tout seul : un contrat qui devient « Annulé » → <b>1 énergie retirée</b> ; un contrat annulé qui redevient actif → <b>énergie redonnée</b> ; un motif qui change → motif mis à jour. Les brouillons et les autres statuts sont seulement enregistrés. Tu vois la liste de tout ce qui change avant de confirmer ; les retours saisis à la main ne sont jamais touchés (ils sont signalés « à vérifier »). Les nouveaux retours sont posés sur le mois affiché ci-dessus.</div>' +
+        '<input type="file" id="ilekXlsx" accept=".xlsx,.csv" style="max-width:100%;"> ' +
+        '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekFichier()">📄 Lire le fichier</button> ' +
+        '<button type="button" class="ct-btn" onclick="adIlekJournal()" title="Ce qui a changé à chaque fichier appliqué">📋 Historique</button></div>' +
       '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Ou colle ici les numéros de contrat Ilek revenus impayés (un par ligne, ou séparés par des espaces). Ils sont retirés sur le mois affiché ci-dessus. Un numéro déjà importé est ignoré.</div>' +
       '<textarea id="ilekImportTxt" rows="3" placeholder="IL-5521&#10;IL-5530" style="width:100%;box-sizing:border-box;"></textarea>' +
       '<div style="margin-top:6px;"><button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekImporter()">↩️ Importer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
@@ -41842,53 +41929,171 @@ async function renderAssistanceHistory(){
     }
     throw new Error('Colonne « Subscription ID » introuvable : ce n\'est pas le fichier Ilek attendu.');
   }
+  // ═══════════════ r385 — FICHIER ILEK HEBDOMADAIRE : le CRM suit le STATUT de chaque contrat et se met à jour tout seul ═══════════════
+  // Un fichier par semaine (Excel .xlsx ou .csv). Pour chaque contrat (Subscription ID) le CRM garde le dernier statut Ilek connu
+  // (doc « ilekStatuts »), le compare à la ligne du fichier et agit selon le changement :
+  //   • devient « Annulé »                           → l'énergie est retirée à l'agent (comme avant) ;
+  //   • était un retour, redevient Actif/Attente…    → l'énergie est REDONNÉE à l'agent (seulement si le retour vient d'un fichier) ;
+  //   • reste « Annulé » mais la raison change       → le motif du retour est mis à jour ;
+  //   • tout autre cas (retour saisi à la main, Résilié, Brouillon…) → jamais touché tout seul : signalé « à vérifier ».
+  // Rien n'est écrit avant ton clic sur la fenêtre de confirmation ; ensuite le détail est gardé dans l'historique (bouton 📋).
+  var ILEK_ETATS = { brouillon:'Brouillon', attentesignature:'Attente signature', attenteempreintebancaire:'Attente empreinte bancaire', attentereseau:'Attente réseau', actif:'Actif', annule:'Annulé', resilie:'Résilié' };
+  var ILEK_REACTIVE = { actif:1, attentereseau:1, attentesignature:1, attenteempreintebancaire:1 };
+  function ilekEtatCode(z){ return ilekNormNom(z) || 'inconnu'; }
+  function ilekEtatLib(code, brut){ return ILEK_ETATS[code] || (String(brut || '').trim() || 'Inconnu'); }
+  function ilekIdPropre(z){ return String(z == null ? '' : z).trim().replace(/\.0+$/, ''); }
+  function ilekLignesEnObjets(lignes){
+    var h = -1;
+    for(var i = 0; i < Math.min(lignes.length, 10); i++){ if((lignes[i] || []).some(function(z){ return ilekNormNom(z) === 'subscriptionid'; })){ h = i; break; } }
+    if(h < 0) throw new Error('Colonne « Subscription ID » introuvable : ce n\'est pas le fichier Ilek attendu.');
+    var cols = (lignes[h] || []).map(ilekNormNom);
+    return lignes.slice(h + 1).filter(function(l){ return l && l.some(function(z){ return z !== '' && z != null; }); }).map(function(l){
+      var o = {}; cols.forEach(function(c, i){ if(c) o[c] = l[i] == null ? '' : l[i]; }); return o;
+    });
+  }
+  // Lit un .csv (séparateur ; , ou tabulation — UTF-8 ou Windows) : même résultat que ilekLireXlsx.
+  async function ilekLireCsv(fichier){
+    var buf = await fichier.arrayBuffer(), txt = new TextDecoder('utf-8').decode(buf);
+    if(txt.indexOf('�') >= 0){ try{ txt = new TextDecoder('windows-1252').decode(buf); }catch(e){} }
+    txt = txt.replace(/^﻿/, '');
+    var prem = txt.split(/\r?\n/)[0] || '';
+    var nPv = (prem.match(/;/g) || []).length, nVi = (prem.match(/,/g) || []).length, nTa = (prem.match(/\t/g) || []).length;
+    var sep = (nPv >= nVi && nPv >= nTa) ? ';' : (nVi >= nTa ? ',' : '\t');
+    var lignes = [], l = [], c = '', q = false;
+    for(var i = 0; i < txt.length; i++){
+      var ch = txt[i];
+      if(q){ if(ch === '"'){ if(txt[i + 1] === '"'){ c += '"'; i++; } else q = false; } else c += ch; }
+      else if(ch === '"') q = true;
+      else if(ch === sep){ l.push(c); c = ''; }
+      else if(ch === '\n' || ch === '\r'){ if(ch === '\r' && txt[i + 1] === '\n') i++; l.push(c); c = ''; lignes.push(l); l = []; }
+      else c += ch;
+    }
+    if(c !== '' || l.length){ l.push(c); lignes.push(l); }
+    return ilekLignesEnObjets(lignes);
+  }
+  async function ilekStatutsLire(){
+    var r = { m: {} };
+    try{ var sn = await db.collection('vortexnova').doc('ilekStatuts').get(); if(sn.exists){ var o = JSON.parse(sn.data().value); if(o && o.m && typeof o.m === 'object') r = o; } }catch(e){}
+    return r;
+  }
+  // Un retour a-t-il été posé PAR UN FICHIER (donc modifiable tout seul) ? Pas un retour saisi à la main ni collé.
+  function ilekRetourDeFichier(r){ return !r.manuel && (r.source === 'fichier' || !!r.motifTexte); }
   window.adIlekFichier = async function(){
     if(adIlek.occupe) return;
     var inp = document.getElementById('ilekXlsx'), fichier = inp && inp.files && inp.files[0];
-    if(!fichier){ adIlek.msg = '⚠️ Choisis d\'abord le fichier Excel d\'Ilek (.xlsx).'; adRendre(); return; }
+    if(!fichier){ adIlek.msg = '⚠️ Choisis d\'abord le fichier d\'Ilek (.xlsx ou .csv).'; adRendre(); return; }
     adIlek.occupe = true; adIlek.msg = 'Lecture du fichier…'; adRendre();
     try{
-      var lignes = await ilekLireXlsx(fichier);
-      var annules = lignes.filter(function(o){ return ilekNormNom(o.etatducontrat) === 'annule'; });
-      if(!annules.length){ adIlek.msg = 'Aucune ligne « Annulé » dans ce fichier (' + lignes.length + ' lignes lues). Rien à importer.'; return; }
+      var lignes = /\.csv$/i.test(fichier.name) ? await ilekLireCsv(fichier) : await ilekLireXlsx(fichier);
       window.ilekInvalider();
-      var tous = await ilekContratsTous(), T = await ilekRetoursLire();
+      var tous = await ilekContratsTous(), T = await ilekRetoursLire(), S = await ilekStatutsLire();
       var idx = {}; tous.forEach(function(v){ var c = v.champs || {}; [c.numero, c.numeroGaz].forEach(function(z){ var k = ilekNormNum(z); if(k && !idx[k]) idx[k] = v; }); });
-      var deja = {}; T.rows.forEach(function(r){ deja[ilekNormNum(r.numero)] = true; });
-      var nouveaux = [], dejaImportes = [], pasConformes = [], introuvables = [], vus = {};
-      annules.forEach(function(o){
-        var id = String(o.subscriptionid || '').trim(), k = ilekNormNum(id), raison = String(o.raisondannulation || '').trim(), rn = ilekNormNom(raison);
+      var parNum = {}; T.rows.forEach(function(r){ parNum[ilekNormNum(r.numero)] = r; });
+      var aujourdhui = new Date().toISOString().slice(0, 10);
+      var premier = Object.keys(S.m).length === 0;
+      var nouveaux = [], reactives = [], motifs = [], averifier = [], pasConformes = [], introuvables = [], transitions = {}, vus = {}, nbStatutsChanges = 0, nbLignes = 0;
+      var newS = Object.assign({}, S.m);
+      lignes.forEach(function(o){
+        var id = ilekIdPropre(o.subscriptionid), k = ilekNormNum(id);
+        if(!k || vus[k]) return; vus[k] = true; nbLignes++;
+        var etat = ilekEtatCode(o.etatducontrat), libEtat = ilekEtatLib(etat, o.etatducontrat);
+        var raison = String(o.raisondannulation || '').trim(), rn = ilekNormNom(raison);
         var motif = rn.indexOf('tract') >= 0 ? 'retractation' : (rn.indexOf('impay') >= 0 ? 'impaye' : 'autre');
         var nomClient = [o.prenom, o.nom].filter(Boolean).join(' ');
-        if(!k) return;
-        if(vus[k]) return; vus[k] = true;
-        if(deja[k]){ dejaImportes.push(id); return; }
-        var v = idx[k];
-        if(!v){ introuvables.push('#' + id + ' ' + nomClient + ' (' + (raison || 'sans raison') + ')'); return; }
-        if(v.statut !== 'conforme'){ pasConformes.push('#' + id + ' ' + nomClient + ' (statut dans le CRM : ' + (v.statut || '?') + ')'); return; }
-        nouveaux.push({ numero: id.toUpperCase(), agent: v.agent, mois: adIlek.mois, energies: 1, nom: nomChamps(v.champs) || nomClient, motif: motif, motifTexte: raison, energie: String(o.typedenergie || ''), le: new Date().toISOString() });
+        var prev = S.m[k], row = parNum[k], v = idx[k];
+        var etiq = '#' + id + ' ' + nomClient + (v ? ' — ' + v.agent : '');
+        // 1) le statut gardé par le CRM
+        var raisonCourte = etat === 'annule' ? raison.slice(0, 40) : '';
+        if(!prev || prev.e !== etat || (etat === 'annule' && (prev.r || '') !== raisonCourte)){
+          newS[k] = { e: etat, r: raisonCourte, d: aujourdhui };
+          if(libEtat !== ILEK_ETATS[etat]) newS[k].l = libEtat;
+          nbStatutsChanges++;
+          if(prev && prev.e !== etat){ var cle = ilekEtatLib(prev.e, prev.l) + ' → ' + libEtat; transitions[cle] = (transitions[cle] || 0) + 1; }
+        } else { newS[k] = prev; }
+        // 2) ce que ça change pour les retours
+        if(etat === 'annule'){
+          if(row){
+            if(ilekRetourDeFichier(row) && (row.motif !== motif || String(row.motifTexte || '') !== raison)) motifs.push({ numero: k, etiq: etiq, de: ilekMotifLib(row.motif), vers: ilekMotifLib(motif), motif: motif, raison: raison });
+          } else if(!v){ introuvables.push(etiq + ' (' + (raison || 'sans raison') + ')'); }
+          else if(v.statut !== 'conforme'){ pasConformes.push(etiq + ' (statut dans le CRM : ' + (v.statut || '?') + ')'); }
+          else nouveaux.push({ numero: id.toUpperCase(), agent: v.agent, mois: adIlek.mois, energies: 1, nom: nomChamps(v.champs) || nomClient, motif: motif, motifTexte: raison, energie: String(o.typedenergie || ''), source: 'fichier', le: new Date().toISOString() });
+        } else if(row){
+          if(ILEK_REACTIVE[etat] && ilekRetourDeFichier(row)) reactives.push({ numero: k, etiq: '#' + id + ' ' + (row.nom || nomClient) + ' — ' + row.agent + ' (' + (row.mois || '') + ')', vers: libEtat });
+          else averifier.push(etiq + ' : un retour est enregistré' + (row.manuel ? ' à la main' : (ilekRetourDeFichier(row) ? '' : ' (collé)')) + ', mais le contrat est maintenant « ' + libEtat + ' » chez Ilek');
+        } else if(etat === 'resilie' && prev && prev.e !== 'resilie' && v){
+          averifier.push(etiq + ' : passé « Résilié » chez Ilek (aucun retour enregistré, rien changé)');
+        }
       });
+      // Les statuts très anciens (plus revus depuis 200 jours) sortent de la mémoire pour qu'elle reste petite.
+      var limite = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
+      Object.keys(newS).forEach(function(k){ if(!vus[k] && newS[k] && newS[k].d && newS[k].d < limite && newS[k].e !== 'annule') delete newS[k]; });
+      var nbRetourChanges = nouveaux.length + reactives.length + motifs.length;
+      var listeTrans = Object.keys(transitions).sort(function(a, b){ return transitions[b] - transitions[a]; }).map(function(t){ return t + ' : ' + transitions[t]; });
       var cpt = {}; nouveaux.forEach(function(r){ var l = ilekMotifLib(r.motif); cpt[l] = (cpt[l] || 0) + 1; });
       var resume = Object.keys(cpt).map(function(l){ return cpt[l] + ' ' + l; }).join(', ');
-      var infos = [];
-      if(dejaImportes.length) infos.push('Déjà importés (ignorés) : ' + dejaImportes.join(', '));
-      if(pasConformes.length) infos.push('Pas « conformes » dans le CRM (ignorés) : ' + pasConformes.join(' · '));
-      if(introuvables.length) infos.push('Introuvables dans le CRM (ignorés) : ' + introuvables.join(' · '));
-      if(!nouveaux.length){ adIlek.msg = 'Rien à importer (' + annules.length + ' ligne(s) « Annulé » lue(s)).' + (infos.length ? '\n' + infos.join('\n') : ''); return; }
-      if(!(await uiConfirm({ titre:'Importer ces retours Ilek ?', icone:'↩️', ton:'warn',
-          texte: nouveaux.length + ' énergie(s) retirée(s) sur ' + adIlek.mois + ' (' + resume + '), 1 pour 1, sans division.',
-          liste: nouveaux.map(function(r){ return '#' + r.numero + ' — ' + r.agent + ' · ' + ilekMotifLib(r.motif) + (r.energie ? ' (' + r.energie + ')' : ''); }).concat(infos),
-          oui:'Importer', non:'Annuler' }))){ adIlek.msg = 'Annulé : rien n\'a été importé.'; return; }
-      window.ilekInvalider();
-      var T2 = await ilekRetoursLire(), rows = T2.rows.slice();
-      nouveaux.forEach(function(r){ if(!rows.some(function(x){ return ilekNormNum(x.numero) === ilekNormNum(r.numero); })) rows.push(r); });
-      var ok = await storageSet('ilekRetours', JSON.stringify({ rows: rows }));
-      if(!ok){ adIlek.msg = '❌ Enregistrement impossible.'; return; }
-      try{ logAudit('Admin', 'Retours Ilek importés depuis le fichier : ' + nouveaux.length + ' énergie(s) sur ' + adIlek.mois, resume); }catch(e){}
-      adIlek.msg = '✅ ' + nouveaux.length + ' énergie(s) retirée(s) sur ' + adIlek.mois + ' (' + resume + ').' + (infos.length ? '\n' + infos.join('\n') : '');
+      var ignores = [];
+      if(pasConformes.length) ignores.push('Pas « conformes » dans le CRM (ignorés) : ' + pasConformes.join(' · '));
+      if(introuvables.length) ignores.push('Introuvables dans le CRM (ignorés) : ' + introuvables.join(' · '));
+      var liste = [];
+      if(nouveaux.length){ liste.push('↩️ NOUVEAUX RETOURS — énergie retirée (' + nouveaux.length + ')'); nouveaux.forEach(function(r){ liste.push('   #' + r.numero + ' — ' + r.agent + ' · ' + ilekMotifLib(r.motif) + (r.energie ? ' (' + r.energie + ')' : '')); }); }
+      if(reactives.length){ liste.push('✅ REVENUS ACTIFS — énergie REDONNÉE à l\'agent (' + reactives.length + ')'); reactives.forEach(function(r){ liste.push('   ' + r.etiq + ' : Annulé → ' + r.vers); }); }
+      if(motifs.length){ liste.push('✏️ MOTIF CHANGÉ (' + motifs.length + ')'); motifs.forEach(function(m){ liste.push('   ' + m.etiq + ' : ' + m.de + ' → ' + m.vers); }); }
+      if(averifier.length){ liste.push('⚠️ À VÉRIFIER — rien n\'est changé tout seul (' + averifier.length + ')'); averifier.forEach(function(a){ liste.push('   ' + a); }); }
+      if(premier) liste.push('📊 Premier fichier : ' + nbLignes + ' contrats enregistrés comme état de départ.');
+      else if(listeTrans.length){ liste.push('📊 CHANGEMENTS DE STATUT (' + nbStatutsChanges + ')'); listeTrans.forEach(function(t){ liste.push('   ' + t); }); }
+      ignores.forEach(function(t){ liste.push('🚫 ' + t); });
+
+      if(!nbRetourChanges && !nbStatutsChanges){
+        adIlek.msg = 'Aucun changement depuis le dernier fichier (' + nbLignes + ' contrats lus).' + (averifier.length ? '\n⚠️ Toujours à vérifier (rien n\'est changé tout seul) :\n   ' + averifier.join('\n   ') : '') + (ignores.length ? '\n' + ignores.join('\n') : ''); return;
+      }
+      if(nbRetourChanges){
+        var texte = [];
+        if(nouveaux.length) texte.push(nouveaux.length + ' énergie(s) retirée(s) sur ' + adIlek.mois + (resume ? ' (' + resume + ')' : ''));
+        if(reactives.length) texte.push(reactives.length + ' énergie(s) redonnée(s)');
+        if(motifs.length) texte.push(motifs.length + ' motif(s) changé(s)');
+        if(!(await uiConfirm({ titre:'Appliquer ce fichier Ilek ?', icone:'🔄', ton:'warn', texte: texte.join(' · ') + '. 1 pour 1, sans division.', liste: liste, oui:'Appliquer', non:'Annuler' }))){ adIlek.msg = 'Annulé : rien n\'a été changé.'; return; }
+        window.ilekInvalider();
+        var T2 = await ilekRetoursLire(), rows = T2.rows.slice();
+        var rm = {}; reactives.forEach(function(r){ rm[r.numero] = true; });
+        rows = rows.filter(function(x){ return !rm[ilekNormNum(x.numero)]; });
+        motifs.forEach(function(m){ rows.forEach(function(x){ if(ilekNormNum(x.numero) === m.numero){ x.motif = m.motif; x.motifTexte = m.raison; } }); });
+        nouveaux.forEach(function(r){ if(!rows.some(function(x){ return ilekNormNum(x.numero) === ilekNormNum(r.numero); })) rows.push(r); });
+        var ok = await storageSet('ilekRetours', JSON.stringify({ rows: rows }));
+        if(!ok){ adIlek.msg = '❌ Enregistrement impossible : rien n\'a été changé.'; return; }
+      }
+      var okS = await storageSet('ilekStatuts', JSON.stringify({ m: newS, maj: new Date().toISOString() }));
+      // Historique : ce qui a changé, gardé pour pouvoir le relire plus tard (20 derniers fichiers).
+      try{
+        var rj = await storageGet('ilekJournal', { fresh: true }), items = [];
+        try{ var oj = rj && rj.value ? JSON.parse(rj.value) : null; if(oj && Array.isArray(oj.items)) items = oj.items; }catch(e){}
+        items.unshift({ le: new Date().toISOString(), fichier: fichier.name, mois: adIlek.mois, lignes: nbLignes, premier: premier,
+          nouveaux: nouveaux.map(function(r){ return '#' + r.numero + ' ' + r.agent + ' · ' + ilekMotifLib(r.motif); }),
+          reactives: reactives.map(function(r){ return r.etiq + ' → ' + r.vers; }),
+          motifs: motifs.map(function(m){ return m.etiq + ' : ' + m.de + ' → ' + m.vers; }),
+          averifier: averifier, statuts: listeTrans, ignores: ignores });
+        await storageSet('ilekJournal', JSON.stringify({ items: items.slice(0, 20) }));
+      }catch(e){ console.warn('Journal Ilek', e); }
+      var bilan = nouveaux.length + ' retiré(s), ' + reactives.length + ' redonné(s), ' + motifs.length + ' motif(s) changé(s), ' + averifier.length + ' à vérifier, ' + nbStatutsChanges + ' statut(s) mis à jour';
+      try{ logAudit('Admin', 'Fichier Ilek appliqué (' + fichier.name + ') : ' + bilan, liste.join(' | ').slice(0, 900)); }catch(e){}
+      adIlek.msg = '✅ Fichier appliqué : ' + bilan + '.' + (okS ? '' : '\n⚠️ Les statuts n\'ont pas pu être enregistrés (les retours, eux, l\'ont été).') + '\n' + liste.join('\n') + '\nTout est gardé dans 📋 Historique.';
+      try{ showToast('🔄 Fichier Ilek appliqué : ' + bilan, averifier.length ? 'warn' : 'ok', 9000); }catch(e){}
       if(inp) inp.value = '';
     }catch(e){ adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
     finally{ adIlek.occupe = false; adIlekRafraichir(); }
+  };
+  // 📋 Historique : les derniers fichiers appliqués et tout ce qui a changé à chaque fois.
+  window.adIlekJournal = async function(){
+    try{
+      var r = await storageGet('ilekJournal', { fresh: true }), items = [];
+      try{ var o = r && r.value ? JSON.parse(r.value) : null; if(o && Array.isArray(o.items)) items = o.items; }catch(e){}
+      var liste = [];
+      items.slice(0, 8).forEach(function(it){
+        var d = new Date(it.le), q = d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+        liste.push('📄 ' + q + ' — ' + (it.fichier || 'fichier') + ' (' + (it.lignes || 0) + ' contrats)');
+        [['↩️ retiré', it.nouveaux], ['✅ redonné', it.reactives], ['✏️ motif', it.motifs], ['⚠️ à vérifier', it.averifier], ['📊 statut', it.statuts]].forEach(function(g){ (g[1] || []).slice(0, 25).forEach(function(t){ liste.push('   ' + g[0] + ' : ' + t); }); });
+      });
+      await uiConfirm({ titre:'Historique des fichiers Ilek', icone:'📋', ton:'info', texte: items.length ? 'Les 8 derniers fichiers appliqués.' : 'Aucun fichier appliqué depuis la mise en place du suivi des statuts.', liste: liste, oui:'Fermer', non:null });
+    }catch(e){ try{ uiAlert('❌ Historique illisible : ' + (e && e.message ? e.message : e)); }catch(x){} }
   };
 
   // ═══════════════ r351 — MARQUER À LA MAIN un retour Ilek (rétractation, impayé, autre, ou un motif que tu ajoutes) ═══════════════
@@ -42768,11 +42973,21 @@ async function forcerAffichage(id){
              '<button class="rdv-btn" onclick="rdvAction(\'' + r.id + '\',\'annule\')">🗄 Archiver</button>';
     }
     var fr = hhmmDe(t, 'fr'), ma = hhmmDe(t, 'ma');
+    // r383 — la DATE sur chaque carte (avant : seulement dans les titres de jour de la vue « À venir »).
+    var jMa = jourDe(t, 'ma'), jFr = jourDe(t, 'fr');
+    var dateLib = '🗓️ ' + libJour(jMa) + (jFr !== jMa ? ' <small>(' + libJour(jFr) + ' en France)</small>' : '');
+    function courtDate(ms){ var q = jourDe(ms, 'ma').split('-'); return q[2] + '/' + q[1] + ' à ' + hhmmDe(ms, 'ma'); }
+    var priseLe = '';
+    if(r.creeLe){ var tc = new Date(r.creeLe).getTime(); if(!isNaN(tc)) priseLe = 'Pris le ' + courtDate(tc) + ' (Maroc)'; }
+    var histo = '';
+    if(r.tentatives && r.tentatives.length){
+      histo = '🔁 ' + r.tentatives.map(function(d, i){ return (i === 0 ? '1er appel prévu le ' : 'relance ' + i + ' le ') + courtDate(new Date(d).getTime()); }).join(' → ') + ' → maintenant : ' + courtDate(t);
+    }
     return '<div class="' + cls + '">' +
-      '<div class="rdv-h"><b>' + ma + '</b><span>Maroc · ' + fr + ' France</span></div>' +
+      '<div class="rdv-h"><b>' + ma + '</b><span>Maroc · ' + fr + ' France</span><span style="display:block;margin-top:3px;font-weight:700;color:var(--text);">' + dateLib + '</span></div>' +
       '<div><div class="rdv-nom">' + E(r.contact || 'Client') + statutLib(r) + (r.relances ? '<span class="rdv-tag">🔁 relance ' + r.relances + '/3</span>' : '') + '</div>' +
         (r.tel ? '<div class="rdv-tel"><a href="tel:' + E(String(r.tel).replace(/[^0-9+]/g, '')) + '">📞 ' + E(r.tel) + '</a></div>' : '') +
-        '<div class="rdv-meta">' + ((S.tous || (S.agent && r.agent !== S.agent)) ? '👤 Pour ' + E(r.agent) + (r.creePar && r.creePar !== r.agent ? ' (pris par ' + E(r.creePar) + ')' : '') + ' · ' : (r.creePar && r.creePar !== r.agent ? 'Pris par ' + E(r.creePar) + ' · ' : '')) + (r.duree || 15) + ' min' + (r.note ? ' · 📝 ' + E(r.note) : '') + '</div></div>' +
+        '<div class="rdv-meta">' + ((S.tous || (S.agent && r.agent !== S.agent)) ? '👤 Pour ' + E(r.agent) + (r.creePar && r.creePar !== r.agent ? ' (pris par ' + E(r.creePar) + ')' : '') + ' · ' : (r.creePar && r.creePar !== r.agent ? 'Pris par ' + E(r.creePar) + ' · ' : '')) + (r.duree || 15) + ' min' + (r.note ? ' · 📝 ' + E(r.note) : '') + (priseLe ? ' · ' + priseLe : '') + '</div>' + (histo ? '<div class="rdv-meta" style="margin-top:3px;">' + histo + '</div>' : '') + '</div>' +
       '<div class="rdv-acts">' + acts + '</div></div>';
   }
   function rendre(){
