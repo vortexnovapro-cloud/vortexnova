@@ -3599,7 +3599,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-25-r385';
+const APP_VERSION = '2026-11-26-r388';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -23840,7 +23840,7 @@ async function supervisorMonthlyBonus(year, month){
   const ener = await supervisorEnergieMonthlyBonus(year, month);
   const dhEnergie = ener.dh, energiesSup = ener.energies;
   supervisors.forEach(sup=>{ dh[sup] = (dh[sup] || 0) + (dhEnergie[sup] || 0); });
-  return { dh, contracts, dhEnergie, energies: energiesSup, poolEnergie: ener.pool };
+  return { dh, contracts, dhEnergie, energies: energiesSup, poolEnergie: ener.pool, energieParJour: ener.parJour };
 }
 
 
@@ -24061,12 +24061,13 @@ function supervisorMontantTranche(debut, qte, tauxBase, paliers){
 async function supervisorEnergieMonthlyBonus(year, month){
   const supervisors = listSupervisors();
   const dh = {}, energies = {};
+  const parJour = {};   // r388 : { date: { superviseur: { dh, energies } } } pour afficher Jour et Semaine
   supervisors.forEach(s=>{ dh[s] = 0; energies[s] = 0; });
-  if(!supervisors.length) return { dh, energies, pool: 0 };
+  if(!supervisors.length) return { dh, energies, pool: 0, parJour };
 
   const taux = {};
   supervisors.forEach(s=> taux[s] = supervisorTauxBase(s, 'energie'));
-  if(!supervisors.some(s=> taux[s] > 0 || supervisorPaliers(s, 'energie').length > 0)) return { dh, energies, pool: 0 };
+  if(!supervisors.some(s=> taux[s] > 0 || supervisorPaliers(s, 'energie').length > 0)) return { dh, energies, pool: 0, parJour };
 
   try{ if(typeof window.energieCharger === 'function') await window.energieCharger(); }catch(e){}
 
@@ -24117,13 +24118,15 @@ async function supervisorEnergieMonthlyBonus(year, month){
     });
     const { eligible, bonusRateBySup } = await resolveSupervisorDay(j.ds, board, supervisors, tauxJour, 'energie');
     eligible.forEach(sup=>{
-      dh[sup] += j.pool * (tauxJour[sup] + (bonusRateBySup[sup] || 0));
+      const gain = j.pool * (tauxJour[sup] + (bonusRateBySup[sup] || 0));
+      dh[sup] += gain;
       energies[sup] += j.pool;
+      (parJour[j.ds] = parJour[j.ds] || {})[sup] = { dh: gain, energies: j.pool };
       cumulSup[sup] += j.pool;   // n'avance QUE pour ceux qui etaient la ce jour-la
     });
     cumul += j.pool;
   }
-  return { dh, energies, pool: cumul };
+  return { dh, energies, pool: cumul, parJour };
 }
 
 // 📊 r354 — LE DÉTAIL DE LA PRIME DE SUPERVISION, en deux lignes séparées : ce qui vient de
@@ -25760,6 +25763,21 @@ async function renderSupervisionReel(){
   // avait déjà été remonté par capture d'écran.
   const bonusWeek = Math.min(supervisorBonus, Math.round(bonusWeekMap.dh[supervisor] || 0));
   const bonusDay = Math.min(bonusWeek, Math.round(bonusDayRaw));
+  // r388 — la carte montre Assistance et Énergie séparément. Les montants d'assistance ci-dessus sont
+  // inchangés ; le total du mois contient déjà l'énergie.
+  const enerSur = dates => dates.reduce((t, ds)=>{
+    const l = ((bonusMonthMap.energieParJour || {})[ds] || {})[supervisor];
+    if(l){ t.dh += l.dh; t.n += l.energies; }
+    return t;
+  }, { dh:0, n:0 });
+  const enerJ = enerSur([todayDateStrForBonus]);
+  const enerS = enerSur(weekDatesForBonus);
+  const enerM = { dh: (bonusMonthMap.dhEnergie || {})[supervisor] || 0, n: (bonusMonthMap.energies || {})[supervisor] || 0 };
+  const enerMDh = Math.round(enerM.dh);
+  const assistMDh = Math.max(0, supervisorBonus - enerMDh);
+  const enerTaux = supervisorTauxBase(supervisor, 'energie');
+  const enerPaliers = supervisorPaliers(supervisor, 'energie').length > 0;
+  const enerReglee = enerTaux > 0 || enerPaliers;
   // Taux effectif réellement appliqué aujourd'hui (peut dépasser le taux perso si un collègue
   // superviseur est en retard >10min ou absent ce jour-là — sa part est reversée sur ce taux). BUG
   // CORRIGÉ : tant qu'aucun contrat n'était encore saisi aujourd'hui (contractsDay=0), on retombait sur
@@ -25841,23 +25859,24 @@ async function renderSupervisionReel(){
   const svNbSousContrat = config.agents.filter(a=>!isIndependant(a) && estSousContrat(a, todayStr(), true)).length;
   const svViseOk = nbDesiredSet > 0 && totalMonthDesired > 0;
   const svColMin = teamPct>=100 ? 'var(--gold)' : (teamPct>=50 ? 'var(--amber)' : 'var(--red)');
+  const svPrimeCol = (titre, assistDh, nbContrats, ener, style) => {
+    const nbE2 = Math.round(ener.n * 100) / 100;
+    return `<div style="text-align:center;${style}">
+          <div class="sub" style="font-size:11px;font-weight:700;">${titre}</div>
+          <div class="big gold" style="font-size:20px;">${(assistDh + Math.round(ener.dh)).toLocaleString('fr-FR')} DH</div>
+          <div class="sub" style="font-size:11px;">📊 Assistance : <b>${assistDh.toLocaleString('fr-FR')} DH</b> (${nbContrats} contrat${nbContrats>1?'s':''})</div>
+          <div class="sub" style="font-size:11px;color:#34b774;">⚡ Énergie : ${enerReglee ? `<b>${Math.round(ener.dh).toLocaleString('fr-FR')} DH</b> (${nbE(nbE2)} énergie${nbE2>1?'s':''})` : 'tarif non réglé'}</div>
+        </div>`;
+  };
   const svPrimeHtml = `<div class="supervision-card">
       <div class="label">📊 Ta prime de supervision</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:6px 0 4px;">
-        <div style="text-align:center;">
-          <div class="big gold" style="font-size:20px;">${bonusDay.toLocaleString('fr-FR')} DH</div>
-          <div class="sub" style="font-size:10.5px;">Jour (${contractsDay} contrat${contractsDay>1?'s':''})</div>
-        </div>
-        <div style="text-align:center; border-left:1px solid var(--border); border-right:1px solid var(--border);">
-          <div class="big gold" style="font-size:20px;">${bonusWeek.toLocaleString('fr-FR')} DH</div>
-          <div class="sub" style="font-size:10.5px;">Semaine (${contractsWeek} contrat${contractsWeek>1?'s':''})</div>
-        </div>
-        <div style="text-align:center;">
-          <div class="big gold" style="font-size:20px;">${supervisorBonus.toLocaleString('fr-FR')} DH</div>
-          <div class="sub" style="font-size:10.5px;">Mois (${contractsUnderSupervision} contrat${contractsUnderSupervision>1?'s':''})</div>
-        </div>
+        ${svPrimeCol('Jour', bonusDay, contractsDay, enerJ, '')}
+        ${svPrimeCol('Semaine', bonusWeek, contractsWeek, enerS, 'border-left:1px solid var(--border); border-right:1px solid var(--border);')}
+        ${svPrimeCol('Mois', assistMDh, contractsUnderSupervision, { dh: enerM.dh, n: enerM.n }, '')}
       </div>
       <div class="sub" style="margin-top:4px;">Ton taux : ${(rate).toLocaleString('fr-FR')} DH/contrat des agents de base${!rate ? " — montant à régler par l'admin dans Production" : ''}${effectiveRateToday > rate ? ` <b style="color:var(--gold);">→ ${effectiveRateToday.toLocaleString('fr-FR')} DH aujourd'hui</b> (part d'un collègue superviseur en retard/absent reversée sur ton taux)` : ''}</div>
+      <div class="sub" style="margin-top:4px;color:#34b774;">⚡ Taux énergie : ${enerReglee ? `${enerTaux.toLocaleString('fr-FR')} DH/énergie des agents de base${enerPaliers ? ' (tarif de départ, puis paliers)' : ''}` : "non réglé — à régler par l'admin"}</div>
       <div class="sub" style="margin-top:4px;font-size:11px;">Hors tes contrats perso${myOwnRow && myOwnRow.monthReal>0 ? ` (${myOwnRow.monthReal})` : ''} et ceux des autres superviseurs. Semaine = lundi à aujourd'hui.</div>
       ${myIneligibilityReason ? `<div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--red-bg); border:1px solid rgba(229,72,77,0.4); font-size:12.5px; color:var(--red); font-weight:600;">🚫 Aujourd'hui, à cause du non-respect du règlement — ${myIneligibilityReason} — tu es à <b>0 DH/contrat</b> des agents de base. Ta part est reversée au(x) superviseur(s) présent(s).</div>` : ''}
     </div>`;
@@ -41425,10 +41444,15 @@ async function renderAssistanceHistory(){
     h += '<div><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;"><b>↩️ Retours Ilek du mois</b><input type="month" value="' + esc(adIlek.mois) + '" onchange="adIlekMois(this.value)"></div>' +
       '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
         '<div style="font-size:12.5px;"><b>📄 Fichier d\'Ilek (un par semaine) — Excel ou CSV</b></div>' +
-        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Le CRM garde le <b>statut de chaque contrat</b> et se met à jour tout seul : un contrat qui devient « Annulé » → <b>1 énergie retirée</b> ; un contrat annulé qui redevient actif → <b>énergie redonnée</b> ; un motif qui change → motif mis à jour. Les brouillons et les autres statuts sont seulement enregistrés. Tu vois la liste de tout ce qui change avant de confirmer ; les retours saisis à la main ne sont jamais touchés (ils sont signalés « à vérifier »). Les nouveaux retours sont posés sur le mois affiché ci-dessus.</div>' +
+        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Le CRM garde le <b>statut de chaque contrat</b> et se met à jour tout seul : un contrat qui devient « Annulé » → <b>1 énergie retirée</b> ; un contrat annulé qui redevient actif → <b>énergie redonnée</b> ; un motif qui change → motif mis à jour. Les brouillons et les autres statuts sont seulement enregistrés. Tu vois la liste de tout ce qui change avant de confirmer ; les retours saisis à la main ne sont jamais touchés (ils sont signalés « à vérifier »). Les nouveaux retours sont posés sur le mois affiché ci-dessus (au tout 1er fichier, les contrats annulés vendus avant ce mois vont sur leur mois de vente, pour les statistiques).</div>' +
         '<input type="file" id="ilekXlsx" accept=".xlsx,.csv" style="max-width:100%;"> ' +
         '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekFichier()">📄 Lire le fichier</button> ' +
         '<button type="button" class="ct-btn" onclick="adIlekJournal()" title="Ce qui a changé à chaque fichier appliqué">📋 Historique</button></div>' +
+      '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
+        '<div style="font-size:12.5px;"><b>↩️ Fichier des retours (clients non prélevés, en général 1 mois après)</b></div>' +
+        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">La commission avait été avancée : chaque contrat du fichier est <b>retiré sur le mois affiché ci-dessus</b> (le mois en cours), motif « non prélevé ». Un contrat déjà retiré n\'est jamais retiré deux fois. Tu vois la liste avant de confirmer.</div>' +
+        '<input type="file" id="ilekRetourXlsx" accept=".xlsx,.csv" style="max-width:100%;"> ' +
+        '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekRetoursFichier()">↩️ Retirer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
       '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Ou colle ici les numéros de contrat Ilek revenus impayés (un par ligne, ou séparés par des espaces). Ils sont retirés sur le mois affiché ci-dessus. Un numéro déjà importé est ignoré.</div>' +
       '<textarea id="ilekImportTxt" rows="3" placeholder="IL-5521&#10;IL-5530" style="width:100%;box-sizing:border-box;"></textarea>' +
       '<div style="margin-top:6px;"><button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekImporter()">↩️ Importer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
@@ -41971,6 +41995,16 @@ async function renderAssistanceHistory(){
     if(c !== '' || l.length){ l.push(c); lignes.push(l); }
     return ilekLignesEnObjets(lignes);
   }
+  // r387 — dates du fichier (texte « 2026-11-06 01:00:00 », « 06/11/2026 » ou numéro Excel) → « AAAA-MM-JJ » ; vide si absente.
+  function ilekDateIso(z){
+    if(z == null || z === '') return '';
+    var t = String(z).trim(), m;
+    if(/^\d{5}(\.\d+)?$/.test(t)){ var n = Number(t); if(n > 20000 && n < 80000) return new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000).toISOString().slice(0, 10); }
+    if((m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t))) return m[1] + '-' + m[2] + '-' + m[3];
+    if((m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(t))) return m[3] + '-' + m[2] + '-' + m[1];
+    return '';
+  }
+  function ilekPlusUnMois(iso){ var d = new Date(iso + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); return d.toISOString().slice(0, 10); }
   async function ilekStatutsLire(){
     var r = { m: {} };
     try{ var sn = await db.collection('vortexnova').doc('ilekStatuts').get(); if(sn.exists){ var o = JSON.parse(sn.data().value); if(o && o.m && typeof o.m === 'object') r = o; } }catch(e){}
@@ -41991,8 +42025,14 @@ async function renderAssistanceHistory(){
       var parNum = {}; T.rows.forEach(function(r){ parNum[ilekNormNum(r.numero)] = r; });
       var aujourdhui = new Date().toISOString().slice(0, 10);
       var premier = Object.keys(S.m).length === 0;
-      var nouveaux = [], reactives = [], motifs = [], averifier = [], pasConformes = [], introuvables = [], transitions = {}, vus = {}, nbStatutsChanges = 0, nbLignes = 0;
+      var nouveaux = [], reactives = [], motifs = [], averifier = [], horsResp = [], pasConformes = [], introuvables = [], transitions = {}, vus = {}, nbStatutsChanges = 0, nbLignes = 0;
       var newS = Object.assign({}, S.m);
+      // r386 — 1er fichier seulement : un contrat annulé VENDU AVANT le mois choisi est posé sur son mois de vente (il avait déjà été retiré à l'époque : c'est pour que les statistiques soient justes).
+      // Dès le 2e fichier, tout nouvel annulé est retiré sur le mois choisi (le mois en cours), même s'il a été vendu avant.
+      function moisRetour(v){
+        var mv = String(((v && v.champs) || {}).date || '').slice(0, 7);
+        return (premier && /^\d{4}-\d{2}$/.test(mv) && mv < adIlek.mois) ? mv : adIlek.mois;
+      }
       lignes.forEach(function(o){
         var id = ilekIdPropre(o.subscriptionid), k = ilekNormNum(id);
         if(!k || vus[k]) return; vus[k] = true; nbLignes++;
@@ -42010,18 +42050,29 @@ async function renderAssistanceHistory(){
           nbStatutsChanges++;
           if(prev && prev.e !== etat){ var cle = ilekEtatLib(prev.e, prev.l) + ' → ' + libEtat; transitions[cle] = (transitions[cle] || 0) + 1; }
         } else { newS[k] = prev; }
+        // r387 — tu es responsable du contrat 1 mois après l'ACTIVATION (jusqu'au 1er prélèvement). Perte au-delà = prévenu seulement.
+        // Sans date d'activation (annulé avant l'activation) → toujours un retour.
+        var actIso = ilekDateIso(o.datedactivation), perteIso = ilekDateIso(o.datederesiliation) || aujourdhui;
+        var horsMois = !!actIso && perteIso > ilekPlusUnMois(actIso);
         // 2) ce que ça change pour les retours
         if(etat === 'annule'){
           if(row){
             if(ilekRetourDeFichier(row) && (row.motif !== motif || String(row.motifTexte || '') !== raison)) motifs.push({ numero: k, etiq: etiq, de: ilekMotifLib(row.motif), vers: ilekMotifLib(motif), motif: motif, raison: raison });
           } else if(!v){ introuvables.push(etiq + ' (' + (raison || 'sans raison') + ')'); }
           else if(v.statut !== 'conforme'){ pasConformes.push(etiq + ' (statut dans le CRM : ' + (v.statut || '?') + ')'); }
-          else nouveaux.push({ numero: id.toUpperCase(), agent: v.agent, mois: adIlek.mois, energies: 1, nom: nomChamps(v.champs) || nomClient, motif: motif, motifTexte: raison, energie: String(o.typedenergie || ''), source: 'fichier', le: new Date().toISOString() });
+          else if(horsMois){ if(!prev || prev.e !== etat) horsResp.push(etiq + ' : ' + libEtat + (raison ? ' (' + raison + ')' : '') + ' le ' + perteIso + ', activé le ' + actIso + ' → plus d\'1 mois, rien retiré'); }
+          else nouveaux.push({ numero: id.toUpperCase(), agent: v.agent, mois: moisRetour(v), energies: 1, nom: nomChamps(v.champs) || nomClient, motif: motif, motifTexte: raison, energie: String(o.typedenergie || ''), source: 'fichier', le: new Date().toISOString() });
         } else if(row){
           if(ILEK_REACTIVE[etat] && ilekRetourDeFichier(row)) reactives.push({ numero: k, etiq: '#' + id + ' ' + (row.nom || nomClient) + ' — ' + row.agent + ' (' + (row.mois || '') + ')', vers: libEtat });
-          else averifier.push(etiq + ' : un retour est enregistré' + (row.manuel ? ' à la main' : (ilekRetourDeFichier(row) ? '' : ' (collé)')) + ', mais le contrat est maintenant « ' + libEtat + ' » chez Ilek');
-        } else if(etat === 'resilie' && prev && prev.e !== 'resilie' && v){
-          averifier.push(etiq + ' : passé « Résilié » chez Ilek (aucun retour enregistré, rien changé)');
+          else averifier.push(etiq + ' : un retour est enregistré' + (row.manuel ? ' à la main' : (row.source === 'retour' ? ' (fichier des retours)' : (ilekRetourDeFichier(row) ? '' : ' (collé)'))) + ', mais le contrat est maintenant « ' + libEtat + ' » chez Ilek');
+        } else if(etat === 'resilie' && (premier || (prev && prev.e !== 'resilie')) && v){
+          // r387 — « Résilié » : même règle de responsabilité d'1 mois que pour un annulé.
+          if(v.statut !== 'conforme') pasConformes.push(etiq + ' (statut dans le CRM : ' + (v.statut || '?') + ')');
+          else if(!actIso) averifier.push(etiq + ' : passé « Résilié » sans date d\'activation dans le fichier (rien retiré, à regarder)');
+          else if(horsMois) horsResp.push(etiq + ' : ' + libEtat + ' le ' + perteIso + ', activé le ' + actIso + ' → plus d\'1 mois, rien retiré');
+          else nouveaux.push({ numero: id.toUpperCase(), agent: v.agent, mois: moisRetour(v), energies: 1, nom: nomChamps(v.champs) || nomClient, motif: 'résilié', motifTexte: 'Résilié le ' + perteIso + ' (activé le ' + actIso + ')', energie: String(o.typedenergie || ''), source: 'fichier', le: new Date().toISOString() });
+        } else if(prev && prev.e === 'actif' && (etat === 'brouillon' || ILEK_REACTIVE[etat])){
+          if(etat !== 'actif') averifier.push(etiq + ' : était « Actif » au dernier fichier, maintenant « ' + libEtat + ' » (rien retiré, à regarder)');
         }
       });
       // Les statuts très anciens (plus revus depuis 200 jours) sortent de la mémoire pour qu'elle reste petite.
@@ -42035,20 +42086,24 @@ async function renderAssistanceHistory(){
       if(pasConformes.length) ignores.push('Pas « conformes » dans le CRM (ignorés) : ' + pasConformes.join(' · '));
       if(introuvables.length) ignores.push('Introuvables dans le CRM (ignorés) : ' + introuvables.join(' · '));
       var liste = [];
-      if(nouveaux.length){ liste.push('↩️ NOUVEAUX RETOURS — énergie retirée (' + nouveaux.length + ')'); nouveaux.forEach(function(r){ liste.push('   #' + r.numero + ' — ' + r.agent + ' · ' + ilekMotifLib(r.motif) + (r.energie ? ' (' + r.energie + ')' : '')); }); }
+      if(nouveaux.length){ liste.push('↩️ NOUVEAUX RETOURS — énergie retirée (' + nouveaux.length + ')'); nouveaux.forEach(function(r){ liste.push('   #' + r.numero + ' — ' + r.agent + ' · ' + ilekMotifLib(r.motif) + (r.energie ? ' (' + r.energie + ')' : '') + (r.mois !== adIlek.mois ? ' → sur ' + r.mois + ' (mois de la vente, statistiques)' : '')); }); }
       if(reactives.length){ liste.push('✅ REVENUS ACTIFS — énergie REDONNÉE à l\'agent (' + reactives.length + ')'); reactives.forEach(function(r){ liste.push('   ' + r.etiq + ' : Annulé → ' + r.vers); }); }
+      if(horsResp.length){ liste.push('ℹ️ PLUS D\'1 MOIS APRÈS L\'ACTIVATION — tu n\'es plus responsable, rien n\'est retiré (' + horsResp.length + ')'); horsResp.forEach(function(a){ liste.push('   ' + a); }); }
       if(motifs.length){ liste.push('✏️ MOTIF CHANGÉ (' + motifs.length + ')'); motifs.forEach(function(m){ liste.push('   ' + m.etiq + ' : ' + m.de + ' → ' + m.vers); }); }
       if(averifier.length){ liste.push('⚠️ À VÉRIFIER — rien n\'est changé tout seul (' + averifier.length + ')'); averifier.forEach(function(a){ liste.push('   ' + a); }); }
       if(premier) liste.push('📊 Premier fichier : ' + nbLignes + ' contrats enregistrés comme état de départ.');
       else if(listeTrans.length){ liste.push('📊 CHANGEMENTS DE STATUT (' + nbStatutsChanges + ')'); listeTrans.forEach(function(t){ liste.push('   ' + t); }); }
       ignores.forEach(function(t){ liste.push('🚫 ' + t); });
 
-      if(!nbRetourChanges && !nbStatutsChanges){
+      if(!nbRetourChanges && !nbStatutsChanges && !horsResp.length){
         adIlek.msg = 'Aucun changement depuis le dernier fichier (' + nbLignes + ' contrats lus).' + (averifier.length ? '\n⚠️ Toujours à vérifier (rien n\'est changé tout seul) :\n   ' + averifier.join('\n   ') : '') + (ignores.length ? '\n' + ignores.join('\n') : ''); return;
       }
       if(nbRetourChanges){
         var texte = [];
-        if(nouveaux.length) texte.push(nouveaux.length + ' énergie(s) retirée(s) sur ' + adIlek.mois + (resume ? ' (' + resume + ')' : ''));
+        if(nouveaux.length){
+          var parMois = {}; nouveaux.forEach(function(r){ parMois[r.mois] = (parMois[r.mois] || 0) + 1; });
+          texte.push(Object.keys(parMois).sort().map(function(m){ return parMois[m] + ' énergie(s) retirée(s) sur ' + m; }).join(', ') + (resume ? ' (' + resume + ')' : ''));
+        }
         if(reactives.length) texte.push(reactives.length + ' énergie(s) redonnée(s)');
         if(motifs.length) texte.push(motifs.length + ' motif(s) changé(s)');
         if(!(await uiConfirm({ titre:'Appliquer ce fichier Ilek ?', icone:'🔄', ton:'warn', texte: texte.join(' · ') + '. 1 pour 1, sans division.', liste: liste, oui:'Appliquer', non:'Annuler' }))){ adIlek.msg = 'Annulé : rien n\'a été changé.'; return; }
@@ -42070,13 +42125,110 @@ async function renderAssistanceHistory(){
           nouveaux: nouveaux.map(function(r){ return '#' + r.numero + ' ' + r.agent + ' · ' + ilekMotifLib(r.motif); }),
           reactives: reactives.map(function(r){ return r.etiq + ' → ' + r.vers; }),
           motifs: motifs.map(function(m){ return m.etiq + ' : ' + m.de + ' → ' + m.vers; }),
-          averifier: averifier, statuts: listeTrans, ignores: ignores });
+          averifier: averifier.concat(horsResp), statuts: listeTrans, ignores: ignores });
         await storageSet('ilekJournal', JSON.stringify({ items: items.slice(0, 20) }));
       }catch(e){ console.warn('Journal Ilek', e); }
-      var bilan = nouveaux.length + ' retiré(s), ' + reactives.length + ' redonné(s), ' + motifs.length + ' motif(s) changé(s), ' + averifier.length + ' à vérifier, ' + nbStatutsChanges + ' statut(s) mis à jour';
+      var bilan = nouveaux.length + ' retiré(s), ' + horsResp.length + ' hors responsabilité, ' + reactives.length + ' redonné(s), ' + motifs.length + ' motif(s) changé(s), ' + averifier.length + ' à vérifier, ' + nbStatutsChanges + ' statut(s) mis à jour';
       try{ logAudit('Admin', 'Fichier Ilek appliqué (' + fichier.name + ') : ' + bilan, liste.join(' | ').slice(0, 900)); }catch(e){}
       adIlek.msg = '✅ Fichier appliqué : ' + bilan + '.' + (okS ? '' : '\n⚠️ Les statuts n\'ont pas pu être enregistrés (les retours, eux, l\'ont été).') + '\n' + liste.join('\n') + '\nTout est gardé dans 📋 Historique.';
       try{ showToast('🔄 Fichier Ilek appliqué : ' + bilan, averifier.length ? 'warn' : 'ok', 9000); }catch(e){}
+      if(inp) inp.value = '';
+    }catch(e){ adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
+    finally{ adIlek.occupe = false; adIlekRafraichir(); }
+  };
+
+  // ═══════════════ r386 — FICHIER DES RETOURS (clients non prélevés au 1er prélèvement, en général M+1) ═══════════════
+  // Séparé du fichier Ilek : la commission avait déjà été avancée, on la retire de la production du MOIS EN COURS (le mois choisi plus haut).
+  // Motif « non prélevé ». Un contrat déjà retiré n'est jamais retiré une 2e fois. Ces retours ne sont jamais changés tout seuls par le fichier Ilek.
+  async function ilekLireCellules(fichier){
+    var lignes = [];
+    if(/\.csv$/i.test(fichier.name)){
+      var buf = await fichier.arrayBuffer(), txt = new TextDecoder('utf-8').decode(buf);
+      if(txt.indexOf('�') >= 0){ try{ txt = new TextDecoder('windows-1252').decode(buf); }catch(e){} }
+      txt.replace(/^﻿/, '').split(/\r?\n/).forEach(function(l){ lignes.push(l.split(/[;\t,]/).map(function(z){ return z.replace(/^"|"$/g, '').trim(); })); });
+      return lignes;
+    }
+    await ensureJSZip();
+    var zip = await window.JSZip.loadAsync(await fichier.arrayBuffer());
+    var ss = [], fss = zip.file('xl/sharedStrings.xml');
+    if(fss){
+      var dss = new DOMParser().parseFromString(await fss.async('string'), 'application/xml');
+      [].forEach.call(dss.getElementsByTagName('si'), function(si){ var t = ''; [].forEach.call(si.getElementsByTagName('t'), function(x){ t += x.textContent; }); ss.push(t); });
+    }
+    var feuilles = Object.keys(zip.files).filter(function(n){ return /^xl\/worksheets\/[^\/]+\.xml$/.test(n); }).sort();
+    for(var f = 0; f < feuilles.length; f++){
+      var d = new DOMParser().parseFromString(await zip.file(feuilles[f]).async('string'), 'application/xml');
+      [].forEach.call(d.getElementsByTagName('row'), function(row){
+        var l = [];
+        [].forEach.call(row.getElementsByTagName('c'), function(c){
+          var t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0], val = '';
+          if(t === 'inlineStr'){ [].forEach.call(c.getElementsByTagName('t'), function(x){ val += x.textContent; }); }
+          else if(v){ val = (t === 's') ? (ss[Number(v.textContent)] || '') : v.textContent; }
+          l[ilekColIdx(c.getAttribute('r'))] = String(val).trim();
+        });
+        lignes.push(l);
+      });
+    }
+    return lignes;
+  }
+  window.adIlekRetoursFichier = async function(){
+    if(adIlek.occupe) return;
+    var inp = document.getElementById('ilekRetourXlsx'), fichier = inp && inp.files && inp.files[0];
+    if(!fichier){ adIlek.msg = '⚠️ Choisis d\'abord le fichier des retours (.xlsx ou .csv).'; adRendre(); return; }
+    adIlek.occupe = true; adIlek.msg = 'Lecture du fichier des retours…'; adRendre();
+    try{
+      var cellules = await ilekLireCellules(fichier);
+      // Si une colonne de numéros existe (Subscription ID, numéro…), on ne lit qu'elle ; sinon on regarde toutes les cases.
+      var noms = { subscriptionid:1, numero:1, numerodecontrat:1, numerocontrat:1, idcontrat:1, id:1, contrat:1 }, colN = -1, ligneN = -1;
+      for(var i = 0; i < Math.min(cellules.length, 10) && colN < 0; i++){
+        (cellules[i] || []).forEach(function(z, j){ if(colN < 0 && noms[ilekNormNom(z)]){ colN = j; ligneN = i; } });
+      }
+      var jetons = {};
+      cellules.forEach(function(l, i){
+        if(colN >= 0){ if(i > ligneN && l && l[colN]) jetons[ilekNormNum(ilekIdPropre(l[colN]))] = ilekIdPropre(l[colN]); }
+        else (l || []).forEach(function(z){ if(z) jetons[ilekNormNum(ilekIdPropre(z))] = ilekIdPropre(z); });
+      });
+      var nbJetons = Object.keys(jetons).length;
+      if(!nbJetons){ adIlek.msg = '⚠️ Aucun numéro de contrat trouvé dans ce fichier.'; return; }
+      window.ilekInvalider();
+      var tous = await ilekContratsTous(), T = await ilekRetoursLire();
+      var deja = {}; T.rows.forEach(function(r){ deja[ilekNormNum(r.numero)] = true; });
+      var nouveaux = [], ignores = [], pasConformes = [], vus = {}, pris = {};
+      tous.forEach(function(v){
+        var c = v.champs || {}, num = ilekNormNum(c.numero), gaz = ilekNormNum(c.numeroGaz);
+        var hit = (num && jetons[num]) ? num : ((gaz && jetons[gaz]) ? gaz : '');
+        if(!hit) return;
+        vus[num] = true; if(gaz) vus[gaz] = true;
+        var cle = num || gaz; if(pris[cle]) return; pris[cle] = true;
+        if(v.statut !== 'conforme'){ pasConformes.push('#' + (c.numero || hit) + ' — ' + v.agent + ' (statut dans le CRM : ' + (v.statut || '?') + ')'); return; }
+        if(deja[num] || (gaz && deja[gaz])){ ignores.push('#' + (c.numero || hit) + ' — ' + v.agent); return; }
+        nouveaux.push({ numero: String(c.numero || hit).toUpperCase(), agent: v.agent, mois: adIlek.mois, energies: ilekEnergies(v), nom: nomChamps(v.champs), motif: 'non prélevé', source: 'retour', le: new Date().toISOString() });
+      });
+      var inconnus = colN >= 0 ? Object.keys(jetons).filter(function(k){ return !vus[k] && /\d/.test(k) && k.length >= 4; }).map(function(k){ return jetons[k]; }) : [];
+      var total = 0; nouveaux.forEach(function(r){ total += r.energies; });
+      var liste = [];
+      nouveaux.forEach(function(r){ liste.push('#' + r.numero + ' — ' + r.agent + ' (' + r.energies + ' énergie' + (r.energies > 1 ? 's' : '') + ')'); });
+      if(ignores.length) liste.push('Déjà retirés avant (ignorés) : ' + ignores.join(' · '));
+      if(pasConformes.length) liste.push('Pas « conformes » dans le CRM (ignorés) : ' + pasConformes.join(' · '));
+      if(inconnus.length) liste.push('Introuvables dans le CRM (ignorés) : ' + inconnus.join(' · '));
+      if(!nouveaux.length){ adIlek.msg = 'Rien à retirer (' + nbJetons + ' numéro(s) lus).\n' + liste.join('\n'); return; }
+      if(!(await uiConfirm({ titre:'Appliquer ces retours « non prélevé » ?', icone:'↩️', ton:'warn',
+          texte: nouveaux.length + ' contrat(s), ' + total + ' énergie(s) retirée(s) sur ' + adIlek.mois + ' (le mois en cours), motif « non prélevé ».', liste: liste, oui:'Retirer', non:'Annuler' }))){ adIlek.msg = 'Annulé : rien n\'a été retiré.'; return; }
+      window.ilekInvalider();
+      var T2 = await ilekRetoursLire(), rows = T2.rows.slice();
+      nouveaux.forEach(function(r){ if(!rows.some(function(x){ return ilekNormNum(x.numero) === ilekNormNum(r.numero); })) rows.push(r); });
+      var ok = await storageSet('ilekRetours', JSON.stringify({ rows: rows }));
+      if(!ok){ adIlek.msg = '❌ Enregistrement impossible : rien n\'a été retiré.'; return; }
+      try{
+        var rj = await storageGet('ilekJournal', { fresh: true }), items = [];
+        try{ var oj = rj && rj.value ? JSON.parse(rj.value) : null; if(oj && Array.isArray(oj.items)) items = oj.items; }catch(e){}
+        items.unshift({ le: new Date().toISOString(), fichier: fichier.name + ' (retours non prélevés)', mois: adIlek.mois, lignes: nbJetons, premier: false,
+          nouveaux: nouveaux.map(function(r){ return '#' + r.numero + ' ' + r.agent + ' · non prélevé'; }), reactives: [], motifs: [], averifier: [], statuts: [], ignores: ignores.concat(pasConformes, inconnus) });
+        await storageSet('ilekJournal', JSON.stringify({ items: items.slice(0, 20) }));
+      }catch(e){ console.warn('Journal Ilek', e); }
+      try{ logAudit('Admin', 'Retours « non prélevé » appliqués (' + fichier.name + ') : ' + nouveaux.length + ' contrat(s), ' + total + ' énergie(s) sur ' + adIlek.mois, liste.join(' | ').slice(0, 900)); }catch(e){}
+      adIlek.msg = '✅ ' + nouveaux.length + ' retour(s) « non prélevé » retiré(s) sur ' + adIlek.mois + ' (' + total + ' énergie' + (total > 1 ? 's' : '') + ').' + (ignores.length ? '\nDéjà retirés avant (ignorés) : ' + ignores.length : '') + (pasConformes.length ? '\nPas conformes (ignorés) : ' + pasConformes.length : '') + (inconnus.length ? '\nIntrouvables : ' + inconnus.join(', ') : '');
+      try{ showToast('↩️ ' + nouveaux.length + ' retour(s) non prélevé(s) retiré(s) sur ' + adIlek.mois, 'ok', 8000); }catch(e){}
       if(inp) inp.value = '';
     }catch(e){ adIlek.msg = '❌ ' + (e && e.message ? e.message : e); }
     finally{ adIlek.occupe = false; adIlekRafraichir(); }
