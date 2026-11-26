@@ -3599,7 +3599,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-26-r388';
+const APP_VERSION = '2026-11-26-r389';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -41437,6 +41437,37 @@ async function renderAssistanceHistory(){
     catch(e){ return Promise.resolve([]); }
   };
   window.ilekViseDuMois = async function(mois){ try{ return await enerObjLire('Mois', mois); }catch(e){ return {}; } };
+
+  // r389 — Détail de ce que le dernier fichier a traité, regroupé par agent. Reste affiché sous les boutons.
+  function ilekActionLib(x){
+    var a = x.action;
+    return a === 'retire' ? ('✅ retiré' + (x.mois ? ' sur ' + x.mois : '')) : a === 'redonne' ? '↩️ énergie redonnée' : a === 'motif' ? '✏️ motif changé'
+      : a === 'averifier' ? '⚠️ à vérifier (rien changé)' : a === 'hors' ? 'ℹ️ prévenu seulement (plus d\'1 mois après l\'activation)' : a === 'ignore' ? '🚫 ignoré (pas conforme dans le CRM)'
+      : a === 'introuvable' ? '🚫 introuvable dans le CRM' : '📊 statut enregistré';
+  }
+  function adIlekDetailHtml(){
+    var D = adIlek.detail; if(!D) return '';
+    var par = {}; (D.lignes || []).forEach(function(x){ (par[x.agent] = par[x.agent] || []).push(x); });
+    var agents = Object.keys(par).sort(function(a, b){
+      var ra = par[a].filter(function(x){ return x.action === 'retire'; }).length, rb = par[b].filter(function(x){ return x.action === 'retire'; }).length;
+      return rb - ra || (a < b ? -1 : 1);
+    });
+    var tot = { retire: 0, redonne: 0, hors: 0, averifier: 0 }; (D.lignes || []).forEach(function(x){ if(tot[x.action] != null) tot[x.action]++; });
+    var q = new Date(D.le), quand = q.toLocaleDateString('fr-FR') + ' ' + q.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+    var h = '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
+      '<div style="font-size:13px;"><b>🔎 Détail du dernier fichier</b> — ' + esc(D.fichier) + ' (' + esc(quand) + ', ' + (D.nbLignes || 0) + ' contrats lus)</div>' +
+      '<div style="font-size:12.5px;margin:4px 0 8px;color:var(--muted);">✅ ' + tot.retire + ' retiré(s) · ↩️ ' + tot.redonne + ' redonné(s) · ℹ️ ' + tot.hors + ' prévenu(s) seulement · ⚠️ ' + tot.averifier + ' à vérifier' + (D.premier ? ' · 1er fichier : les autres contrats sont seulement enregistrés comme état de départ' : '') + '</div>';
+    if(!agents.length) h += '<div style="font-size:12.5px;">Aucun contrat n\'a changé.</div>';
+    agents.forEach(function(ag){
+      var L = par[ag], nr = L.filter(function(x){ return x.action === 'retire'; }).length;
+      h += '<div style="margin-top:8px;"><b>' + esc(ag) + '</b> <span style="color:var(--muted);font-size:12px;">— ' + L.length + ' contrat(s)' + (nr ? ', <b style="color:var(--amber);">' + nr + ' retiré(s)</b>' : '') + '</span></div>';
+      L.forEach(function(x){
+        h += '<div style="font-size:12.5px;padding:3px 0 3px 10px;border-top:1px solid var(--border);">#' + esc(x.numero) + ' ' + esc(x.client || '') + ' : <b>' + esc(x.de) + ' → ' + esc(x.vers) + '</b>' + (x.raison ? ' (' + esc(x.raison) + ')' : '') +
+          (x.act ? ' · activé le ' + esc(x.act) : '') + (x.res ? ' · résilié/annulé le ' + esc(x.res) : '') + '<br><span style="opacity:.9;">' + esc(ilekActionLib(x)) + '</span></div>';
+      });
+    });
+    return h + '</div>';
+  }
   function adIlekRetoursHtml(){
     var h = '';
     var T = ilekMem.ret || { rows: [] };
@@ -41448,11 +41479,7 @@ async function renderAssistanceHistory(){
         '<input type="file" id="ilekXlsx" accept=".xlsx,.csv" style="max-width:100%;"> ' +
         '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekFichier()">📄 Lire le fichier</button> ' +
         '<button type="button" class="ct-btn" onclick="adIlekJournal()" title="Ce qui a changé à chaque fichier appliqué">📋 Historique</button></div>' +
-      '<div style="margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;">' +
-        '<div style="font-size:12.5px;"><b>↩️ Fichier des retours (clients non prélevés, en général 1 mois après)</b></div>' +
-        '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">La commission avait été avancée : chaque contrat du fichier est <b>retiré sur le mois affiché ci-dessus</b> (le mois en cours), motif « non prélevé ». Un contrat déjà retiré n\'est jamais retiré deux fois. Tu vois la liste avant de confirmer.</div>' +
-        '<input type="file" id="ilekRetourXlsx" accept=".xlsx,.csv" style="max-width:100%;"> ' +
-        '<button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekRetoursFichier()">↩️ Retirer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
+      adIlekDetailHtml() +
       '<div style="font-size:12.5px;color:var(--muted);margin:4px 0 6px;">Ou colle ici les numéros de contrat Ilek revenus impayés (un par ligne, ou séparés par des espaces). Ils sont retirés sur le mois affiché ci-dessus. Un numéro déjà importé est ignoré.</div>' +
       '<textarea id="ilekImportTxt" rows="3" placeholder="IL-5521&#10;IL-5530" style="width:100%;box-sizing:border-box;"></textarea>' +
       '<div style="margin-top:6px;"><button type="button" class="ct-btn nc" ' + (adIlek.occupe ? 'disabled ' : '') + 'onclick="adIlekImporter()">↩️ Importer ces retours sur ' + esc(adIlek.mois) + '</button></div>' +
@@ -42025,7 +42052,7 @@ async function renderAssistanceHistory(){
       var parNum = {}; T.rows.forEach(function(r){ parNum[ilekNormNum(r.numero)] = r; });
       var aujourdhui = new Date().toISOString().slice(0, 10);
       var premier = Object.keys(S.m).length === 0;
-      var nouveaux = [], reactives = [], motifs = [], averifier = [], horsResp = [], pasConformes = [], introuvables = [], transitions = {}, vus = {}, nbStatutsChanges = 0, nbLignes = 0;
+      var detail = [], nouveaux = [], reactives = [], motifs = [], averifier = [], horsResp = [], pasConformes = [], introuvables = [], transitions = {}, vus = {}, nbStatutsChanges = 0, nbLignes = 0;
       var newS = Object.assign({}, S.m);
       // r386 — 1er fichier seulement : un contrat annulé VENDU AVANT le mois choisi est posé sur son mois de vente (il avait déjà été retiré à l'époque : c'est pour que les statistiques soient justes).
       // Dès le 2e fichier, tout nouvel annulé est retiré sur le mois choisi (le mois en cours), même s'il a été vendu avant.
@@ -42054,6 +42081,7 @@ async function renderAssistanceHistory(){
         // Sans date d'activation (annulé avant l'activation) → toujours un retour.
         var actIso = ilekDateIso(o.datedactivation), perteIso = ilekDateIso(o.datederesiliation) || aujourdhui;
         var horsMois = !!actIso && perteIso > ilekPlusUnMois(actIso);
+        var n0 = [nouveaux.length, reactives.length, motifs.length, averifier.length, horsResp.length, pasConformes.length, introuvables.length];
         // 2) ce que ça change pour les retours
         if(etat === 'annule'){
           if(row){
@@ -42073,6 +42101,11 @@ async function renderAssistanceHistory(){
           else nouveaux.push({ numero: id.toUpperCase(), agent: v.agent, mois: moisRetour(v), energies: 1, nom: nomChamps(v.champs) || nomClient, motif: 'résilié', motifTexte: 'Résilié le ' + perteIso + ' (activé le ' + actIso + ')', energie: String(o.typedenergie || ''), source: 'fichier', le: new Date().toISOString() });
         } else if(prev && prev.e === 'actif' && (etat === 'brouillon' || ILEK_REACTIVE[etat])){
           if(etat !== 'actif') averifier.push(etiq + ' : était « Actif » au dernier fichier, maintenant « ' + libEtat + ' » (rien retiré, à regarder)');
+        }
+        // r389 — détail contrat par contrat : tout ce que le CRM a fait (ou seulement noté) pour ce contrat.
+        var actD = nouveaux.length > n0[0] ? 'retire' : (reactives.length > n0[1] ? 'redonne' : (motifs.length > n0[2] ? 'motif' : (averifier.length > n0[3] ? 'averifier' : (horsResp.length > n0[4] ? 'hors' : (pasConformes.length > n0[5] ? 'ignore' : (introuvables.length > n0[6] ? 'introuvable' : 'enregistre'))))));
+        if(actD !== 'enregistre' || (!premier && prev && prev.e !== etat)){
+          detail.push({ agent: v ? v.agent : '(agent inconnu)', numero: id, client: nomClient, de: prev ? ilekEtatLib(prev.e, prev.l) : '—', vers: libEtat, raison: raison, act: actIso, res: ilekDateIso(o.datederesiliation), action: actD, mois: actD === 'retire' ? nouveaux[nouveaux.length - 1].mois : '' });
         }
       });
       // Les statuts très anciens (plus revus depuis 200 jours) sortent de la mémoire pour qu'elle reste petite.
@@ -42095,6 +42128,7 @@ async function renderAssistanceHistory(){
       else if(listeTrans.length){ liste.push('📊 CHANGEMENTS DE STATUT (' + nbStatutsChanges + ')'); listeTrans.forEach(function(t){ liste.push('   ' + t); }); }
       ignores.forEach(function(t){ liste.push('🚫 ' + t); });
 
+      adIlek.detail = { fichier: fichier.name, le: new Date().toISOString(), mois: adIlek.mois, nbLignes: nbLignes, premier: premier, lignes: detail };
       if(!nbRetourChanges && !nbStatutsChanges && !horsResp.length){
         adIlek.msg = 'Aucun changement depuis le dernier fichier (' + nbLignes + ' contrats lus).' + (averifier.length ? '\n⚠️ Toujours à vérifier (rien n\'est changé tout seul) :\n   ' + averifier.join('\n   ') : '') + (ignores.length ? '\n' + ignores.join('\n') : ''); return;
       }
@@ -42106,7 +42140,7 @@ async function renderAssistanceHistory(){
         }
         if(reactives.length) texte.push(reactives.length + ' énergie(s) redonnée(s)');
         if(motifs.length) texte.push(motifs.length + ' motif(s) changé(s)');
-        if(!(await uiConfirm({ titre:'Appliquer ce fichier Ilek ?', icone:'🔄', ton:'warn', texte: texte.join(' · ') + '. 1 pour 1, sans division.', liste: liste, oui:'Appliquer', non:'Annuler' }))){ adIlek.msg = 'Annulé : rien n\'a été changé.'; return; }
+        if(!(await uiConfirm({ titre:'Appliquer ce fichier Ilek ?', icone:'🔄', ton:'warn', texte: texte.join(' · ') + '. 1 pour 1, sans division.', liste: liste, oui:'Appliquer', non:'Annuler' }))){ adIlek.detail = null; adIlek.msg = 'Annulé : rien n\'a été changé.'; return; }
         window.ilekInvalider();
         var T2 = await ilekRetoursLire(), rows = T2.rows.slice();
         var rm = {}; reactives.forEach(function(r){ rm[r.numero] = true; });
@@ -42125,7 +42159,7 @@ async function renderAssistanceHistory(){
           nouveaux: nouveaux.map(function(r){ return '#' + r.numero + ' ' + r.agent + ' · ' + ilekMotifLib(r.motif); }),
           reactives: reactives.map(function(r){ return r.etiq + ' → ' + r.vers; }),
           motifs: motifs.map(function(m){ return m.etiq + ' : ' + m.de + ' → ' + m.vers; }),
-          averifier: averifier.concat(horsResp), statuts: listeTrans, ignores: ignores });
+          averifier: averifier.concat(horsResp), statuts: listeTrans, ignores: ignores, detail: detail.slice(0, 300) });
         await storageSet('ilekJournal', JSON.stringify({ items: items.slice(0, 20) }));
       }catch(e){ console.warn('Journal Ilek', e); }
       var bilan = nouveaux.length + ' retiré(s), ' + horsResp.length + ' hors responsabilité, ' + reactives.length + ' redonné(s), ' + motifs.length + ' motif(s) changé(s), ' + averifier.length + ' à vérifier, ' + nbStatutsChanges + ' statut(s) mis à jour';
@@ -42243,6 +42277,7 @@ async function renderAssistanceHistory(){
         var d = new Date(it.le), q = d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
         liste.push('📄 ' + q + ' — ' + (it.fichier || 'fichier') + ' (' + (it.lignes || 0) + ' contrats)');
         [['↩️ retiré', it.nouveaux], ['✅ redonné', it.reactives], ['✏️ motif', it.motifs], ['⚠️ à vérifier', it.averifier], ['📊 statut', it.statuts]].forEach(function(g){ (g[1] || []).slice(0, 25).forEach(function(t){ liste.push('   ' + g[0] + ' : ' + t); }); });
+        (it.detail || []).slice(0, 40).forEach(function(x){ liste.push('   🔎 ' + (x.agent || '?') + ' · #' + x.numero + ' ' + (x.client || '') + ' : ' + x.de + ' → ' + x.vers + (x.raison ? ' (' + x.raison + ')' : '') + ' — ' + ilekActionLib(x)); });
       });
       await uiConfirm({ titre:'Historique des fichiers Ilek', icone:'📋', ton:'info', texte: items.length ? 'Les 8 derniers fichiers appliqués.' : 'Aucun fichier appliqué depuis la mise en place du suivi des statuts.', liste: liste, oui:'Fermer', non:null });
     }catch(e){ try{ uiAlert('❌ Historique illisible : ' + (e && e.message ? e.message : e)); }catch(x){} }
