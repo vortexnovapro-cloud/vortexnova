@@ -3599,7 +3599,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-26-r396';
+const APP_VERSION = '2026-11-26-r397';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -12357,6 +12357,12 @@ async function renderBilanIlek(force){
   }
 }
 function ilekNbG(n){ return String(Math.round(n*10)/10).replace('.',','); }
+// r397 — Cartes de l'Arena : l'énergie du mois s'affiche en BRUT (signées, avant retours). La paie reste calculée sur le NET.
+function ilekBrutDe(il){ return il ? (Number(il.energies) || 0) : 0; }
+function ilekCarte(il){
+  const brut = il ? (Number(il.energies) || 0) : 0, nets = il ? (Number(il.nets) || 0) : 0, obj = il ? (Number(il.objectif) || 0) : 0;
+  return { brut, nets, obj, atteint: obj > 0 && brut >= obj, retires: Math.max(0, Math.round((brut - nets) * 10) / 10) };
+}
 async function exportBilanIlekImage(){
   const el = document.getElementById('bilanIlekJour');
   if(!el || !BILAN_ILEK_DERNIER){ uiAlert('Rien à exporter pour le moment.'); return; }
@@ -12697,18 +12703,18 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
   }));
   function buildMonthlyRanking(list){
     // r373 — chacun est classé parmi les agents de son produit principal (assistance / énergie).
-    const metric = r => dayIsOver ? r.realized : (isEnergiePrincipal(r.agent) ? (Number((monthlyByAgent[r.agent].ilek || {}).nets) || 0) : monthlyByAgent[r.agent].monthlyRealized);
+    const metric = r => dayIsOver ? r.realized : (isEnergiePrincipal(r.agent) ? ilekBrutDe(monthlyByAgent[r.agent].ilek) : monthlyByAgent[r.agent].monthlyRealized);
     return rangParGroupe(list, metric);
   }
   // r375 — Valeur « du mois » à écrire dans les phrases : pour un agent énergie, ses énergies NETTES (comme le classement et « Énergie ce mois »), jamais son compteur d'assistance.
-  const moisValeurAgent = (agent, mo)=> isEnergiePrincipal(agent) ? (Math.round((Number(((mo && mo.ilek) || {}).nets) || 0) * 10) / 10) : (mo ? mo.monthlyRealized : 0);
+  const moisValeurAgent = (agent, mo)=> isEnergiePrincipal(agent) ? (Math.round(ilekBrutDe(mo && mo.ilek) * 10) / 10) : (mo ? mo.monthlyRealized : 0);
   const allRankByAgent = buildMonthlyRanking(rows.concat(indepRows));
   // Classement du MOIS, toujours calculé, même quand la journée est terminée. Une fois la journée
   // close, le classement du jour est un résultat acquis — plus rien ne peut le changer, donc lui
   // associer un conseil du type « un bon coup et le classement change » n'a aucun sens. C'est le
   // classement du mois, lui toujours ouvert, qui porte alors la motivation.
   const monthRankByAgent = (function(){
-    const metric = r => isEnergiePrincipal(r.agent) ? (Number((monthlyByAgent[r.agent].ilek || {}).nets) || 0) : monthlyByAgent[r.agent].monthlyRealized;
+    const metric = r => isEnergiePrincipal(r.agent) ? ilekBrutDe(monthlyByAgent[r.agent].ilek) : monthlyByAgent[r.agent].monthlyRealized;
     return rangParGroupe(rows.concat(indepRows), metric);
   })();
   rows = [...rows].sort((a,b)=> allRankByAgent[a.agent].rank - allRankByAgent[b.agent].rank);
@@ -12844,7 +12850,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       monthlyRealized: mo.monthlyRealized || 0,
       objReal: mo.objReal,
       mini: mo.mini || 0,
-      avanceMois: isEnergiePrincipal(r.agent) ? (Number((mo.ilek || {}).nets) || 0) : (mo.objReal != null ? mo.objReal : (mo.monthlyRealized || 0)),
+      avanceMois: isEnergiePrincipal(r.agent) ? ilekBrutDe(mo.ilek) : (mo.objReal != null ? mo.objReal : (mo.monthlyRealized || 0)),
       objMois: isEnergiePrincipal(r.agent) ? (Number((mo.ilek || {}).objectif) || 0) : (mo.mini || 0),
       uniteMois: isEnergiePrincipal(r.agent) ? 'énergies' : 'contrats',
       moisPct: avancementJoursOuvresMois(dateStr),
@@ -12895,12 +12901,13 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       // visé au-dessus du minimum, les deux valent la même chose et la carte affichait deux fois la
       // même ligne (« 16 / 20 » puis « 16 / 20 ») — de quoi faire douter n'importe qui de la fiabilité
       // des chiffres. Une seule ligne, une seule lecture possible.
+      const ikC = ilekCarte(mo.ilek);
       const viseAffichable = mo.vise > 0 && mo.vise !== mo.mini;
       const monthlyBlock = (mo.mini>0 || viseAffichable || mo.ilek || commentLines.length || personalRecordByAgent[r.agent] || dayRecordByAgent[r.agent]) ? `
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); font-size:13px;">
           ${(mo.mini>0 && !isEnergiePrincipal(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-bottom:5px;" title="Cumul depuis le 1er du mois — à ne pas confondre avec le chiffre du jour affiché en gros au-dessus."><span>${mo.equivObj>0 ? `Objectif minimum du mois <small style="font-size:11px; opacity:.75;">(assistance + énergie)</small><br><small style="font-size:11px; color:${mo.objReal>=mo.mini?'#4f9d78':'var(--muted)'};">${isEnergieSeule(r.agent) ? '' : mo.monthlyRealized+' assistance'+(mo.monthlyRealized>1?'s':'')+' + '}${Math.round(mo.equivObj/2*10)/10} énergie${mo.equivObj/2>1?'s':''}</small><br><small style="font-size:11px; opacity:.75;">Pour l'objectif, 1 énergie = 2 assistances</small>` : `Objectif minimum du mois${(!isEnergieSeule(r.agent) && enerMois(r.agent, dateStr) > 0) ? ' <small style="font-size:11px; opacity:.75;">(assistance)</small>' : ''}`}</span><b style="color:${mo.objReal>=mo.mini?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal}<span style="opacity:0.55;"> / ${mo.mini}</span></b></div>` : ''}
           ${(viseAffichable && !isEnergiePrincipal(r.agent)) ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500;" title="Cumul depuis le 1er du mois."><span>Objectif visé du mois</span><b style="color:${(mo.objReal != null ? mo.objReal : mo.monthlyRealized)>=mo.vise?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700; white-space:nowrap; margin-left:10px;">${mo.objReal != null ? mo.objReal : mo.monthlyRealized}<span style="opacity:0.55;"> / ${mo.vise}</span></b></div>` : ''}
-          ${mo.ilek ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-top:5px;" title="Énergies Ilek nettes (retours déduits) depuis le 1er du mois"><span>⚡ Énergie ce mois</span><b style="color:${((mo.ilek.objectif>0 && mo.ilek.atteint) || (!isEnergiePrincipal(r.agent) && mo.ilek.nets>0))?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${ilekNbG(mo.ilek.nets)}${mo.ilek.objectif>0?`<span style="opacity:0.55;"> / ${mo.ilek.objectif}</span>`:''}</b></div>${(isEnergiePrincipal(r.agent) && mo.ilek.objectif>0) ? (mo.ilek.atteint ? `<div class="arena-prog-bar" style="height:8px; border-radius:5px; margin-top:6px;"><div class="arena-prog-fill" style="width:100%; background:#d8b26e; border-radius:5px;"></div></div>${mo.ilek.nets>mo.ilek.objectif ? `<div style="margin-top:4px; font-size:12px; font-weight:700; color:#d8b26e;">+${ilekNbG(mo.ilek.nets-mo.ilek.objectif)} au-dessus de l'objectif</div>` : ''}` : `<div style="margin-top:4px; font-size:12px; color:var(--muted);">encore ${ilekNbG(Math.max(0, mo.ilek.objectif-mo.ilek.nets))} pour l'objectif du mois</div>`) : ''}` : ''}
+          ${mo.ilek ? `<div style="display:flex; justify-content:space-between; align-items:baseline; color:var(--muted); font-weight:500; margin-top:5px;" title="Énergies Ilek signées depuis le 1er du mois (avant retours)"><span>⚡ Énergie ce mois</span><b style="color:${((ikC.obj>0 && ikC.atteint) || (!isEnergiePrincipal(r.agent) && ikC.brut>0))?'#4f9d78':'var(--text)'}; font-size:14px; font-weight:700;">${ilekNbG(ikC.brut)}${mo.ilek.objectif>0?`<span style="opacity:0.55;"> / ${mo.ilek.objectif}</span>`:''}</b></div>${(isEnergiePrincipal(r.agent) && mo.ilek.objectif>0) ? (ikC.atteint ? `<div class="arena-prog-bar" style="height:8px; border-radius:5px; margin-top:6px;"><div class="arena-prog-fill" style="width:100%; background:#d8b26e; border-radius:5px;"></div></div>${ikC.brut>ikC.obj ? `<div style="margin-top:4px; font-size:12px; font-weight:700; color:#d8b26e;">+${ilekNbG(ikC.brut-ikC.obj)} au-dessus de l'objectif</div>` : ''}` : `<div style="margin-top:4px; font-size:12px; color:var(--muted);">encore ${ilekNbG(Math.max(0, ikC.obj-ikC.brut))} pour l'objectif du mois</div>`) : ''}${ikC.retires>0 ? `<div style="margin-top:3px; font-size:11px; color:var(--muted);">dont ${ilekNbG(ikC.retires)} retiré${ikC.retires>1?'s':''} par des retours (net : ${ilekNbG(ikC.nets)})</div>` : ''}` : ''}
           ${commentLinesToHtml(commentLines)}
           ${dayRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.2); border:1px solid rgba(184,147,90,0.55); font-size:12.5px; font-weight:800; color:#d8b26e;\">${escapeHtml(dayRecordByAgent[r.agent])}</div>` : ''}
           ${personalRecordByAgent[r.agent] ? `<div style=\"margin-top:9px; padding:8px 10px; border-radius:9px; background:rgba(184,147,90,0.16); border:1px solid rgba(184,147,90,0.45); font-size:12.5px; font-weight:800; color:#b8935a;\">${personalRecordByAgent[r.agent]}</div>` : ''}
@@ -12913,7 +12920,7 @@ async function renderObjSnapSingleDay(container, rows, indepRows, dateStr){
       const objectiveStreakBadge = objectiveStreak >= 2 ? `<span title="${objectiveStreak}${objectiveStreakPlus?' jours ou plus':' jours'} ouvrés d'affilée avec l'objectif du jour atteint${objectiveStreakPlus?" — la série dépasse l'historique affiché":''}" style="flex-shrink:0; font-size:11px; font-weight:700; color:#34b774; background:rgba(52,183,116,0.14); border:1px solid rgba(52,183,116,0.3); border-radius:20px; padding:3px 9px; white-space:nowrap; cursor:help;">🎯 ${objectiveStreakTxt}</span>` : '';
       const podiumColor = podiumBorderColor(allRankByAgent[r.agent]?.rank);
       // r395 — mise en avant de la réussite en énergie (agents « énergie uniquement » : objectif du jour et du mois).
-      const moisEnerAtteint = !!(isEnergiePrincipal(r.agent) && mo.ilek && mo.ilek.objectif > 0 && mo.ilek.atteint);
+      const moisEnerAtteint = !!(isEnergiePrincipal(r.agent) && ikC.obj > 0 && ikC.atteint);
       const jourEnerAtteint = !!(hit && estEnerC);
       const cardBorder = podiumColor ? `2px solid ${podiumColor}` : (moisEnerAtteint ? '2px solid #d8b26e' : (jourEnerAtteint ? '2px solid #34b774' : `1px solid ${hit?'rgba(79,157,120,0.4)':'rgba(255,255,255,0.07)'}`));
       const rubanEner = moisEnerAtteint
