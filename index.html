@@ -3599,7 +3599,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-26-r393';
+const APP_VERSION = '2026-11-26-r394';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -24088,12 +24088,19 @@ async function supervisorEnergieMonthlyBonus(year, month){
 
   // Mise au NET : les énergies retirées par les retours du mois (diviseur déjà appliqué) sont
   // déduites en partant des jours les plus récents — un retour porte sur le mois, pas sur un jour.
-  if(typeof window.ilekDuMois === 'function'){
+  // r394 — chaque retour est retiré le JOUR OÙ LE CONTRAT AVAIT ÉTÉ VENDU. Ce qui ne peut pas être rangé sur un jour
+  // (vente d'un autre mois, contrat introuvable, ou jour déjà vide) est retiré en partant des jours les plus récents.
+  if(typeof window.ilekRetiresParJour === 'function'){
     let retires = 0;
-    await Promise.all(allKnownAgents().map(async a=>{
-      if(isSupervisor(a) || isIndependant(a)) return;
-      try{ const d = await window.ilekDuMois(a, mois); retires += d ? (Number(d.retires) || 0) : 0; }catch(e){ tracerArgent('retours énergie (prime superviseur)', e, a); }
-    }));
+    try{
+      const rp = await window.ilekRetiresParJour(mois);
+      jours.forEach(j=>{
+        const q = rp.jours[j.ds] || 0;
+        if(q > 0){ const r = Math.min(j.pool, q); j.pool -= r; retires += q - r; }
+      });
+      Object.keys(rp.jours).forEach(ds=>{ if(!jours.some(j=> j.ds === ds)) retires += rp.jours[ds]; });
+      retires += rp.sansJour || 0;
+    }catch(e){ tracerArgent('retours énergie (prime superviseur)', e, ''); }
     for(let i = jours.length - 1; i >= 0 && retires > 0; i--){
       const r = Math.min(jours[i].pool, retires);
       jours[i].pool -= r; retires -= r;
@@ -40930,6 +40937,25 @@ async function renderAssistanceHistory(){
     ilekMem.tous = l; ilekMem.tousT = Date.now(); return l;
   }
   // Chiffres Ilek d'un agent pour un mois (null = l'agent n'a rien à voir avec Ilek)
+  // r394 — Retours du mois, rangés PAR JOUR DE VENTE (pour la prime énergie des superviseurs).
+  // Un retour est retiré le jour où le contrat avait été vendu, pas sur les jours les plus récents.
+  // Jamais les agents superviseurs ni indépendants (un superviseur ne touche pas de commission sur les contrats d'un superviseur).
+  // sansJour = retours dont la vente n'est pas dans ce mois (ou introuvable) : l'appelant les retire des jours les plus récents, comme avant.
+  window.ilekRetiresParJour = async function(mois){
+    var R = await ilekReglages(), T = await ilekRetoursLire(), out = { jours: {}, sansJour: 0 };
+    var rows = T.rows.filter(function(r){ return r.mois === mois && !isSupervisor(r.agent) && !isIndependant(r.agent); });
+    if(!rows.length) return out;
+    var norm = function(z){ return String(z == null ? '' : z).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^0+(?=[0-9A-Z])/, ''); };
+    var tous = await ilekContratsTous(), idx = {};
+    tous.forEach(function(v){ var c = v.champs || {}; [c.numero, c.numeroGaz].forEach(function(z){ var k = norm(z); if(k && !idx[k]) idx[k] = v; }); });
+    var dv = R.diviseur || 1;
+    rows.forEach(function(r){
+      var q = (Number(r.energies) || 1) / dv, v = idx[norm(r.numero)], ds = v ? String((v.champs || {}).date || '').slice(0, 10) : '';
+      if(/^\d{4}-\d{2}-\d{2}$/.test(ds) && ds.slice(0, 7) === mois) out.jours[ds] = (out.jours[ds] || 0) + q;
+      else out.sansJour += q;
+    });
+    return out;
+  };
   window.ilekDuMois = async function(agent, mois){
     var R = await ilekReglages(), T = await ilekRetoursLire();
     var mes = T.rows.filter(function(r){ return r.agent === agent && r.mois === mois; });
