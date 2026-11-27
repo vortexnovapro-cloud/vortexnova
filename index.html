@@ -3599,7 +3599,7 @@ async function tryDeviceGateAdmin(){
 // Identifiant de version de CE fichier — change à chaque fois qu'une nouvelle version est donnée à
 // l'admin. Sert uniquement à repérer, dans Admin → Vue d'ensemble, quels agents utilisent encore une
 // ancienne version restée ouverte (elle n'affecte aucun calcul).
-const APP_VERSION = '2026-11-27-r402';
+const APP_VERSION = '2026-11-27-r403';
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // ⓘ ADMIN ALLÉGÉ (r227) — les explications passent en info-bulle
@@ -24328,6 +24328,20 @@ function supervisorEstNet(sup){
   try{ return !!((getProdConfig().agentPay || {})[sup] || {}).supervisorNet; }catch(e){ return false; }
 }
 
+// r403 — garde ouvertes les cartes « ⚙️ Montants » quand l'écran est redessiné après un enregistrement.
+function rmOuvertsSauver(host){
+  try{
+    const l = Array.from(host.querySelectorAll('details[open]')).map(d=>{ const sm = d.querySelector('summary'); return sm ? sm.textContent.trim() : ''; }).filter(Boolean);
+    return { l, y: window.scrollY };
+  }catch(e){ return { l: [], y: 0 }; }
+}
+function rmOuvertsRestaurer(host, st){
+  try{
+    if(!st) return;
+    if(st.l && st.l.length) host.querySelectorAll('details').forEach(d=>{ const sm = d.querySelector('summary'); if(sm && st.l.indexOf(sm.textContent.trim()) >= 0) d.open = true; });
+    if(typeof st.y === 'number') window.scrollTo(window.scrollX, st.y);
+  }catch(e){}
+}
 // 📊 r354 — Enregistre UNE case d'un palier de superviseur. Deux grilles séparées :
 // 'assistance' et 'energie'. Un palier ne compte que si ses DEUX cases sont remplies, pour qu'une
 // saisie en cours ne change jamais un salaire au passage. Vider le seuil retire le palier.
@@ -24351,6 +24365,7 @@ async function saveSupervisorPalier(agent, produit, idx, champ, valeur){
   try{ renderAgentPayTable(); }catch(e){}
   try{ renderSupervision(); }catch(e){}
   try{ renderPayrollSummary(true); }catch(e){}
+  try{ if(window.adIlekRafraichir) window.adIlekRafraichir(); }catch(e){}
 }
 // Le tarif de départ de la commission énergie d'un superviseur. 0 = il ne touche rien sur
 // l'énergie de son équipe, c'est-à-dire exactement la situation d'avant r354.
@@ -24368,6 +24383,7 @@ async function saveSupervisorEnergieTaux(agent, valeur){
   try{ renderAgentPayTable(); }catch(e){}
   try{ renderSupervision(); }catch(e){}
   try{ renderPayrollSummary(true); }catch(e){}
+  try{ if(window.adIlekRafraichir) window.adIlekRafraichir(); }catch(e){}
 }
 // Les 4 lignes d'une grille de paliers de superviseur + l'aperçu de ce que ça donne.
 function supervisorPaliersHtml(agent, agentKeySafe, produit, unite){
@@ -26537,7 +26553,7 @@ async function renderAgentPayTable(){
     const blocAssid = `<div class="rm-bloc"><h4>✅ Assiduité</h4>${champ('primeAssiduite', p.primeAssiduite, 'DH', 'Prime si aucun retard ni absence')}</div>`;
     const blocComm = `<div class="rm-bloc"><h4>💵 Commission / bonus assistance (Prime)</h4>${champ('perContract', p.perContract, 'DH', lockObjectif ? 'Par contrat fait (dès le 1er)' : 'Par contrat (après l\'objectif)')}${lockObjectifRow ? '' : champ('perContractBeforeObjectif', p.perContractBeforeObjectif, 'DH', 'Par contrat (avant l\'objectif)')}${lockObjectif ? '<div class="rm-hint">Sans objectif : payé dès le 1er contrat.</div>' : ''}</div>`;
     const blocSup = (isSup || p.supervisorPrimePerContract) ? `<div class="rm-bloc"><h4>📊 Supervision — assistance (Prime)</h4>${champ('supervisorPrimePerContract', p.supervisorPrimePerContract, 'DH', 'Prime superviseur par contrat d\'équipe')}${isSup ? `<div class="rm-lig"><span class="t">Base de calcul (prime d'équipe + commission indépendants)</span><span class="rm-num"><select onchange="saveSupervisorBase('${agentKeySafe}', this.value)"><option value="brut" ${c.supervisorNet?'':'selected'}>Brut (retours de facturation non retirés)</option><option value="net" ${c.supervisorNet?'selected':''}>Net (retours de facturation retirés)</option></select></span></div>` : ''}${supervisorPaliersHtml(agent, agentKeySafe, 'assistance', 'contrats équipe')}</div>`
-      + (isSup ? `<div class="rm-bloc"><h4>⚡ Supervision — énergie (Ilek)</h4><div class="rm-lig"><span class="t">Par énergie d'équipe (tarif de départ)</span><span class="rm-num"><input type="number" min="0" step="1" value="${(c.supervisorEnergiePerContract !== undefined && c.supervisorEnergiePerContract !== '') ? c.supervisorEnergiePerContract : ''}" placeholder="0" onchange="saveSupervisorEnergieTaux('${agentKeySafe}', this.value)"><span>DH</span></span></div>${supervisorPaliersHtml(agent, agentKeySafe, 'energie', 'énergies équipe')}<div class="rm-hint">⚠️ Nouveau : avant, un superviseur ne touchait <b>rien</b> sur l'énergie de son équipe. Laissé vide, rien ne change. Assiette : les énergies <b>nettes</b> du mois de l'équipe de base (ni superviseurs, ni indépendants). Jamais mélangée avec l'assistance.</div></div>` : '')
+      + (isSup ? `<div class="rm-hint" style="margin:6px 0 0;">⚡ La commission de supervision sur l'<b>énergie</b> de l'équipe (tarif de départ et paliers) se règle dans l'onglet <b>🟢 ILEK</b>.</div>` : '')
       : '';
     const objVise = `<div class="rm-lig"><span class="t">Objectif visé ce mois (choisi par l'agent)</span><span class="rm-num"><input type="number" min="0" step="1" value="${desiredObj || ''}" placeholder="—" title="Objectif visé par l'agent lui-même — tu peux aussi le régler ici à sa place" onchange="adminSetDesiredObjective('${agentKeySafe}', ${year}, ${month}, this.value)"><span>contrats</span></span></div>`;
     const blocObj = lockObjectifRow
@@ -26575,7 +26591,9 @@ async function renderAgentPayTable(){
     cartes[type].push(carte);
   });
   const groupe = (titre, liste)=> liste.length ? `<h3 style="margin:18px 0 0;font-size:14px;color:var(--muted);">${titre} (${liste.length})</h3><div class="rm-grid">${liste.join('')}</div>` : '';
+  const _ouv = rmOuvertsSauver(container);
   container.innerHTML = groupe('Salariés', cartes.sal) + groupe('Back office / sans objectif', cartes.bo) + groupe('Indépendants', cartes.ind) + groupe('📦 Anciens agents', cartes.old);
+  rmOuvertsRestaurer(container, _ouv);
   rmRemplirMontants(year, month);
 }
 
@@ -41460,6 +41478,16 @@ async function renderAssistanceHistory(){
   // Un palier s'écrit « au-delà de X énergies → Y DH » et ne compte que si ses deux cases sont
   // remplies, pour qu'une saisie en cours ne change jamais un salaire au passage.
   // Vider le seuil d'une ligne suffit à retirer le palier.
+  window.adIlekRafraichir = function(){ try{ adRendre(); }catch(e){} };
+  function adIlekSupervisionHtml(n){
+    var cle = String(n).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    var c = ((getProdConfig().agentPay || {})[n]) || {};
+    var tx = (c.supervisorEnergiePerContract !== undefined && c.supervisorEnergiePerContract !== '') ? c.supervisorEnergiePerContract : '';
+    return '<div class="rm-bloc"><h4>👥 Supervision — énergie de l\'équipe</h4>' +
+      '<div class="rm-lig"><span class="t">Tarif de départ par énergie d\'équipe</span><span class="rm-num"><input type="number" min="0" step="1" value="' + tx + '" placeholder="0" onchange="saveSupervisorEnergieTaux(\'' + cle + '\', this.value)"><span>DH</span></span></div>' +
+      supervisorPaliersHtml(n, cle, 'energie', 'énergies équipe') +
+      '<div class="rm-hint">Le tarif de départ vaut jusqu\'au premier seuil. Chaque palier change le tarif au-delà de son seuil, tranche par tranche, jamais en rétroactif. Exemple : départ 10, au-delà de 100 → 15, de 250 → 20, de 400 → 25. Les montants sont libres. Assiette : les énergies <b>nettes</b> du mois de l\'équipe de base (ni superviseurs, ni indépendants). Jamais mélangée avec l\'assistance. Tarif vide = rien sur l\'énergie de l\'équipe.</div></div>';
+  }
   window.adIlekPalier = async function(agent, idx, champ, valeur){
     var cur = {};
     try{ var sn = await db.collection('vortexnova').doc(REGL_KEY).get(); if(sn.exists) cur = JSON.parse(sn.data().value) || {}; }catch(e){}
@@ -41675,10 +41703,17 @@ async function renderAssistanceHistory(){
             '<div class="rm-hint">Case vide = 0 DH (jamais la valeur de Prime). Ces montants n\'ont plus aucun lien avec Prime. La prime fixe extra vide reprend le montant par défaut réglé plus haut.</div></div>' +
             (seule ? '' : '<div class="rm-bloc"><h4>🔵 Assistances en bonus</h4><div class="rm-hint">Chaque assistance faite lui rapporte <b>' + Math.round(pay.perContract || 0) + ' DH</b>, dès la 1re, sans objectif ni palier. Ce montant se règle dans Rémunération → Prime → sa carte → « Par contrat ». Retours et rétractations sont déduits comme pour un agent assistance.</div></div>')
           ) : warn) +
+          (isSupervisor(n) ? adIlekSupervisionHtml(n) : '') +
           '</details></div>';
       });
       h += '</div>';
     }
+    (function(){
+      var hors = (config.agents || []).filter(function(a){ return isSupervisor(a) && autor.indexOf(a) < 0; });
+      if(hors.length) h += '<div class="rm-grid" style="margin-top:10px;">' + hors.map(function(a){
+        return '<div class="rm-card" style="border-top-color:#16a34a;"><div class="rm-nom"><span>' + esc(a) + '</span><span class="rm-chip">👥 Supervision énergie</span></div><details><summary>⚙️ Montants de ' + esc(a) + ' (supervision)</summary>' + adIlekSupervisionHtml(a) + '</details></div>';
+      }).join('') + '</div>';
+    })();
     // r373 — Supervision : ajuster une journée, pour l'ÉNERGIE seulement (celle de Prime est dans la page Prime).
     h += '<div class="ct-item" style="margin-top:10px;border-color:#16a34a;"><div class="ct-item-head"><b>📊 Supervision Énergie — ajuster une journée</b></div>' +
       '<div style="font-size:12.5px;color:var(--muted);margin:6px 0;">Même principe que pour Prime, mais ça ne touche QUE la prime de supervision énergie : retirer ou donner la prime d\'un superviseur pour une journée, et choisir qui récupère sa part.</div>' +
@@ -43063,7 +43098,7 @@ async function renderAssistanceHistory(){
     var derogs = htmlDerogations(adListe, 'ad');
     var note = adAttente > 0 ? '<div style="margin:0 0 10px;font-size:12.5px;color:var(--muted);">📥 ' + adAttente + ' contrat(s) en attente de vérification chez le backoffice.</div>' : '';
     el.innerHTML = derogs + note + h + envoiCtl;                    // les demandes de déblocage (urgentes) en premier
-    try{ var ih = document.getElementById('remuIlekHost'); if(ih) ih.innerHTML = adIlekCarte(); }catch(e){}
+    try{ var ih = document.getElementById('remuIlekHost'); if(ih){ var _ouvI = rmOuvertsSauver(ih); ih.innerHTML = adIlekCarte(); rmOuvertsRestaurer(ih, _ouvI); } }catch(e){}
     try{ var rh = document.getElementById('billingIlekRetoursHost'); if(rh) rh.innerHTML = adIlekRetoursHtml(); }catch(e){}   // r351 : retours Ilek rangés à côté des retours Prime (Facturation & Paie)
     try{ var eh = document.getElementById('adEcartHost'); if(eh) eh.innerHTML = adEcartCarte(); }catch(e){}                   // r351 : « Écart avec la facturation » rangé dans Facturation & Paie
     var tb = document.getElementById('subtabContrats');             // pastille rouge sur l'onglet quand une demande attend
